@@ -31,9 +31,9 @@ Fresh context: read this ledger + `docs/rag/DESIGN.md`, then do these **in order
    Precision@5 / NDCG@10 lift and set `refusal_min_rerank_score` from it. Then the **Phase 3.5 exit
    gate**, and `/compact-ultra` again before Phase 4.
 
-**Supabase decision: deferred to Phase 5** (prod/deploy only; keep local Docker pgvector for dev).
-When Phase 5 starts, ask for the connection string, confirm pgvector ≥ 0.8, and adapt the
-`rag_reader`/RLS model to Supabase roles (`authenticated`/`service_role` + JWT-claim RLS).
+**Supabase decision: its own dedicated Phase 6** (prod/deploy only; keep local Docker pgvector for
+dev). See "Phase 6 — Supabase vector store migration & deploy" below; it's blocked on the user for the
+connection string, a pgvector ≥ 0.8 confirmation, and the `rag_reader`/RLS→Supabase-roles mapping.
 
 ### Progress (as of 2026-08-07, branch `feat/rag-phase-3.5`)
 
@@ -46,7 +46,8 @@ When Phase 5 starts, ask for the connection string, confirm pgvector ≥ 0.8, an
 | **3.5.4** — `query_trace` scoreboard (minimal) | ✅ done | `a9f9259` | 1 trace/retrieval; migration 0003 reversible |
 | **3.5.5** — measure rerank lift + Phase 3.5 exit gate | ⏳ next | — | needs eval-harness work; real lift needs a live reranker key |
 | **4** — answer runtime + chat (rag_agent, `POST /chat`) | ⬜ todo | — | HTTP+LLM surface → full security controls required |
-| **5** — optimization & proof | ⬜ todo | — | Supabase, caching, red-team, latency/cost |
+| **5** — optimization & proof | ⬜ todo | — | caching, adaptive routing, red-team, latency/cost |
+| **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
 
 Gate at each ✅: `make check` green (116 tests, was 99), `make boundaries` clean, ruff/pyright at the
 ADR-0003 D1 baseline (no regression). Reader/RLS isolation tests + both migrations verified.
@@ -61,11 +62,11 @@ ADR-0003 D1 baseline (no regression). Reader/RLS isolation tests + both migratio
 
 ### Blockers / need from you  *(ask before doing dependent work)*
 
-1. **Supabase vector store** — **DECIDED: Phase 5 (prod/deploy only)**; keep local Docker pgvector for
-   dev now. When Phase 5 starts, I'll need: (a) the connection string (session-pooler or direct, port
-   5432, `postgresql+psycopg://…`); (b) confirmation the instance runs **pgvector ≥ 0.8** (needed for
-   `hnsw.iterative_scan`; Supabase may pin older); (c) how **`rag_reader` + RLS** maps onto Supabase
-   roles (`authenticated`/`service_role`/`anon` + JWT-claim RLS). **Do not invent a connection string.**
+1. **Supabase vector store** — **DECIDED: its own Phase 6 (prod/deploy only)**; keep local Docker
+   pgvector for dev now. When Phase 6 starts, I'll need: (a) the connection string (session-pooler or
+   direct, port 5432, `postgresql+psycopg://…`); (b) confirmation the instance runs **pgvector ≥ 0.8**
+   (needed for `hnsw.iterative_scan`; Supabase may pin older); (c) how **`rag_reader` + RLS** maps onto
+   Supabase roles (`authenticated`/`service_role`/`anon` + JWT-claim RLS). **Never invent a DSN.**
 2. **Reranker API key (Cohere)** — **needed next.** Add `RERANKER_API_KEY` + `RERANKER_PROVIDER=cohere`
    to `.env` so 3.5.5 measures a real rerank lift (CI stays on `FakeReranker`). Without it, 3.5.5 ships
    the lift *mechanism* but "after" == "before" offline, and `refusal_min_rerank_score` can't be tuned
@@ -465,6 +466,43 @@ row. `make check` green; boundaries clean; no-regression on ruff/pyright.
 - **Proof:** config sweeps; prompt-injection + permission/isolation red-team; measured latency
   (TTFT p50 < 1.5s / p95 < 2.5s, e2e p95 < 10s) + cost; deploy/rollback runbooks in `docs/runbooks/`.
   Optional: fine-tune the embedder on real ticket pairs. **Graph RAG stays off.**
+
+---
+
+## Phase 6 — Supabase vector store migration & deploy  *(prod target; its own phase)*
+
+**Goal.** Move the corpus + retrieval from local Docker pgvector to **Supabase** (managed Postgres +
+pgvector) as the production vector store, preserving the ADR-0004 source-isolation model. Dev stays on
+local pgvector until this phase. This is deploy/infra work, deliberately separated from the Phase 5
+accuracy/optimization work so neither blocks the other.
+
+**Blocked on the user (ask at phase start — never invent a DSN or key):**
+
+- **Connection string** → `DATABASE_URL` (writer) and `DATABASE_READER_URL` (reader). Use the
+  **session pooler or direct** connection (port 5432), **not** the `:6543` transaction pooler, so
+  Alembic migrations + prepared statements work. Keep the `postgresql+psycopg://` prefix.
+- **pgvector ≥ 0.8 confirmation.** Needed for `hnsw.iterative_scan` (the RLS-scope recall safety valve,
+  3.5.1). Supabase may pin an older pgvector — if `< 0.8`, decide a mitigation before shipping RLS.
+- **Role / RLS mapping.** Supabase manages roles differently (`authenticated` / `service_role` /
+  `anon`, JWT-claim RLS, no plain superuser). Decide how `rag_reader` maps — since the app talks to
+  Postgres directly (not PostgREST/JWT), a dedicated low-privilege Postgres role is the likely fit;
+  the writer must retain a `BYPASSRLS`-equivalent path.
+
+**Tasks.**
+
+1. Enable pgvector on Supabase (`create extension if not exists vector;`); confirm version ≥ 0.8.
+2. Repoint `DATABASE_URL` + `DATABASE_READER_URL` at Supabase; run `alembic upgrade head` there
+   (0001 → 0003), confirming the halfvec/HNSW index and `query_trace` build.
+3. Recreate roles + RLS on Supabase — the docker init SQL won't run there, so apply
+   `schema.ensure_reader_role` + `schema.apply_chunk_rls` via a one-off script or a Supabase migration.
+4. Load the corpus (re-embed via the version-stamp gate, or migrate rows).
+5. Re-run the isolation tests + `make eval` against Supabase to confirm parity — RLS default-deny,
+   rerank lift, and one `query_trace` row per retrieval all still hold.
+6. Runbook in `docs/runbooks/`: pooler caveats, backup/restore, rollback, secret handling.
+
+**Acceptance.** Isolation + eval pass against Supabase; `hnsw.iterative_scan` confirmed available (or a
+documented mitigation); connection uses the psycopg driver; no secret in logs. `make check` still green
+locally (dev unchanged).
 
 ---
 
