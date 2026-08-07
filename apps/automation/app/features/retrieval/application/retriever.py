@@ -17,6 +17,7 @@ from app.features.retrieval.domain.fusion import reciprocal_rank_fusion
 from app.features.retrieval.domain.permission import PrincipalPermissionPolicy
 from app.features.retrieval.infrastructure.search_repo import (
     apply_hnsw_gucs,
+    apply_source_scope,
     dense_search,
     fetch_rerank_texts,
     keyword_search,
@@ -44,6 +45,7 @@ class HybridRetriever:
         *,
         candidate_k: int = 75,
         rerank_depth: int = 75,
+        allowed_sources: Sequence[str] = ("confluence:default",),
         hnsw_ef_search: int = 100,
         hnsw_iterative_scan: str = "relaxed_order",
     ) -> None:
@@ -53,23 +55,27 @@ class HybridRetriever:
         self._reranker = reranker
         self._candidate_k = candidate_k
         self._rerank_depth = rerank_depth
+        self._allowed_sources = tuple(allowed_sources)
         self._hnsw_ef_search = hnsw_ef_search
         self._hnsw_iterative_scan = hnsw_iterative_scan
 
     def retrieve(self, query: str, scope: str | None, k: int = 5) -> list[str]:
         space_id = self._policy.space_id(scope)
         query_vec = self._embedder.embed([query])[0]
+        sources = self._allowed_sources
         with self._session_factory() as session:
-            # Per-txn HNSW knobs: iterative_scan keeps recall honest once a narrow scope
-            # prunes the candidate set (PLAN 3.5.1). Same transaction as the searches below.
+            # Per-txn knobs, same transaction as the searches below:
+            #  - HNSW iterative_scan keeps recall honest once a narrow scope prunes rows (3.5.1)
+            #  - the source-scope GUC drives RLS default-deny on the reader role (ADR-0004)
             apply_hnsw_gucs(
                 session,
                 ef_search=self._hnsw_ef_search,
                 iterative_scan=self._hnsw_iterative_scan,
             )
-            kw = keyword_search(session, query, space_id, self._candidate_k)
+            apply_source_scope(session, sources)
+            kw = keyword_search(session, query, space_id, self._candidate_k, sources)
             dense = dense_search(
-                session, query_vec, space_id, self._candidate_k, self._embedder.dim
+                session, query_vec, space_id, self._candidate_k, self._embedder.dim, sources
             )
 
             kw_pages = _dedupe(kw)
@@ -84,7 +90,7 @@ class HybridRetriever:
             # Cross-encoder rerank the permitted candidates (never a doc the scope can't see).
             # FakeReranker is order-preserving, so offline this is exactly the pre-rerank ranking.
             to_rerank = allowed[: self._rerank_depth]
-            texts = fetch_rerank_texts(session, to_rerank, space_id)
+            texts = fetch_rerank_texts(session, to_rerank, space_id, sources)
             docs = [(pid, texts[pid]) for pid in to_rerank if pid in texts]
 
         reranked = self._reranker.rerank(query, docs, top_k=k)

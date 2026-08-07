@@ -31,6 +31,11 @@ from app.platform.db.models import KIND_CHILD, KIND_PARENT, Chunk, DocumentVersi
 
 DEFAULT_RETAIN_SUPERSEDED = 2
 
+# Source-tag activation seam (ADR-0004). Confluence is the only source today, so these are
+# constants; a second source turns them into a parameter threaded from the sync caller.
+_SOURCE_TYPE = "confluence"
+_SOURCE_ID = "confluence:default"
+
 
 def _tsv(*parts: str):
     """SQL expr: to_tsvector('english', <joined parts>) — config a literal, text a bind param."""
@@ -79,6 +84,11 @@ def build_chunks(
         cf_version=meta.version_number,
         title=meta.title,
         space_id=meta.space_id,
+        # single source-tag activation seam (ADR-0004): a constant while Confluence is the only
+        # source; becomes a parameter threaded from the caller when a second source lands.
+        source_type=_SOURCE_TYPE,
+        source_id=_SOURCE_ID,
+        tags=[],
         source_url=meta.source_url,
         page_status=page_status,
         retrieval_schema_version=target.retrieval_schema_version,
@@ -188,9 +198,7 @@ def stage_and_activate(
     # Reuse prior embeddings only when the embedding pipeline is unchanged; a model/dim/schema
     # change routes through the full re-embed release gate (all children rebuilt under the new
     # config, then swapped atomically — the prior version stays retained for rollback).
-    old_children = reusable_active_children(
-        session, meta.page_id, target=target, services=services
-    )
+    old_children = reusable_active_children(session, meta.page_id, target=target, services=services)
 
     new_version = DocumentVersion(
         document_id=doc.id,
@@ -229,8 +237,15 @@ def stage_and_activate(
         session.flush()
         raise ValueError(f"staging produced no child chunks for page {meta.page_id}")
 
-    _activate(session, meta=meta, hashes=hashes, target=target, page_status=page_status,
-              new_version=new_version, embedding_dim=services.embedding_dim)
+    _activate(
+        session,
+        meta=meta,
+        hashes=hashes,
+        target=target,
+        page_status=page_status,
+        new_version=new_version,
+        embedding_dim=services.embedding_dim,
+    )
     _gc_superseded(session, document_id=doc.id, retain=retain_superseded)
     return new_version
 
@@ -328,6 +343,9 @@ def _activate(
         ps = PageSource(page_id=meta.page_id)
         session.add(ps)
     ps.space_id = meta.space_id
+    ps.source_type = _SOURCE_TYPE  # source-tag seam (ADR-0004), mirrors the chunk stamp above
+    ps.source_id = _SOURCE_ID
+    ps.tags = []
     ps.parent_id = meta.parent_id
     ps.current_cf_version = meta.version_number
     ps.active_doc_version_id = new_version.id
@@ -353,14 +371,18 @@ def _activate(
 
 def _gc_superseded(session: Session, *, document_id: int, retain: int) -> None:
     """Delete obsolete versions beyond the retained rollback window (chunks cascade)."""
-    superseded = session.execute(
-        select(DocumentVersion.id)
-        .where(
-            DocumentVersion.document_id == document_id,
-            DocumentVersion.state == DocState.superseded,
+    superseded = (
+        session.execute(
+            select(DocumentVersion.id)
+            .where(
+                DocumentVersion.document_id == document_id,
+                DocumentVersion.state == DocState.superseded,
+            )
+            .order_by(DocumentVersion.superseded_at.desc())
         )
-        .order_by(DocumentVersion.superseded_at.desc())
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for vid in superseded[retain:]:
         session.execute(
             update(DocumentVersion).where(DocumentVersion.id == vid).values(state=DocState.failed)

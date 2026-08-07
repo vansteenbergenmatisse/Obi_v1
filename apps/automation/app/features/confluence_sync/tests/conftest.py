@@ -30,6 +30,11 @@ _TABLES = [
     "reconciliation_run",
 ]
 
+# Non-owner role the retriever reads as, so RLS is actually exercised (ADR-0004). The writer
+# (superuser `rag`) bypasses RLS; this role does not, which is the point of the isolation tests.
+_READER_ROLE = "rag_reader"
+_READER_PASSWORD = "rag_reader_test"
+
 
 def _ensure_database(url: str) -> None:
     u = make_url(url)
@@ -61,9 +66,25 @@ def _configure_test_engine() -> Iterator[None]:
     with eng.begin() as conn:
         schema.drop_all(conn)
         schema.create_all(conn)
+        # RLS + the non-owner reader role (ADR-0004), so retrieval is RLS-subject like production.
+        schema.ensure_reader_role(conn, role=_READER_ROLE, password=_READER_PASSWORD)
+        schema.apply_chunk_rls(conn)
+
+    # Point the reader engine at the same test DB but as the non-owner rag_reader role.
+    reader_url = (
+        make_url(test_url)
+        .set(username=_READER_ROLE, password=_READER_PASSWORD)
+        .render_as_string(hide_password=False)
+    )
+    os.environ["DATABASE_READER_URL"] = reader_url
+    get_settings.cache_clear()
+    engine_mod.get_reader_engine.cache_clear()
+    engine_mod.get_reader_sessionmaker.cache_clear()
+
     yield
     with eng.begin() as conn:
         schema.drop_all(conn)
+    engine_mod.get_reader_engine().dispose()
     eng.dispose()
 
 

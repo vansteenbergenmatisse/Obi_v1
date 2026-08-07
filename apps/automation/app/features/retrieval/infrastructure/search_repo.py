@@ -34,10 +34,28 @@ def apply_hnsw_gucs(session: Session, *, ef_search: int, iterative_scan: str) ->
     session.execute(text(f"SET LOCAL hnsw.iterative_scan = '{mode}'"))
 
 
-def _base_filters(space_id: int | None) -> str:
+def apply_source_scope(session: Session, allowed_sources: Sequence[str]) -> None:
+    """Set the RLS scope GUC ``app.allowed_sources`` for this transaction (ADR-0004).
+
+    Uses ``set_config(..., is_local=true)`` with a **bound** parameter: ``SET LOCAL`` cannot bind,
+    and interpolating the caller's source list would be an injection vector or a silent
+    default-deny. Scoped to the transaction, matching the searches that follow. An empty list
+    yields an empty string -> the policy matches nothing -> default-deny.
+    """
+    session.execute(
+        text("SELECT set_config('app.allowed_sources', :s, true)"),
+        {"s": ",".join(allowed_sources)},
+    )
+
+
+def _base_filters(space_id: int | None, sources: Sequence[str] | None) -> str:
     clause = "is_active AND kind = 1 AND page_status = 'current'"
     if space_id is not None:
         clause += " AND space_id = :space_id"
+    if sources is not None:
+        # explicit source filter alongside RLS: correctness + recall, and lets the planner use
+        # ix_chunk_active_source. RLS is the security net; this is the query's own predicate.
+        clause += " AND source_id = ANY(:sources)"
     return clause
 
 
@@ -48,17 +66,23 @@ _OR_TSQUERY = "replace(plainto_tsquery('english', :q)::text, '&', '|')::tsquery"
 
 
 def keyword_search(
-    session: Session, query: str, space_id: int | None, limit: int
+    session: Session,
+    query: str,
+    space_id: int | None,
+    limit: int,
+    sources: Sequence[str] | None = None,
 ) -> list[tuple[int, float]]:
     sql = text(
         f"SELECT page_id, ts_rank(tsv, {_OR_TSQUERY}) AS score "
         f"FROM chunk "
-        f"WHERE {_base_filters(space_id)} AND tsv @@ {_OR_TSQUERY} "
+        f"WHERE {_base_filters(space_id, sources)} AND tsv @@ {_OR_TSQUERY} "
         f"ORDER BY score DESC, page_id ASC LIMIT :limit"
     )
-    params = {"q": query, "limit": limit}
+    params: dict[str, object] = {"q": query, "limit": limit}
     if space_id is not None:
         params["space_id"] = space_id
+    if sources is not None:
+        params["sources"] = list(sources)
     return [(int(pid), float(score)) for pid, score in session.execute(sql, params)]
 
 
@@ -67,7 +91,12 @@ def _vector_literal(vec: Sequence[float]) -> str:
 
 
 def dense_search(
-    session: Session, query_vec: Sequence[float], space_id: int | None, limit: int, dim: int
+    session: Session,
+    query_vec: Sequence[float],
+    space_id: int | None,
+    limit: int,
+    dim: int,
+    sources: Sequence[str] | None = None,
 ) -> list[tuple[int, float]]:
     # >2000-dim models are indexed as halfvec; cast both sides so the ANN index is used.
     if dim >= _HALFVEC_MIN_DIM:
@@ -79,17 +108,22 @@ def dense_search(
     sql = text(
         f"SELECT page_id, ({lhs} <=> {rhs}) AS dist "
         f"FROM chunk "
-        f"WHERE {_base_filters(space_id)} AND embedding IS NOT NULL "
+        f"WHERE {_base_filters(space_id, sources)} AND embedding IS NOT NULL "
         f"ORDER BY dist ASC, page_id ASC LIMIT :limit"
     )
-    params = {"qvec": _vector_literal(query_vec), "limit": limit}
+    params: dict[str, object] = {"qvec": _vector_literal(query_vec), "limit": limit}
     if space_id is not None:
         params["space_id"] = space_id
+    if sources is not None:
+        params["sources"] = list(sources)
     return [(int(pid), float(dist)) for pid, dist in session.execute(sql, params)]
 
 
 def fetch_rerank_texts(
-    session: Session, page_ids: Sequence[int], space_id: int | None
+    session: Session,
+    page_ids: Sequence[int],
+    space_id: int | None,
+    sources: Sequence[str] | None = None,
 ) -> dict[int, str]:
     """One representative text per page for the cross-encoder, keyed by page id.
 
@@ -103,10 +137,12 @@ def fetch_rerank_texts(
         f"SELECT DISTINCT ON (page_id) page_id, "
         f"left(title || ' ' || retrieval_content, 4000) AS txt "
         f"FROM chunk "
-        f"WHERE {_base_filters(space_id)} AND page_id = ANY(:page_ids) "
+        f"WHERE {_base_filters(space_id, sources)} AND page_id = ANY(:page_ids) "
         f"ORDER BY page_id, seq"
     )
     params: dict[str, object] = {"page_ids": list(page_ids)}
     if space_id is not None:
         params["space_id"] = space_id
+    if sources is not None:
+        params["sources"] = list(sources)
     return {int(pid): str(txt) for pid, txt in session.execute(sql, params)}

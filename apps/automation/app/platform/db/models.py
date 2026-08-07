@@ -12,6 +12,7 @@ from datetime import datetime
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
     ForeignKey,
     Index,
@@ -41,6 +42,13 @@ from app.platform.db.enums import (
 )
 
 EMB_DIM = get_settings().embedding_dim
+
+# Provider tagging (ADR-0004). source_type is a coarse connector label constrained by a CHECK
+# (not a PG enum, to avoid ALTER TYPE friction as connectors grow). The set is seeded with the
+# planned sources so adding one is data, not a migration; source_id (e.g. "confluence:default")
+# is the per-source isolation key that RLS and the explicit source filter both key on.
+SOURCE_TYPES = ("confluence", "zendesk", "notion", "upload")
+_SOURCE_TYPE_CHECK = "source_type IN ('confluence', 'zendesk', 'notion', 'upload')"
 
 # chunk.kind
 KIND_PARENT = 0
@@ -89,10 +97,21 @@ class PageSource(Base):
 
     page_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)  # Confluence page id
     space_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # provider tagging (ADR-0004): mirrors chunk so the registry records each page's source
+    source_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'confluence'")
+    )
+    source_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, server_default=text("'confluence:default'")
+    )
+    tags: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
+    )
     parent_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     current_cf_version: Mapped[int] = mapped_column(Integer, nullable=False)
     active_doc_version_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("document_version.id", deferrable=True, initially="DEFERRED"),
+        BigInteger,
+        ForeignKey("document_version.id", deferrable=True, initially="DEFERRED"),
         nullable=True,
     )
     page_status: Mapped[PageStatus] = mapped_column(
@@ -117,9 +136,7 @@ class PageSource(Base):
     embedding_dim: Mapped[int] = mapped_column(Integer, nullable=False)
     retrieval_schema_version: Mapped[int] = mapped_column(SmallInteger, nullable=False)
 
-    last_indexed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    last_indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_reconciled_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -130,8 +147,10 @@ class PageSource(Base):
 
     __table_args__ = (
         UniqueConstraint("active_doc_version_id", name="uq_page_source_active_doc_version_id"),
+        CheckConstraint(_SOURCE_TYPE_CHECK, name="ck_page_source_source_type"),
         Index("ix_page_source_space_id", "space_id"),
         Index("ix_page_source_parent_id", "parent_id"),
+        Index("ix_page_source_source_id", "source_id"),
         Index("ix_page_source_page_status", "page_status"),
         Index("ix_page_source_last_reconciled_at", "last_reconciled_at"),
     )
@@ -160,9 +179,7 @@ class DocumentVersion(Base):
     __tablename__ = "document_version"
 
     id: Mapped[int] = _pk()
-    document_id: Mapped[int] = mapped_column(
-        BigInteger, ForeignKey("document.id"), nullable=False
-    )
+    document_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("document.id"), nullable=False)
     page_id: Mapped[int] = mapped_column(BigInteger, nullable=False)  # denormalized
     cf_version: Mapped[int] = mapped_column(Integer, nullable=False)
     state: Mapped[DocState] = mapped_column(
@@ -229,6 +246,16 @@ class Chunk(Base):
 
     title: Mapped[str] = mapped_column(Text, nullable=False)
     space_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # provider tagging + the RLS isolation key (ADR-0004)
+    source_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'confluence'")
+    )
+    source_id: Mapped[str] = mapped_column(
+        String(128), nullable=False, server_default=text("'confluence:default'")
+    )
+    tags: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
+    )
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
     heading_path: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
     seq: Mapped[int] = mapped_column(Integer, nullable=False)
@@ -276,6 +303,14 @@ class Chunk(Base):
             "space_id",
             postgresql_where=text("is_active"),
         ),
+        # source-scoped hot path: lets the planner use the source key alongside the RLS predicate
+        Index(
+            "ix_chunk_active_source",
+            "is_active",
+            "source_id",
+            postgresql_where=text("is_active"),
+        ),
+        CheckConstraint(_SOURCE_TYPE_CHECK, name="ck_chunk_source_type"),
     )
 
 

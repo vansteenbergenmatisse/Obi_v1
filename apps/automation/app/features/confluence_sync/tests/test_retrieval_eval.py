@@ -12,6 +12,8 @@ Phase 3 target, verified here:
 
 from __future__ import annotations
 
+from sqlalchemy import text
+
 from app.features.evaluation import (
     datasets_dir,
     evaluate,
@@ -21,7 +23,7 @@ from app.features.evaluation import (
 from app.features.retrieval import HybridRetriever, PrincipalPermissionPolicy
 from app.platform.clients import build_embedding_provider, build_reranker
 from app.platform.config import Settings
-from app.platform.db.engine import get_sessionmaker
+from app.platform.db.engine import get_reader_sessionmaker
 
 from ._helpers import index_page
 
@@ -55,9 +57,10 @@ def _build_policy(gateway) -> PrincipalPermissionPolicy:
 
 
 def _retriever(gateway, settings: Settings) -> HybridRetriever:
+    # Reads run as the non-owner rag_reader (RLS-subject), like production.
     embedder = build_embedding_provider(settings)
     return HybridRetriever(
-        get_sessionmaker(), embedder, _build_policy(gateway), build_reranker(settings)
+        get_reader_sessionmaker(), embedder, _build_policy(gateway), build_reranker(settings)
     )
 
 
@@ -78,7 +81,10 @@ def test_permission_no_leak_and_authorized_access(gateway, settings: Settings) -
     _index_corpus(gateway, settings)
     policy = _build_policy(gateway)
     retr = HybridRetriever(
-        get_sessionmaker(), build_embedding_provider(settings), policy, build_reranker(settings)
+        get_reader_sessionmaker(),
+        build_embedding_provider(settings),
+        policy,
+        build_reranker(settings),
     )
     dataset = load_dataset(_DATASETS / "permission.json")
 
@@ -97,3 +103,40 @@ def test_permission_no_leak_and_authorized_access(gateway, settings: Settings) -
         "Show me the exact expense approval amounts.", "unauthorized-user", k=5
     )
     assert "2002" not in outsider
+
+
+def test_rls_default_deny_on_reader_role(gateway, settings: Settings) -> None:
+    """RLS alone (bare SELECT, no app-level source filter) enforces default-deny on the reader.
+
+    Proves the policy, not just the explicit WHERE: an unset/empty or wrong scope returns zero
+    rows to the non-owner role; only the matching source_id makes the rows visible.
+    """
+    _index_corpus(gateway, settings)
+    with get_reader_sessionmaker()() as s:
+
+        def count_with_scope(scope: str) -> int:
+            s.execute(text("SELECT set_config('app.allowed_sources', :v, true)"), {"v": scope})
+            return int(s.execute(text("SELECT count(*) FROM chunk")).scalar_one())
+
+        assert count_with_scope("") == 0  # unset/empty -> default-deny
+        assert count_with_scope("confluence:other") == 0  # wrong source -> zero
+        assert count_with_scope("confluence:default") > 0  # matching source -> visible
+
+
+def test_retriever_wrong_source_scope_returns_zero(gateway, settings: Settings) -> None:
+    """End-to-end: a retriever scoped to the wrong source returns nothing (RLS + source filter)."""
+    _index_corpus(gateway, settings)
+    policy = _build_policy(gateway)
+    question = "How do I request access to core systems when I join?"
+
+    ok = _retriever(gateway, settings)
+    assert ok.retrieve(question, "100", k=5)  # correct default source -> rows
+
+    wrong = HybridRetriever(
+        get_reader_sessionmaker(),
+        build_embedding_provider(settings),
+        policy,
+        build_reranker(settings),
+        allowed_sources=("confluence:nonexistent",),
+    )
+    assert wrong.retrieve(question, "100", k=5) == []  # wrong source -> zero

@@ -25,6 +25,9 @@ class Settings(BaseSettings):
 
     # database
     database_url: str = "postgresql+psycopg://rag:rag@localhost:5434/omniboost_rag"
+    # non-owner rag_reader DSN for RLS-enforced retrieval reads (PLAN 3.5.3; ADR-0004).
+    # Empty -> retrieval falls back to database_url (RLS is a no-op for a superuser/owner).
+    database_reader_url: str = ""
 
     # confluence
     confluence_base_url: str = ""
