@@ -188,7 +188,7 @@ def stage_and_activate(
     # Reuse prior embeddings only when the embedding pipeline is unchanged; a model/dim/schema
     # change routes through the full re-embed release gate (all children rebuilt under the new
     # config, then swapped atomically — the prior version stays retained for rollback).
-    old_children = _reusable_active_children(
+    old_children = reusable_active_children(
         session, meta.page_id, target=target, services=services
     )
 
@@ -235,7 +235,7 @@ def stage_and_activate(
     return new_version
 
 
-def _reusable_active_children(
+def reusable_active_children(
     session: Session, page_id: int, *, target: TargetVersions, services: IngestionServices
 ) -> list[Chunk]:
     """Active child chunks eligible for embedding reuse — empty when the pipeline config changed.

@@ -6,7 +6,7 @@ from sqlalchemy import text
 
 from app.features.confluence_sync.application.sync_service import target_versions
 from app.features.ingestion.application.services import build_ingestion_services
-from app.features.ingestion.application.versioning import _reusable_active_children
+from app.features.ingestion.application.versioning import reusable_active_children
 from app.platform.config import Settings, get_settings
 from app.platform.db.enums import DocState
 from app.platform.db.models import Chunk, DocumentVersion
@@ -75,14 +75,14 @@ def test_reuse_guard_disables_on_config_change(gateway, settings: Settings) -> N
         svc = build_ingestion_services(settings)
         tgt = target_versions(settings, svc.embedding_model)
         # unchanged pipeline config -> prior children are reuse-eligible
-        assert _reusable_active_children(s, 1001, target=tgt, services=svc)
+        assert reusable_active_children(s, 1001, target=tgt, services=svc)
         # bump the retrieval schema version -> reuse disabled (full re-embed)
         bumped = settings.model_copy(
             update={"retrieval_schema_version": settings.retrieval_schema_version + 1}
         )
         svc_b = build_ingestion_services(bumped)
         tgt_b = target_versions(bumped, svc_b.embedding_model)
-        assert _reusable_active_children(s, 1001, target=tgt_b, services=svc_b) == []
+        assert reusable_active_children(s, 1001, target=tgt_b, services=svc_b) == []
 
 
 def test_schema_bump_triggers_full_reembed_release(gateway, settings: Settings) -> None:
