@@ -16,10 +16,15 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI
 
-from app.features.confluence_sync.application import reconciliation
-from app.features.confluence_sync.application.worker import drain, reap
-from app.features.confluence_sync.server import router as confluence_router
-from app.features.confluence_sync.server.webhook import SlidingWindowRateLimiter
+from app.features.confluence_sync import (
+    KIND_COMPLETE,
+    KIND_LIGHTWEIGHT,
+    SlidingWindowRateLimiter,
+    drain,
+    reap,
+    run_reconciliation,
+)
+from app.features.confluence_sync import router as confluence_router
 from app.platform.clients.confluence_client import ConfluenceGateway, HttpConfluenceClient
 from app.platform.clients.fixture_confluence_client import FixtureConfluenceGateway
 from app.platform.config import Settings, get_settings
@@ -44,16 +49,12 @@ def build_gateway(settings: Settings) -> ConfluenceGateway:
 
 def scheduled_lightweight_reconcile(gateway: ConfluenceGateway, settings: Settings) -> None:
     with session_scope() as session:
-        reconciliation.run_reconciliation(
-            session, gateway=gateway, settings=settings, kind=reconciliation.KIND_LIGHTWEIGHT
-        )
+        run_reconciliation(session, gateway=gateway, settings=settings, kind=KIND_LIGHTWEIGHT)
 
 
 def scheduled_complete_reconcile(gateway: ConfluenceGateway, settings: Settings) -> None:
     with session_scope() as session:
-        reconciliation.run_reconciliation(
-            session, gateway=gateway, settings=settings, kind=reconciliation.KIND_COMPLETE
-        )
+        run_reconciliation(session, gateway=gateway, settings=settings, kind=KIND_COMPLETE)
 
 
 def worker_tick(gateway: ConfluenceGateway, settings: Settings) -> None:
