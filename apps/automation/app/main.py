@@ -16,6 +16,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from fastapi import FastAPI
 
+from app import __version__
 from app.features.confluence_sync import (
     KIND_COMPLETE,
     KIND_LIGHTWEIGHT,
@@ -113,7 +114,7 @@ def create_app(*, settings: Settings | None = None, start_scheduler: bool | None
             if scheduler is not None:
                 scheduler.shutdown(wait=False)
 
-    app = FastAPI(title="omniboost-rag automation", version="0.2.0", lifespan=lifespan)
+    app = FastAPI(title="omniboost-rag automation", version=__version__, lifespan=lifespan)
     app.state.settings = settings
     app.state.gateway = gateway
     app.state.rate_limiter = SlidingWindowRateLimiter(settings.webhook_rate_limit_per_minute)

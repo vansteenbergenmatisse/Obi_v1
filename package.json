@@ -4,10 +4,6 @@
   "version": "0.1.0",
   "description": "Accuracy-first, Confluence-native RAG chatbot (Application Platform)",
   "packageManager": "pnpm@10.33.2",
-  "workspaces": [
-    "apps/web",
-    "packages/*"
-  ],
   "scripts": {
     "dev": "turbo run dev",
     "build": "turbo run build",

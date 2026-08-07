@@ -734,7 +734,6 @@ wheels = [
 
 [[package]]
 name = "omniboost-rag-automation"
-version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
@@ -796,7 +795,7 @@ requires-dist = [
     { name = "tiktoken", marker = "extra == 'tokenizers'", specifier = ">=0.8" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]
-provides-extras = ["dev", "tokenizers", "attachments", "local-embeddings"]
+provides-extras = ["attachments", "dev", "local-embeddings", "tokenizers"]
 
 [[package]]
 name = "openpyxl"
