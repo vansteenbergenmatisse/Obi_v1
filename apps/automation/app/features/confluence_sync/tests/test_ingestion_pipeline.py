@@ -5,8 +5,7 @@ from __future__ import annotations
 from sqlalchemy import text
 
 from app.features.confluence_sync.application.sync_service import target_versions
-from app.features.ingestion.application.services import build_ingestion_services
-from app.features.ingestion.application.versioning import reusable_active_children
+from app.features.ingestion import build_ingestion_services, reusable_active_children
 from app.platform.config import Settings, get_settings
 from app.platform.db.enums import DocState
 from app.platform.db.models import Chunk, DocumentVersion

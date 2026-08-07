@@ -25,8 +25,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.features.confluence_sync.application.event_service import JOB_SYNC_PAGE
-from app.features.ingestion.application.versioning import deactivate_page
-from app.features.ingestion.domain.change_detection import map_page_status
+from app.features.ingestion import deactivate_page, map_page_status
 from app.platform.clients.confluence_client import ConfluenceGateway, ConfluencePageMeta
 from app.platform.config import Settings
 from app.platform.db.enums import PageStatus, ReconStatus

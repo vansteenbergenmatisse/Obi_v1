@@ -8,21 +8,21 @@ from datetime import UTC, datetime
 from sqlalchemy import update
 from sqlalchemy.orm import Session
 
-from app.features.ingestion.application.services import build_ingestion_services
-from app.features.ingestion.application.versioning import (
+from app.features.ingestion import (
+    ChangeClass,
     PageHashes,
+    TargetVersions,
+    build_ingestion_services,
+    classify,
     deactivate_page,
+    decide_body_fetch,
+    get_local_state,
+    map_page_status,
     stage_and_activate,
 )
-from app.features.ingestion.domain import normalization as norm
-from app.features.ingestion.domain.change_detection import (
-    ChangeClass,
-    TargetVersions,
-    classify,
-    decide_body_fetch,
-    map_page_status,
+from app.features.ingestion import (
+    normalization as norm,
 )
-from app.features.ingestion.infrastructure.page_source_repo import get_local_state
 from app.platform.clients.confluence_client import ConfluenceGateway
 from app.platform.config import Settings
 from app.platform.db.models import Chunk, PageSource

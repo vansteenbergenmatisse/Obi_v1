@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from app.features.ingestion.application.versioning import rollback_to
+from app.features.ingestion import rollback_to
 from app.platform.db.engine import session_scope
 from app.platform.db.models import DocumentVersion
 
