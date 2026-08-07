@@ -25,7 +25,7 @@ from pathlib import Path
 
 from app.features.evaluation.fixtures import load_corpus_loader
 from app.features.evaluation.runner import RankFn, evaluate
-from app.features.evaluation.schemas import EvalDataset, EvalReport
+from app.features.evaluation.schemas import EvalDataset, EvalReport, RerankLiftReport
 from app.platform.logging import get_logger
 
 logger = get_logger(__name__)
@@ -38,6 +38,9 @@ _K = 5
 def _reports_dir() -> Path:
     # app/features/evaluation/run_baseline.py -> parents[3] == apps/automation
     return Path(__file__).resolve().parents[3] / "eval-reports"
+
+
+_RERANK_LIFT_JSON = "rerank_lift.json"
 
 
 def load_dataset(path: Path) -> EvalDataset:
@@ -78,7 +81,75 @@ def run() -> list[EvalReport]:
 
     _write_reports(reports, now_iso)
     _print_summary(reports)
+    _print_saved_rerank_lift()
     return reports
+
+
+def render_rerank_lift_markdown(report: RerankLiftReport) -> str:
+    """Render a before/after rerank-lift table (PLAN 3.5.5), comparable to the baseline format."""
+    p_key = f"precision@{report.precision_k}"
+    n_key = f"ndcg@{report.ndcg_k}"
+    lines: list[str] = []
+    lines.append("# Rerank Lift Report")
+    lines.append("")
+    lines.append(f"- Timestamp: `{report.timestamp}`")
+    lines.append(f"- Dataset: `{report.dataset_name}` ({report.case_count} cases)")
+    lines.append(f"- Reranker: `{report.reranker_model}`")
+    lines.append(
+        "- Before = fused + permission-filtered ranking (no cross-encoder); "
+        "After = with the cross-encoder rerank."
+    )
+    lines.append("")
+    lines.append("| Metric | Before | After | Δ |")
+    lines.append("| --- | --- | --- | --- |")
+    for key in (p_key, n_key):
+        lines.append(
+            f"| {key} | {report.before.get(key, 0.0):.4f} | "
+            f"{report.after.get(key, 0.0):.4f} | {report.delta.get(key, 0.0):+.4f} |"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_rerank_lift_reports(report: RerankLiftReport) -> Path:
+    """Persist the rerank-lift report as JSON + Markdown next to the baseline reports."""
+    out_dir = _reports_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    json_path = out_dir / _RERANK_LIFT_JSON
+    with json_path.open("w", encoding="utf-8") as handle:
+        json.dump(report.model_dump(), handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    md_path = out_dir / "rerank_lift.md"
+    with md_path.open("w", encoding="utf-8") as handle:
+        handle.write(render_rerank_lift_markdown(report))
+    logger.info("rerank_lift_report_written", json=str(json_path), markdown=str(md_path))
+    return json_path
+
+
+def _print_saved_rerank_lift() -> None:
+    """Echo the last measured rerank lift (PLAN 3.5.5) if a run has produced one.
+
+    The numbers come from the DB-backed integration measurement (a live reranker key
+    yields a real lift; CI's FakeReranker yields zero). This DB-free baseline entrypoint
+    only surfaces what was saved, so `make eval` shows the before/after table.
+    """
+    json_path = _reports_dir() / _RERANK_LIFT_JSON
+    if not json_path.exists():
+        return
+    with json_path.open(encoding="utf-8") as handle:
+        report = RerankLiftReport.model_validate(json.load(handle))
+    p_key = f"precision@{report.precision_k}"
+    n_key = f"ndcg@{report.ndcg_k}"
+    print()
+    print(f"Rerank lift ({report.dataset_name}, reranker={report.reranker_model})")
+    print("=" * 40)
+    for key in (p_key, n_key):
+        print(
+            f"{key:<14} before={report.before.get(key, 0.0):.3f} "
+            f"after={report.after.get(key, 0.0):.3f} "
+            f"Δ={report.delta.get(key, 0.0):+.3f}"
+        )
+    print("=" * 40)
 
 
 def _write_reports(reports: list[EvalReport], now_iso: str) -> None:

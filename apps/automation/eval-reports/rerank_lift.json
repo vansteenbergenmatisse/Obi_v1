@@ -1,0 +1,20 @@
+{
+  "after": {
+    "ndcg@10": 0.8769765845238192,
+    "precision@5": 0.19999999999999998
+  },
+  "before": {
+    "ndcg@10": 1.0,
+    "precision@5": 0.19999999999999998
+  },
+  "case_count": 6,
+  "dataset_name": "retrieval_smoke",
+  "delta": {
+    "ndcg@10": -0.12302341547618079,
+    "precision@5": 0.0
+  },
+  "ndcg_k": 10,
+  "precision_k": 5,
+  "reranker_model": "rerank-v3.5",
+  "timestamp": "phase3.5.5"
+}

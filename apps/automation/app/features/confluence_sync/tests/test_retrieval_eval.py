@@ -12,16 +12,20 @@ Phase 3 target, verified here:
 
 from __future__ import annotations
 
+import os
+
 from sqlalchemy import text
 
 from app.features.evaluation import (
     datasets_dir,
     evaluate,
+    evaluate_rerank_lift,
     load_corpus_loader,
     load_dataset,
+    write_rerank_lift_reports,
 )
 from app.features.retrieval import HybridRetriever, PrincipalPermissionPolicy
-from app.platform.clients import build_embedding_provider, build_reranker
+from app.platform.clients import Reranker, build_embedding_provider, build_reranker
 from app.platform.config import Settings
 from app.platform.db.engine import get_reader_sessionmaker, get_sessionmaker
 
@@ -61,6 +65,16 @@ def _retriever(gateway, settings: Settings) -> HybridRetriever:
     embedder = build_embedding_provider(settings)
     return HybridRetriever(
         get_reader_sessionmaker(), embedder, _build_policy(gateway), build_reranker(settings)
+    )
+
+
+def _retriever_with(gateway, settings: Settings, reranker: Reranker) -> HybridRetriever:
+    """A reader-role retriever wired to a specific reranker (for before/after comparison)."""
+    return HybridRetriever(
+        get_reader_sessionmaker(),
+        build_embedding_provider(settings),
+        _build_policy(gateway),
+        reranker,
     )
 
 
@@ -170,3 +184,40 @@ def test_retrieval_writes_one_query_trace_row(gateway, settings: Settings) -> No
     assert list(row.allowed_sources) == ["confluence:default"]
     assert row.reranker_model == "fake"
     assert row.latency_ms >= 0
+
+
+def test_rerank_lift_before_vs_after(gateway, settings: Settings) -> None:
+    """3.5.5: measure the cross-encoder's Precision@5 / NDCG@10 lift over the fixture corpus.
+
+    'Before' is the fused, permission-filtered ranking with the order-preserving FakeReranker;
+    'after' uses the configured reranker (Cohere live; Fake in CI). Retrieve depth 10 so NDCG@10
+    is not truncated. In CI both are Fake, so the lift is exactly zero — the deterministic
+    invariant that proves the *mechanism* without a hosted key. Set RERANKER_PROVIDER=cohere (and
+    EVAL_WRITE_RERANK_REPORT=1 to persist the artifact) to capture the real lift.
+    """
+    _index_corpus(gateway, settings)
+    dataset = load_dataset(_DATASETS / "retrieval_smoke.json")
+
+    before_reranker = build_reranker(settings.model_copy(update={"reranker_provider": "fake"}))
+    after_reranker = build_reranker(settings)
+    before = _retriever_with(gateway, settings, before_reranker)
+    after = _retriever_with(gateway, settings, after_reranker)
+
+    report = evaluate_rerank_lift(
+        dataset,
+        before_fn=lambda q, s: before.retrieve(q, s, k=10),
+        after_fn=lambda q, s: after.retrieve(q, s, k=10),
+        now_iso="phase3.5.5",
+        reranker_model=after_reranker.model,
+    )
+
+    assert report.case_count == len(dataset.cases)
+    assert set(report.delta) == {"precision@5", "ndcg@10"}
+
+    if after_reranker.model == "fake":
+        # Identity reranker on both sides -> before == after, no lift (the CI invariant).
+        assert report.before == report.after
+        assert report.delta == {"precision@5": 0.0, "ndcg@10": 0.0}
+
+    if os.environ.get("EVAL_WRITE_RERANK_REPORT"):
+        write_rerank_lift_reports(report)

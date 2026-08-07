@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     rerank_breaker_threshold: int = 5  # consecutive failed calls -> open the fuse
     rerank_max_docs: int = 1000  # C10 abuse cap on a single rerank() call
 
+    # refusal threshold (PLAN 4, tuned from the 3.5.5 measurement). If the top survivor's
+    # cross-encoder relevance score is below this, the answer runtime refuses ("not in the
+    # docs") and routes to a human rather than hallucinate. Cohere rerank-v3.5 scores are in
+    # [0, 1]. Provisional floor from the 3.5.5 fixture run; re-tune on the Phase-5 gold set.
+    refusal_min_rerank_score: float = 0.10
+
     # retrieval / budgets
     evidence_token_budget: int = 7000
     provider_timeout_seconds: float = 8.0

@@ -16,20 +16,25 @@ fix here as the next task; update this ledger after each phase.
 
 ### ▶ Resume here (after `/compact-ultra`) — first things first
 
-Fresh context: read this ledger + `docs/rag/DESIGN.md`, then do these **in order**:
+**Phase 3.5 is COMPLETE (all sub-steps ✅, exit gate MET). Next is Phase 4.** Changes for 3.5.5 are
+**uncommitted** — commit them first (see below), then start Phase 4.
 
-1. **Add API keys to the root `.env`** (the user is providing these; do not invent them):
-   - `RERANKER_API_KEY=<cohere key>` **and** `RERANKER_PROVIDER=cohere` — enables the real
-     cross-encoder so 3.5.5 can measure an actual rerank lift. (Tests still force `fake` via
-     `conftest.py`, so CI stays deterministic — no action needed there.)
-   - Confirm already-present: `OPENAI_API_KEY` (embeddings, set), `ANTHROPIC_API_KEY`
-     (contextualization + Phase-4 answers, set). `CONFLUENCE_API_TOKEN` is dead — needed only for
-     *live* ingestion, not for offline 3.5/4.
-2. **Run the pre-phase verification gate on Phase 3.5** (per `CLAUDE.local.md` rule 2): security of the
-   reranker/embedding HTTP clients, real tests present, acceptance met. Record any gap here as a task.
-3. **Do 3.5.5** — rerank-lift reporting in `features/evaluation`; with the live key, capture the real
-   Precision@5 / NDCG@10 lift and set `refusal_min_rerank_score` from it. Then the **Phase 3.5 exit
-   gate**, and `/compact-ultra` again before Phase 4.
+Fresh context: read this ledger + `docs/rag/DESIGN.md` (esp. §5 Proof of lift), then do these **in order**:
+
+1. **Commit the 3.5.5 work** (uncommitted on `feat/rag-phase-3.5`): `evaluate_rerank_lift` +
+   `RerankLiftReport` (`features/evaluation`), `refusal_min_rerank_score` setting, unit +
+   integration tests, DESIGN/PLAN updates. Suggested: `feat(evaluation): Phase 3.5.5 rerank-lift
+   reporting + provisional refusal floor`. (The `eval-reports/rerank_lift.{json,md}` artifacts are a
+   real-run record — commit or gitignore per preference; they're currently untracked.)
+2. **Begin Phase 4** — answer runtime + chat (`rag_agent`, `POST /chat`). This is the first HTTP+LLM
+   surface: invoke `securing-http-and-llm-endpoints` and apply the full control set (rule 2). Reuse the
+   3.5 reader-engine + RLS scoping; refusal uses `refusal_min_rerank_score` (0.10 provisional).
+
+**3.5.5 outcome (done):** rerank-lift mechanism (`evaluate_rerank_lift`, pure) + DB-backed integration
+run captured a live Cohere lift of **ndcg@10 −0.123 / precision@5 +0.000** on the saturated 6-case fixture
+— expected (no headroom); genuine lift deferred to the Phase-5 gold set. `refusal_min_rerank_score=0.10`
+provisional. Keys confirmed present in `.env`: `RERANKER_PROVIDER=cohere` + `RERANKER_API_KEY`,
+`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`. `CONFLUENCE_API_TOKEN` still dead (live ingestion only).
 
 **Supabase decision: its own dedicated Phase 6** (prod/deploy only; keep local Docker pgvector for
 dev). See "Phase 6 — Supabase vector store migration & deploy" below; it's blocked on the user for the
@@ -44,13 +49,22 @@ connection string, a pgvector ≥ 0.8 confirmation, and the `rag_reader`/RLS→S
 | **3.5.2** — cross-encoder reranker (Cohere/Fake) + wire | ✅ done | `7cd9fd1` | 10 unit tests; rerank after permission filter; Fake in CI |
 | **3.5.3** — provider tags + RLS + `rag_reader` role | ✅ done | `96f4786` | RLS default-deny proven; migration 0002 reversible |
 | **3.5.4** — `query_trace` scoreboard (minimal) | ✅ done | `a9f9259` | 1 trace/retrieval; migration 0003 reversible |
-| **3.5.5** — measure rerank lift + Phase 3.5 exit gate | ⏳ next | — | needs eval-harness work; real lift needs a live reranker key |
-| **4** — answer runtime + chat (rag_agent, `POST /chat`) | ⬜ todo | — | HTTP+LLM surface → full security controls required |
+| **3.5.5** — measure rerank lift + Phase 3.5 exit gate | ✅ done | _(uncommitted)_ | 120 tests; `evaluate_rerank_lift` + live Cohere run; **lift −0.123 ndcg@10 on the saturated fixture — expected, real lift is a Phase-5 gold-set measurement** |
+| **4** — answer runtime + chat (rag_agent, `POST /chat`) | ⏳ next | — | HTTP+LLM surface → full security controls required |
 | **5** — optimization & proof | ⬜ todo | — | caching, adaptive routing, red-team, latency/cost |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
 
-Gate at each ✅: `make check` green (116 tests, was 99), `make boundaries` clean, ruff/pyright at the
-ADR-0003 D1 baseline (no regression). Reader/RLS isolation tests + both migrations verified.
+Gate at each ✅: `make check` green (**120 tests**, was 116/99), `make boundaries` clean, ruff/pyright at the
+ADR-0003 D1 baseline (no regression — 22/2 ruff ≤ 25/2, pyright 0/0 on touched files). Reader/RLS isolation
+tests + both migrations verified.
+
+**Phase 3.5 exit gate — MET (2026-08-07):** `make check` green (120); `make eval` prints the before/after
+rerank table; isolation tests pass (RLS default-deny + wrong-source→0); pgvector 0.8.5 pinned; every
+retrieval writes one `query_trace` row; no ruff/pyright regression. Rerank lift measured live (Cohere
+`rerank-v3.5` + OpenAI-3072): **ndcg@10 −0.123, precision@5 +0.000 on `retrieval_smoke`** — the fixture is
+already saturated (dense ranks the one relevant page first, before-ndcg = 1.000), so there is no headroom;
+the genuine lift is a **Phase-5 gold-set measurement**. `refusal_min_rerank_score = 0.10` provisional,
+re-tune in Phase 5. **→ ready for Phase 4 after `/compact-ultra`.**
 
 ### Deviations already taken (documented, not silent)
 
@@ -67,10 +81,10 @@ ADR-0003 D1 baseline (no regression). Reader/RLS isolation tests + both migratio
    direct, port 5432, `postgresql+psycopg://…`); (b) confirmation the instance runs **pgvector ≥ 0.8**
    (needed for `hnsw.iterative_scan`; Supabase may pin older); (c) how **`rag_reader` + RLS** maps onto
    Supabase roles (`authenticated`/`service_role`/`anon` + JWT-claim RLS). **Never invent a DSN.**
-2. **Reranker API key (Cohere)** — **needed next.** Add `RERANKER_API_KEY` + `RERANKER_PROVIDER=cohere`
-   to `.env` so 3.5.5 measures a real rerank lift (CI stays on `FakeReranker`). Without it, 3.5.5 ships
-   the lift *mechanism* but "after" == "before" offline, and `refusal_min_rerank_score` can't be tuned
-   from real numbers.
+2. **Reranker API key (Cohere)** — ✅ **PROVIDED & USED (2026-08-07).** `.env` carries
+   `RERANKER_PROVIDER=cohere` + a live `RERANKER_API_KEY`; 3.5.5 measured a real lift with it (see the
+   exit-gate note above). CI still forces `FakeReranker` via `conftest.py`, so the suite stays
+   deterministic. No further action.
 3. **Confluence token** — still dead (401/403, no Confluence seat; `CONFLUENCE_SPACES` empty). Blocks
    *live* ingestion only; all offline phases (3.5 → most of 4) run on the fixture corpus.
 4. **Phase 5 infra (later)** — Redis for caching only if the proportionality gate is met; Langfuse
@@ -176,7 +190,7 @@ New / changed settings in `app/platform/config/settings.py` (add with safe defau
 | `hnsw_ef_search` | `100` | 3.5.1 | per-txn recall knob |
 | `hnsw_iterative_scan` | `relaxed_order` | 3.5.1 | safety valve under narrow RLS scope |
 | `rewrite_enabled` | `true` | 4 | conversational query rewrite on |
-| `refusal_min_rerank_score` | (tune in 3.5.5) | 4 | below → refuse + route to human |
+| `refusal_min_rerank_score` | `0.10` provisional (set 3.5.5; re-tune Phase 5) | 4 | below → refuse + route to human |
 | `crag_max_retries` | `1` | 4 | corrective retrieval cap (protects p95) |
 
 **Test fixture rule (critical):** the hermetic settings fixture MUST force `reranker_provider=fake`.
@@ -380,17 +394,36 @@ structlog stays for ops logging; Langfuse remains an optional future exporter (n
 **Acceptance.** Each retrieval writes one `query_trace` row carrying retrieved ids + rerank scores +
 `allowed_sources`.
 
-### 3.5.5 Measure
+### 3.5.5 Measure ✅ done
 
 **Task.** Extend `features/evaluation/run_baseline.py` / `runner.py` to report **rerank lift** —
 Precision@5 and NDCG@10 **before vs after** rerank — while keeping the report format comparable to
 the existing baseline. This is the phase's accuracy proof.
 
-**Acceptance.** `make eval` prints a before/after table; the after-rerank numbers are the new
-baseline. Use these numbers to set `refusal_min_rerank_score` for Phase 4.
+**What shipped.**
+- `evaluate_rerank_lift(dataset, before_fn, after_fn, …)` + `RerankLiftReport` in `features/evaluation`
+  (pure; exported from the feature root), computing precision@5 / ndcg@10 before/after + Δ.
+- `run_baseline.py`: `write_rerank_lift_reports` + `_print_saved_rerank_lift`, so `make eval` echoes the
+  saved before/after table (`eval-reports/rerank_lift.{json,md}`).
+- The **real** before/after run is the DB-backed integration test `test_rerank_lift_before_vs_after`
+  (reader role + RLS + indexed corpus): "before" = order-preserving `FakeReranker`, "after" =
+  configured reranker. Writes the artifact under `EVAL_WRITE_RERANK_REPORT=1`.
+- `refusal_min_rerank_score = 0.10` provisional setting (+ `.env.example`).
+- Tests: 3 unit (`test_rerank_lift.py`: positive/zero/empty) + 1 integration → **120 tests green**.
 
-**Phase 3.5 exit gate:** `make check` green, `make eval` shows rerank lift, isolation tests pass,
-pgvector ≥ 0.8 confirmed, every retrieval traced. No-regression on ruff/pyright (ADR-0003 D1).
+**Measured (live Cohere `rerank-v3.5` + OpenAI-3072, 6-case `retrieval_smoke`):** precision@5
+0.200→0.200 (+0.000); **ndcg@10 1.000→0.877 (−0.123)**. Negative *by construction*: dense already ranks
+the one relevant page first (before-ndcg saturated at 1.000), so the cross-encoder has no headroom. The
+genuine lift is a **Phase-5 gold-set measurement**; `refusal_min_rerank_score` re-tunes there. CI
+(`FakeReranker`) → before == after → zero lift, deterministic.
+
+**Acceptance.** ✅ `make eval` prints the before/after table (echoed from the saved artifact). The
+threshold is set provisionally (0.10) pending the Phase-5 gold set — the fixture is too saturated to tune
+it honestly.
+
+**Phase 3.5 exit gate — MET (2026-08-07):** `make check` green (120), `make eval` shows the rerank table,
+isolation tests pass, pgvector 0.8.5 pinned (≥ 0.8), every retrieval traced. No-regression on ruff/pyright
+(ADR-0003 D1: 22/2 ruff ≤ 25/2; pyright 0/0 on touched files).
 
 ---
 

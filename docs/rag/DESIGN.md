@@ -221,8 +221,29 @@ same trace row (writer engine).
   to protect p95. Not an agent loop — a fixed workflow (ADR-0005).
 
 **Proof of lift (Phase 3.5.5).** `make eval` reports Precision@5 and NDCG@10 **before vs after** rerank
-on `retrieval_smoke.json`, keeping the report format comparable to the existing baseline. The after-rerank
-numbers become the new baseline and set `refusal_min_rerank_score`.
+on `retrieval_smoke.json`, keeping the report format comparable to the existing baseline. The mechanism
+is `evaluate_rerank_lift` (pure, in `features/evaluation`); the *real* before/after run is the DB-backed
+integration test `test_rerank_lift_before_vs_after` (reader role + RLS + indexed corpus), which writes
+`eval-reports/rerank_lift.{json,md}` under `EVAL_WRITE_RERANK_REPORT=1`. `make eval` (DB-free baseline)
+echoes that saved table. CI runs with `FakeReranker` → before == after → **zero lift**, the deterministic
+invariant that proves the mechanism without a hosted key.
+
+**Measured result (live Cohere `rerank-v3.5` + real OpenAI-3072 embeddings, 6-case fixture):**
+
+| Metric | Before | After | Δ |
+|---|---|---|---|
+| precision@5 | 0.200 | 0.200 | +0.000 |
+| ndcg@10 | 1.000 | 0.877 | **−0.123** |
+
+The lift is **negative on this fixture** — and that is the honest, expected outcome, not a reranker
+defect. `retrieval_smoke` has one relevant page per query and real dense retrieval already ranks it
+**first** (before-ndcg@10 = 1.000, saturated), so the cross-encoder has no headroom to improve and its
+reordering can only demote. Reranking pays off when first-stage retrieval is *imperfect* — a larger,
+noisier, more ambiguous corpus — which this 6-case synthetic set is not. The genuine rerank lift is
+therefore a **Phase-5 measurement on the real-ticket gold set** (§6: "gold set is 12 synthetic cases").
+Consequently `refusal_min_rerank_score` is set to a **conservative provisional 0.10** (Cohere v3.5 scores
+clearly-relevant docs well above this and noise below it) and **must be re-tuned on the Phase-5 gold set**,
+not fixed from this fixture.
 
 ---
 
@@ -256,7 +277,7 @@ New / changed settings in `app/platform/config/settings.py` (safe defaults; docu
 | `hnsw_ef_search` | `100` | 3.5.1 | per-txn recall knob |
 | `hnsw_iterative_scan` | `relaxed_order` | 3.5.1 | safety valve under narrow RLS scope |
 | `rewrite_enabled` | `true` | 4 | conversational query rewrite on |
-| `refusal_min_rerank_score` | tuned in 3.5.5 | 4 | below → refuse + route to human |
+| `refusal_min_rerank_score` | `0.10` provisional (set 3.5.5; re-tune Phase 5) | 4 | below → refuse + route to human |
 | `crag_max_retries` | `1` | 4 | corrective retrieval cap (protects p95) |
 
 **Test fixture rule (critical).** The hermetic settings fixture MUST force `reranker_provider=fake`.

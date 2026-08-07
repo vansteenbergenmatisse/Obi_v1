@@ -19,7 +19,12 @@ from app.features.evaluation.metrics.retrieval_metrics import (
     precision_at_k,
     recall_at_k,
 )
-from app.features.evaluation.schemas import EvalDataset, EvalReport, EvalResult
+from app.features.evaluation.schemas import (
+    EvalDataset,
+    EvalReport,
+    EvalResult,
+    RerankLiftReport,
+)
 
 # A ranker maps (question, scope) -> ranked list of candidate ids.
 RankFn = Callable[[str, str | None], list[str]]
@@ -76,6 +81,59 @@ def evaluate(
     )
 
 
+def evaluate_rerank_lift(
+    dataset: EvalDataset,
+    before_fn: RankFn,
+    after_fn: RankFn,
+    now_iso: str,
+    *,
+    reranker_model: str,
+    precision_k: int = 5,
+    ndcg_k: int = 10,
+) -> RerankLiftReport:
+    """Measure the accuracy lift of the cross-encoder rerank (PLAN 3.5.5).
+
+    ``before_fn`` produces the fused, permission-filtered ranking *without* the real
+    reranker (the order-preserving ``FakeReranker``); ``after_fn`` applies it. Both are
+    scored over the same cases and the per-metric mean delta (``after - before``) is
+    returned. Metrics are the two the plan calls out: ``precision@precision_k`` and
+    ``ndcg@ndcg_k``. Pure with respect to time — ``now_iso`` is passed in.
+
+    Note ``ndcg_k`` may exceed ``precision_k``: rank both fns deep enough (``k >= ndcg_k``)
+    upstream so the ranking is not truncated before the deeper metric sees it.
+    """
+    p_key = f"precision@{precision_k}"
+    n_key = f"ndcg@{ndcg_k}"
+
+    before_tot = {p_key: 0.0, n_key: 0.0}
+    after_tot = {p_key: 0.0, n_key: 0.0}
+    n = 0
+    for case in dataset.cases:
+        relevant = set(case.relevant_chunk_ids)
+        before_ranked = list(before_fn(case.question, case.scope))
+        after_ranked = list(after_fn(case.question, case.scope))
+        before_tot[p_key] += precision_at_k(before_ranked, relevant, precision_k)
+        before_tot[n_key] += ndcg_at_k(before_ranked, relevant, ndcg_k)
+        after_tot[p_key] += precision_at_k(after_ranked, relevant, precision_k)
+        after_tot[n_key] += ndcg_at_k(after_ranked, relevant, ndcg_k)
+        n += 1
+
+    before = {k: (v / n if n else 0.0) for k, v in before_tot.items()}
+    after = {k: (v / n if n else 0.0) for k, v in after_tot.items()}
+    delta = {k: after[k] - before[k] for k in before}
+    return RerankLiftReport(
+        dataset_name=dataset.name,
+        timestamp=now_iso,
+        case_count=n,
+        precision_k=precision_k,
+        ndcg_k=ndcg_k,
+        reranker_model=reranker_model,
+        before=before,
+        after=after,
+        delta=delta,
+    )
+
+
 def _aggregate(results: list[EvalResult]) -> dict[str, float]:
     """Mean of every metric across cases. Empty dataset yields no aggregates."""
     if not results:
@@ -89,4 +147,4 @@ def _aggregate(results: list[EvalResult]) -> dict[str, float]:
     return {name: totals[name] / counts[name] for name in totals}
 
 
-__all__ = ["RankFn", "evaluate"]
+__all__ = ["RankFn", "evaluate", "evaluate_rerank_lift"]

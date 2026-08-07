@@ -65,10 +65,34 @@ class EvalReport(BaseModel):
     results: list[EvalResult] = Field(default_factory=list)
 
 
+class RerankLiftReport(BaseModel):
+    """Before-vs-after rerank comparison for one dataset (PLAN 3.5.5).
+
+    ``before`` is the fused, permission-filtered ranking *without* the cross-encoder
+    (equivalently, the order-preserving ``FakeReranker``); ``after`` applies the real
+    reranker. ``delta`` is ``after - before`` per metric. Keys are the two accuracy
+    metrics the plan calls out: ``precision@{precision_k}`` and ``ndcg@{ndcg_k}``.
+    The timestamp is passed in (no clock read), like the other reports.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_name: str
+    timestamp: str
+    case_count: int
+    precision_k: int
+    ndcg_k: int
+    reranker_model: str
+    before: dict[str, float] = Field(default_factory=dict)
+    after: dict[str, float] = Field(default_factory=dict)
+    delta: dict[str, float] = Field(default_factory=dict)
+
+
 __all__ = [
     "EvalKind",
     "EvalCase",
     "EvalDataset",
     "EvalResult",
     "EvalReport",
+    "RerankLiftReport",
 ]

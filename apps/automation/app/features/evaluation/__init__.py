@@ -13,9 +13,9 @@ ImportError.
 from __future__ import annotations
 
 from .fixtures import confluence_fixtures_dir, datasets_dir, load_corpus_loader
-from .run_baseline import load_dataset
-from .runner import RankFn, evaluate
-from .schemas import EvalCase, EvalDataset, EvalReport, EvalResult
+from .run_baseline import load_dataset, write_rerank_lift_reports
+from .runner import RankFn, evaluate, evaluate_rerank_lift
+from .schemas import EvalCase, EvalDataset, EvalReport, EvalResult, RerankLiftReport
 
 __all__ = [
     "EvalCase",
@@ -23,9 +23,12 @@ __all__ = [
     "EvalReport",
     "EvalResult",
     "RankFn",
+    "RerankLiftReport",
     "confluence_fixtures_dir",
     "datasets_dir",
     "evaluate",
+    "evaluate_rerank_lift",
     "load_corpus_loader",
     "load_dataset",
+    "write_rerank_lift_reports",
 ]
