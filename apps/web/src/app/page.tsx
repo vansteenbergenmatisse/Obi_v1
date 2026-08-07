@@ -1,20 +1,27 @@
 /**
- * Phase 1 placeholder home page.
+ * Landing route — a thin, static page.
  *
- * The full streaming chat UI (message list, composer, citations) lands in
- * Phase 4 under `src/features/chat`. This shell exists so the app builds and
- * renders a stable landing surface.
+ * It owns no behavior, so per the architecture standard it stays in `app/` and
+ * is NOT a feature. It composes the reusable `PageShell` and links to the chat
+ * route, whose UI is owned by `features/chat`.
  */
+import Link from "next/link";
+import { PageShell } from "@/components/layout/page-shell";
+import { Button } from "@/components/ui/button";
+
 export default function HomePage() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center gap-md p-xl text-center">
+    <PageShell center>
       <h1 className="text-3xl font-semibold tracking-tight text-text">
         Omniboost RAG
       </h1>
       <p className="max-w-md text-text-muted">
-        Chat coming in Phase 4. This is the Phase 1 shell of the
-        Confluence-native, accuracy-first RAG chatbot.
+        Accuracy-first, Confluence-native RAG chatbot. The chat surface is
+        scaffolded; grounded answers land in Phase 4.
       </p>
-    </main>
+      <Link href="/chat">
+        <Button>Open chat</Button>
+      </Link>
+    </PageShell>
   );
 }
