@@ -59,14 +59,31 @@ class Settings(BaseSettings):
     contextualization_max_retries: int = 2
     contextualization_max_doc_chars: int = 60_000  # cap document context sent to the model
 
-    # reranker (used from Phase 4)
-    reranker_provider: str = ""
+    # reranker (PLAN 3.5.2). cross-encoder only — no general-LLM rerankers (ADR-0005).
+    reranker_provider: str = ""  # cohere | fake | local ; "" -> fake offline
     reranker_api_key: str = ""
+    reranker_model: str = "rerank-v3.5"  # hosted cross-encoder (Cohere v2)
     reranker_local_model: str = "BAAI/bge-reranker-base"
+
+    # reranker depths + call controls (LLM-CALL security tier, mirrors embeddings)
+    rerank_candidate_k: int = 75  # candidates fetched before rerank
+    rerank_depth: int = 75  # max docs sent to the cross-encoder
+    rerank_top_k: int = 5  # survivors returned
+    rerank_timeout_seconds: float = 30.0
+    rerank_max_retries: int = 3
+    rerank_breaker_threshold: int = 5  # consecutive failed calls -> open the fuse
+    rerank_max_docs: int = 1000  # C10 abuse cap on a single rerank() call
 
     # retrieval / budgets
     evidence_token_budget: int = 7000
     provider_timeout_seconds: float = 8.0
+
+    # pgvector HNSW per-transaction knobs (PLAN 3.5.1). ef_search trades recall for latency;
+    # iterative_scan (pgvector 0.8+) re-probes the index when an RLS/source predicate prunes
+    # the candidate set, so a narrow scope still returns the full LIMIT. relaxed_order is safe
+    # because we re-rank downstream. Set via SET LOCAL, so values are validated, not bound.
+    hnsw_ef_search: int = 100
+    hnsw_iterative_scan: str = "relaxed_order"  # off | relaxed_order | strict_order
 
     # reconciliation
     lightweight_recon_cron: str = "0 3 * * *"

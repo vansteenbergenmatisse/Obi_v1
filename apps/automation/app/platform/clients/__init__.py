@@ -29,6 +29,7 @@ from .confluence_client import (
 )
 from .embeddings_client import EmbeddingProvider, build_embedding_provider
 from .fixture_confluence_client import FixtureConfluenceGateway
+from .reranker_client import Reranker, RerankError, build_reranker
 
 __all__ = [
     "AnthropicError",
@@ -40,4 +41,7 @@ __all__ = [
     "EmbeddingProvider",
     "build_embedding_provider",
     "FixtureConfluenceGateway",
+    "Reranker",
+    "build_reranker",
+    "RerankError",
 ]

@@ -19,7 +19,7 @@ from app.features.evaluation import (
     load_dataset,
 )
 from app.features.retrieval import HybridRetriever, PrincipalPermissionPolicy
-from app.platform.clients import build_embedding_provider
+from app.platform.clients import build_embedding_provider, build_reranker
 from app.platform.config import Settings
 from app.platform.db.engine import get_sessionmaker
 
@@ -56,7 +56,9 @@ def _build_policy(gateway) -> PrincipalPermissionPolicy:
 
 def _retriever(gateway, settings: Settings) -> HybridRetriever:
     embedder = build_embedding_provider(settings)
-    return HybridRetriever(get_sessionmaker(), embedder, _build_policy(gateway))
+    return HybridRetriever(
+        get_sessionmaker(), embedder, _build_policy(gateway), build_reranker(settings)
+    )
 
 
 def test_smoke_maintains_recall_and_beats_ranking(gateway, settings: Settings) -> None:
@@ -67,15 +69,17 @@ def test_smoke_maintains_recall_and_beats_ranking(gateway, settings: Settings) -
     report = evaluate(dataset, lambda q, s: retr.retrieve(q, s, k=5), now_iso="phase3", k=5)
     agg = report.aggregates
 
-    assert agg["recall@5"] == 1.0                    # recall maintained
-    assert agg["mrr"] > _BASE_SMOKE_MRR              # right page ranked higher than baseline
+    assert agg["recall@5"] == 1.0  # recall maintained
+    assert agg["mrr"] > _BASE_SMOKE_MRR  # right page ranked higher than baseline
     assert agg["ndcg@5"] > _BASE_SMOKE_NDCG
 
 
 def test_permission_no_leak_and_authorized_access(gateway, settings: Settings) -> None:
     _index_corpus(gateway, settings)
     policy = _build_policy(gateway)
-    retr = HybridRetriever(get_sessionmaker(), build_embedding_provider(settings), policy)
+    retr = HybridRetriever(
+        get_sessionmaker(), build_embedding_provider(settings), policy, build_reranker(settings)
+    )
     dataset = load_dataset(_DATASETS / "permission.json")
 
     for case in dataset.cases:
@@ -85,8 +89,8 @@ def test_permission_no_leak_and_authorized_access(gateway, settings: Settings) -
 
     # authorized principal still retrieves the restricted page it is entitled to
     alice = retr.retrieve("What are the production deploy steps?", "acct-alice", k=5)
-    assert "1002" in alice          # acct-alice is on 1002's read list
-    assert "2002" not in alice      # 2002 (HR/finance) must never leak to acct-alice
+    assert "1002" in alice  # acct-alice is on 1002's read list
+    assert "2002" not in alice  # 2002 (HR/finance) must never leak to acct-alice
 
     # unauthorized scope is denied the restricted page the baseline would leak
     outsider = retr.retrieve(

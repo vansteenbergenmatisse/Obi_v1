@@ -14,3 +14,7 @@ os.environ.setdefault("EMBEDDING_DIM", "256")
 os.environ.setdefault("EMBEDDING_PROVIDER", "fake")
 os.environ.setdefault("EMBEDDING_MODEL", "fake")
 os.environ.setdefault("CONTEXTUALIZATION_ENABLED", "false")
+# .env carries RERANKER_PROVIDER=cohere + a live key with ENV=local; the offline fallback fires
+# only on an *empty* key, so without this the suite would hit Cohere non-deterministically. A real
+# env var outranks the .env file in pydantic-settings, so this pins the deterministic FakeReranker.
+os.environ.setdefault("RERANKER_PROVIDER", "fake")
