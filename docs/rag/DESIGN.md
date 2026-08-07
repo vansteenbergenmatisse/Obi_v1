@@ -255,11 +255,13 @@ recall@k, precision@k, MRR, NDCG@k, hit_rate@k. The reranker plugs into the same
 `permission.json` (isolation/no-leak), `ambiguity.json`. A real-ticket gold set is a Phase 5 deliverable.
 
 **Tracing.** A new `QueryTrace` ORM model + `query_trace` table, written via the **writer** engine (so
-RLS never blocks the insert and Phase-4 feedback can `UPDATE` the row). Populated **now** (retrieval):
-`id`, `raw_query`, `retrieved_page_ids`, `retrieved_chunk_ids`, `rerank_scores`, `allowed_sources`
-(isolation audit), `embedding_model`, `reranker_model`, `latency_ms`, `created_at`. **Nullable, filled in
-Phase 4**: `rewritten_query`, `answer`, `citations`, `feedback`. structlog stays for ops logging; Langfuse
-is a possible future exporter, not built here.
+RLS never blocks the insert and Phase-4 feedback can `UPDATE` the row). Populated **now** (3.5.4
+retrieval): `id`, `raw_query`, `retrieved_page_ids`, `allowed_sources` (isolation audit),
+`embedding_model`, `reranker_model`, `latency_ms`, `created_at`. **Nullable, filled in Phase 4**:
+`retrieved_chunk_ids` and `rerank_scores` (the retriever currently returns page ids only and discards the
+rerank scores; Phase 4.2 refactors its return to surface both, and persists them here), plus
+`rewritten_query`, `answer`, `citations`, `feedback`. structlog stays for ops logging; Langfuse is a
+possible future exporter, not built here.
 
 ---
 

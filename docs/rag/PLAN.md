@@ -397,15 +397,18 @@ sets `app.allowed_sources` to the fixture `source_id`. So, in the same PR:
 **Task.** New `QueryTrace` ORM model + migration (`query_trace` table), written via the **writer**
 engine so RLS never blocks trace inserts and Phase-4 feedback can `UPDATE` the row later.
 
-Columns populated **now** (retrieval): `id`, `raw_query`, `retrieved_page_ids`, `retrieved_chunk_ids`,
-`rerank_scores`, `allowed_sources` (isolation audit), `embedding_model`, `reranker_model`,
-`latency_ms`, `created_at`. Columns **nullable, filled in Phase 4**: `rewritten_query`, `answer`,
-`citations`, `feedback`.
+Columns populated **now** (3.5.4 retrieval): `id`, `raw_query`, `retrieved_page_ids`, `allowed_sources`
+(isolation audit), `embedding_model`, `reranker_model`, `latency_ms`, `created_at`. Columns **nullable,
+filled in Phase 4**: `retrieved_chunk_ids` + `rerank_scores` (deferred — the retriever returns page ids
+only and discards the rerank scores today; **Phase 4.2 refactors `HybridRetriever.retrieve`'s return to
+surface scores + chunk ids and persists both here**), plus `rewritten_query`, `answer`, `citations`,
+`feedback`.
 
 structlog stays for ops logging; Langfuse remains an optional future exporter (not built here).
 
-**Acceptance.** Each retrieval writes one `query_trace` row carrying retrieved ids + rerank scores +
-`allowed_sources`.
+**Acceptance (as shipped).** Each retrieval writes one `query_trace` row carrying `retrieved_page_ids` +
+`allowed_sources` + models + latency. `rerank_scores` / `retrieved_chunk_ids` are Phase-4 columns (see
+above) — the model docstring already marks them "reserved for Phase 4".
 
 ### 3.5.5 Measure ✅ done
 
@@ -458,6 +461,11 @@ Order, each stage a plain function (research + repo standard — no agent loop):
 1. **Conversational query rewrite** — multi-turn history → standalone query. One cheap LLM call
    (`routing_model`), always on (`rewrite_enabled`). Store `rewritten_query` in the trace.
 2. **RLS-scoped retrieve → RRF → rerank** — reuse `HybridRetriever` (reader engine, scoped GUC).
+   **Refactor `retrieve`'s return** so it surfaces the rerank **scores** (needed by step 5's refusal)
+   and the retrieved **chunk ids** (needed by step 3) instead of only page-id strings — today it
+   discards both. **Persist `rerank_scores` + `retrieved_chunk_ids` on the `query_trace` row** at the
+   same time (these columns were deferred from 3.5.4; the model already reserves them). Extend
+   `write_query_trace` + its 3.5.4 test to assert both are now non-NULL.
 3. **Parent-context expansion** — join `parent_chunk_id` and feed the *parent* chunk text to the
    generator (children retrieve, parents ground).
 4. **Grounded generation with forced numbered citations** — every claim cites a retrieved chunk;
@@ -594,8 +602,9 @@ locally (dev unchanged).
   `FakeReranker`.
 - **pgvector:** `SELECT extversion FROM pg_extension WHERE extname='vector'` ≥ 0.8; iterative scan
   returns full `LIMIT` under a narrow scope.
-- **Tracing:** each retrieval writes a `query_trace` row with retrieved ids + rerank scores +
-  `allowed_sources`.
+- **Tracing:** each retrieval writes a `query_trace` row with `retrieved_page_ids` + `allowed_sources`
+  + models + latency (3.5.4). `rerank_scores` + `retrieved_chunk_ids` are populated in Phase 4.2 (the
+  retriever-return refactor), not 3.5.4.
 - **Phase 4 e2e:** web UI → streamed, grounded, cited, scoped answer; refusal below threshold;
   feedback updates the trace.
 - **No-regression:** ruff/pyright at baseline; OpenAPI/collect deltas only where intended.
