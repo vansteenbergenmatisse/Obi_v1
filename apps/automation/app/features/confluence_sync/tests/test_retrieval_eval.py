@@ -19,7 +19,7 @@ from app.features.evaluation import (
     load_dataset,
 )
 from app.features.retrieval import HybridRetriever, PrincipalPermissionPolicy
-from app.platform.clients.embeddings_client import build_embedding_provider
+from app.platform.clients import build_embedding_provider
 from app.platform.config import Settings
 from app.platform.db.engine import get_sessionmaker
 

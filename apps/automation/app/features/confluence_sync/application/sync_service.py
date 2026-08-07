@@ -23,7 +23,7 @@ from app.features.ingestion import (
 from app.features.ingestion import (
     normalization as norm,
 )
-from app.platform.clients.confluence_client import ConfluenceGateway
+from app.platform.clients import ConfluenceGateway
 from app.platform.config import Settings
 from app.platform.db.models import Chunk, PageSource
 

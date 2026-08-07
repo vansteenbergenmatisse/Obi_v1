@@ -12,7 +12,7 @@ from app.features.ingestion.application.versioning import _resolve_children
 from app.features.ingestion.domain import normalization as norm
 from app.features.ingestion.domain.chunking import ChunkConfig, plan_chunks
 from app.features.ingestion.domain.tokenization import TokenCounter
-from app.platform.clients.confluence_client import ConfluencePageMeta
+from app.platform.clients import ConfluencePageMeta
 from app.platform.config import Settings
 
 HTML_V1 = (

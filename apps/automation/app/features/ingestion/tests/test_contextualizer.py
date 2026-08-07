@@ -10,7 +10,7 @@ from app.features.ingestion.application.contextualizer import (
     ContextItem,
     Contextualizer,
 )
-from app.platform.clients.anthropic_client import AnthropicMessagesClient
+from app.platform.clients import AnthropicMessagesClient
 from app.platform.config import Settings
 
 ITEMS = [

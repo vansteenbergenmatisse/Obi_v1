@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy import func, select
 
 from app.features.confluence_sync.application.worker import drain, run_once
-from app.platform.clients.confluence_client import ConfluenceGateway
+from app.platform.clients import ConfluenceGateway
 from app.platform.config import Settings
 from app.platform.db.engine import get_sessionmaker, session_scope
 from app.platform.db.enums import DocState

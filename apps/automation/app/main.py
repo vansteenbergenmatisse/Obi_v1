@@ -25,8 +25,11 @@ from app.features.confluence_sync import (
     run_reconciliation,
 )
 from app.features.confluence_sync import router as confluence_router
-from app.platform.clients.confluence_client import ConfluenceGateway, HttpConfluenceClient
-from app.platform.clients.fixture_confluence_client import FixtureConfluenceGateway
+from app.platform.clients import (
+    ConfluenceGateway,
+    FixtureConfluenceGateway,
+    HttpConfluenceClient,
+)
 from app.platform.config import Settings, get_settings
 from app.platform.db.engine import session_scope
 from app.platform.logging import configure_logging, get_logger

@@ -31,7 +31,7 @@ from app.features.confluence_sync.application.sync_service import (
     handle_delete_page,
     handle_sync_page,
 )
-from app.platform.clients.confluence_client import ConfluenceGateway
+from app.platform.clients import ConfluenceGateway
 from app.platform.config import Settings
 from app.platform.db.engine import session_scope
 from app.platform.db.models import Job

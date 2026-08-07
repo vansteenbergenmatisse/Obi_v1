@@ -14,8 +14,11 @@ from dataclasses import dataclass
 from app.features.ingestion.application.contextualizer import Contextualizer
 from app.features.ingestion.domain.chunking import ChunkConfig
 from app.features.ingestion.domain.tokenization import TokenCounter
-from app.platform.clients.anthropic_client import AnthropicMessagesClient
-from app.platform.clients.embeddings_client import EmbeddingProvider, build_embedding_provider
+from app.platform.clients import (
+    AnthropicMessagesClient,
+    EmbeddingProvider,
+    build_embedding_provider,
+)
 from app.platform.config import Settings
 
 

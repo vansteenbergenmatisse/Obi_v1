@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from app.platform.clients.anthropic_client import (
+from app.platform.clients import (
     AnthropicError,
     AnthropicMessagesClient,
     cached_system_block,

@@ -25,7 +25,7 @@ from app.features.ingestion.domain.change_detection import TargetVersions
 from app.features.ingestion.domain.chunk_diff import diff_chunks
 from app.features.ingestion.domain.chunking import PlannedChunk, plan_chunks
 from app.features.ingestion.infrastructure.page_source_repo import ensure_document
-from app.platform.clients.confluence_client import ConfluencePageMeta
+from app.platform.clients import ConfluencePageMeta
 from app.platform.db.enums import DocState, PageStatus
 from app.platform.db.models import KIND_CHILD, KIND_PARENT, Chunk, DocumentVersion, PageSource
 

@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from app.features.retrieval.domain.fusion import reciprocal_rank_fusion
 from app.features.retrieval.domain.permission import PrincipalPermissionPolicy
 from app.features.retrieval.infrastructure.search_repo import dense_search, keyword_search
-from app.platform.clients.embeddings_client import EmbeddingProvider
+from app.platform.clients import EmbeddingProvider
 
 
 def _dedupe(pairs: Sequence[tuple[int, float]]) -> list[int]:

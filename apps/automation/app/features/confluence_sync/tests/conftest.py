@@ -15,7 +15,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
-from app.platform.clients.fixture_confluence_client import FixtureConfluenceGateway
+from app.platform.clients import FixtureConfluenceGateway
 from app.platform.config import Settings, get_settings
 from app.platform.db import engine as engine_mod
 from app.platform.db import schema

@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from app.features.ingestion.domain import normalization as norm
-from app.platform.clients.confluence_client import ConfluencePageMeta
+from app.platform.clients import ConfluencePageMeta
 from app.platform.db.enums import ChangeClass, PageStatus
 from app.shared.hashing import (
     hash_access_scope,
