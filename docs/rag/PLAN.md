@@ -7,6 +7,55 @@
 
 ---
 
+## 0. Status ledger & blockers  *(keep current — update after every phase)*
+
+**Working rules (see local `CLAUDE.local.md`):** stop after **every** phase/sub-step so the user can
+`/compact-ultra` (keep context < ~200k); before starting a new phase, **verify the previous one** —
+security (HTTP/LLM controls), real tests, acceptance actually met — and if it falls short, add the
+fix here as the next task; update this ledger after each phase.
+
+### Progress (as of 2026-08-07, branch `feat/rag-phase-3.5`)
+
+| Phase | Status | Commit | Proof |
+|---|---|---|---|
+| **0** — DESIGN.md + ADR-0004/0005 | ✅ done | `d793bb1` | design of record + 2 ADRs, code-grounded |
+| **3.5.1** — pin pgvector 0.8 + HNSW iterative-scan GUCs | ✅ done | `7cd9fd1` | pgvector 0.8.5 pinned by digest; 4 unit tests |
+| **3.5.2** — cross-encoder reranker (Cohere/Fake) + wire | ✅ done | `7cd9fd1` | 10 unit tests; rerank after permission filter; Fake in CI |
+| **3.5.3** — provider tags + RLS + `rag_reader` role | ✅ done | `96f4786` | RLS default-deny proven; migration 0002 reversible |
+| **3.5.4** — `query_trace` scoreboard (minimal) | ✅ done | `a9f9259` | 1 trace/retrieval; migration 0003 reversible |
+| **3.5.5** — measure rerank lift + Phase 3.5 exit gate | ⏳ next | — | needs eval-harness work; real lift needs a live reranker key |
+| **4** — answer runtime + chat (rag_agent, `POST /chat`) | ⬜ todo | — | HTTP+LLM surface → full security controls required |
+| **5** — optimization & proof | ⬜ todo | — | Supabase, caching, red-team, latency/cost |
+
+Gate at each ✅: `make check` green (116 tests, was 99), `make boundaries` clean, ruff/pyright at the
+ADR-0003 D1 baseline (no regression). Reader/RLS isolation tests + both migrations verified.
+
+### Deviations already taken (documented, not silent)
+
+- **Source columns keep their `server_default`** (plan said "drop it"): keeps the migration-built and
+  `create_all`-built schemas identical, and the sole inserter (`versioning.py`) stamps `source_id`
+  explicitly anyway. Losing nothing on isolation — RLS enforces reads.
+- **Writer stays the existing superuser `rag`** (no separate `rag_writer` owner): brownfield
+  preservation; a superuser bypasses RLS, which is the required "writer bypasses RLS" property.
+
+### Blockers / need from you  *(ask before doing dependent work)*
+
+1. **Supabase vector store** — planned target. Before wiring it, I need: (a) whether Supabase replaces
+   local pgvector for **dev** or only **prod**; (b) the connection string (session-pooler or direct,
+   port 5432, `postgresql+psycopg://…`); (c) confirmation the Supabase instance runs **pgvector ≥ 0.8**
+   (needed for `hnsw.iterative_scan`; Supabase may pin older); (d) how the **`rag_reader` role + RLS**
+   maps onto Supabase's role model (`authenticated`/`service_role`/`anon` + JWT-claim RLS) — the
+   current ADR-0004 role split needs adaptation there. **Do not invent a connection string.**
+2. **Reranker API key (Cohere)** — CI/offline uses `FakeReranker` (order-preserving), so 3.5.5 reports
+   the lift *mechanism* but the "after" == "before" until a **live Cohere key** runs it. A real
+   rerank-lift number (and tuning `refusal_min_rerank_score` for Phase 4) needs that key.
+3. **Confluence token** — still dead (401/403, no Confluence seat; `CONFLUENCE_SPACES` empty). Blocks
+   *live* ingestion only; all offline phases (3.5 → most of 4) run on the fixture corpus.
+4. **Phase 5 infra (later)** — Redis for caching only if the proportionality gate is met; Langfuse
+   optional. Will re-ask when Phase 5 starts.
+
+---
+
 ## 1. Context
 
 The Omniboost RAG backend (`apps/automation`) is offline-verified through Phase 3: **99 tests
