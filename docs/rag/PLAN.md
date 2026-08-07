@@ -14,6 +14,27 @@
 security (HTTP/LLM controls), real tests, acceptance actually met — and if it falls short, add the
 fix here as the next task; update this ledger after each phase.
 
+### ▶ Resume here (after `/compact-ultra`) — first things first
+
+Fresh context: read this ledger + `docs/rag/DESIGN.md`, then do these **in order**:
+
+1. **Add API keys to the root `.env`** (the user is providing these; do not invent them):
+   - `RERANKER_API_KEY=<cohere key>` **and** `RERANKER_PROVIDER=cohere` — enables the real
+     cross-encoder so 3.5.5 can measure an actual rerank lift. (Tests still force `fake` via
+     `conftest.py`, so CI stays deterministic — no action needed there.)
+   - Confirm already-present: `OPENAI_API_KEY` (embeddings, set), `ANTHROPIC_API_KEY`
+     (contextualization + Phase-4 answers, set). `CONFLUENCE_API_TOKEN` is dead — needed only for
+     *live* ingestion, not for offline 3.5/4.
+2. **Run the pre-phase verification gate on Phase 3.5** (per `CLAUDE.local.md` rule 2): security of the
+   reranker/embedding HTTP clients, real tests present, acceptance met. Record any gap here as a task.
+3. **Do 3.5.5** — rerank-lift reporting in `features/evaluation`; with the live key, capture the real
+   Precision@5 / NDCG@10 lift and set `refusal_min_rerank_score` from it. Then the **Phase 3.5 exit
+   gate**, and `/compact-ultra` again before Phase 4.
+
+**Supabase decision: deferred to Phase 5** (prod/deploy only; keep local Docker pgvector for dev).
+When Phase 5 starts, ask for the connection string, confirm pgvector ≥ 0.8, and adapt the
+`rag_reader`/RLS model to Supabase roles (`authenticated`/`service_role` + JWT-claim RLS).
+
 ### Progress (as of 2026-08-07, branch `feat/rag-phase-3.5`)
 
 | Phase | Status | Commit | Proof |
@@ -40,15 +61,15 @@ ADR-0003 D1 baseline (no regression). Reader/RLS isolation tests + both migratio
 
 ### Blockers / need from you  *(ask before doing dependent work)*
 
-1. **Supabase vector store** — planned target. Before wiring it, I need: (a) whether Supabase replaces
-   local pgvector for **dev** or only **prod**; (b) the connection string (session-pooler or direct,
-   port 5432, `postgresql+psycopg://…`); (c) confirmation the Supabase instance runs **pgvector ≥ 0.8**
-   (needed for `hnsw.iterative_scan`; Supabase may pin older); (d) how the **`rag_reader` role + RLS**
-   maps onto Supabase's role model (`authenticated`/`service_role`/`anon` + JWT-claim RLS) — the
-   current ADR-0004 role split needs adaptation there. **Do not invent a connection string.**
-2. **Reranker API key (Cohere)** — CI/offline uses `FakeReranker` (order-preserving), so 3.5.5 reports
-   the lift *mechanism* but the "after" == "before" until a **live Cohere key** runs it. A real
-   rerank-lift number (and tuning `refusal_min_rerank_score` for Phase 4) needs that key.
+1. **Supabase vector store** — **DECIDED: Phase 5 (prod/deploy only)**; keep local Docker pgvector for
+   dev now. When Phase 5 starts, I'll need: (a) the connection string (session-pooler or direct, port
+   5432, `postgresql+psycopg://…`); (b) confirmation the instance runs **pgvector ≥ 0.8** (needed for
+   `hnsw.iterative_scan`; Supabase may pin older); (c) how **`rag_reader` + RLS** maps onto Supabase
+   roles (`authenticated`/`service_role`/`anon` + JWT-claim RLS). **Do not invent a connection string.**
+2. **Reranker API key (Cohere)** — **needed next.** Add `RERANKER_API_KEY` + `RERANKER_PROVIDER=cohere`
+   to `.env` so 3.5.5 measures a real rerank lift (CI stays on `FakeReranker`). Without it, 3.5.5 ships
+   the lift *mechanism* but "after" == "before" offline, and `refusal_min_rerank_score` can't be tuned
+   from real numbers.
 3. **Confluence token** — still dead (401/403, no Confluence seat; `CONFLUENCE_SPACES` empty). Blocks
    *live* ingestion only; all offline phases (3.5 → most of 4) run on the fixture corpus.
 4. **Phase 5 infra (later)** — Redis for caching only if the proportionality gate is met; Langfuse
