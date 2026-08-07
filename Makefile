@@ -7,7 +7,7 @@
 AUTOMATION := apps/automation
 COMPOSE := infra/foundation/docker-compose.yml
 
-.PHONY: up down migrate test eval web-dev fmt
+.PHONY: up down migrate test eval boundaries check web-dev fmt
 
 ## up: start Postgres (pgvector) in the background.
 up:
@@ -30,6 +30,14 @@ test:
 ##  target may fail until that module exists.)
 eval:
 	cd $(AUTOMATION) && uv run python -m app.features.evaluation.run_baseline
+
+## boundaries: enforce the feature / platform / shared import architecture.
+boundaries:
+	cd $(AUTOMATION) && uv run python tools/check_feature_boundaries.py
+
+## check: the machine-enforced gate — architecture boundaries then the tests.
+## (Ruff and Pyright are tracked separately at no-regression; see docs/adr.)
+check: boundaries test
 
 ## web-dev: run the Next.js dev server.
 web-dev:
