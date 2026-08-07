@@ -23,6 +23,11 @@ def confluence_fixtures_dir() -> Path:
     return _automation_root() / "tests" / "fixtures" / "confluence"
 
 
+def datasets_dir() -> Path:
+    """Absolute path to the evaluation datasets directory (bundled in the package)."""
+    return Path(__file__).resolve().parent / "datasets"
+
+
 def load_corpus_loader() -> ModuleType:
     """Import the fixture corpus ``loader.py`` module by file path."""
     loader_path = confluence_fixtures_dir() / "loader.py"
@@ -36,4 +41,4 @@ def load_corpus_loader() -> ModuleType:
     return module
 
 
-__all__ = ["confluence_fixtures_dir", "load_corpus_loader"]
+__all__ = ["confluence_fixtures_dir", "datasets_dir", "load_corpus_loader"]
