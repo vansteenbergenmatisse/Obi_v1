@@ -93,7 +93,16 @@ def gateway() -> FixtureConfluenceGateway:
 
 @pytest.fixture
 def settings() -> Settings:
-    return get_settings()
+    # Hermetic: strip webhook credentials that may be present in the developer's
+    # real .env (loaded by get_settings()), so tests exercise the unconfigured
+    # path deterministically regardless of the local environment. model_copy
+    # preserves the *_test database URL and env wired by _configure_test_engine.
+    return get_settings().model_copy(
+        update={
+            "confluence_webhook_secret": "",
+            "confluence_service_account_id": "",
+        }
+    )
 
 
 @pytest.fixture
