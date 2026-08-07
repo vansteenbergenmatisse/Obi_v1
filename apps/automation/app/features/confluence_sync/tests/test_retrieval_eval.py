@@ -12,20 +12,20 @@ Phase 3 target, verified here:
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import app.features.evaluation as evaluation_pkg
-from app.features.evaluation.run_baseline import load_dataset
-from app.features.evaluation.runner import evaluate
-from app.features.retrieval.application.retriever import HybridRetriever
-from app.features.retrieval.domain.permission import PrincipalPermissionPolicy
+from app.features.evaluation import (
+    datasets_dir,
+    evaluate,
+    load_corpus_loader,
+    load_dataset,
+)
+from app.features.retrieval import HybridRetriever, PrincipalPermissionPolicy
 from app.platform.clients.embeddings_client import build_embedding_provider
 from app.platform.config import Settings
 from app.platform.db.engine import get_sessionmaker
 
 from ._helpers import index_page
 
-_DATASETS = Path(evaluation_pkg.__file__).resolve().parent / "datasets"
+_DATASETS = datasets_dir()
 
 # Baseline numbers to beat (from eval-reports/baseline.json).
 _BASE_SMOKE_MRR = 0.75
@@ -33,8 +33,6 @@ _BASE_SMOKE_NDCG = 0.8155
 
 
 def _index_corpus(gateway, settings: Settings) -> None:
-    from app.features.evaluation.fixtures import load_corpus_loader
-
     loader = load_corpus_loader()
     for page in loader.list_pages():
         pid = int(page["id"])
@@ -44,8 +42,6 @@ def _index_corpus(gateway, settings: Settings) -> None:
 
 
 def _build_policy(gateway) -> PrincipalPermissionPolicy:
-    from app.features.evaluation.fixtures import load_corpus_loader
-
     loader = load_corpus_loader()
     space_of: dict[int, int] = {}
     restrictions: dict[int, set[str]] = {}
