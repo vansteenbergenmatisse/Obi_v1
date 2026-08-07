@@ -23,7 +23,7 @@ from app.features.evaluation import (
 from app.features.retrieval import HybridRetriever, PrincipalPermissionPolicy
 from app.platform.clients import build_embedding_provider, build_reranker
 from app.platform.config import Settings
-from app.platform.db.engine import get_reader_sessionmaker
+from app.platform.db.engine import get_reader_sessionmaker, get_sessionmaker
 
 from ._helpers import index_page
 
@@ -140,3 +140,33 @@ def test_retriever_wrong_source_scope_returns_zero(gateway, settings: Settings) 
         allowed_sources=("confluence:nonexistent",),
     )
     assert wrong.retrieve(question, "100", k=5) == []  # wrong source -> zero
+
+
+def test_retrieval_writes_one_query_trace_row(gateway, settings: Settings) -> None:
+    """3.5.4: a traced retrieval writes exactly one query_trace row via the writer engine."""
+    _index_corpus(gateway, settings)
+    retr = HybridRetriever(
+        get_reader_sessionmaker(),
+        build_embedding_provider(settings),
+        _build_policy(gateway),
+        build_reranker(settings),
+        trace_sessionmaker=get_sessionmaker(),  # writer: RLS never blocks the insert
+    )
+    result = retr.retrieve("How do I request access to core systems when I join?", "100", k=5)
+    assert result
+
+    with get_sessionmaker()() as s:
+        rows = s.execute(
+            text(
+                "SELECT raw_query, retrieved_page_ids, allowed_sources, embedding_model, "
+                "reranker_model, latency_ms FROM query_trace"
+            )
+        ).all()
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.raw_query.startswith("How do I request access")
+    assert [str(p) for p in row.retrieved_page_ids] == result  # same ids, same order
+    assert list(row.allowed_sources) == ["confluence:default"]
+    assert row.reranker_model == "fake"
+    assert row.latency_ms >= 0

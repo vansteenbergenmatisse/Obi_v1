@@ -9,6 +9,7 @@ RRF ties so lexical relevance wins when the dense signal is weak (e.g. the offli
 
 from __future__ import annotations
 
+import time
 from collections.abc import Callable, Sequence
 
 from sqlalchemy.orm import Session
@@ -22,6 +23,7 @@ from app.features.retrieval.infrastructure.search_repo import (
     fetch_rerank_texts,
     keyword_search,
 )
+from app.features.retrieval.infrastructure.trace_repo import write_query_trace
 from app.platform.clients import EmbeddingProvider, Reranker
 
 
@@ -48,6 +50,7 @@ class HybridRetriever:
         allowed_sources: Sequence[str] = ("confluence:default",),
         hnsw_ef_search: int = 100,
         hnsw_iterative_scan: str = "relaxed_order",
+        trace_sessionmaker: Callable[[], Session] | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._embedder = embedder
@@ -58,8 +61,11 @@ class HybridRetriever:
         self._allowed_sources = tuple(allowed_sources)
         self._hnsw_ef_search = hnsw_ef_search
         self._hnsw_iterative_scan = hnsw_iterative_scan
+        # optional WRITER sessionmaker: when set, each retrieve writes one query_trace row (3.5.4)
+        self._trace_sessionmaker = trace_sessionmaker
 
     def retrieve(self, query: str, scope: str | None, k: int = 5) -> list[str]:
+        started = time.perf_counter()
         space_id = self._policy.space_id(scope)
         query_vec = self._embedder.embed([query])[0]
         sources = self._allowed_sources
@@ -94,4 +100,19 @@ class HybridRetriever:
             docs = [(pid, texts[pid]) for pid in to_rerank if pid in texts]
 
         reranked = self._reranker.rerank(query, docs, top_k=k)
-        return [str(pid) for pid, _score in reranked]
+        page_ids = [pid for pid, _score in reranked]
+
+        if self._trace_sessionmaker is not None:
+            latency_ms = int((time.perf_counter() - started) * 1000)
+            with self._trace_sessionmaker() as trace_session:
+                write_query_trace(
+                    trace_session,
+                    raw_query=query,
+                    retrieved_page_ids=page_ids,
+                    allowed_sources=sources,
+                    embedding_model=self._embedder.model,
+                    reranker_model=self._reranker.model,
+                    latency_ms=latency_ms,
+                )
+
+        return [str(pid) for pid in page_ids]

@@ -28,6 +28,7 @@ _TABLES = [
     "job",
     "event_ledger",
     "reconciliation_run",
+    "query_trace",
 ]
 
 # Non-owner role the retriever reads as, so RLS is actually exercised (ADR-0004). The writer

@@ -14,6 +14,7 @@ from sqlalchemy import (
     BigInteger,
     CheckConstraint,
     DateTime,
+    Float,
     ForeignKey,
     Index,
     Integer,
@@ -440,6 +441,37 @@ class ReconciliationRun(Base):
     __table_args__ = (Index("ix_reconciliation_run_started_at", "started_at"),)
 
 
+class QueryTrace(Base):
+    """One row per retrieval request: the tracing scoreboard (PLAN 3.5.4).
+
+    Written via the WRITER engine so RLS never blocks the insert. Retrieval fills the retrieval
+    columns now; the Phase-4 answer runtime UPDATEs the same row with rewritten_query / answer /
+    citations / feedback (all nullable here). rerank_scores is reserved for Phase 4 as well.
+    """
+
+    __tablename__ = "query_trace"
+
+    id: Mapped[int] = _pk()
+    raw_query: Mapped[str] = mapped_column(Text, nullable=False)
+    retrieved_page_ids: Mapped[list[int]] = mapped_column(ARRAY(BigInteger), nullable=False)
+    allowed_sources: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    embedding_model: Mapped[str] = mapped_column(String(128), nullable=False)
+    reranker_model: Mapped[str] = mapped_column(String(128), nullable=False)
+    latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # populated in Phase 4 (answer runtime + feedback); nullable so 3.5.4 writes a partial row
+    retrieved_chunk_ids: Mapped[list[int] | None] = mapped_column(ARRAY(BigInteger), nullable=True)
+    rerank_scores: Mapped[list[float] | None] = mapped_column(ARRAY(Float), nullable=True)
+    rewritten_query: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    citations: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    feedback: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)  # +1 / -1
+
+    created_at: Mapped[datetime] = _ts_created()
+
+    __table_args__ = (Index("ix_query_trace_created_at", "created_at"),)
+
+
 __all__ = [
     "PageSource",
     "Document",
@@ -448,6 +480,7 @@ __all__ = [
     "EventLedger",
     "Job",
     "ReconciliationRun",
+    "QueryTrace",
     "KIND_PARENT",
     "KIND_CHILD",
     "EMB_DIM",
