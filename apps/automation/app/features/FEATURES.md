@@ -89,3 +89,18 @@ security_baseline:
 - **Shared components used:** None.
 - **Tests / risky paths:** `app/features/evaluation/tests/` — metrics correctness, fixture loader, baseline runner.
 - **Run / test:** `make eval` or `python -m app.features.evaluation.run_baseline`; `pytest app/features/evaluation/tests`.
+
+## rag_agent
+
+- **What it does:** The grounded answer runtime over the Phase 3.5 retrieval spine (ADR-0005). A fixed, testable workflow — conversational rewrite → RLS-scoped retrieve → RRF → cross-encoder rerank → parent-context expansion → grounded generation with forced numbered citations → refusal threshold → at most one CRAG retry → SSE — **not** an agent loop. **Status: Phase 4.1 scaffold** — the DTO contract plus the pure domain core (refusal decision, citation enforcement) with unit tests. The answer service, prompt assembly, principal-ACL store, and the `POST /chat` surface are Phase 4.2–4.4.
+- **Path / owner:** apps/automation/app/features/rag_agent — owned by the `automation` application.
+- **Language / framework / runtime:** Python 3.12; Pydantic v2 (DTOs), pure-Python domain; will use SQLAlchemy 2 + `platform.clients` (Anthropic, reranker) once the workflow lands. Runs inside the automation service.
+- **Deployment unit:** ships in `apps/automation`.
+- **Public surface (`__init__.py`, enforced):** the answer contract DTOs — `Answer`, `Citation`, `ChatMessage`. The answer service is added to this root in Phase 4.2 once its pipeline exists; refusal / citation domain logic stays internal (deep-imported within the feature only). Consumers import via `app.features.rag_agent`.
+- **Allowed importers:** `app/main.py` (Phase 4.4 wiring of `POST /chat`). It will import downward into `retrieval` (reader engine, RLS scope) and `platform`; nothing imports back into it except `main`.
+- **Contracts / external systems:** none yet. Planned (Phase 4.2/4.4): Anthropic messages (query rewrite + grounded generation) and the Cohere reranker via `platform.clients` — both LLM-CALL surfaces; `POST /chat` + `PATCH /chat/{trace_id}/feedback` are an HTTP surface. The full `securing-http-and-llm-endpoints` control set applies then (ADR-0005 §10); the chat contract will be published in `packages/contracts`.
+- **Database tables owned:** none — reads the `chunk` index (owned by `ingestion`) via `retrieval`, and reads/updates `query_trace` (owned by `retrieval`) for answer + feedback fields.
+- **Untrusted input validation:** none at this layer yet — the Phase 4.4 endpoint owns request validation, rate limiting, and PII redaction. The pure domain core operates on already-retrieved, trusted data; `enforce_citations` defensively strips any claim citing a page that was not retrieved.
+- **Shared components used:** None (backend feature).
+- **Tests / risky paths:** `app/features/rag_agent/tests/` — refusal below/at/above threshold and the no-candidates case; citation enforcement (keeps cited claims, strips uncited and hallucinated-source claims, drops invalid markers, dedupes used markers).
+- **Run / test:** `pytest app/features/rag_agent/tests`.

@@ -16,15 +16,23 @@ fix here as the next task; update this ledger after each phase.
 
 ### ▶ Resume here (after `/compact-ultra`) — first things first
 
-**Phase 3.5 is COMPLETE (all sub-steps ✅, exit gate MET). Next is Phase 4.** The 3.5.5 work is
-**committed** (`1b6e94c`) and the pre-Phase-4 verification gate has been **re-run and PASSED**
-(2026-08-07, see below) — Phase 3.5 is solid to build on.
+**Phase 3.5 is COMPLETE (exit gate MET, verification re-run PASSED). Phase 4 is IN PROGRESS: 4.1 done.**
+Next is **4.2** — the answer workflow (rewrite → retrieve → rerank → parent expansion → ground → refuse
+→ CRAG).
 
-Fresh context: read this ledger + `docs/rag/DESIGN.md` (esp. §5 Proof of lift), then:
+Fresh context: read this ledger + `docs/rag/DESIGN.md` (§2 target pipeline, §5 accuracy stack) +
+`docs/adr/0005*`, then:
 
-1. **Begin Phase 4** — answer runtime + chat (`rag_agent`, `POST /chat`). This is the first HTTP+LLM
-   surface: invoke `securing-http-and-llm-endpoints` and apply the full control set (rule 2). Reuse the
-   3.5 reader-engine + RLS scoping; refusal uses `refusal_min_rerank_score` (0.10 provisional).
+1. **Begin Phase 4.2** — the fixed answer workflow in `rag_agent/application/` reusing the 3.5
+   reader-engine + RLS scoping and the `refusal`/`citations` domain core already built in 4.1. Add the
+   `rewrite_enabled` + `crag_max_retries` settings then. The `POST /chat` **HTTP+LLM surface is 4.4** —
+   invoke `securing-http-and-llm-endpoints` and apply the full control set there (rule 2).
+
+**Phase 4.1 done (`_(uncommitted → commit next)_`):** new `rag_agent` feature scaffolded per the repo
+standard — public root exporting the `Answer`/`Citation`/`ChatMessage` DTO contract; pure domain core
+`decide_refusal` (ADR-0005 §7) + `enforce_citations` (§6, strips uncited/hallucinated-source claims);
+`FEATURES.md` block; **10 unit tests → 130 passed total**. Boundaries clean; ruff/pyright 0 on the new
+files. No service/endpoint yet (that's 4.2/4.4).
 
 **Pre-Phase-4 verification gate — re-run 2026-08-07, PASS:** pgvector 0.8.5 (≥ 0.8); `make boundaries`
 clean; `make test` → **120 passed, 0 skipped**; the four DB-backed isolation/trace/lift tests
@@ -54,7 +62,8 @@ connection string, a pgvector ≥ 0.8 confirmation, and the `rag_reader`/RLS→S
 | **3.5.3** — provider tags + RLS + `rag_reader` role | ✅ done | `96f4786` | RLS default-deny proven; migration 0002 reversible |
 | **3.5.4** — `query_trace` scoreboard (minimal) | ✅ done | `a9f9259` | 1 trace/retrieval; migration 0003 reversible |
 | **3.5.5** — measure rerank lift + Phase 3.5 exit gate | ✅ done | `1b6e94c` | 120 tests; `evaluate_rerank_lift` + live Cohere run; **lift −0.123 ndcg@10 on the saturated fixture — expected, real lift is a Phase-5 gold-set measurement** |
-| **4** — answer runtime + chat (rag_agent, `POST /chat`) | ⏳ next | — | HTTP+LLM surface → full security controls required |
+| **4.1** — `rag_agent` scaffold: DTOs + refusal/citation domain core | ✅ done | _(uncommitted)_ | 10 unit tests → 130 total; public root + FEATURES.md; boundaries clean; ruff/pyright 0 on new files |
+| **4.2–4.5** — answer workflow, principal ACL, `POST /chat`, web UI | ⏳ next | — | HTTP+LLM surface (4.4) → full security controls required |
 | **5** — optimization & proof | ⬜ todo | — | caching, adaptive routing, red-team, latency/cost |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
 
