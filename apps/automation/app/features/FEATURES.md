@@ -6,7 +6,7 @@ This file documents every feature in apps/automation/app/features. Each block be
 - **Path / owner:** apps/automation/app/features/confluence_sync — owned by the `automation` application.
 - **Language / framework / runtime:** Python 3.12; FastAPI (webhook router), SQLAlchemy 2, APScheduler; runs inside the automation service.
 - **Deployment unit:** ships in the single `apps/automation` deployment (infra/automation).
-- **Public surface (`__init__.py`):** none declared yet — consumers deep-import today (see Open items in the checkpoint). Intended entrypoints: `server.router` (POST /confluence/events); `application.worker.{run_once,drain,reap}`; `application.reconciliation.{run_reconciliation,reconcile_space}`; `application.event_service.ingest_event`; `application.sync_service.{handle_sync_page,handle_delete_page}`.
+- **Public surface (`__init__.py`, enforced):** `router` (POST /confluence/events), `run_reconciliation`, `drain`, `reap`, `KIND_LIGHTWEIGHT`, `KIND_COMPLETE`, `SlidingWindowRateLimiter`. Everything else (event_service, sync_service handlers, per-job worker internals, reconcile_space) stays internal and is deep-imported only within the feature. Consumers import via `app.features.confluence_sync`; the boundary is checked by `tools/check_feature_boundaries.py` (ADR-0003).
 - **Allowed importers:** `app/main.py` (wiring). It imports downward into `ingestion` (shared domain) and `platform`; nothing imports back into it except `main`.
 - **Contracts / external systems:** consumes the Confluence event-envelope contract (packages/contracts); calls Confluence Cloud REST v2 (`HttpConfluenceClient`) and receives Confluence webhooks. Offline runs/tests use `FixtureConfluenceGateway`.
 - **Database tables owned:** `event_ledger`, `job`, `reconciliation_run`. (It drives, but does not own, the `page_source`/`document`/`document_version`/`chunk` tables owned by `ingestion`.)
@@ -21,7 +21,7 @@ This file documents every feature in apps/automation/app/features. Each block be
 - **Path / owner:** apps/automation/app/features/ingestion — owned by the `automation` application.
 - **Language / framework / runtime:** Python 3.12; SQLAlchemy 2; runs inside the automation service.
 - **Deployment unit:** ships in `apps/automation`.
-- **Public surface (`__init__.py`):** none declared yet (deep-imported). Key symbols: `domain.normalization`; `domain.tokenization.TokenCounter`; `domain.chunking.{plan_chunks,ChunkConfig,PlannedParent,PlannedChunk}`; `domain.chunk_diff.diff_chunks`; `domain.attachment_extraction.extract_attachment`; `domain.change_detection.{classify,decide_body_fetch,map_page_status,LocalState,TargetVersions}`; `application.services.{build_ingestion_services,IngestionServices}`; `application.contextualizer.{Contextualizer,ContextItem}`; `application.versioning.{stage_and_activate,build_chunks,deactivate_page,rollback_to}`; `infrastructure.page_source_repo.{get_local_state,ensure_document}`.
+- **Public surface (`__init__.py`, enforced):** `build_ingestion_services`, `stage_and_activate`, `deactivate_page`, `rollback_to`, `reusable_active_children`, `get_local_state`, `classify`, `decide_body_fetch`, `map_page_status`, `ChangeClass`, `PageHashes`, `TargetVersions`, and the `normalization` module (re-exported whole — call sites use `norm.Block` / `norm.normalize_body`, ADR-0003 D4). Tokenization, chunking, chunk_diff, and the contextualizer stay internal. Consumers import via `app.features.ingestion`.
 - **Allowed importers:** `confluence_sync` (sync/reconciliation) and `retrieval` (reads the chunk index).
 - **Contracts / external systems:** OpenAI embeddings and Anthropic messages (contextualization) via `platform.clients.{embeddings_client,anthropic_client}` — both LLM-CALL surfaces (see `security_baseline` below). Optional attachment parsers (pypdf/python-docx/openpyxl) and `tiktoken` are lazily imported and degrade gracefully when absent.
 - **Database tables owned:** `page_source`, `document`, `document_version`, `chunk` (ORM in `app/platform/db/models.py`). `chunk.embedding` is `vector(EMBEDDING_DIM)`; its HNSW index casts to `halfvec` for >2000-dim models (pgvector's `vector` HNSW cap is 2000 — see ADR-0002).
@@ -66,7 +66,7 @@ security_baseline:
 - **Path / owner:** apps/automation/app/features/retrieval — owned by the `automation` application.
 - **Language / framework / runtime:** Python 3.12; SQLAlchemy 2 (raw SQL for the vector/tsvector operators); runs inside the automation service.
 - **Deployment unit:** ships in `apps/automation`.
-- **Public surface (`__init__.py`):** none declared yet (deep-imported). Key symbols: `application.retriever.HybridRetriever`; `domain.fusion.reciprocal_rank_fusion`; `domain.permission.PrincipalPermissionPolicy`; `infrastructure.search_repo.{keyword_search,dense_search}`.
+- **Public surface (`__init__.py`, enforced):** `HybridRetriever` (the entry point) and `PrincipalPermissionPolicy` (the policy callers construct). Fusion and the low-level search functions stay internal until a real external consumer needs them. Consumers import via `app.features.retrieval`.
 - **Allowed importers:** the RAG agent (Phase 4) and the evaluation harness. Imports downward into `ingestion` data (the `chunk` table) and `platform`.
 - **Contracts / external systems:** the embedding provider (query embedding) via `platform.clients.embeddings_client`.
 - **Database tables owned:** none — reads the `chunk` table owned by `ingestion`.
@@ -81,7 +81,7 @@ security_baseline:
 - **Path / owner:** apps/automation/app/features/evaluation — owned by the `automation` application.
 - **Language / framework / runtime:** Python 3.12; pure Python (no DB, no network); runs inside the automation service or standalone.
 - **Deployment unit:** ships in `apps/automation` (dev/CI utility; not on the request path).
-- **Public surface (`__init__.py`):** documented at module level; entrypoints: `run_baseline` (module), `runner`, `metrics.{retrieval_metrics,latency_metrics}`, `schemas`, `fixtures`.
+- **Public surface (`__init__.py`, enforced):** `evaluate`, `load_dataset`, `load_corpus_loader`, `datasets_dir`, `confluence_fixtures_dir`, `RankFn`, and the `EvalCase` / `EvalDataset` / `EvalResult` / `EvalReport` types. `run_baseline` remains a runnable module (`python -m app.features.evaluation.run_baseline`). Consumers import via `app.features.evaluation`.
 - **Allowed importers:** standalone tooling; no runtime feature depends on it.
 - **Contracts / external systems:** None; reads the Confluence fixture corpus under `tests/fixtures/confluence`.
 - **Database tables owned:** None.
