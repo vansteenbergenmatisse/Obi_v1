@@ -49,6 +49,12 @@ this doc and the code.
 - **7-table versioned store** with atomic activation, rollback, HNSW-over-`halfvec` for 3072-dim
   vectors (ADR-0002). **Eval beats baseline** (retrieval_smoke mrr 0.75→1.00, ndcg 0.82→1.00;
   permission: no cross-scope leak).
+- **Frontend (`apps/web`) scaffolded to the standard: `features/` + `components/`.** The chat
+  capability is a real feature behind one public root (`@/features/chat` → `ChatPanel` + view-model
+  types), with private `ui/ api/ model/` internals; reusable primitives (`Button`, `PageShell`) live
+  in `components/`; `app/` routes (`/`, `/chat`, `/api/chat`) are thin and only compose. Typed,
+  token-styled, and `pnpm --filter web build` passes. The runtime is still the Phase-1 stub
+  (`/api/chat` returns 501; the panel renders that honestly) — no fake answers. See §C.1.
 
 ### A.3 Live credential verification (from the 2026-08-06 audit)
 | Credential | Result | Note |
@@ -75,8 +81,12 @@ Still open:
    transcript — **rotate all four** once wired.
 5. **[DEBT] Ruff/Pyright baseline dirt** (Ruff 2 errors / 25 unformatted, Pyright 31/1) predates
    this standard and is tracked at no-regression (ADR-0003 D1), not yet cleaned.
-6. **[DEBT] A few empty placeholder dirs** may remain (e.g. `docs/architecture/`,
-   `docs/runbooks/`); fill or leave untracked — runbooks are a Phase-5 deliverable.
+6. **[RESOLVED] Empty placeholder dirs removed.** Six empty folders that the standard forbids were
+   deleted: `docs/architecture/`, `docs/runbooks/`, `infra/automation/`, `infra/web/`,
+   `apps/automation/app/features/confluence_sync/domain/`, and `.../ingestion/schemas/`. Recreate
+   each with real content when its need lands (runbooks in Phase 5; per-service infra alongside a
+   real deploy) — inhabit folders by responsibility, never pre-create empties. Real docs live in
+   `docs/adr/`, real local infra in `infra/foundation/docker-compose.yml`.
 
 ---
 
@@ -159,6 +169,40 @@ the decision and its register live in **`docs/adr/0003-Feature-Boundary-Enforcem
   gated in `make check`. Add a needed symbol to the feature's `__init__.py`; never deep-import
   across a boundary.
 
+### C.1 Frontend structure (`apps/web`) — features + components
+
+The frontend follows the same standard, using the folders that apply to a UI app.
+
+```
+apps/web/src/
+  app/          Routes + composition ONLY, kept thin: page.tsx (/), chat/page.tsx (/chat),
+                api/chat/route.ts (501 stub), layout.tsx, globals.css.
+  features/     Business capabilities. chat/ is the one today, behind a public root.
+  components/   Reusable, presentation-only primitives (ui/button, layout/page-shell).
+```
+
+- **`features/chat`** exposes exactly one public root — `index.ts` → `ChatPanel` and the view-model
+  types (`ChatMessage`, `MessageRole`, `MessageStatus`). Its `ui/`, `api/`, `model/` internals are
+  private; routes import **only** `@/features/chat`, never a deeper path. Per-feature contract in
+  `apps/web/src/features/chat/FEATURES.md`.
+- **`components/`** holds only what is reused across 2+ routes/features (`Button`, `PageShell`).
+  Placement rule: used once → keep it beside the route/feature; reused → `components/`;
+  feature-specific despite reuse → `features/<f>/ui/`. See `apps/web/src/components/README.md`.
+- **`platform/` and `shared/` are intentionally absent for `apps/web` today** — there is no
+  app-wide technical capability and no cross-feature primitive to justify them yet, and the standard
+  forbids empty/placeholder folders. Add them the moment a real one appears (e.g. `platform/` for an
+  API-base-URL/http client shared by multiple features), exactly as the backend inhabits folders by
+  responsibility rather than pre-creating them.
+
+> **STANDING CONVENTION — build all new frontend work as features + components.**
+> Every new capability is a **feature** under `apps/web/src/features/<name>/` with one public
+> `index.ts` root and private internals; every reusable UI piece that crosses routes/features is a
+> **component** under `apps/web/src/components/`; `app/` routes stay thin and only compose. Never
+> deep-import past a feature's root, never duplicate a feature-owned concept, and never add empty or
+> placeholder folders. This mirrors the machine-enforced backend rule (§C) — the frontend boundary is
+> convention-enforced today; a checker equivalent to `check_feature_boundaries.py` for `apps/web` is a
+> reasonable future addition.
+
 ## D. Restructuring — completed
 
 Executed green-to-green on `main`; each step is one atomic commit gated by pytest + boundaries +
@@ -173,6 +217,7 @@ no-regression on Ruff/Pyright. What the prior edition listed as §D plan is done
 | `FEATURES.md` public-surface fields | ✅ updated to the real `__all__` per feature |
 | Hermetic test settings | ✅ fixture independent of `.env`; 99 passed |
 | Standard reconciliation + ADR | ✅ root `CLAUDE.md` + ADR-0003 |
+| Frontend `apps/web` → features + components (§C.1) | ✅ `features/chat` public root + `components/{ui,layout}` + thin routes; `pnpm --filter web build` passes |
 
 **Verification (every phase):** `pytest -q` = 99 passed; `import app.main` clean (no cycle);
 `tools/check_feature_boundaries.py` exit 0; `pytest --collect-only` and OpenAPI byte-identical to
@@ -196,6 +241,12 @@ baseline (OpenAPI `info.version` unchanged at 0.2.0); `app.*` startup graph = 46
   chat UI (streaming, history, citation cards, dev trace); replace the `/api/chat` **501 stub** +
   validate inbound `ChatRequest`; publish the chat contract in `packages/contracts`.
   New backend work is a **`rag_agent` feature** behind its own public root, per the standard.
+- **Frontend head start (already scaffolded, §C.1):** `apps/web/src/features/chat` exists as a real
+  feature (public `ChatPanel`, private `ui/ api/ model/`) with reusable `components/` (`Button`,
+  `PageShell`) and thin `/` + `/chat` routes; build passes. Phase 4 flesh-out = add SSE parsing in
+  `features/chat/api/chat-client.ts` (replace the request/response stub), citation cards + history +
+  streaming render in `ui/`, an `.env.local` (`NEXT_PUBLIC_API_BASE_URL`), and swap the `/api/chat`
+  501 for the real proxy. Keep it inside the feature; do NOT deep-import past `@/features/chat`.
 - **Testing:** agent step units; SSE parsing / partial + aborted streams; citation rendering; ACL
   enforcement on real storage; grounding/no-hallucination checks; endpoint security per
   `securing-http-and-llm-endpoints` (HTTP + LLM surface).
