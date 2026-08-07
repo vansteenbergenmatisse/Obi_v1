@@ -12,8 +12,12 @@
 > [`../adr/0004-Multi-Source-Provider-Tagging-And-RLS.md`](../adr/0004-Multi-Source-Provider-Tagging-And-RLS.md)
 > and [`../adr/0005-Reranking-And-Answer-Pipeline.md`](../adr/0005-Reranking-And-Answer-Pipeline.md).
 >
-> `TODAY` = shipped and verified (Phases 1–3, 99 tests green). `PLANNED` = specified here, gated on
-> the phase named. Every code claim is anchored `file:line` so it can be checked against the tree.
+> `TODAY` = shipped and verified. As of 2026-08-07 that is **Phases 1–3 + all of Phase 3.5**
+> (reranker, provider tags + RLS + reader role, `query_trace`, rerank-lift eval) **and the Phase 4.1
+> `rag_agent` scaffold** (DTO contract + pure refusal/citation domain core) — **130 tests green**.
+> `PLANNED` = specified here, gated on the phase named (the Phase 4.2+ answer workflow, `POST /chat`,
+> and web UI are not built yet). Every code claim is anchored `file:line` so it can be checked against
+> the tree.
 
 ---
 
@@ -94,8 +98,8 @@ scope → conversational rewrite → embed → (RLS-scoped) dense ∥ keyword �
 | 5 | Permission filter | `permission.py` | 4 | fixture ACL → real persisted principal lists; runs **before** rerank |
 | 6 | Cross-encoder rerank | `reranker_client.py` (new), `retriever.py` | 3.5.2 | `candidate_k` 40→75; rerank ≤75 → top-`k`; **after** the permission filter |
 | 7 | Parent-context expansion | `rag_agent` | 4 | join `parent_chunk_id`; feed the *parent* text to the generator |
-| 8 | Grounded generation + forced citations | `rag_agent` | 4 | every claim cites a chunk; uncited claims are stripped |
-| 9 | Refusal threshold | `rag_agent` | 4 | top rerank score < `refusal_min_rerank_score` → refuse + route to human |
+| 8 | Grounded generation + forced citations | `rag_agent` | 4 (citation core ✅ 4.1) | every claim cites a chunk; uncited claims stripped by `enforce_citations`; generation is 4.2 |
+| 9 | Refusal threshold | `rag_agent` | 4 (core ✅ 4.1) | top rerank score < `refusal_min_rerank_score` → refuse via `decide_refusal`; live wiring 4.2 |
 | 10 | One CRAG retry | `rag_agent` | 4 | at most one corrective retrieval (`crag_max_retries=1`) to protect p95 |
 | 11 | SSE stream | `POST /chat` in `main.py` | 4 | events `start`/`token`/`citations`/`done`, reader engine |
 
@@ -214,9 +218,15 @@ same trace row (writer engine).
 - **Parent-context expansion (Phase 4).** Children retrieve; parents ground. Join `parent_chunk_id` and
   send the parent chunk text to the generator, so the model has enough surrounding context to answer.
 - **Forced citations (Phase 4).** Every claim cites a retrieved chunk; **uncited claims are stripped**
-  before returning.
+  before returning. *Domain core built in 4.1* — `enforce_citations`
+  (`features/rag_agent/domain/citations.py`) keeps a sentence only if it cites a valid numbered marker,
+  drops hallucinated-source markers, and returns the markers actually used; the generator that produces
+  the cited text (which this pass then enforces) is 4.2.
 - **Refusal threshold (Phase 4).** If the top rerank score < `refusal_min_rerank_score`, refuse ("not in
   the docs") and route to a human rather than hallucinate. The threshold is tuned from the 3.5.5 numbers.
+  *Domain core built in 4.1* — `decide_refusal` (`features/rag_agent/domain/refusal.py`) refuses below
+  threshold or when retrieval returned nothing; wiring it to the live top rerank score is 4.2 (it needs
+  the retriever-return refactor that surfaces scores — see §6).
 - **One CRAG retry (Phase 4).** On a weak result, exactly one corrective retrieval (`crag_max_retries=1`),
   to protect p95. Not an agent loop — a fixed workflow (ADR-0005).
 

@@ -67,9 +67,9 @@ connection string, a pgvector ≥ 0.8 confirmation, and the `rag_reader`/RLS→S
 | **5** — optimization & proof | ⬜ todo | — | caching, adaptive routing, red-team, latency/cost |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
 
-Gate at each ✅: `make check` green (**120 tests**, was 116/99), `make boundaries` clean, ruff/pyright at the
-ADR-0003 D1 baseline (no regression — 22/2 ruff ≤ 25/2, pyright 0/0 on touched files). Reader/RLS isolation
-tests + both migrations verified.
+Gate at each ✅: `make check` green (**130 tests** as of 4.1; was 120 at end-3.5, 99 pre-3.5),
+`make boundaries` clean, ruff/pyright at the ADR-0003 D1 baseline (no regression — 22/2 ruff ≤ 25/2,
+pyright 0/0 on touched files). Reader/RLS isolation tests + all three migrations verified.
 
 **Phase 3.5 exit gate — MET (2026-08-07):** `make check` green (120); `make eval` prints the before/after
 rerank table; isolation tests pass (RLS default-deny + wrong-source→0); pgvector 0.8.5 pinned; every
@@ -77,7 +77,7 @@ retrieval writes one `query_trace` row; no ruff/pyright regression. Rerank lift 
 `rerank-v3.5` + OpenAI-3072): **ndcg@10 −0.123, precision@5 +0.000 on `retrieval_smoke`** — the fixture is
 already saturated (dense ranks the one relevant page first, before-ndcg = 1.000), so there is no headroom;
 the genuine lift is a **Phase-5 gold-set measurement**. `refusal_min_rerank_score = 0.10` provisional,
-re-tune in Phase 5. **→ ready for Phase 4 after `/compact-ultra`.**
+re-tune in Phase 5. **→ Phase 3.5 closed; Phase 4.1 shipped (`e4490aa`); next is 4.2.**
 
 ### Deviations already taken (documented, not silent)
 
