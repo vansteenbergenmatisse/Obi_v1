@@ -27,8 +27,8 @@ from typing import Protocol, runtime_checkable
 import httpx
 
 from app.platform.config import Settings
-from app.platform.hashing import sha256_text
 from app.platform.logging import get_logger
+from app.shared.hashing import sha256_text
 
 log = get_logger("embeddings_client")
 

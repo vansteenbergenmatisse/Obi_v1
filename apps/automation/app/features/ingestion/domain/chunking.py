@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 from app.features.ingestion.domain import normalization as norm
 from app.features.ingestion.domain.change_detection import section_stable_key
 from app.features.ingestion.domain.tokenization import TokenCounter
-from app.platform.hashing import sha256_bytes, sha256_text
+from app.shared.hashing import sha256_bytes, sha256_text
 
 
 @dataclass(frozen=True)

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from app.features.ingestion.domain import normalization as norm
 from app.platform.clients.confluence_client import ConfluencePageMeta
 from app.platform.db.enums import ChangeClass, PageStatus
-from app.platform.hashing import (
+from app.shared.hashing import (
     hash_access_scope,
     hash_attachment_manifest,
     hash_labels,

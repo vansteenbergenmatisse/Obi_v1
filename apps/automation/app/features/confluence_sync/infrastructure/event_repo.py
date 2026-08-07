@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.features.confluence_sync.schemas.events import EventEnvelope
 from app.platform.db.enums import EventProcStatus, PageStatus
 from app.platform.db.models import EventLedger
-from app.platform.hashing import hash_json
+from app.shared.hashing import hash_json
 
 
 def _status_enum(status: str | None) -> PageStatus | None:

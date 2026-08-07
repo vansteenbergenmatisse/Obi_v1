@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
 
-from app.platform.hashing import normalize_text, sha256_text
+from app.shared.hashing import normalize_text, sha256_text
 
 HEADING_TAGS = {f"h{i}": i for i in range(1, 7)}
 _BLOCK_BREAK = {"p", "li", "tr", "br", "pre", "table", "ul", "ol"}
