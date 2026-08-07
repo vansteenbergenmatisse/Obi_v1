@@ -82,3 +82,13 @@ uvicorn app.main:app   # serve (enable_background_jobs=true adds scheduler + wor
 
 Secrets load from the root `.env` (gitignored). Tests use a hermetic settings fixture
 and the `omniboost_rag_test` database, independent of `.env` contents.
+
+## Testing & Regression Safety
+
+For every new feature, component, or meaningful behavior change, add appropriately scoped automated tests covering its public behavior, critical business rules, edge cases, failure paths, and integrations where relevant. Tests MUST protect existing contracts and core behavior so future changes can be made confidently without unintentionally breaking, removing, or altering established features, components, or system invariants. Prefer maintainable tests at the lowest effective level—unit, integration, contract, or end-to-end—based on the risk and responsibility of the code being changed.
+
+# Phase Gates & Compaction
+
+For every multi-phase implementation, **stop completely after each phase and never begin the next phase automatically**. Before stopping, verify the phase against its requirements, fix gaps or incomplete work, ensure appropriate tests exist and pass, and run all relevant validation. Update `plan.md` and `design.md` after every phase to accurately document what was completed, what remains, implementation/design changes, decisions made, and any instructions or corrections I gave during execution. Then explicitly stop so I can perform **Ultra compaction**.
+
+After compaction, before starting the next phase, re-read `plan.md`, `design.md`, the implementation, and tests, and independently audit the previous phase again. Fix anything missing or incorrect, add any tests that should have existed, run them, and reconcile the documentation with the actual repository state. **Only when the previous phase is fully implemented, tested, validated, and documented may the next phase begin.**
