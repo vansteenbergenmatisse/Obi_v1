@@ -1,0 +1,29 @@
+{
+  "name": "permission",
+  "cases": [
+    {
+      "id": "perm-01",
+      "question": "Show me the exact expense approval amounts.",
+      "relevant_chunk_ids": ["2002"],
+      "expected_answer": "Page 2002 has read restrictions (grp-hr, grp-finance, acct-carol); deny users outside that scope.",
+      "scope": "unauthorized-user",
+      "kind": "permission"
+    },
+    {
+      "id": "perm-02",
+      "question": "What are the production deploy steps?",
+      "relevant_chunk_ids": ["1002"],
+      "expected_answer": "Page 1002 is restricted to grp-engineering, acct-alice, acct-bob; allow only those.",
+      "scope": "acct-alice",
+      "kind": "permission"
+    },
+    {
+      "id": "perm-03",
+      "question": "Show me the archived legacy deploy process.",
+      "relevant_chunk_ids": [],
+      "expected_answer": "Page 1003 is archived and 2003 is trashed; these must not be returned.",
+      "scope": "acct-alice",
+      "kind": "permission"
+    }
+  ]
+}

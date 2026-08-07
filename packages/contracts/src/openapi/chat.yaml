@@ -1,0 +1,216 @@
+openapi: 3.1.0
+info:
+  title: Omniboost RAG API
+  version: 0.1.0
+  description: >
+    Source-of-truth contract for the Omniboost RAG chat API and the inbound
+    Confluence webhook envelope. TypeScript and Pydantic types are generated
+    from this document. Phase 1 defines the shapes only; the streaming runtime
+    lands in Phase 4.
+servers:
+  - url: http://localhost:8000
+    description: Local automation API (FastAPI)
+
+paths:
+  /chat:
+    post:
+      operationId: postChat
+      summary: Ask a question and stream back an answer with citations.
+      description: >
+        Accepts a user message (optionally continuing an existing
+        conversation) and returns a Server-Sent Events stream. Each SSE `data:`
+        line is a JSON `ChatStreamEvent`: a single `start` (with the
+        conversationId), zero or more `token` deltas, a `citations` event, and
+        a terminal `done` or `error`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChatRequest"
+      responses:
+        "200":
+          description: An SSE stream of chat events.
+          content:
+            text/event-stream:
+              schema:
+                $ref: "#/components/schemas/ChatStreamEvent"
+        "400":
+          description: Malformed request body.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "501":
+          description: Chat runtime not yet implemented (Phase 1 shell).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /confluence/events:
+    post:
+      operationId: postConfluenceEvent
+      summary: Receive a Confluence webhook delivery.
+      description: >
+        Inbound webhook endpoint. Deliveries are authenticated out-of-band
+        (HMAC shared secret) and processed idempotently by `deliveryId`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConfluenceEventEnvelope"
+      responses:
+        "202":
+          description: Delivery accepted and queued for processing.
+        "400":
+          description: Malformed or unauthenticated delivery.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+components:
+  schemas:
+    ChatRequest:
+      type: object
+      required:
+        - message
+      properties:
+        conversationId:
+          type: string
+          description: Existing conversation to continue. Omit to start a new one.
+        message:
+          type: string
+          minLength: 1
+          description: The user's message / question.
+
+    Citation:
+      type: object
+      required:
+        - id
+        - pageId
+        - title
+        - url
+        - version
+      properties:
+        id:
+          type: string
+        pageId:
+          type: string
+        title:
+          type: string
+        url:
+          type: string
+          format: uri
+        version:
+          type: integer
+          minimum: 1
+        snippet:
+          type: string
+
+    ChatStartEvent:
+      type: object
+      required: [type, conversationId]
+      properties:
+        type:
+          type: string
+          const: start
+        conversationId:
+          type: string
+
+    ChatTokenEvent:
+      type: object
+      required: [type, delta]
+      properties:
+        type:
+          type: string
+          const: token
+        delta:
+          type: string
+
+    ChatCitationsEvent:
+      type: object
+      required: [type, citations]
+      properties:
+        type:
+          type: string
+          const: citations
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Citation"
+
+    ChatDoneEvent:
+      type: object
+      required: [type, answer, citations]
+      properties:
+        type:
+          type: string
+          const: done
+        answer:
+          type: string
+        citations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Citation"
+
+    ChatErrorEvent:
+      type: object
+      required: [type, error]
+      properties:
+        type:
+          type: string
+          const: error
+        error:
+          type: string
+
+    ChatStreamEvent:
+      oneOf:
+        - $ref: "#/components/schemas/ChatStartEvent"
+        - $ref: "#/components/schemas/ChatTokenEvent"
+        - $ref: "#/components/schemas/ChatCitationsEvent"
+        - $ref: "#/components/schemas/ChatDoneEvent"
+        - $ref: "#/components/schemas/ChatErrorEvent"
+      discriminator:
+        propertyName: type
+
+    ConfluenceEventEnvelope:
+      type: object
+      required:
+        - eventType
+        - pageId
+        - version
+        - spaceId
+        - status
+        - timestamp
+        - deliveryId
+      properties:
+        eventType:
+          type: string
+          enum: [page_created, page_updated, page_removed, page_restored]
+        pageId:
+          type: string
+        version:
+          type: integer
+          minimum: 1
+        spaceId:
+          type: string
+        status:
+          type: string
+          enum: [current, draft, trashed, historical]
+        timestamp:
+          type: string
+          format: date-time
+        deliveryId:
+          type: string
+          description: Unique delivery id used for idempotent processing.
+
+    Error:
+      type: object
+      required:
+        - error
+      properties:
+        error:
+          type: string

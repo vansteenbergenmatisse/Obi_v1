@@ -1,0 +1,22 @@
+{
+  "id": "1003",
+  "spaceId": "100",
+  "parentId": "1002",
+  "status": "archived",
+  "title": "Legacy Deploy Process (Archived)",
+  "version": {
+    "number": 2,
+    "createdAt": "2025-11-20T14:30:00.000Z",
+    "message": "Superseded by Deployment Runbook",
+    "authorId": "acct-bob"
+  },
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": "<h1>Legacy Deploy Process</h1><ac:structured-macro ac:name=\"info\" ac:schema-version=\"1\"><ac:rich-text-body><p>This page is archived. See the <a href=\"/spaces/ENG/pages/1002\">Deployment Runbook</a>.</p></ac:rich-text-body></ac:structured-macro><h2>Old FTP Upload</h2><p>Historically releases were uploaded via FTP to the app servers manually.</p><ul><li>Build the artifact</li><li>SCP to each server</li><li>Restart the service by hand</li></ul>"
+    }
+  },
+  "_links": {
+    "webui": "/spaces/ENG/pages/1003/Legacy+Deploy+Process"
+  }
+}

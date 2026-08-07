@@ -1,0 +1,97 @@
+"""Environment-driven application settings.
+
+Single source of truth for configuration. Loaded once and cached. Reads a repo-root or
+app-local .env for local development; real deployments inject env vars directly.
+"""
+
+from __future__ import annotations
+
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=(".env", "../../.env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
+
+    # runtime
+    env: str = "local"
+    log_level: str = "INFO"
+
+    # database
+    database_url: str = "postgresql+psycopg://rag:rag@localhost:5434/omniboost_rag"
+
+    # confluence
+    confluence_base_url: str = ""
+    confluence_email: str = ""
+    confluence_api_token: str = ""
+    confluence_spaces: str = ""  # comma-separated space keys / page ids / tree roots
+    confluence_webhook_secret: str = ""
+    confluence_service_account_id: str = ""
+
+    # models
+    anthropic_api_key: str = ""
+    routing_model: str = "claude-haiku-4-5-20251001"
+    answer_model: str = "claude-sonnet-5"
+
+    # embeddings (used from Phase 3)
+    embedding_provider: str = "voyage"
+    embedding_model: str = "voyage-3-large"
+    embedding_dim: int = 1024
+    voyage_api_key: str = ""
+    openai_api_key: str = ""
+
+    # embedding call controls (LLM-CALL security tier: C4 timeout/retry/breaker, C10 abuse cap)
+    embedding_timeout_seconds: float = 30.0
+    embedding_max_batch: int = 128  # texts per provider request
+    embedding_max_retries: int = 3
+    embedding_breaker_threshold: int = 5  # consecutive failed batches -> open the fuse
+    embedding_max_texts_per_call: int = 20_000  # abuse guard on a single embed() invocation
+
+    # contextualization call controls (LLM-CALL). Anthropic prompt-caches the document context.
+    contextualization_enabled: bool = True
+    contextualization_timeout_seconds: float = 30.0
+    contextualization_max_retries: int = 2
+    contextualization_max_doc_chars: int = 60_000  # cap document context sent to the model
+
+    # reranker (used from Phase 4)
+    reranker_provider: str = ""
+    reranker_api_key: str = ""
+    reranker_local_model: str = "BAAI/bge-reranker-base"
+
+    # retrieval / budgets
+    evidence_token_budget: int = 7000
+    provider_timeout_seconds: float = 8.0
+
+    # reconciliation
+    lightweight_recon_cron: str = "0 3 * * *"
+    complete_recon_interval_days: int = 14
+
+    # webhook ingress guards
+    webhook_rate_limit_per_minute: int = 300
+    webhook_max_body_bytes: int = 524_288  # 512 KiB
+    worker_lease_seconds: int = 120
+
+    # background scheduler + in-process worker (off unless explicitly enabled)
+    enable_background_jobs: bool = False
+    worker_tick_seconds: int = 5
+
+    # pipeline version stamps (bumping these forces recompute / re-embed per ADR-0002)
+    parser_version: int = 1
+    chunker_version: int = 1
+    contextualization_version: int = 1
+    retrieval_schema_version: int = 1
+
+    @property
+    def confluence_scope_list(self) -> list[str]:
+        return [s.strip() for s in self.confluence_spaces.split(",") if s.strip()]
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

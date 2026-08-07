@@ -1,0 +1,47 @@
+{
+  "name": "retrieval_smoke",
+  "cases": [
+    {
+      "id": "rs-01",
+      "question": "How do I request access to core systems when I join?",
+      "relevant_chunk_ids": ["1001"],
+      "scope": "100",
+      "kind": "retrieval"
+    },
+    {
+      "id": "rs-02",
+      "question": "What are the steps to deploy a release to production?",
+      "relevant_chunk_ids": ["1002"],
+      "scope": "100",
+      "kind": "retrieval"
+    },
+    {
+      "id": "rs-03",
+      "question": "What is the rollback procedure if error rate spikes?",
+      "relevant_chunk_ids": ["1002"],
+      "scope": "100",
+      "kind": "retrieval"
+    },
+    {
+      "id": "rs-04",
+      "question": "What is the per diem meal limit in Europe?",
+      "relevant_chunk_ids": ["2001"],
+      "scope": "200",
+      "kind": "retrieval"
+    },
+    {
+      "id": "rs-05",
+      "question": "Who approves an expense over 5000 EUR?",
+      "relevant_chunk_ids": ["2002"],
+      "scope": "200",
+      "kind": "retrieval"
+    },
+    {
+      "id": "rs-06",
+      "question": "How do I troubleshoot an SSO login failure during onboarding?",
+      "relevant_chunk_ids": ["1001"],
+      "scope": "100",
+      "kind": "retrieval"
+    }
+  ]
+}

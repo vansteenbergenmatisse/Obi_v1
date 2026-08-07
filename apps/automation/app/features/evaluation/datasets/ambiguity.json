@@ -1,0 +1,29 @@
+{
+  "name": "ambiguity",
+  "cases": [
+    {
+      "id": "amb-01",
+      "question": "What is the approval process?",
+      "relevant_chunk_ids": ["2002"],
+      "expected_answer": "Ask which approval: expense approval routing is in the Approval Workflow page.",
+      "scope": "200",
+      "kind": "ambiguity"
+    },
+    {
+      "id": "amb-02",
+      "question": "How do I do a rollback?",
+      "relevant_chunk_ids": ["1002"],
+      "expected_answer": "Deployment rollback steps live in the Deployment Runbook.",
+      "scope": "100",
+      "kind": "ambiguity"
+    },
+    {
+      "id": "amb-03",
+      "question": "What are the limits?",
+      "relevant_chunk_ids": ["2001", "2002"],
+      "expected_answer": "Clarify: per diem spending limits or approval-amount thresholds?",
+      "scope": "200",
+      "kind": "ambiguity"
+    }
+  ]
+}

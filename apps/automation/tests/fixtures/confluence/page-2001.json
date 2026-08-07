@@ -1,0 +1,22 @@
+{
+  "id": "2001",
+  "spaceId": "200",
+  "parentId": null,
+  "status": "current",
+  "title": "Expense Policy",
+  "version": {
+    "number": 4,
+    "createdAt": "2026-05-10T09:15:00.000Z",
+    "message": "Updated per diem rates",
+    "authorId": "acct-carol"
+  },
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": "<h1>Expense Policy</h1><p>Guidelines for submitting and approving expenses.</p><h2>What Is Reimbursable</h2><ul><li>Travel: flights, trains, and taxis for business</li><li>Meals: within the per diem limit</li><li>Software: pre-approved tools</li></ul><h2>Per Diem Rates</h2><table><tbody><tr><th>Region</th><th>Daily Limit</th></tr><tr><td>Europe</td><td>75 EUR</td></tr><tr><td>North America</td><td>90 USD</td></tr></tbody></table><ac:structured-macro ac:name=\"note\" ac:schema-version=\"1\"><ac:rich-text-body><p>Receipts are required for any single item over 25 EUR.</p></ac:rich-text-body></ac:structured-macro><h2>How To Submit</h2><p>File claims in the finance portal within 30 days. See the <a href=\"/spaces/HR/pages/2002\">Approval Workflow</a> for routing.</p>"
+    }
+  },
+  "_links": {
+    "webui": "/spaces/HR/pages/2001/Expense+Policy"
+  }
+}

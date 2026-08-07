@@ -1,0 +1,17 @@
+{
+  "pageId": "1002",
+  "operation": "read",
+  "restrictions": {
+    "user": {
+      "results": [
+        { "accountId": "acct-alice", "displayName": "Alice" },
+        { "accountId": "acct-bob", "displayName": "Bob" }
+      ]
+    },
+    "group": {
+      "results": [
+        { "id": "grp-engineering", "name": "engineering" }
+      ]
+    }
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "id": "2002",
+  "spaceId": "200",
+  "parentId": "2001",
+  "status": "current",
+  "title": "Approval Workflow",
+  "version": {
+    "number": 1,
+    "createdAt": "2026-04-02T11:00:00.000Z",
+    "message": "Initial version",
+    "authorId": "acct-carol"
+  },
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": "<h1>Approval Workflow</h1><p>Who approves what, and in what order.</p><h2>Routing Rules</h2><ul><li>Under 500 EUR: manager approval</li><li>500 to 5000 EUR: manager plus finance</li><li>Over 5000 EUR: director sign-off</li></ul><h3>Escalation</h3><p>If an approver is out of office for more than three days, the request escalates to their delegate.</p><ac:structured-macro ac:name=\"code\" ac:schema-version=\"1\"><ac:parameter ac:name=\"language\">text</ac:parameter><ac:plain-text-body><![CDATA[requester -> manager -> finance -> director]]></ac:plain-text-body></ac:structured-macro><p>This page has restricted read access. Contact HR to view amounts.</p>"
+    }
+  },
+  "_links": {
+    "webui": "/spaces/HR/pages/2002/Approval+Workflow"
+  }
+}

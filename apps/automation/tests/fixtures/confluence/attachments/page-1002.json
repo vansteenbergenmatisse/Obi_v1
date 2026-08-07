@@ -1,0 +1,34 @@
+{
+  "pageId": "1002",
+  "results": [
+    {
+      "id": "att-1002-1",
+      "title": "rollback-notes.md",
+      "mediaType": "text/markdown",
+      "fileSize": 198,
+      "version": { "number": 2, "createdAt": "2026-07-01T08:02:00.000Z" },
+      "file": "rollback-notes.md",
+      "_links": { "download": "/download/attachments/1002/rollback-notes.md" }
+    },
+    {
+      "id": "att-1002-2",
+      "title": "architecture-diagram.pdf",
+      "mediaType": "application/pdf",
+      "fileSize": 48213,
+      "version": { "number": 1, "createdAt": "2026-07-01T08:03:00.000Z" },
+      "file": "PLACEHOLDER-BINARIES.txt",
+      "note": "Binary placeholder. Real PDF not included; see PLACEHOLDER-BINARIES.txt for Phase 3 parser targets.",
+      "_links": { "download": "/download/attachments/1002/architecture-diagram.pdf" }
+    },
+    {
+      "id": "att-1002-3",
+      "title": "capacity-plan.xlsx",
+      "mediaType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "fileSize": 12044,
+      "version": { "number": 1, "createdAt": "2026-07-01T08:04:00.000Z" },
+      "file": "PLACEHOLDER-BINARIES.txt",
+      "note": "Binary placeholder. Real XLSX not included; see PLACEHOLDER-BINARIES.txt.",
+      "_links": { "download": "/download/attachments/1002/capacity-plan.xlsx" }
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "pageId": "2002",
+  "results": [
+    { "id": "l-finance", "name": "finance", "prefix": "global" },
+    { "id": "l-confidential", "name": "confidential", "prefix": "global" }
+  ]
+}

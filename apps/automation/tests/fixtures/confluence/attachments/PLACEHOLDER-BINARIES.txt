@@ -1,0 +1,20 @@
+Placeholder for binary attachments
+===================================
+
+This corpus intentionally ships only tiny text-based attachments (.txt, .csv, .md)
+that Phase 3 can parse without external binary libraries.
+
+The attachment manifests reference these binary formats as placeholders so the
+ingestion pipeline can be tested for "attachment present, parser required" cases
+without committing real binaries:
+
+  - application/pdf  (architecture-diagram.pdf)   -> Phase 3 PDF text extraction
+  - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet (capacity-plan.xlsx) -> Phase 3 XLSX parsing
+
+Phase 3 parser targets to implement/verify:
+  txt   -> plain read (covered by real fixture)
+  csv   -> tabular parse (covered by real fixture)
+  md    -> markdown parse (covered by real fixture)
+  pdf   -> text extraction (placeholder only)
+  docx  -> document parse (placeholder only)
+  xlsx  -> spreadsheet parse (placeholder only)

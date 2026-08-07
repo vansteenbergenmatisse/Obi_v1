@@ -1,0 +1,7 @@
+Welcome Checklist
+=================
+- Sign the code of conduct
+- Set up SSO and MFA
+- Request VPN access
+- Clone the monorepo and run `make setup`
+- Introduce yourself in #team-onboarding

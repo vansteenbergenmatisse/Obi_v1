@@ -1,0 +1,17 @@
+{
+  "name": "@omniboost/design-tokens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Semantic design tokens and the Tailwind theme extension for Omniboost RAG.",
+  "type": "module",
+  "main": "./src/tokens.ts",
+  "types": "./src/tokens.ts",
+  "exports": {
+    ".": "./src/tokens.ts",
+    "./tokens": "./src/tokens.ts",
+    "./tailwind-theme": "./src/tailwind-theme.ts"
+  },
+  "files": [
+    "src"
+  ]
+}

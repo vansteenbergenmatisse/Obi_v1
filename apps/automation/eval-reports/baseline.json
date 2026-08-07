@@ -1,0 +1,272 @@
+{
+  "k": 5,
+  "reports": [
+    {
+      "aggregates": {
+        "hit_rate@5": 1.0,
+        "mrr": 0.75,
+        "ndcg@5": 0.8154648767857288,
+        "precision@5": 0.19999999999999998,
+        "recall@5": 1.0
+      },
+      "case_count": 6,
+      "dataset_name": "retrieval_smoke",
+      "k": 5,
+      "results": [
+        {
+          "case_id": "rs-01",
+          "kind": "retrieval",
+          "metrics": {
+            "hit_rate@5": 1.0,
+            "mrr": 1.0,
+            "ndcg@5": 1.0,
+            "precision@5": 0.2,
+            "recall@5": 1.0
+          },
+          "ranked_ids": [
+            "1001",
+            "1002"
+          ],
+          "relevant_ids": [
+            "1001"
+          ]
+        },
+        {
+          "case_id": "rs-02",
+          "kind": "retrieval",
+          "metrics": {
+            "hit_rate@5": 1.0,
+            "mrr": 0.5,
+            "ndcg@5": 0.6309297535714575,
+            "precision@5": 0.2,
+            "recall@5": 1.0
+          },
+          "ranked_ids": [
+            "1001",
+            "1002"
+          ],
+          "relevant_ids": [
+            "1002"
+          ]
+        },
+        {
+          "case_id": "rs-03",
+          "kind": "retrieval",
+          "metrics": {
+            "hit_rate@5": 1.0,
+            "mrr": 0.5,
+            "ndcg@5": 0.6309297535714575,
+            "precision@5": 0.2,
+            "recall@5": 1.0
+          },
+          "ranked_ids": [
+            "1001",
+            "1002"
+          ],
+          "relevant_ids": [
+            "1002"
+          ]
+        },
+        {
+          "case_id": "rs-04",
+          "kind": "retrieval",
+          "metrics": {
+            "hit_rate@5": 1.0,
+            "mrr": 1.0,
+            "ndcg@5": 1.0,
+            "precision@5": 0.2,
+            "recall@5": 1.0
+          },
+          "ranked_ids": [
+            "2001",
+            "2002"
+          ],
+          "relevant_ids": [
+            "2001"
+          ]
+        },
+        {
+          "case_id": "rs-05",
+          "kind": "retrieval",
+          "metrics": {
+            "hit_rate@5": 1.0,
+            "mrr": 0.5,
+            "ndcg@5": 0.6309297535714575,
+            "precision@5": 0.2,
+            "recall@5": 1.0
+          },
+          "ranked_ids": [
+            "2001",
+            "2002"
+          ],
+          "relevant_ids": [
+            "2002"
+          ]
+        },
+        {
+          "case_id": "rs-06",
+          "kind": "retrieval",
+          "metrics": {
+            "hit_rate@5": 1.0,
+            "mrr": 1.0,
+            "ndcg@5": 1.0,
+            "precision@5": 0.2,
+            "recall@5": 1.0
+          },
+          "ranked_ids": [
+            "1001",
+            "1002"
+          ],
+          "relevant_ids": [
+            "1001"
+          ]
+        }
+      ],
+      "timestamp": "baseline"
+    },
+    {
+      "aggregates": {
+        "hit_rate@5": 1.0,
+        "mrr": 0.6666666666666666,
+        "ndcg@5": 0.7539531690476383,
+        "precision@5": 0.26666666666666666,
+        "recall@5": 1.0
+      },
+      "case_count": 3,
+      "dataset_name": "ambiguity",
+      "k": 5,
+      "results": [
+        {
+          "case_id": "amb-01",
+          "kind": "ambiguity",
+          "metrics": {
+            "hit_rate@5": 1.0,
+            "mrr": 0.5,
+            "ndcg@5": 0.6309297535714575,
+            "precision@5": 0.2,
+            "recall@5": 1.0
+          },
+          "ranked_ids": [
+            "2001",
+            "2002"
+          ],
+          "relevant_ids": [
+            "2002"
+          ]
+        },
+        {
+          "case_id": "amb-02",
+          "kind": "ambiguity",
+          "metrics": {
+            "hit_rate@5": 1.0,
+            "mrr": 0.5,
+            "ndcg@5": 0.6309297535714575,
+            "precision@5": 0.2,
+            "recall@5": 1.0
+          },
+          "ranked_ids": [
+            "1001",
+            "1002"
+          ],
+          "relevant_ids": [
+            "1002"
+          ]
+        },
+        {
+          "case_id": "amb-03",
+          "kind": "ambiguity",
+          "metrics": {
+            "hit_rate@5": 1.0,
+            "mrr": 1.0,
+            "ndcg@5": 1.0,
+            "precision@5": 0.4,
+            "recall@5": 1.0
+          },
+          "ranked_ids": [
+            "2001",
+            "2002"
+          ],
+          "relevant_ids": [
+            "2001",
+            "2002"
+          ]
+        }
+      ],
+      "timestamp": "baseline"
+    },
+    {
+      "aggregates": {
+        "hit_rate@5": 0.6666666666666666,
+        "mrr": 0.25,
+        "ndcg@5": 0.35386877054828353,
+        "precision@5": 0.13333333333333333,
+        "recall@5": 0.6666666666666666
+      },
+      "case_count": 3,
+      "dataset_name": "permission",
+      "k": 5,
+      "results": [
+        {
+          "case_id": "perm-01",
+          "kind": "permission",
+          "metrics": {
+            "hit_rate@5": 1.0,
+            "mrr": 0.25,
+            "ndcg@5": 0.43067655807339306,
+            "precision@5": 0.2,
+            "recall@5": 1.0
+          },
+          "ranked_ids": [
+            "1001",
+            "1002",
+            "2001",
+            "2002"
+          ],
+          "relevant_ids": [
+            "2002"
+          ]
+        },
+        {
+          "case_id": "perm-02",
+          "kind": "permission",
+          "metrics": {
+            "hit_rate@5": 1.0,
+            "mrr": 0.5,
+            "ndcg@5": 0.6309297535714575,
+            "precision@5": 0.2,
+            "recall@5": 1.0
+          },
+          "ranked_ids": [
+            "1001",
+            "1002",
+            "2001",
+            "2002"
+          ],
+          "relevant_ids": [
+            "1002"
+          ]
+        },
+        {
+          "case_id": "perm-03",
+          "kind": "permission",
+          "metrics": {
+            "hit_rate@5": 0.0,
+            "mrr": 0.0,
+            "ndcg@5": 0.0,
+            "precision@5": 0.0,
+            "recall@5": 0.0
+          },
+          "ranked_ids": [
+            "1001",
+            "1002",
+            "2001",
+            "2002"
+          ],
+          "relevant_ids": []
+        }
+      ],
+      "timestamp": "baseline"
+    }
+  ],
+  "timestamp": "baseline"
+}

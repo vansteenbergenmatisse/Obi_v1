@@ -1,0 +1,6 @@
+@import "tailwindcss";
+
+/* Bridge to the JS Tailwind config so the semantic token theme extension in
+   tailwind.config.ts (sourced from @omniboost/design-tokens) is available as
+   utilities. */
+@config "../../tailwind.config.ts";

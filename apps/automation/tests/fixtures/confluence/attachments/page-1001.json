@@ -1,0 +1,23 @@
+{
+  "pageId": "1001",
+  "results": [
+    {
+      "id": "att-1001-1",
+      "title": "welcome-checklist.txt",
+      "mediaType": "text/plain",
+      "fileSize": 214,
+      "version": { "number": 1, "createdAt": "2026-06-01T09:05:00.000Z" },
+      "file": "welcome-checklist.txt",
+      "_links": { "download": "/download/attachments/1001/welcome-checklist.txt" }
+    },
+    {
+      "id": "att-1001-2",
+      "title": "team-roster.csv",
+      "mediaType": "text/csv",
+      "fileSize": 132,
+      "version": { "number": 1, "createdAt": "2026-06-01T09:06:00.000Z" },
+      "file": "team-roster.csv",
+      "_links": { "download": "/download/attachments/1001/team-roster.csv" }
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "pageId": "2002",
+  "operation": "read",
+  "restrictions": {
+    "user": {
+      "results": [
+        { "accountId": "acct-carol", "displayName": "Carol" }
+      ]
+    },
+    "group": {
+      "results": [
+        { "id": "grp-hr", "name": "hr" },
+        { "id": "grp-finance", "name": "finance" }
+      ]
+    }
+  }
+}

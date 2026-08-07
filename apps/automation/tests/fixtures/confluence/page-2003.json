@@ -1,0 +1,22 @@
+{
+  "id": "2003",
+  "spaceId": "200",
+  "parentId": null,
+  "status": "trashed",
+  "title": "Draft Bonus Scheme (Deleted)",
+  "version": {
+    "number": 1,
+    "createdAt": "2026-03-01T16:45:00.000Z",
+    "message": "Draft, later trashed",
+    "authorId": "acct-carol"
+  },
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": "<h1>Draft Bonus Scheme</h1><p>This was a working draft and has been moved to the trash. Do not index.</p><ul><li>Placeholder tier A</li><li>Placeholder tier B</li></ul>"
+    }
+  },
+  "_links": {
+    "webui": "/spaces/HR/pages/2003/Draft+Bonus+Scheme"
+  }
+}

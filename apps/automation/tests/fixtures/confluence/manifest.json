@@ -1,0 +1,88 @@
+{
+  "schema": "confluence-fixture-corpus/v1",
+  "description": "Representative Confluence Cloud REST v2 fixture corpus for the omniboost-rag ingestion and eval pipelines.",
+  "spaces": [
+    { "id": "100", "key": "ENG", "name": "Engineering" },
+    { "id": "200", "key": "HR", "name": "People Operations" }
+  ],
+  "pages": [
+    {
+      "id": "1001",
+      "spaceId": "100",
+      "title": "Onboarding Guide",
+      "parentId": null,
+      "currentStatus": "current",
+      "currentVersion": 3,
+      "versionsAvailable": [1, 2, 3],
+      "hasLabels": true,
+      "hasRestrictions": false,
+      "hasAttachments": true
+    },
+    {
+      "id": "1002",
+      "spaceId": "100",
+      "title": "Deployment Runbook",
+      "parentId": "1001",
+      "currentStatus": "current",
+      "currentVersion": 5,
+      "versionsAvailable": [5],
+      "hasLabels": false,
+      "hasRestrictions": true,
+      "hasAttachments": true
+    },
+    {
+      "id": "1003",
+      "spaceId": "100",
+      "title": "Legacy Deploy Process (Archived)",
+      "parentId": "1002",
+      "currentStatus": "archived",
+      "currentVersion": 2,
+      "versionsAvailable": [2],
+      "hasLabels": false,
+      "hasRestrictions": false,
+      "hasAttachments": false
+    },
+    {
+      "id": "2001",
+      "spaceId": "200",
+      "title": "Expense Policy",
+      "parentId": null,
+      "currentStatus": "current",
+      "currentVersion": 4,
+      "versionsAvailable": [4],
+      "hasLabels": false,
+      "hasRestrictions": false,
+      "hasAttachments": false
+    },
+    {
+      "id": "2002",
+      "spaceId": "200",
+      "title": "Approval Workflow",
+      "parentId": "2001",
+      "currentStatus": "current",
+      "currentVersion": 1,
+      "versionsAvailable": [1],
+      "hasLabels": true,
+      "hasRestrictions": true,
+      "hasAttachments": false
+    },
+    {
+      "id": "2003",
+      "spaceId": "200",
+      "title": "Draft Bonus Scheme (Deleted)",
+      "parentId": null,
+      "currentStatus": "trashed",
+      "currentVersion": 1,
+      "versionsAvailable": [1],
+      "hasLabels": false,
+      "hasRestrictions": false,
+      "hasAttachments": false
+    }
+  ],
+  "attachmentFiles": [
+    "attachments/welcome-checklist.txt",
+    "attachments/team-roster.csv",
+    "attachments/rollback-notes.md",
+    "attachments/PLACEHOLDER-BINARIES.txt"
+  ]
+}
