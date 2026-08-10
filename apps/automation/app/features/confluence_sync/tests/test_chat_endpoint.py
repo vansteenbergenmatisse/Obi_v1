@@ -11,7 +11,7 @@ import json
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.features.rag_agent import AnswerService
+from app.features.rag_agent import AnswerProvider, AnswerService, CachingAnswerService
 from app.main import create_app
 from app.platform.config import Settings
 from app.platform.db.engine import get_sessionmaker
@@ -38,7 +38,7 @@ def _chat_settings(base: Settings, **overrides) -> Settings:
     )
 
 
-def _client_with_service(settings: Settings, service: AnswerService) -> TestClient:
+def _client_with_service(settings: Settings, service: AnswerProvider) -> TestClient:
     app = create_app(settings=settings, start_scheduler=False)
     app.state.answer_service = service  # override the real (Anthropic-backed) singleton
     return TestClient(app)
@@ -82,6 +82,46 @@ def test_unconfigured_api_key_fails_closed(gateway, settings: Settings) -> None:
         "/chat", json={"history": [{"role": "user", "content": "hi"}]}, headers=_auth()
     )
     assert resp.status_code == 503
+
+
+def test_previous_api_key_is_accepted_during_rotation_overlap(gateway, settings: Settings) -> None:
+    chat_settings = _chat_settings(settings, chat_api_key_previous="old-chat-key")
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+    resp = client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": "hi"}]},
+        headers={"authorization": "Bearer old-chat-key"},
+    )
+    assert resp.status_code == 200
+    # the new key must still work at the same time, not either/or
+    resp_current = client.post(
+        "/chat", json={"history": [{"role": "user", "content": "hi"}]}, headers=_auth()
+    )
+    assert resp_current.status_code == 200
+
+
+def test_key_outside_current_and_previous_is_rejected(gateway, settings: Settings) -> None:
+    chat_settings = _chat_settings(settings, chat_api_key_previous="old-chat-key")
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+    resp = client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": "hi"}]},
+        headers={"authorization": "Bearer some-other-key"},
+    )
+    assert resp.status_code == 401
+
+
+def test_previous_key_stops_working_once_rotation_completes(gateway, settings: Settings) -> None:
+    # chat_api_key_previous defaults to "" via _chat_settings — simulates the operator having
+    # dropped it after the overlap window closed.
+    chat_settings = _chat_settings(settings)
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+    resp = client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": "hi"}]},
+        headers={"authorization": "Bearer old-chat-key"},
+    )
+    assert resp.status_code == 401
 
 
 def test_history_must_end_on_user_turn(gateway, settings: Settings) -> None:
@@ -195,6 +235,50 @@ def test_idempotency_key_replays_cached_answer_without_rerunning(
     first_trace = first[-1]["traceId"]
     second_trace = second[-1]["traceId"]
     assert first_trace == second_trace  # replayed, not a fresh trace row
+
+
+def test_answer_cache_replays_without_rerunning_retrieval(gateway, settings: Settings) -> None:
+    """PLAN 5 exact-match cache: same history + principal, no Idempotency-Key header at all ->
+    the second call is still a cache hit (same trace id, no fresh query_trace row)."""
+    _index_corpus(gateway, settings)
+    chat_settings = _chat_settings(settings)
+    cached_service = CachingAnswerService(
+        _grounded_service(gateway, chat_settings), ttl_seconds=60.0
+    )
+    client = _client_with_service(chat_settings, cached_service)
+
+    body = {"history": [{"role": "user", "content": "How do I request access?"}]}
+    first = _parse_sse(client.post("/chat", json=body, headers=_auth()).text)
+    second = _parse_sse(client.post("/chat", json=body, headers=_auth()).text)
+
+    assert first[-1]["traceId"] == second[-1]["traceId"]
+
+
+def test_answer_cache_does_not_cross_principal_boundary(gateway, settings: Settings) -> None:
+    _index_corpus(gateway, settings)
+    chat_settings = _chat_settings(settings)
+    cached_service = CachingAnswerService(
+        _grounded_service(gateway, chat_settings), ttl_seconds=60.0
+    )
+    client = _client_with_service(chat_settings, cached_service)
+
+    body_template = {"history": [{"role": "user", "content": "How do I request access?"}]}
+    alice = _parse_sse(
+        client.post("/chat", json={**body_template, "principal": "alice"}, headers=_auth()).text
+    )
+    bob = _parse_sse(
+        client.post("/chat", json={**body_template, "principal": "bob"}, headers=_auth()).text
+    )
+
+    assert alice[-1]["traceId"] != bob[-1]["traceId"]
+
+
+def test_create_app_wires_the_answer_cache_by_default(settings: Settings) -> None:
+    """`main.create_app` wraps the real `AnswerService` in `CachingAnswerService` (PLAN 5) —
+    constructing the app makes no network call (same guarantee `build_answer_service` documents),
+    so this asserts the wiring directly rather than through a live request."""
+    app = create_app(settings=_chat_settings(settings), start_scheduler=False)
+    assert isinstance(app.state.answer_service, CachingAnswerService)
 
 
 def test_feedback_updates_trace_row(gateway, settings: Settings) -> None:

@@ -7,7 +7,11 @@ LLM-CALL (rewrite + generation), so it satisfies the union of both tiers' requir
 
 security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
   C1_auth:        covered   - shared-secret `chat_api_key` via `Authorization: Bearer`,
-                              constant-time compare; fail-closed (503) when unset.
+                              constant-time compare; fail-closed (503) when unset. A second,
+                              optional `chat_api_key_previous` is accepted in parallel (both
+                              compares always run, never short-circuited) so a key can rotate
+                              through a bounded overlap window without an outage — see
+                              `docs/runbooks/chat-api-key-rotation.md` (PLAN 5).
   C2_rate_limit:  covered   - per-principal (if the caller supplies one) else per-client-IP
                               sliding window (chat_rate_limit_per_minute).
   C3_input:       covered   - Pydantic body (extra=forbid); history non-empty + ends on a user
@@ -31,7 +35,7 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
                               abuse cap (answer_max_input_chars) + circuit breaker.
 
 security_baseline (surface: PATCH /chat/{trace_id}/feedback, tier STATE-MUTATING):
-  C1_auth:        covered   - same shared-secret check as POST /chat.
+  C1_auth:        covered   - same shared-secret check (current + previous) as POST /chat.
   C2_rate_limit:  covered   - same limiter/key as POST /chat.
   C3_input:       covered   - feedback constrained to Literal[-1, 1].
   C4_timeout:     covered   - one bound UPDATE statement, no fan-out.
@@ -47,6 +51,13 @@ is caller-self-reported, trusted only as far as C1 trusts the calling web proxy.
 default-deny model, an absent/unverified principal can only ever see *unrestricted* pages
 (`PrincipalPermissionPolicy.allowed`) — it is never a blanket-access bypass. Real per-user identity
 is a later phase; this endpoint is already safe in its absence.
+
+PLAN 5 addendum: `get_answer_service_dep` may return either the real `AnswerService` or
+`answer_cache.CachingAnswerService` wrapping it (see `main.build_answer_service`'s call site).
+Transparent to this module and to every control above — the cache is keyed by (full history,
+principal), so a hit can never cross a principal boundary, and this function still logs one
+`chat_request` line (near-zero `latency_ms`) per call either way, cache hit or miss, so C9 audit
+coverage is unaffected.
 """
 
 from __future__ import annotations
@@ -64,13 +75,14 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
 
-from app.features.rag_agent.application.answer_service import AnswerService
+from app.features.rag_agent.application.answer_service import AnswerProvider
 from app.features.rag_agent.schemas import Answer, ChatMessage, Citation
 from app.features.retrieval import update_query_trace_feedback
 from app.platform.config import Settings
 from app.platform.db.engine import session_scope
 from app.platform.logging import get_logger
 from app.shared.rate_limiter import SlidingWindowRateLimiter
+from app.shared.ttl_cache import TTLCache
 
 log = get_logger("rag_agent.chat")
 
@@ -98,28 +110,6 @@ class FeedbackBody(BaseModel):
     feedback: Literal[-1, 1]
 
 
-class _IdempotencyCache:
-    """In-process replay cache for `Idempotency-Key` (C7). Single-process scope, like
-    `SlidingWindowRateLimiter` — a multi-instance deployment would need a shared store."""
-
-    def __init__(self, ttl_seconds: float) -> None:
-        self._ttl = ttl_seconds
-        self._entries: dict[str, tuple[float, Answer]] = {}
-
-    def get(self, key: str) -> Answer | None:
-        entry = self._entries.get(key)
-        if entry is None:
-            return None
-        stored_at, answer = entry
-        if time.monotonic() - stored_at > self._ttl:
-            del self._entries[key]
-            return None
-        return answer
-
-    def set(self, key: str, answer: Answer) -> None:
-        self._entries[key] = (time.monotonic(), answer)
-
-
 # -- dependencies (settings read from app.state; answer_service/db overridable in tests via
 # app.dependency_overrides or by mutating app.state directly) --------------------------
 
@@ -133,8 +123,9 @@ def get_settings_dep(request: Request) -> Settings:
     return request.app.state.settings
 
 
-def get_answer_service_dep(request: Request) -> AnswerService:
-    """The singleton `AnswerService` built once at app startup (`main.build_answer_service`)."""
+def get_answer_service_dep(request: Request) -> AnswerProvider:
+    """The singleton `AnswerProvider` built once at app startup (`main.build_answer_service`,
+    optionally wrapped in `answer_cache.CachingAnswerService`, PLAN 5)."""
     return request.app.state.answer_service
 
 
@@ -151,10 +142,10 @@ def _chat_rate_limiter(request: Request, settings: Settings) -> SlidingWindowRat
     return limiter
 
 
-def _idempotency_cache(request: Request, settings: Settings) -> _IdempotencyCache:
+def _idempotency_cache(request: Request, settings: Settings) -> TTLCache[str, Answer]:
     cache = getattr(request.app.state, "chat_idempotency_cache", None)
     if cache is None:
-        cache = _IdempotencyCache(settings.chat_idempotency_ttl_seconds)
+        cache = TTLCache[str, Answer](settings.chat_idempotency_ttl_seconds)
         request.app.state.chat_idempotency_cache = cache
     return cache
 
@@ -166,7 +157,12 @@ def _verify_api_key(request: Request, settings: Settings) -> None:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "chat API key not configured")
     header = request.headers.get(_AUTH_HEADER, "")
     token = header[len(_BEARER_PREFIX) :] if header.startswith(_BEARER_PREFIX) else ""
-    if not token or not hmac.compare_digest(token, configured):
+    # rotation overlap window (PLAN 5): both compares always run (not short-circuited on the
+    # first match) so a caller can't distinguish "matched current" from "matched previous" by
+    # timing; chat_api_key_previous empty -> compare_digest("", token) is just another mismatch.
+    matches_current = bool(token) and hmac.compare_digest(token, configured)
+    matches_previous = bool(token) and hmac.compare_digest(token, settings.chat_api_key_previous)
+    if not (matches_current or matches_previous):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or missing API key")
 
 
@@ -207,9 +203,9 @@ def _wire_citations(citations: list[Citation]) -> list[dict]:
 async def _stream_answer(
     conversation_id: str,
     body: ChatRequestBody,
-    service: AnswerService,
+    service: AnswerProvider,
     settings: Settings,
-    cache: _IdempotencyCache,
+    cache: TTLCache[str, Answer],
     idempotency_key: str | None,
 ) -> AsyncIterator[str]:
     yield _sse({"type": "start", "conversationId": conversation_id})
@@ -270,7 +266,7 @@ async def post_chat(
     request: Request,
     body: ChatRequestBody,
     settings: Settings = Depends(get_settings_dep),  # noqa: B008 — FastAPI dependency idiom
-    service: AnswerService = Depends(get_answer_service_dep),  # noqa: B008
+    service: AnswerProvider = Depends(get_answer_service_dep),  # noqa: B008
 ) -> StreamingResponse:
     _verify_api_key(request, settings)
 

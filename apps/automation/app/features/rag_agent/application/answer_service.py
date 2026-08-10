@@ -12,6 +12,7 @@ retrying would defeat the point of a corrective retry.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from typing import Protocol, runtime_checkable
 
 from sqlalchemy.orm import Session
 
@@ -24,6 +25,14 @@ from app.features.retrieval import HybridRetriever, RetrievalResult, update_quer
 
 _REFUSAL_TEXT = "I don't have that in the documentation I can search — routing this to a human."
 _NO_GROUNDED_CLAIM_REASON = "no claim in the generated answer survived citation enforcement"
+
+
+@runtime_checkable
+class AnswerProvider(Protocol):
+    """The shape `POST /chat` depends on — satisfied by `AnswerService` itself and by
+    `answer_cache.CachingAnswerService`, which wraps one `AnswerProvider` around another."""
+
+    def answer(self, history: Sequence[ChatMessage], scope: str | None) -> Answer: ...
 
 
 class AnswerService:

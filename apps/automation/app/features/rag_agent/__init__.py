@@ -5,7 +5,9 @@ RLS-scoped retrieve → RRF → cross-encoder rerank → parent-context expansio
 generation with forced citations → refusal threshold → at most one CRAG retry → SSE.
 
 Public surface: the DTOs `POST /chat` serialises (`Answer`/`ChatMessage`/`Citation`), the
-`AnswerService` orchestrator (Phase 4.2), the `QueryRewriter`/`AnswerGenerator` collaborator
+`AnswerService` orchestrator (Phase 4.2), the `AnswerProvider` protocol it satisfies (the shape
+`router.py` actually depends on) plus `CachingAnswerService` (Phase 5, an exact-match cache
+decorator around any `AnswerProvider`), the `QueryRewriter`/`AnswerGenerator` collaborator
 protocols + their Anthropic-backed implementations, and — as of Phase 4.4 — `router` (the
 `POST /chat` + `PATCH /chat/{trace_id}/feedback` HTTP surface `app.main` includes). The refusal /
 citation / prompt / PII-redaction domain logic stays internal.
@@ -22,7 +24,8 @@ import each other by full submodule path.
 
 from __future__ import annotations
 
-from .application.answer_service import AnswerService
+from .application.answer_cache import CachingAnswerService
+from .application.answer_service import AnswerProvider, AnswerService
 from .infrastructure.llm_client import (
     AnswerGenerator,
     AnthropicAnswerGenerator,
@@ -37,6 +40,8 @@ __all__ = [
     "ChatMessage",
     "Citation",
     "AnswerService",
+    "AnswerProvider",
+    "CachingAnswerService",
     "QueryRewriter",
     "AnswerGenerator",
     "AnthropicQueryRewriter",

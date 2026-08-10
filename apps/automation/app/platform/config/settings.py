@@ -97,6 +97,9 @@ class Settings(BaseSettings):
     # POST /chat + PATCH /chat/{trace_id}/feedback (PLAN 4.4). Both an HTTP and an LLM surface —
     # see securing-http-and-llm-endpoints controls in FEATURES.md / PLAN.md.
     chat_api_key: str = ""  # shared secret between the trusted web proxy and this API; fail-closed
+    # accepted alongside chat_api_key during a rotation's overlap window (PLAN 5); empty = no
+    # second key accepted. Drop back to "" once every caller has switched to the new chat_api_key.
+    chat_api_key_previous: str = ""
     chat_rate_limit_per_minute: int = 20  # C2, keyed by principal (if supplied) else client IP
     chat_max_history_turns: int = 20  # C3/C10: caller-supplied conversation turns per request
     chat_max_message_chars: int = 4000  # C3: per-turn content length
@@ -104,6 +107,12 @@ class Settings(BaseSettings):
     chat_token_chunk_chars: int = 40  # C5: SSE token-event chunk size (paces bytes/sec streamed)
     chat_stream_interval_ms: int = 15  # C5: delay between SSE token events
     chat_idempotency_ttl_seconds: float = 300.0  # C7: Idempotency-Key replay window
+
+    # PLAN 5: exact-match answer cache in front of AnswerService (answer_cache.py). Same TTL
+    # default/shape as chat_idempotency_ttl_seconds — a bounded staleness tradeoff already
+    # accepted there. Semantic caching is deliberately not built (see answer_cache.py docstring).
+    chat_answer_cache_ttl_seconds: float = 300.0
+    chat_answer_cache_max_entries: int = 500  # bounds in-process memory, not a cost/scale target
 
     # retrieval / budgets
     evidence_token_budget: int = 7000

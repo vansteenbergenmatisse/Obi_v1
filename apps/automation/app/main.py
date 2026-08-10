@@ -29,6 +29,7 @@ from app.features.rag_agent import (
     AnswerService,
     AnthropicAnswerGenerator,
     AnthropicQueryRewriter,
+    CachingAnswerService,
 )
 from app.features.rag_agent import router as chat_router
 from app.features.retrieval import HybridRetriever, PrincipalPermissionPolicy
@@ -67,7 +68,9 @@ def build_answer_service(settings: Settings) -> AnswerService:
     (see `retriever.py`). Merely constructing this (including the `AnthropicMessagesClient`) makes
     no network call — `build_reranker`/`build_embedding_provider` already fall back to
     deterministic offline providers when unconfigured, so this is safe to call unconditionally at
-    app startup, mirroring `build_gateway` above.
+    app startup, mirroring `build_gateway` above. Returns the raw `AnswerService` — the caller
+    (`create_app`, below) wraps it in `CachingAnswerService` (PLAN 5); kept separate so tests can
+    still construct an uncached `AnswerService` directly, as `test_chat_endpoint.py` already does.
     """
     retriever = HybridRetriever(
         get_reader_sessionmaker(),
@@ -169,7 +172,11 @@ def create_app(*, settings: Settings | None = None, start_scheduler: bool | None
     app.state.settings = settings
     app.state.gateway = gateway
     app.state.rate_limiter = SlidingWindowRateLimiter(settings.webhook_rate_limit_per_minute)
-    app.state.answer_service = build_answer_service(settings)
+    app.state.answer_service = CachingAnswerService(
+        build_answer_service(settings),
+        ttl_seconds=settings.chat_answer_cache_ttl_seconds,
+        max_entries=settings.chat_answer_cache_max_entries,
+    )
     app.include_router(confluence_router)
     app.include_router(chat_router)
 
