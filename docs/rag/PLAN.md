@@ -66,7 +66,10 @@ actual zero-rows on wrong scope), not smoke checks. **No gaps found; nothing to 
 
 ### 3.5.6 — Confluence source scoping ✅ done (2026-08-10)
 
-**Status: implemented, tested, documented, same session as design approval.** Followed
+**Status: implemented, tested, documented, committed (`0f1a0d7`).** Independently re-verified in a
+follow-up session before committing: `make boundaries` clean, `pytest -q` → 144 passed, ruff 2
+errors/19 unformatted (within the ≤25/2 baseline), pyright 31 errors (exactly at baseline, none on
+touched files), migration 0004 round-tripped `head → -1 → head`. Followed
 `superpowers:brainstorming` end to end (clarifying questions → 2 approaches proposed → design
 presented in 3 sections, each approved → spec written to
 `docs/superpowers/specs/2026-08-10-confluence-source-scoping-design.md` → approved → built directly
@@ -126,7 +129,7 @@ OCR/image reading untouched.
 | **3.5.4** — `query_trace` scoreboard (minimal) | ✅ done | `a9f9259` | 1 trace/retrieval; migration 0003 reversible |
 | **3.5.5** — measure rerank lift + Phase 3.5 exit gate | ✅ done | `1b6e94c` | 120 tests; `evaluate_rerank_lift` + live Cohere run; **lift −0.123 ndcg@10 on the saturated fixture — expected, real lift is a Phase-5 gold-set measurement** |
 | **4.1** — `rag_agent` scaffold: DTOs + refusal/citation domain core | ✅ done | `e4490aa` | 10 unit tests → 130 total; public root + FEATURES.md; boundaries clean; ruff/pyright 0 on new files |
-| **3.5.6** — Confluence source scoping (`source_scope` table) | ✅ done | *(uncommitted)* | 14 tests → 144 total; migration 0004 reversible; boundaries clean; no ruff/pyright regression |
+| **3.5.6** — Confluence source scoping (`source_scope` table) | ✅ done | `0f1a0d7` | 14 tests → 144 total; migration 0004 reversible; boundaries clean; no ruff/pyright regression |
 | **4.2–4.5** — answer workflow, principal ACL, `POST /chat`, web UI | ⏳ next | — | HTTP+LLM surface (4.4) → full security controls required |
 | **5** — optimization & proof | ⬜ todo | — | caching, adaptive routing, red-team, latency/cost |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
