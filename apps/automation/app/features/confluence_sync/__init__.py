@@ -19,14 +19,26 @@ from .application.reconciliation import (
     run_reconciliation,
 )
 from .application.worker import drain, reap
+from .domain.scope_resolver import (
+    ROOT_TYPE_PAGE,
+    ROOT_TYPE_SPACE,
+    ScopeResolution,
+    resolve_scope_roots,
+    resolve_space_scope,
+)
 from .server import SlidingWindowRateLimiter, router
 
 __all__ = [
     "KIND_COMPLETE",
     "KIND_LIGHTWEIGHT",
+    "ROOT_TYPE_PAGE",
+    "ROOT_TYPE_SPACE",
+    "ScopeResolution",
     "SlidingWindowRateLimiter",
     "drain",
     "reap",
+    "resolve_scope_roots",
+    "resolve_space_scope",
     "router",
     "run_reconciliation",
 ]

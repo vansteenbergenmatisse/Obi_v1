@@ -99,7 +99,7 @@ reaching into `app.features.ingestion.application.versioning` from outside would
 
 ---
 
-## 3. The data model (the 7 tables)
+## 3. The data model (the 9 tables)
 
 Defined in `app/platform/db/models.py`. The relationships:
 
@@ -150,6 +150,8 @@ Table by table:
 | **`event_ledger`** | webhook/reconcile delivery | dedup + audit. Unique on `payload_hash`; partial-unique on `delivery_id` |
 | **`job`** | unit of background work | crash-safe queue. Unique on `idempotency_key` |
 | **`reconciliation_run`** | drift sweep | report: pages scanned, drift detected, jobs enqueued |
+| **`source_scope`** | a configured sync root | `space` or `page` root narrowing/tagging reconciliation (PLAN 3.5.6); unique on `(root_type, root_id)` |
+| **`query_trace`** | retrieval request | tracing scoreboard (PLAN 3.5.4): retrieved page ids, allowed sources, models, latency; answer/citation columns reserved for Phase 4 |
 
 **Two search indexes on `chunk`** (both partial — they only cover *active child* rows, which keeps
 them small and fast; `models.py:58-74, 267-272`):
@@ -290,6 +292,25 @@ deactivate them. Each writes a `reconciliation_run` report (pages scanned, drift
 enqueued, orphans deleted). The scheduler + in-process worker only run when
 `enable_background_jobs=true`.
 
+**Scope (PLAN 3.5.6, implemented).** Which spaces/pages get swept — and which registry rows get
+purged when they're removed from scope — is governed by the `source_scope` table, not an env var
+(`CONFLUENCE_SPACES` was dead code: zero consumers, confirmed by grep, now deleted). A `space` row
+reproduces the always-existing whole-space behavior; a `page` row narrows a sweep to a root page +
+its live descendants (`confluence_sync/domain/scope_resolver.py`, a pure tree-walk over
+`parent_id` — no extra API calls) and tags what it covers for bot scoping. Seed rows one-off with
+`scripts/seed_source_scope.py`. Two things this table also fixes:
+
+- **First sweep of a brand-new space.** Before 3.5.6, `run_reconciliation`'s default space
+  discovery only looked at spaces already present in `page_source` — a space with zero rows was
+  never swept no matter what `CONFLUENCE_SPACES` said. Now discovery unions in every space implied
+  by a `source_scope` row (resolving a `page` row's space via one `get_page_meta` call), so a
+  brand-new space gets its first sweep from the schedule alone.
+- **Purge on scope removal.** Deactivating (or deleting) the *last* active root for a space
+  restricts its coverage to the empty set — not back to unrestricted — so the next sweep purges
+  everything that root used to cover, via the same `deactivate_page` path an upstream deletion
+  uses. A space that has never had a `source_scope` row at all stays fully unrestricted, byte-for-
+  byte the pre-3.5.6 behavior.
+
 ### 4.8 The Confluence gateway (live vs fixture)
 
 `main.build_gateway` (`main.py:43-48`) picks the client at startup:
@@ -303,9 +324,9 @@ enqueued, orphans deleted). The scheduler + in-process worker only run when
   `apps/automation/tests/fixtures/confluence/` (pages 1001–2003, with versions, labels, restrictions,
   attachments). This is what makes the system runnable **with no credentials**.
 
-> ⚠️ **Current status:** the live Confluence token is **dead** (401/403 — no Confluence seat / empty
-> `CONFLUENCE_SPACES`). Until a fresh token lands, everything runs against the fixture corpus. This
-> does not block Phases 3.5–4, which are all offline-measurable.
+> ⚠️ **Current status:** the live Confluence token is **dead** (401/403 — no Confluence seat) and no
+> `source_scope` rows are seeded yet. Until a fresh token lands, everything runs against the
+> fixture corpus. This does not block Phases 3.5–4, which are all offline-measurable.
 
 ---
 
@@ -620,30 +641,31 @@ fix whichever drifted. Keep this file updated as Phases 3.5–5 land so it stays
 
 ---
 
-## 12. Confluence source scoping — design approved, not yet implemented
+## 12. Confluence source scoping — implemented (PLAN 3.5.6)
 
-**Status (2026-08-10): design approved via `superpowers:brainstorming`; no implementation code
-written yet.** Today (§4) a Confluence "source" is scoped at the **whole-space** level only —
-`settings.confluence_scope_list` (`CONFLUENCE_SPACES`) exists but has zero consumers anywhere in the
-app (confirmed by grep). There is no way to say "sync just this page" or "just this page-subtree"
-narrower than a full space.
+**Status (2026-08-10): implemented and tested.** §3 and §4.7 above are the as-built content — this
+section is now a pointer to the design record, not a design-in-progress note. Summary of what
+shipped, for anyone diffing against the original design:
 
-The approved design adds a **DB-backed `source_scope` table** (roots carry `root_type`
-space\|page, `root_id`, and `tags` for bot scoping) plus a **zero-network resolver** — it tree-walks
-the `parent_id` Confluence already returns on every page from `list_space_pages`, so no new
-Confluence API call is needed to compute a page-subtree's descendants. The resolver feeds an
-optional narrower live-set into the existing, already-correct `reconciliation.py` diff/deactivate
-engine (§4.7) — removing a root purges its now-uncovered pages via the same `deactivate_page` path
-reconciliation already uses today, with no new deletion logic. `CONFLUENCE_SPACES` becomes a
-one-time migration seed rather than a runtime dependency.
+- `source_scope` table (§3), `confluence_sync/domain/scope_resolver.py` (pure resolver:
+  `resolve_scope_roots` + `resolve_space_scope`), wired into `reconciliation.py`'s space discovery
+  and per-space sweep (§4.7). `CONFLUENCE_SPACES`/`confluence_scope_list` deleted (were dead code —
+  zero consumers, confirmed by grep — before this).
+- One deviation from the original design note: the migration (`0004_source_scope`) does **not**
+  read `CONFLUENCE_SPACES`/`Settings` as a one-time seed. Migrations 0001–0003 never coupled DDL to
+  mutable env state, and doing so here would make `alembic upgrade head` non-deterministic across
+  environments (including the hermetic test DB). Rows are seeded instead via the one-off
+  `scripts/seed_source_scope.py` — ownership was already "one-off, no CRUD" either way, so nothing
+  about the actual workflow changed, only where the seed command lives.
+- One design refinement made during implementation: `resolve_space_scope` takes *every* recorded
+  root for a space, active or not — not just active ones — because "zero rows ever" (unrestricted,
+  today's default) and "rows exist but all inactive" (restricted to nothing) need to be
+  distinguishable. Otherwise deactivating the last root for a space would silently revert to
+  unrestricted instead of purging it, contradicting the design's own purge-on-removal intent.
 
-**Once implemented, this will change:** §3 (a new `source_scope` table alongside the 7), §4 (sync
-narrows from whole-space to configured page-trees, tags propagate to `page_source`/`chunk.tags`),
-and §4.7 (reconciliation's per-source scan gains the narrowing parameter). Full schema, resolver
-contract, and test plan are in
-`docs/superpowers/specs/2026-08-10-confluence-source-scoping-design.md`; decision history is in
-`docs/rag/PLAN.md` §0. This section is a pointer, not the design — it becomes real §3/§4 content
-once a `writing-plans` implementation plan lands and ships (proposed PLAN.md sub-step 3.5.6).
+Full schema, resolver contract, and test plan are in
+`docs/superpowers/specs/2026-08-10-confluence-source-scoping-design.md`; decision history and the
+status ledger are in `docs/rag/PLAN.md` §0.
 
 ---
 

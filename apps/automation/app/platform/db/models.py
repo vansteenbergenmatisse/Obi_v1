@@ -441,6 +441,45 @@ class ReconciliationRun(Base):
     __table_args__ = (Index("ix_reconciliation_run_started_at", "started_at"),)
 
 
+_ROOT_TYPE_CHECK = "root_type IN ('space', 'page')"
+
+
+class SourceScope(Base):
+    """A configured Confluence sync root: a whole space, or a page-subtree narrower than one.
+
+    Replaces the old, never-consumed ``CONFLUENCE_SPACES`` env var (PLAN 3.5.6 / ADR-0004
+    follow-on). ``space`` roots reproduce today's whole-space behavior unchanged; ``page`` roots
+    narrow reconciliation to a root page + its live descendants (resolved by
+    ``confluence_sync.domain.scope_resolver``). ``tags`` propagate to ``page_source``/``chunk``
+    for bot scoping. One-off ownership: rows are inserted directly (script), no CRUD API yet.
+    """
+
+    __tablename__ = "source_scope"
+
+    id: Mapped[int] = _pk()
+    root_type: Mapped[str] = mapped_column(String(16), nullable=False)
+    root_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    source_type: Mapped[str] = mapped_column(
+        String(32), nullable=False, server_default=text("'confluence'")
+    )
+    tags: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
+    )
+    label: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    is_active: Mapped[bool] = mapped_column(nullable=False, server_default=text("true"))
+    created_at: Mapped[datetime] = _ts_created()
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("root_type", "root_id", name="uq_source_scope_root"),
+        CheckConstraint(_ROOT_TYPE_CHECK, name="ck_source_scope_root_type"),
+        CheckConstraint(_SOURCE_TYPE_CHECK, name="ck_source_scope_source_type"),
+        Index("ix_source_scope_active", "is_active", postgresql_where=text("is_active")),
+    )
+
+
 class QueryTrace(Base):
     """One row per retrieval request: the tracing scoreboard (PLAN 3.5.4).
 
@@ -480,6 +519,7 @@ __all__ = [
     "EventLedger",
     "Job",
     "ReconciliationRun",
+    "SourceScope",
     "QueryTrace",
     "KIND_PARENT",
     "KIND_CHILD",

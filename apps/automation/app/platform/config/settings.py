@@ -33,7 +33,6 @@ class Settings(BaseSettings):
     confluence_base_url: str = ""
     confluence_email: str = ""
     confluence_api_token: str = ""
-    confluence_spaces: str = ""  # comma-separated space keys / page ids / tree roots
     confluence_webhook_secret: str = ""
     confluence_service_account_id: str = ""
 
@@ -112,10 +111,6 @@ class Settings(BaseSettings):
     chunker_version: int = 1
     contextualization_version: int = 1
     retrieval_schema_version: int = 1
-
-    @property
-    def confluence_scope_list(self) -> list[str]:
-        return [s.strip() for s in self.confluence_spaces.split(",") if s.strip()]
 
 
 @lru_cache

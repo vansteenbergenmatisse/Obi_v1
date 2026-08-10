@@ -66,6 +66,7 @@ def build_chunks(
     target: TargetVersions,
     services: IngestionServices,
     old_children: list[Chunk],
+    tags: list[str] | None = None,
 ) -> list[Chunk]:
     """Token-aware parent/child chunks with contextual retrieval_content, embeddings and tsv.
 
@@ -86,9 +87,10 @@ def build_chunks(
         space_id=meta.space_id,
         # single source-tag activation seam (ADR-0004): a constant while Confluence is the only
         # source; becomes a parameter threaded from the caller when a second source lands.
+        # tags (PLAN 3.5.6): threaded from the covering source_scope root(s), [] when none.
         source_type=_SOURCE_TYPE,
         source_id=_SOURCE_ID,
-        tags=[],
+        tags=list(tags) if tags is not None else [],
         source_url=meta.source_url,
         page_status=page_status,
         retrieval_schema_version=target.retrieval_schema_version,
@@ -192,6 +194,7 @@ def stage_and_activate(
     page_status: PageStatus,
     services: IngestionServices,
     retain_superseded: int = DEFAULT_RETAIN_SUPERSEDED,
+    tags: list[str] | None = None,
 ) -> DocumentVersion:
     """Stage a new version, validate, and atomically activate it. Single transaction."""
     doc = ensure_document(session, meta.page_id)
@@ -226,6 +229,7 @@ def stage_and_activate(
         target=target,
         services=services,
         old_children=old_children,
+        tags=tags,
     )
     # link parent<-child and prev/next among children in reading order
     _link_chunks(session, chunks)
@@ -245,6 +249,7 @@ def stage_and_activate(
         page_status=page_status,
         new_version=new_version,
         embedding_dim=services.embedding_dim,
+        tags=tags,
     )
     _gc_superseded(session, document_id=doc.id, retain=retain_superseded)
     return new_version
@@ -315,6 +320,7 @@ def _activate(
     page_status: PageStatus,
     new_version: DocumentVersion,
     embedding_dim: int,
+    tags: list[str] | None = None,
 ) -> None:
     now = _now()
     ps = session.get(PageSource, meta.page_id)
@@ -345,7 +351,7 @@ def _activate(
     ps.space_id = meta.space_id
     ps.source_type = _SOURCE_TYPE  # source-tag seam (ADR-0004), mirrors the chunk stamp above
     ps.source_id = _SOURCE_ID
-    ps.tags = []
+    ps.tags = list(tags) if tags is not None else []
     ps.parent_id = meta.parent_id
     ps.current_cf_version = meta.version_number
     ps.active_doc_version_id = new_version.id

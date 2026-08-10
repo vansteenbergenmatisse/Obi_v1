@@ -28,6 +28,7 @@ _TABLES = [
     "job",
     "event_ledger",
     "reconciliation_run",
+    "source_scope",
     "query_trace",
 ]
 

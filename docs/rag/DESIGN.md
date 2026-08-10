@@ -347,15 +347,27 @@ ruff/pyright at the ADR-0003 D1 baseline (2/25 ruff, 31/1 pyright) — bring tou
 reformat untouched files. `make check` stays green. Migrations are reversible and ordered from
 `0001_core_schema`.
 
-## 10. Confluence source scoping — design approved, not yet implemented
+## 10. Confluence source scoping — implemented (PLAN 3.5.6)
 
 A brainstorm (per `superpowers:brainstorming`) on letting Confluence sync be scoped to individual
-pages / page-subtrees, not just whole spaces, concluded 2026-08-10 with an **approved design**: a
-DB-backed `source_scope` table + a zero-network resolver (tree-walks the `parent_id` already
-returned by `list_space_pages` — no new Confluence API call) feeding an optional narrowing into the
-existing, already-correct `reconciliation.py` diff/deactivate engine, with purge-on-removal and
-`tags`-based bot scoping. **No implementation code exists yet** — the full schema, resolver
-contract, reconciliation integration, migration, and test plan are in
+pages / page-subtrees, not just whole spaces, concluded 2026-08-10 with an approved design, planned
+and shipped the same day. **Implemented:** a DB-backed `source_scope` table + a zero-network
+resolver (`confluence_sync/domain/scope_resolver.py`; tree-walks the `parent_id` already returned by
+`list_space_pages` — no new Confluence API call) feeding an optional narrowing into the existing
+`reconciliation.py` diff/deactivate engine, with purge-on-removal and `tags`-based bot scoping.
+`CONFLUENCE_SPACES`/`confluence_scope_list` — dead code, zero consumers — are deleted; rows are
+seeded one-off via `scripts/seed_source_scope.py`.
+
+Two things worth knowing that weren't obvious from the original design note:
+
+- **Reconciliation's space discovery now unions in scope-implied spaces**, not just spaces already
+  present in `page_source`. This is what lets a brand-new space (or a space that only ever existed
+  as a `source_scope` row) get its first sweep at all — `CONFLUENCE_SPACES` never had this
+  capability even when non-empty, since nothing consumed it.
+- **`resolve_space_scope` distinguishes "no rows ever" from "rows exist, all inactive."** The
+  former is unrestricted (today's default); the latter restricts to the empty set, so deactivating
+  a space's last root purges everything it covered rather than silently reverting to unrestricted.
+
+Full schema, resolver contract, reconciliation integration, and test plan are in
 `docs/superpowers/specs/2026-08-10-confluence-source-scoping-design.md`; status/decision history is
-in `docs/rag/PLAN.md` §0. This section becomes real §3/§10 content once implemented (proposed
-PLAN.md sub-step 3.5.6).
+in `docs/rag/PLAN.md` §0.

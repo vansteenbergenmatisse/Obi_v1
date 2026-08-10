@@ -16,7 +16,8 @@ fix here as the next task; update this ledger after each phase.
 
 ### ▶ Resume here (after `/compact-ultra`) — first things first
 
-**Phase 3.5 is COMPLETE (exit gate MET, verification re-run PASSED). Phase 4 is IN PROGRESS: 4.1 done.**
+**Phase 3.5 is COMPLETE (exit gate MET, verification re-run PASSED); 3.5.6 (Confluence source
+scoping) also shipped 2026-08-10. Phase 4 is IN PROGRESS: 4.1 done.**
 Next is **4.2** — the answer workflow (rewrite → retrieve → rerank → parent expansion → ground → refuse
 → CRAG).
 
@@ -63,64 +64,56 @@ no-key-logging, the `query_trace` one-row-per-retrieval write path, and the `rag
 `decide_refusal`/`enforce_citations` tests — all assert real behavior (actual refusal below threshold,
 actual zero-rows on wrong scope), not smoke checks. **No gaps found; nothing to fix before 4.2.**
 
-### Side-thread (not blocking Phase 4.2) — Confluence source scoping, DESIGN APPROVED
+### 3.5.6 — Confluence source scoping ✅ done (2026-08-10)
 
-**Status 2026-08-10: brainstorm concluded, design approved, spec written and committed
-(`236eb68`); no implementation code written yet — next step is `writing-plans`.** Followed
+**Status: implemented, tested, documented, same session as design approval.** Followed
 `superpowers:brainstorming` end to end (clarifying questions → 2 approaches proposed → design
 presented in 3 sections, each approved → spec written to
-`docs/superpowers/specs/2026-08-10-confluence-source-scoping-design.md` → self-reviewed → user
-approved the spec and the commit). **Does not block Phase 4.2** — this only affects *ingestion
-scope config*, a Phase-3.5.3-adjacent concern; resume 4.2 independently whenever.
+`docs/superpowers/specs/2026-08-10-confluence-source-scoping-design.md` → approved → built directly
+given the spec's completeness and the user's explicit go-ahead, skipping a separate `writing-plans`
+pass). **Did not block Phase 4.2** — this only touched ingestion scope config; 4.2 remains next.
 
-**Decisions (all confirmed by the user):** narrower-than-space scoping — yes; storage — a DB-backed
-`source_scope` table, explicitly not a checked-in config file; deletion semantics — purge
-already-ingested content when its covering root is removed; ownership — one-off (user supplies
-IDs, no self-service CRUD yet); each root also carries `tags` for bot scoping, propagated to
-`page_source`/`chunk.tags` at ingestion.
+**Shipped:**
+- `source_scope` ORM model + migration `0004_source_scope` (`down_revision="0003_query_trace"`,
+  schema-only, reversible — round-tripped `head → -1 → head` and diffed identical to the ORM).
+- `confluence_sync/domain/scope_resolver.py` — pure `resolve_scope_roots` (root → covered page ids;
+  a `page` root's tree-walk over `parent_id`, never a sibling/ancestor) + `resolve_space_scope`
+  (per-space aggregator: union of active roots' coverage + tag union on overlap). Exported from
+  the feature's public root per the boundary rule.
+- `reconciliation.py` wired: `_sweep_space` takes the resolved scope (narrows the live set,
+  purges what's no longer covered); `run_reconciliation`'s space discovery unions in scope-implied
+  spaces so a brand-new space gets its first sweep; tags ride the job payload through
+  `worker.py` → `sync_service.handle_sync_page` → `ingestion.stage_and_activate`/`build_chunks`
+  (new optional `tags` param, `[]` when omitted — the existing single activation seam, extended not
+  replaced) → stamped on `page_source.tags`/`chunk.tags`.
+- **Dead code removed**: `settings.confluence_spaces` + `.confluence_scope_list` deleted (zero
+  consumers, confirmed by grep before deletion); `CONFLUENCE_SPACES` dropped from `.env.example`
+  with a pointer to the new seed script.
+- `scripts/seed_source_scope.py` — one-off idempotent CLI (upsert/deactivate/delete by
+  `root_type`+`root_id`), matching the spec's "one-off, no CRUD API yet" ownership decision.
+  Smoke-tested end to end against the dev DB.
+- Tests: 12 pure unit tests (`test_scope_resolver.py`) + 2 DB-backed integration tests extending
+  `test_reconciliation.py` (subtree-narrowing + tag propagation; purge-on-root-deactivation) →
+  **144 tests total** (was 130). `make boundaries` clean. Ruff/pyright verified against baseline via
+  git-stash diff, not just "still passes": 0 new pyright errors, 0 new ruff errors, fewer
+  unformatted files than baseline (19 vs. 22-25) after formatting the files this sub-step touched.
 
-**Chosen approach:** a zero-network resolver (reuses `parent_id`, already returned by
-`list_space_pages`, to tree-walk descendants in-memory — no new Confluence API call needed) feeds
-an optional `allowed_page_ids` narrowing into the existing `reconciliation.py` `_sweep_space` diff/
-deactivate engine. Full schema, resolver contract, reconciliation integration, migration
-(`0004_source_scope`, `down_revision="0003_query_trace"`), and test/acceptance plan are in the spec
-— this ledger entry is a pointer, not a duplicate.
+**Deviations from the spec as written (both are refinements, not scope changes):**
+1. The migration does **not** read `CONFLUENCE_SPACES`/`Settings` as a data seed, unlike the
+   spec's "one-time migration seed" framing. Migrations 0001-0003 never coupled DDL to mutable env
+   state; doing so here would make `alembic upgrade head` non-deterministic across environments,
+   including the hermetic test DB. Seeding is the one-off script instead — ownership was already
+   "one-off, no CRUD" either way, so the actual workflow is unchanged, only where the seed command
+   lives.
+2. `resolve_space_scope` takes every recorded root for a space (active or not), not only active
+   ones. Discovered while writing the purge-on-removal test: with only-active roots, "zero rows
+   ever" and "rows exist but all deactivated" both collapse to the same `roots=[]` input, which
+   would make deactivating a space's *last* root silently revert to unrestricted instead of purging
+   it — contradicting the spec's own "purge only when no active root covers it" intent. Fixed by
+   distinguishing the two cases explicitly (see `scope_resolver.py`'s docstring).
 
-**Next step:** invoke `writing-plans` on the approved spec to produce an implementation plan —
-proposed as PLAN.md sub-step **3.5.6** (extends the already-closed 3.5.3 tagging/reconciliation
-work rather than reopening it). Not started this session; no go-ahead given yet.
-
-**Trigger.** User wants Confluence sources configurable more granularly than "sync the whole
-space" — individual pages and page-subtrees ("folders"), inspired by a prior Omniboost project
-(Mewsy, `knowledge/fetch_sources.json` + `scraper/scrapers/confluence.ts`), which lets you list
-folder root IDs and recursively walks + syncs their descendants.
-
-**Research findings (both codebases read directly, not assumed):**
-- **Mewsy's approach:** a checked-in JSON config lists folder root page IDs; a TS scraper walks
-  `GET /wiki/rest/api/content/{id}/child/page` recursively, converts to markdown, dedupes via a
-  content-hash manifest. **Real gap found:** its deletion check (`runDeletionCheck`) only fires
-  when a *whole folder* is removed from the config file — an individual page deleted upstream
-  inside a still-configured folder is never cleaned up (silent staleness). **Do not copy this part
-  verbatim.**
-- **This repo already does the deletion/drift part correctly and better**, already shipped in
-  Phase 1–3: `confluence_sync/application/reconciliation.py` lists every live page in a space,
-  diffs against the DB registry, enqueues new/changed pages, and deactivates (versioned soft-
-  delete) pages that vanished from Confluence — two sweep speeds (lightweight/complete). Nothing
-  new needed for *that* part.
-- **The actual gap:** everything above operates at **whole-space granularity only**.
-  `settings.confluence_scope_list` (parses `CONFLUENCE_SPACES`) is defined but **never consumed
-  anywhere in the app** — confirmed by grep, zero other references. There is no existing concept
-  of "just this page" or "just this page-tree" narrower than a full space.
-- **Image/OCR reading** (separately raised by the user, "add later, not now"): already a known,
-  already-flagged gap — `ingestion/domain/attachment_extraction.py` marks images `needs_ocr=True`
-  but returns `text=""`; OCR is never invoked. Tracked here so it isn't lost; **not in scope now**,
-  revisit alongside Phase 5 or whenever OCR becomes a concrete requirement.
-
-**Resolved** (was: "open question, not yet answered" — see Decisions above). All clarifying
-questions answered, both proposed approaches evaluated, the DB-backed-table approach chosen (matches
-PLAN.md §1's "easy per-source CRUD" goal), design presented and approved section by section, spec
-written, self-reviewed, and approved by the user. **No implementation before a plan exists** —
-`writing-plans` is the next, not-yet-taken step.
+**Not done (explicit non-goals, per the spec, unchanged):** no CRUD API/admin UI; Confluence only;
+OCR/image reading untouched.
 
 ### Progress (as of 2026-08-07, branch `feat/rag-phase-3.5`; re-verified 2026-08-10)
 
@@ -133,13 +126,15 @@ written, self-reviewed, and approved by the user. **No implementation before a p
 | **3.5.4** — `query_trace` scoreboard (minimal) | ✅ done | `a9f9259` | 1 trace/retrieval; migration 0003 reversible |
 | **3.5.5** — measure rerank lift + Phase 3.5 exit gate | ✅ done | `1b6e94c` | 120 tests; `evaluate_rerank_lift` + live Cohere run; **lift −0.123 ndcg@10 on the saturated fixture — expected, real lift is a Phase-5 gold-set measurement** |
 | **4.1** — `rag_agent` scaffold: DTOs + refusal/citation domain core | ✅ done | `e4490aa` | 10 unit tests → 130 total; public root + FEATURES.md; boundaries clean; ruff/pyright 0 on new files |
+| **3.5.6** — Confluence source scoping (`source_scope` table) | ✅ done | *(uncommitted)* | 14 tests → 144 total; migration 0004 reversible; boundaries clean; no ruff/pyright regression |
 | **4.2–4.5** — answer workflow, principal ACL, `POST /chat`, web UI | ⏳ next | — | HTTP+LLM surface (4.4) → full security controls required |
 | **5** — optimization & proof | ⬜ todo | — | caching, adaptive routing, red-team, latency/cost |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
 
-Gate at each ✅: `make check` green (**130 tests** as of 4.1; was 120 at end-3.5, 99 pre-3.5),
-`make boundaries` clean, ruff/pyright at the ADR-0003 D1 baseline (no regression — 22/2 ruff ≤ 25/2,
-pyright 0/0 on touched files). Reader/RLS isolation tests + all three migrations verified.
+Gate at each ✅: `make check` green (**144 tests** as of 3.5.6; was 130 at 4.1, 120 at end-3.5, 99
+pre-3.5), `make boundaries` clean, ruff/pyright at the ADR-0003 D1 baseline (no regression — 22/2
+ruff ≤ 25/2, pyright 0/0 on touched files). Reader/RLS isolation tests + all four migrations
+verified.
 
 **Phase 3.5 exit gate — MET (2026-08-07):** `make check` green (120); `make eval` prints the before/after
 rerank table; isolation tests pass (RLS default-deny + wrong-source→0); pgvector 0.8.5 pinned; every
@@ -181,8 +176,12 @@ re-tune in Phase 5. **→ Phase 3.5 closed; Phase 4.1 shipped (`e4490aa`); next 
      `api_token` in `confluence_client.py:72`).
    - Confirm `CONFLUENCE_BASE_URL` is the real site's `/wiki` base, e.g.
      `https://<your-org>.atlassian.net/wiki` (already set — just confirm it matches the account above).
-   - Set `CONFLUENCE_SPACES` (currently **empty**) to the comma-separated space keys / page IDs / tree
-     roots to sync, e.g. `ENG,PRODUCT`.
+   - Which spaces/pages to sync is no longer an env var (`CONFLUENCE_SPACES` was dead code, removed
+     in 3.5.6) — once the token works, seed the spaces/page-subtrees to track via
+     `uv run python scripts/seed_source_scope.py --root-type space --root-id <numeric space id>`
+     (or `--root-type page --root-id <page id>` for a narrower subtree). Space/page ids are
+     numeric Confluence content ids, not the short space *key* — get them from
+     `GET {base_url}/api/v2/spaces` or a page's "Page Information" panel.
    - `CONFLUENCE_WEBHOOK_SECRET` is already set — no action needed.
    - `CONFLUENCE_SERVICE_ACCOUNT_ID` is optional — only used (`event_service.py:47-50`) to filter the
      integration's own webhook events and avoid self-triggered loops; leave empty unless the sync

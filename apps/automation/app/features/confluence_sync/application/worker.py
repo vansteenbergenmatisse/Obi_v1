@@ -54,7 +54,10 @@ class RunResult:
 
 
 def _handle_sync_page(session, job, gateway, settings) -> SyncOutcome:
-    return handle_sync_page(session, page_id=job.page_id, gateway=gateway, settings=settings)
+    tags = (job.payload or {}).get("tags") or []
+    return handle_sync_page(
+        session, page_id=job.page_id, gateway=gateway, settings=settings, tags=tags
+    )
 
 
 def _handle_delete_page(session, job, gateway, settings) -> SyncOutcome:
@@ -69,9 +72,7 @@ def _handle_reconcile_space(session, job, gateway, settings):
     space_id = (job.payload or {}).get("space_id")
     if space_id is None:
         raise ValueError(f"reconcile_space job {job.id} missing space_id in payload")
-    return reconcile_space(
-        session, space_id=int(space_id), gateway=gateway, settings=settings
-    )
+    return reconcile_space(session, space_id=int(space_id), gateway=gateway, settings=settings)
 
 
 HANDLERS: dict[str, JobHandler] = {
@@ -92,9 +93,7 @@ def run_once(
     """Claim and process at most one job. Returns None when the queue is empty."""
     # transaction 1: claim (committed on context exit)
     with session_scope() as session:
-        job = claim_job(
-            session, owner=owner, lease_seconds=lease_seconds, job_types=job_types
-        )
+        job = claim_job(session, owner=owner, lease_seconds=lease_seconds, job_types=job_types)
         if job is None:
             return None
         job_id = job.id
@@ -140,9 +139,7 @@ def drain(
     """Process jobs until the queue is empty or ``max_jobs`` is reached (bounded, non-blocking)."""
     results: list[RunResult] = []
     for _ in range(max_jobs):
-        result = run_once(
-            gateway, settings, owner=owner, job_types=job_types
-        )
+        result = run_once(gateway, settings, owner=owner, job_types=job_types)
         if result is None:
             break
         results.append(result)

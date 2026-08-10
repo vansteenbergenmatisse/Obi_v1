@@ -1,9 +1,17 @@
 # Design — Confluence source scoping (page/page-tree granularity)
 
-> Status: **approved design, not yet planned or implemented.** Written via `superpowers:brainstorming`
-> on 2026-08-10. Companion status/history lives in `docs/rag/PLAN.md` §0 ("Side-thread — Confluence
-> source scoping") and `docs/rag/DESIGN.md` §10 / `docs/rag/how_this_works.md` §12 (pointers to this
-> file). This document is the design of record for the feature; those are pointers, not duplicates.
+> Status: **implemented (PLAN.md sub-step 3.5.6, shipped 2026-08-10).** Written via
+> `superpowers:brainstorming` on 2026-08-10, then planned and built the same day. Companion
+> status/history lives in `docs/rag/PLAN.md` §0 and `docs/rag/DESIGN.md` §10 /
+> `docs/rag/how_this_works.md` §3, §4.7, §12. Two deviations from this document as originally
+> written, both noted in DESIGN.md §10 and how_this_works.md §12: (1) the migration does not read
+> `CONFLUENCE_SPACES` as a data seed — it's schema-only, seeding is a separate one-off script
+> (`scripts/seed_source_scope.py`), to keep migrations environment-independent like 0001-0003; (2)
+> `resolve_space_scope` takes *every* recorded root (active or not) rather than only active ones,
+> so a space with rows that are all inactive is distinguishable from a space with no rows at all —
+> otherwise deactivating a space's last root would silently revert to unrestricted instead of
+> purging it. This document is the design of record for the feature; those files are pointers, not
+> duplicates.
 
 ## 1. Problem
 

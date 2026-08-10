@@ -57,7 +57,12 @@ def target_versions(settings: Settings, embedding_model: str | None = None) -> T
 
 
 def handle_sync_page(
-    session: Session, *, page_id: int, gateway: ConfluenceGateway, settings: Settings
+    session: Session,
+    *,
+    page_id: int,
+    gateway: ConfluenceGateway,
+    settings: Settings,
+    tags: list[str] | None = None,
 ) -> SyncOutcome:
     meta = gateway.get_page_meta(page_id)
     if meta is None:
@@ -118,13 +123,14 @@ def handle_sync_page(
             target=target,
             page_status=page_status,
             services=services,
+            tags=tags,
         )
         return SyncOutcome(
             action="indexed", classes=sorted(c.value for c in decision.classes), page_id=page_id
         )
 
     if decision.meaningful:
-        _apply_metadata_only(session, meta, decision, page_status)
+        _apply_metadata_only(session, meta, decision, page_status, tags=tags)
         return SyncOutcome(
             action="metadata_only",
             classes=sorted(c.value for c in decision.classes),
@@ -140,7 +146,7 @@ def handle_delete_page(session: Session, *, page_id: int, status: str) -> SyncOu
     return SyncOutcome(action="deactivated", classes=["status_changed"], page_id=page_id)
 
 
-def _apply_metadata_only(session, meta, decision, page_status) -> None:
+def _apply_metadata_only(session, meta, decision, page_status, *, tags=None) -> None:
     """Update registry + propagate retrieval-relevant metadata to chunks WITHOUT re-embedding."""
     ps = session.get(PageSource, meta.page_id)
     if ps is None:
@@ -157,13 +163,20 @@ def _apply_metadata_only(session, meta, decision, page_status) -> None:
         ps.access_scope_hash = decision.access_scope_hash
     if decision.attachment_manifest_hash is not None:
         ps.attachment_manifest_hash = decision.attachment_manifest_hash
+    if tags is not None:
+        ps.tags = list(tags)
     ps.last_indexed_at = now
     ps.updated_at = now
     if ps.active_doc_version_id is not None:
-        values: dict = {"title": meta.title, "source_url": meta.source_url,
-                        "page_status": page_status}
+        values: dict = {
+            "title": meta.title,
+            "source_url": meta.source_url,
+            "page_status": page_status,
+        }
         if decision.access_scope_hash is not None:
             values["access_scope"] = decision.access_scope_hash
+        if tags is not None:
+            values["tags"] = list(tags)
         session.execute(
             update(Chunk).where(Chunk.doc_version_id == ps.active_doc_version_id).values(**values)
         )
