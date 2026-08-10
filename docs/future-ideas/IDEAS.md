@@ -53,21 +53,30 @@ review under `securing-http-and-llm-endpoints` before building), a vision-capabl
 probably a way to ground the screenshot against known UI states/docs rather than freeform
 description.
 
-## 4. Segment the RAG corpus by product/integration
+## 4. Segment retrieval by connector instance within one deployment
 
-Split the corpus so retrieval doesn't search everything indiscriminately: separate
-Muse-related vs. Toast-related vs. other-integration-related content, and further split *within*
-an integration by which system it connects to (e.g. "Muse → QuickBooks" content should only be
-searched when that's the relevant integration pairing) — as opposed to full-corpus retrieval, which
-is what happens today.
+**Corrected 2026-08-10** — this idea previously conflated two different concepts. "Muse vs. Toast"
+is **not** a corpus-tagging problem: Muse is a future *second full deployment* (its own database/
+knowledge base, same codebase) reusing this app, not a content category inside Toast's own corpus.
+That split is a deployment decision, now governed by `docs/adr/0006-Defer-Multi-Product-Extraction.md`
+— deliberately deferred until Muse is a real, scheduled second deployment, and not solved by
+ADR-0004's tagging model at all.
 
-**Relation to current architecture.** This one is the closest to already-existing scaffolding.
-`page_source`/`chunk` already carry `source_type`, `source_id`, and a free-form `tags` array
-(ADR-0004, PLAN 3.5.3), and `source_scope` (PLAN 3.5.6) already resolves which Confluence
-roots/spaces feed which tags. Extending tags to encode integration pairs (e.g. `muse:quickbooks`)
-and then filtering `HybridRetriever` by tag in addition to `source_id` is plausibly a small
-extension of the existing seam rather than new architecture — but confirm that against the real
-tag taxonomy before assuming it's just a config change.
+The part of the original idea that *is* a real tagging problem, kept here: **within one deployment**
+(e.g. Toast), a single customer can have multiple instances of the same connector — e.g. two separate
+QuickBooks accounts — and retrieval should be scoped to the relevant connector instance, not the
+whole corpus for that integration type, as opposed to today's behavior which doesn't distinguish
+connector instances at all.
+
+**Relation to current architecture.** `page_source`/`chunk` already carry `source_type`, `source_id`,
+and a free-form `tags` array (ADR-0004, PLAN 3.5.3), and `source_scope` (PLAN 3.5.6) already resolves
+which Confluence roots/spaces feed which tags. Extending tags (or `source_id` itself) to encode a
+connector-instance identity (e.g. `quickbooks:acct-1234` vs. `quickbooks:acct-5678`) and then
+filtering `HybridRetriever` by that identity in addition to the existing `source_id` filter is
+plausibly a small extension of the existing seam rather than new architecture — but confirm that
+against the real tag taxonomy and how connector instances are actually identified upstream before
+assuming it's just a config change. Not scoped, designed, or scheduled — same as every other idea in
+this file.
 
 ---
 
