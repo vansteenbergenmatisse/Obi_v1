@@ -1335,7 +1335,7 @@ fixture page restricted only by group persists as inaccessible to a principal ou
 fix the existing `test_worker_sync.py::test_first_index_persists_restrictions` assertion, which
 today encodes the bug as expected behavior. Pure code fix, no migration.
 
-### 4.6.2 — Confluence group-membership expansion (CRITICAL) ✅ done (2026-08-10)
+### 4.6.2 — Confluence group-membership expansion (CRITICAL) ✅ done (2026-08-10, `21dffd5`)
 
 **Status: implemented, tested (8 new tests + 2 existing `test_worker_sync.py` assertions
 updated), boundaries clean, no ruff/pyright regression → 237 tests total (was 229). No live
