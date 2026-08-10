@@ -28,6 +28,16 @@ Fresh context: read this ledger + `docs/rag/DESIGN.md` (§2 target pipeline, §5
 live-verified end to end; both dev servers were confirmed running together again after 5.1
 (`uvicorn app.main:app` on :8000, `pnpm --filter web dev` on :3000, chat UI at `/chat`).
 
+**Commit gap closed — 2026-08-10 (new session, again).** 5.3 was implemented and self-reported
+done in the prior session but never committed (`git status` showed the same 7 files still dirty at
+this session's start). Per `CLAUDE.local.md` §2, re-verified live before trusting the ledger's
+self-report and before committing: `make check` (from repo root) → **219 passed**, boundaries
+clean; `ruff check`/`ruff format --check` unchanged (2 errors / 17 unformatted, same as the 5.2
+baseline); `pyright` unchanged (34 errors — listed every error file directly, none touch
+`router.py`, `test_answer_service.py`, `test_pii.py`, or `test_chat_endpoint.py`); `alembic
+current` → `0005_page_restriction (head)`, no pending migration (5.3 is validator-only, no schema
+change). **No gaps found.** Committed as `92bbb7f`.
+
 **Commit gap closed — 2026-08-10 (new session).** 4.5, 5.1, and 5.2 were implemented and
 live-verified in the prior session but never committed (`git status` showed them all still
 dirty/untracked at session start). Per `CLAUDE.local.md` §2, re-verified live before trusting the
@@ -79,7 +89,7 @@ already exists" for all four candidates. Neither holds on inspection:
 Asked the user how to sequence 5.2 given this (see chat) rather than guessing at cost/scaling
 numbers or silently running a bake-off that can't support its own conclusion.
 
-### 5.3 — Prompt-injection + permission/isolation red-team ✅ done (2026-08-10)
+### 5.3 — Prompt-injection + permission/isolation red-team ✅ done (2026-08-10, `92bbb7f`)
 
 **Status: implemented, 6 new deterministic tests, no live LLM spend (per the user's chosen
 sequencing: deterministic red-team first, live-LLM adversarial pass + latency/cost together next as
@@ -732,7 +742,7 @@ OCR/image reading untouched.
 | **4.5** — web chat UI + contract extension | ✅ done | `8cbaf46` | 39 web tests; typecheck/build clean; live-verified end to end (real browser + real backend, real `CHAT_API_KEY`) |
 | **5.1** — `CHAT_API_KEY` rotation mechanism | ✅ done | `261ac1e` | 3 tests → 197 total; overlap-window auth, rotation script, runbook |
 | **5.2** — exact-match answer caching | ✅ done | `261ac1e` | 16 tests → 213 total; `TTLCache` extracted to `shared/`, `CachingAnswerService` wraps `AnswerService`, no cross-principal leak |
-| **5.3** — prompt-injection + permission/isolation red-team | ✅ done | *(uncommitted)* | 6 tests → 219 total; found + fixed a real numeric-principal space-trust bypass; no live LLM spend |
+| **5.3** — prompt-injection + permission/isolation red-team | ✅ done | `92bbb7f` | 6 tests → 219 total; found + fixed a real numeric-principal space-trust bypass; no live LLM spend |
 | **5** (remaining) — 5.4 live-LLM red-team + latency/cost proof, embedder bake-off, adaptive routing | ⬜ todo | — | 5.4 needs real API calls/spend; bake-off blocked on Confluence token + `VOYAGE_API_KEY` |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
 
