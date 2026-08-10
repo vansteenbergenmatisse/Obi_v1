@@ -4,9 +4,12 @@ info:
   version: 0.1.0
   description: >
     Source-of-truth contract for the Omniboost RAG chat API and the inbound
-    Confluence webhook envelope. TypeScript and Pydantic types are generated
-    from this document. Phase 1 defines the shapes only; the streaming runtime
-    lands in Phase 4.
+    Confluence webhook envelope. TypeScript types under `src/index.ts` are
+    hand-written to match this document until a generator is wired up; a
+    Pydantic sibling is not needed today because `apps/automation`'s FastAPI
+    route already defines its own Pydantic body models directly (PLAN 4.4).
+    The streaming runtime is implemented (PLAN 4.4/4.5): `POST /chat` streams
+    a real answer and `PATCH /chat/{traceId}/feedback` records a rating.
 servers:
   - url: http://localhost:8000
     description: Local automation API (FastAPI)
@@ -36,13 +39,70 @@ paths:
               schema:
                 $ref: "#/components/schemas/ChatStreamEvent"
         "400":
-          description: Malformed request body.
+          description: Malformed request body, empty/oversized history, or history not ending on a user turn.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "501":
-          description: Chat runtime not yet implemented (Phase 1 shell).
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Rate limited.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Chat API key not configured server-side (fail-closed).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /chat/{traceId}/feedback:
+    patch:
+      operationId: patchChatFeedback
+      summary: Record thumbs up/down feedback for a completed chat turn.
+      description: >
+        Updates the `query_trace` row identified by `traceId` (returned on the
+        stream's `done` event) with a `1` (up) or `-1` (down) rating.
+      parameters:
+        - name: traceId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FeedbackRequest"
+      responses:
+        "200":
+          description: Feedback recorded.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FeedbackResponse"
+        "400":
+          description: Malformed feedback value (must be -1 or 1).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing or invalid API key.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Rate limited.
           content:
             application/json:
               schema:
@@ -73,18 +133,42 @@ paths:
 
 components:
   schemas:
+    ChatTurn:
+      type: object
+      required:
+        - role
+        - content
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+        content:
+          type: string
+          minLength: 1
+
     ChatRequest:
       type: object
       required:
-        - message
+        - history
       properties:
         conversationId:
           type: string
           description: Existing conversation to continue. Omit to start a new one.
-        message:
+        history:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/ChatTurn"
+          description: >
+            Full turn history for this conversation, oldest first, ending on a
+            user turn. The server is stateless per request — the caller resends
+            the whole history on every call (PLAN 4.4 design decision 2).
+        principal:
           type: string
-          minLength: 1
-          description: The user's message / question.
+          description: >
+            Caller-self-reported principal id used for page-level ACL scoping.
+            Trusted only as far as the deployment trusts the calling web proxy
+            (ADR-0004) — absent/unverified never widens access.
 
     Citation:
       type: object
@@ -93,7 +177,6 @@ components:
         - pageId
         - title
         - url
-        - version
       properties:
         id:
           type: string
@@ -103,10 +186,10 @@ components:
           type: string
         url:
           type: string
-          format: uri
         version:
           type: integer
           minimum: 1
+          description: Not currently populated by the retrieval pipeline; reserved for a future page-version join.
         snippet:
           type: string
 
@@ -144,7 +227,7 @@ components:
 
     ChatDoneEvent:
       type: object
-      required: [type, answer, citations]
+      required: [type, answer, citations, refused]
       properties:
         type:
           type: string
@@ -155,6 +238,15 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Citation"
+        traceId:
+          type: ["string", "null"]
+          description: >
+            Links to the `query_trace` row for `PATCH /chat/{traceId}/feedback`.
+            Null only if the trace write itself failed (documented edge case,
+            not a bypass — feedback is simply unavailable for that turn).
+        refused:
+          type: boolean
+          description: True when the pipeline refused below `refusal_min_rerank_score`; the UI should route to a human instead of treating `answer` as grounded.
 
     ChatErrorEvent:
       type: object
@@ -206,6 +298,24 @@ components:
         deliveryId:
           type: string
           description: Unique delivery id used for idempotent processing.
+
+    FeedbackRequest:
+      type: object
+      required:
+        - feedback
+      properties:
+        feedback:
+          type: integer
+          enum: [-1, 1]
+          description: Thumbs down (-1) or thumbs up (1).
+
+    FeedbackResponse:
+      type: object
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
 
     Error:
       type: object

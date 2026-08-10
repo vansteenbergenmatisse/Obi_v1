@@ -2,15 +2,24 @@
  * Cross-boundary contract types for Omniboost RAG.
  *
  * SOURCE OF TRUTH: `src/openapi/chat.yaml`. The interfaces below are
- * hand-written for Phase 1 so `apps/web` and the Python automation API can
- * agree on shapes today. In a later phase they will be GENERATED from the
- * OpenAPI file (TypeScript here, Pydantic models under a `python/` sibling),
- * and this hand-written file will be replaced by the generated output.
+ * hand-written so `apps/web` and the Python automation API agree on shapes;
+ * `apps/automation` defines its own Pydantic body models directly against the
+ * same wire shapes (PLAN 4.4) rather than generating from this file, so there
+ * is no `python/` sibling today.
  *
  * No logic and no database models live here — shapes only.
  */
 
 // ---- Chat: request ----------------------------------------------------------
+
+/**
+ * One turn of conversation history. Distinct from `apps/web`'s feature-owned
+ * render view-model (also named `ChatMessage` there) — this is the wire shape.
+ */
+export interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
 
 export interface ChatRequest {
   /**
@@ -18,8 +27,17 @@ export interface ChatRequest {
    * server mints and returns a `conversationId` on the first streamed event.
    */
   conversationId?: string;
-  /** The user's message / question. */
-  message: string;
+  /**
+   * Full turn history, oldest first, ending on a user turn. The server is
+   * stateless per request — the caller resends the whole history every call.
+   */
+  history: ChatTurn[];
+  /**
+   * Caller-self-reported principal id used for page-level ACL scoping.
+   * Trusted only as far as the deployment trusts the calling web proxy
+   * (ADR-0004) — absent/unverified never widens access.
+   */
+  principal?: string;
 }
 
 // ---- Chat: streamed response ------------------------------------------------
@@ -35,10 +53,10 @@ export interface Citation {
   pageId: string;
   /** Human-readable page title at retrieval time. */
   title: string;
-  /** Direct URL to the source page (or anchor within it). */
+  /** Direct URL to the source page (or anchor within it). May be empty if unavailable. */
   url: string;
-  /** Confluence page version the evidence was drawn from. */
-  version: number;
+  /** Confluence page version the evidence was drawn from. Not currently populated. */
+  version?: number;
   /** Optional quoted snippet of the supporting evidence. */
   snippet?: string;
 }
@@ -71,6 +89,17 @@ export interface ChatDoneEvent {
   /** Full assembled answer text, for clients that did not accumulate tokens. */
   answer: string;
   citations: Citation[];
+  /**
+   * Links to the `query_trace` row for `PATCH /chat/{traceId}/feedback`.
+   * Null only if the trace write itself failed — feedback is simply
+   * unavailable for that turn, never a bypass of anything.
+   */
+  traceId: string | null;
+  /**
+   * True when the pipeline refused below `refusal_min_rerank_score`; the UI
+   * should route to a human instead of treating `answer` as grounded.
+   */
+  refused: boolean;
 }
 
 /** Terminal error event. */
@@ -86,6 +115,17 @@ export type ChatStreamEvent =
   | ChatCitationsEvent
   | ChatDoneEvent
   | ChatErrorEvent;
+
+// ---- Chat: feedback ----------------------------------------------------------
+
+/** `PATCH /chat/{traceId}/feedback` body: thumbs down (-1) or thumbs up (1). */
+export interface FeedbackRequest {
+  feedback: -1 | 1;
+}
+
+export interface FeedbackResponse {
+  ok: boolean;
+}
 
 // ---- Confluence webhook envelope -------------------------------------------
 
