@@ -7,6 +7,7 @@ defined so tests (and offline runs) can substitute a fixture-backed gateway with
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 
@@ -52,27 +53,46 @@ class ConfluenceGateway(Protocol):
     def get_attachments(self, page_id: int) -> list[dict]: ...
 
 
-# Returned in place of a group-only restriction's principals. No real caller is ever this
-# literal string, so a page keyed by it is inaccessible to everyone but the sync/admin path —
-# fail-closed until group-membership expansion (PLAN 4.6.2) resolves it to real account ids.
+# Returned in place of a group-only restriction's principals when group membership could not be
+# expanded to real account ids (no resolver given, or the resolver found no members). No real
+# caller is ever this literal string, so a page keyed by it is inaccessible to everyone but the
+# sync/admin path — fail-closed rather than silently unrestricted.
 GROUP_RESTRICTED_SENTINEL = "__unresolved_group_restriction__"
 
+# One Confluence group record as it appears in a restriction payload: `{"id": ..., "name": ...}`.
+GroupRecord = dict
 
-def _resolve_read_restriction(restrictions: dict) -> list[str]:
+
+def _resolve_read_restriction(
+    restrictions: dict,
+    resolve_group: Callable[[GroupRecord], list[str]] | None = None,
+) -> list[str]:
     """Resolve one Confluence read-restriction record's principals.
 
-    Only individual-user restrictions are directly resolvable today — group membership isn't
-    looked up yet. A restriction expressed only via Confluence groups, with no resolvable user
-    principal alongside it, must fail closed rather than silently becoming unrestricted: dropping
+    Individual-user restrictions are always directly resolvable. Group restrictions need
+    ``resolve_group`` (PLAN 4.6.2) to expand a group record to its member account ids — each
+    caller supplies its own (a live REST lookup, cached per sync run, for
+    :class:`HttpConfluenceClient`; a fixture-backed lookup for
+    :class:`~app.platform.clients.fixture_confluence_client.FixtureConfluenceGateway`). Without a
+    resolver, or when the resolver returns no members for every group on the record (API
+    call failed, or the group control plane says no members are visible with the current
+    token's scope), this must fail closed rather than silently becoming unrestricted: dropping
     ``restrictions.group`` entirely and returning ``[]`` (PLAN 4.6.1's finding) would let a page
     restricted only by group sync as world-readable through the chatbot.
     """
     users = (restrictions.get("user") or {}).get("results", []) or []
     groups = (restrictions.get("group") or {}).get("results", []) or []
     principals = [u["accountId"] for u in users if u.get("accountId")]
-    if groups and not principals:
-        return [GROUP_RESTRICTED_SENTINEL]
-    return principals
+    if not groups:
+        return principals
+    if resolve_group is None:
+        return principals if principals else [GROUP_RESTRICTED_SENTINEL]
+    expanded = list(principals)
+    for group in groups:
+        for account_id in resolve_group(group):
+            if account_id not in expanded:
+                expanded.append(account_id)
+    return expanded if expanded else [GROUP_RESTRICTED_SENTINEL]
 
 
 def _webui(base_url: str, links: dict) -> str:
@@ -96,6 +116,10 @@ class HttpConfluenceClient:
             timeout=settings.provider_timeout_seconds,
             headers={"Accept": "application/json"},
         )
+        # group id/name -> member accountIds, cached for this client's lifetime (PLAN 4.6.2):
+        # a sync run reuses one client instance across every page, so a group shared by many
+        # pages (e.g. a whole space's HR docs) is fetched once, not once per page.
+        self._group_members_cache: dict[str, list[str]] = {}
 
     def close(self) -> None:
         self._client.close()
@@ -192,5 +216,61 @@ class HttpConfluenceClient:
         for r in resp.json().get("results", []):
             if r.get("operation") != "read":
                 continue
-            principals.extend(_resolve_read_restriction(r.get("restrictions", {}) or {}))
+            principals.extend(
+                _resolve_read_restriction(r.get("restrictions", {}) or {}, self._group_members)
+            )
         return principals
+
+    def _group_members(self, group: GroupRecord) -> list[str]:
+        """Resolve one restriction's Confluence group to its member accountIds (PLAN 4.6.2)."""
+        cache_key = group.get("id") or group.get("name")
+        if not cache_key:
+            return []
+        if cache_key in self._group_members_cache:
+            return self._group_members_cache[cache_key]
+        members = self._fetch_group_members(group.get("id"), group.get("name"))
+        self._group_members_cache[cache_key] = members
+        return members
+
+    def _fetch_group_members(self, group_id: str | None, group_name: str | None) -> list[str]:
+        """Fetch a Confluence group's member accountIds.
+
+        UNVERIFIED against a live Confluence instance — the Confluence API token has been dead
+        (401/403, see PLAN.md blocker #3) for this whole engagement, so this endpoint has never
+        actually been exercised outside a mocked transport. REST API v2 has no group-membership
+        endpoint yet, so this uses v1's id-based endpoint (falling back to the deprecated
+        name-based one when only a name is available, since restriction payloads sometimes omit
+        `id`). **Confirm the exact path/response shape once the token works** (PLAN 4.6.2) —
+        until then, a wrong path/shape fails the request, which `_group_members` caches as `[]`
+        and `_resolve_read_restriction` turns into the same fail-closed sentinel 4.6.1 already
+        proved correct — never a silent open-access regression.
+        """
+        if group_id:
+            url = f"{self._base}/rest/api/group/by-id/{group_id}/member"
+        elif group_name:
+            url = f"{self._base}/rest/api/group/{group_name}/member"
+        else:
+            return []
+        members: list[str] = []
+        params: dict | None = {"limit": 200}
+        while url:
+            resp = self._get(url, params=params)
+            if resp.status_code >= 400:
+                log.warning(
+                    "confluence_group_members_fetch_failed",
+                    group_id=group_id,
+                    group_name=group_name,
+                    status=resp.status_code,
+                )
+                return members
+            data = resp.json()
+            for r in data.get("results", []):
+                account_id = r.get("accountId")
+                if account_id:
+                    members.append(account_id)
+            next_link = (data.get("_links", {}) or {}).get("next")
+            if not next_link:
+                break
+            url = next_link if next_link.startswith("http") else f"{self._base}{next_link}"
+            params = None  # cursor is embedded in next_link, matching list_space_pages
+        return members

@@ -18,6 +18,7 @@ from app.platform.clients.confluence_client import (
     ConfluenceGateway,
     ConfluencePage,
     ConfluencePageMeta,
+    GroupRecord,
     _resolve_read_restriction,
 )
 
@@ -69,6 +70,8 @@ class FixtureConfluenceGateway:
         # page_id -> label names / restriction account ids (None = use fixture)
         self._labels: dict[int, list[str]] = {}
         self._restrictions: dict[int, list[str]] = {}
+        # group id/name -> member accountIds (None = use the group_members.json fixture)
+        self._group_members: dict[str, list[str]] = {}
         # pages that behave as gone/inaccessible (get_page_meta/get_page return None)
         self._hidden: set[int] = set()
 
@@ -85,6 +88,10 @@ class FixtureConfluenceGateway:
 
     def set_restrictions(self, page_id: int, account_ids: list[str]) -> None:
         self._restrictions[int(page_id)] = list(account_ids)
+
+    def set_group_members(self, group_id: str, account_ids: list[str]) -> None:
+        """Override a group's fixture-backed membership (PLAN 4.6.2 test control)."""
+        self._group_members[group_id] = list(account_ids)
 
     def hide(self, page_id: int) -> None:
         """Simulate deletion / lost access: reads return None."""
@@ -179,7 +186,18 @@ class FixtureConfluenceGateway:
         data = _loader().load_restrictions(str(pid))
         if not data:
             return []
-        return _resolve_read_restriction(data.get("restrictions", {}) or {})
+        return _resolve_read_restriction(
+            data.get("restrictions", {}) or {}, self._group_members_for
+        )
+
+    def _group_members_for(self, group: GroupRecord) -> list[str]:
+        """Fixture-backed group-membership lookup (4.6.2), overridable via `set_group_members`."""
+        group_id = group.get("id") or group.get("name")
+        if not group_id:
+            return []
+        if group_id in self._group_members:
+            return list(self._group_members[group_id])
+        return list(_loader().load_group_members(group_id) or [])
 
     def get_attachments(self, page_id: int) -> list[dict]:
         data = _loader().load_attachments(str(int(page_id)))

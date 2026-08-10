@@ -27,10 +27,12 @@ one HIGH cross-principal cache leak, plus 12 more MEDIUM/LOW findings. **Phase 4
 remediation, see its own section below Phase 4) must fully complete — exit gate 4.6.16 green — before
 5.4 / the embedder bake-off / adaptive routing may resume.** Do Phase 4.6 next, in the order given.
 
-**4.6.1 done (2026-08-10, see its own section for detail) → 229 tests (was 219), boundaries clean,
-no ruff/pyright regression.** **4.6.2 is next and needs your input before it can start** (Confluence
-group-members API scope/cost — see that section) — ask before doing other Phase-4.6 work, per
-`CLAUDE.local.md` §4.
+**4.6.1 and 4.6.2 done (2026-08-10, see their own sections for detail) → 237 tests (was 219),
+boundaries clean, no ruff/pyright regression.** 4.6.2 was implemented against the fixture
+gateway per the user's explicit "implement now, verify later" choice — **live Confluence
+verification of the group-membership endpoint is still outstanding** (token still dead, blocker
+#3) and must happen before trusting 4.6.2's live behavior. **4.6.3 (idempotency cache
+cross-principal leak, HIGH) is next** — no user input needed, pure code fix.
 
 **Commit gap closed — 2026-08-10 (new session).** 4.6.1 (Confluence group-restriction fail-closed
 fix), plus ADR-0006/ADR-0007 and the six-agent `docs/rag/fixes/` audit itself, were all sitting
@@ -784,7 +786,7 @@ OCR/image reading untouched.
 | **5.1** — `CHAT_API_KEY` rotation mechanism | ✅ done | `261ac1e` | 3 tests → 197 total; overlap-window auth, rotation script, runbook |
 | **5.2** — exact-match answer caching | ✅ done | `261ac1e` | 16 tests → 213 total; `TTLCache` extracted to `shared/`, `CachingAnswerService` wraps `AnswerService`, no cross-principal leak |
 | **5.3** — prompt-injection + permission/isolation red-team | ✅ done | `92bbb7f` | 6 tests → 219 total; found + fixed a real numeric-principal space-trust bypass; no live LLM spend |
-| **4.6** — fixes-backlog remediation (16 sub-steps + exit gate) | 🔶 in progress (4.6.1/16 done) | `4d0ba70` | independent same-day audit (`docs/rag/fixes/`) found a CRITICAL ACL bypass + a HIGH cross-principal leak + 12 more findings in already-"done" phases 0-4; **gates 5.4/bake-off/adaptive-routing** until the 4.6.16 exit gate is green; 4.6.2 blocked on user input |
+| **4.6** — fixes-backlog remediation (16 sub-steps + exit gate) | 🔶 in progress (4.6.1+4.6.2/16 done) | — | independent same-day audit (`docs/rag/fixes/`) found a CRITICAL ACL bypass + a HIGH cross-principal leak + 12 more findings in already-"done" phases 0-4; **gates 5.4/bake-off/adaptive-routing** until the 4.6.16 exit gate is green; 4.6.2 live-verification still outstanding (Confluence token dead) |
 | **5** (remaining) — 5.4 live-LLM red-team + latency/cost proof, embedder bake-off, adaptive routing | ⬜ todo (blocked on 4.6) | — | 5.4 needs real API calls/spend; bake-off blocked on Confluence token + `VOYAGE_API_KEY` |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
 | **4.7** — UI component refactor: Obi widget rebuild + brand tokens (4.7.1 → 4.7.4) | ⬜ todo | — | frontend-only, `apps/web`; does not gate Phase 5; source of truth `/Users/matissevansteenbergen/Downloads/Obi chatbot UI mockups/` |
@@ -1333,16 +1335,55 @@ fixture page restricted only by group persists as inaccessible to a principal ou
 fix the existing `test_worker_sync.py::test_first_index_persists_restrictions` assertion, which
 today encodes the bug as expected behavior. Pure code fix, no migration.
 
-### 4.6.2 — Confluence group-membership expansion (CRITICAL)
+### 4.6.2 — Confluence group-membership expansion (CRITICAL) ✅ done (2026-08-10)
 
-The real fix once 4.6.1's mitigation is live: resolve each `group.results[].name`/`id` to member
-`accountId`s via the Confluence group-members API (cacheable per sync run) and union those into the
-persisted `page_restriction` principal set. **Needs your input before starting:** confirm the
-Confluence API token/scope can call the group-members endpoint, and accept the added per-sync API
-cost — if the token can't be granted that scope, 4.6.1's fail-closed behavior becomes the permanent
-answer and this sub-step is descoped (document as an accepted limitation, don't guess). Tests: a
-group member can retrieve the page; a non-member cannot; repeated pages sharing a group don't
-re-fetch membership every time.
+**Status: implemented, tested (8 new tests + 2 existing `test_worker_sync.py` assertions
+updated), boundaries clean, no ruff/pyright regression → 237 tests total (was 229). No live
+Confluence verification** — the user chose "implement now, verify later" given the token is
+still dead (blocker #3): the group-membership endpoint has only ever been exercised against a
+mocked transport, never a real Confluence instance.
+
+**Design.** `_resolve_read_restriction` (`confluence_client.py`) gains an optional
+`resolve_group: Callable[[GroupRecord], list[str]] | None` parameter. Each group on a
+restriction record is passed to it; returned account ids are unioned into the principal list
+(de-duplicated, order-preserving). Fail-closed is preserved, not weakened: no resolver (the old
+default), or a resolver that finds zero members for every group on the record, still returns
+`GROUP_RESTRICTED_SENTINEL` when no user principal is present either — a failed/empty lookup can
+never silently open access.
+
+- **`HttpConfluenceClient`** gets a per-instance `_group_members_cache: dict[str, list[str]]`
+  (the client is already documented "instantiate once and reuse" across a sync run, so this
+  cache lives exactly as long as it needs to) and `_fetch_group_members`, which calls Confluence's
+  v1 REST group-membership endpoint (`GET {base}/rest/api/group/by-id/{groupId}/member`, falling
+  back to the deprecated name-based path when a restriction record has no `id`) — REST **v2** has
+  no group-membership endpoint yet. **Flagged, not silently assumed:** this exact path/response
+  shape is unverified against a live Confluence instance; the docstring on
+  `_fetch_group_members` says so explicitly and points back at this ledger's blocker #3. A wrong
+  path/shape fails the request (4xx/5xx), which the cache stores as `[]` and which
+  `_resolve_read_restriction` turns into the same fail-closed sentinel 4.6.1 already proved
+  correct — a config/API mistake degrades to "inaccessible," never "world-readable."
+- **`FixtureConfluenceGateway`** gets a parallel fixture-backed resolver
+  (`_group_members_for`) reading a new `tests/fixtures/confluence/group_members.json`
+  (`grp-hr` → `acct-dave`, `grp-finance` → `acct-erin`), plus a `set_group_members` test mutator
+  matching the existing `set_restrictions` pattern for scenarios the static fixture can't express.
+- **`test_worker_sync.py::test_first_index_persists_restrictions`** (and
+  `test_permission_change_is_metadata_only`'s initial assertion) updated: fixture page 2002's
+  persisted principal set is now `{"acct-carol", "acct-dave", "acct-erin"}` (the user plus both
+  groups' expanded members), not just `{"acct-carol"}` — the group-membership expansion this
+  sub-step ships, landing through 4.3's existing, unmodified `page_restriction` write path.
+
+**Not done (explicit, tracked, not silent):** confirming the real endpoint path/shape and running
+a live group-member sync once the Confluence token works — re-verify before trusting this
+sub-step's live behavior, per `CLAUDE.local.md` §2. A consecutive-failure circuit breaker for
+Confluence calls (including this new endpoint) is 4.6.7's job, not duplicated here.
+
+**Shipped (tests, by file):** `app/platform/clients/tests/test_confluence_client.py` (+8): pure
+resolver expands via a fake `resolve_group` and unions across groups without duplicates; a
+resolver that finds nobody still fails closed; `HttpConfluenceClient` expands a real group-only
+restriction via a mocked v1 member endpoint; two pages sharing one group hit the member endpoint
+exactly once (cache proof); a 403 from the member endpoint stays fail-closed, not open;
+`FixtureConfluenceGateway` expands via the new `group_members.json` fixture and via the
+`set_group_members` override.
 
 ### 4.6.3 — Idempotency cache cross-principal leak (HIGH)
 

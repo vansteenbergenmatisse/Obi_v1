@@ -68,16 +68,16 @@ def test_version_guard_drops_stale_update(gateway, settings):
 def test_first_index_persists_restrictions(gateway, settings):
     """PLAN 4.3: the real principal list, not just its hash, lands in page_restriction.
 
-    Fixture `page-2002.json` also carries `grp-hr`/`grp-finance` group restrictions alongside
-    the resolvable `acct-carol` user restriction. Per PLAN 4.6.1, a page with at least one
-    resolvable user principal keeps exactly that principal — group-membership expansion is
-    deferred to PLAN 4.6.2, an explicit, accepted-for-now limitation, not silently dropped data.
-    The actual bypass PLAN 4.6.1 closes — a page restricted ONLY by group syncing as fully
-    unrestricted — is covered by
+    Fixture `page-2002.json` carries a resolvable `acct-carol` user restriction alongside
+    `grp-hr`/`grp-finance` group restrictions. Per PLAN 4.6.2, group membership is expanded via
+    `group_members.json` (`grp-hr` -> `acct-dave`, `grp-finance` -> `acct-erin`) and unioned into
+    the persisted set — the user principal is not a bypass of that expansion, both apply. The
+    fail-closed sentinel PLAN 4.6.1 introduced for a page restricted ONLY by an unresolvable group
+    is covered separately by
     `platform/clients/tests/test_confluence_client.py::test_group_only_restriction_fails_closed`.
     """
     index_page(gateway, settings, 2002, version=1)
-    assert restricted_principals(2002) == {"acct-carol"}  # fixture: page-2002.json
+    assert restricted_principals(2002) == {"acct-carol", "acct-dave", "acct-erin"}
 
 
 def test_permission_change_is_metadata_only(gateway, settings):
@@ -85,7 +85,7 @@ def test_permission_change_is_metadata_only(gateway, settings):
     before = active_child_chunks(2002)
     assert before, "expected active chunks after first index"
     scope_before = before[0].access_scope
-    assert restricted_principals(2002) == {"acct-carol"}
+    assert restricted_principals(2002) == {"acct-carol", "acct-dave", "acct-erin"}
 
     gateway.set_restrictions(2002, ["acct-brand-new-person"])  # no version bump
     enqueue_sync(2002, 1, key="sync:2002:perm")

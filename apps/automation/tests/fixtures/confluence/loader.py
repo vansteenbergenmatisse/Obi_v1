@@ -89,6 +89,20 @@ def load_attachments(page_id: str) -> dict[str, Any] | None:
     return _load_optional("attachments", str(page_id))
 
 
+@lru_cache(maxsize=1)
+def _group_members_index() -> dict[str, list[str]]:
+    path = fixtures_dir() / "group_members.json"
+    if not path.exists():
+        return {}
+    return _read_json(path)
+
+
+def load_group_members(group_id: str) -> list[str] | None:
+    """Load a fixture group's member accountIds by group id (or name), or None if unknown."""
+    index = _group_members_index()
+    return list(index[group_id]) if group_id in index else None
+
+
 def attachment_path(file_name: str) -> Path:
     """Absolute path to a raw attachment file under attachments/."""
     return fixtures_dir() / "attachments" / file_name
@@ -105,4 +119,5 @@ __all__ = [
     "load_restrictions",
     "load_attachments",
     "attachment_path",
+    "load_group_members",
 ]
