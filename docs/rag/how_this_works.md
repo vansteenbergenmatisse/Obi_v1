@@ -620,29 +620,30 @@ fix whichever drifted. Keep this file updated as Phases 3.5–5 land so it stays
 
 ---
 
-## 12. Open design discussion — Confluence source scoping
+## 12. Confluence source scoping — design approved, not yet implemented
 
-**Status: mid-brainstorm (`superpowers:brainstorming`), NOT decided, no code written.** Today (§4) a
-Confluence "source" is scoped at the **whole-space** level only — `settings.confluence_scope_list`
-(`CONFLUENCE_SPACES`) exists but has zero consumers anywhere in the app (confirmed by grep). There is
-no way to say "sync just this page" or "just this page-subtree" narrower than a full space.
+**Status (2026-08-10): design approved via `superpowers:brainstorming`; no implementation code
+written yet.** Today (§4) a Confluence "source" is scoped at the **whole-space** level only —
+`settings.confluence_scope_list` (`CONFLUENCE_SPACES`) exists but has zero consumers anywhere in the
+app (confirmed by grep). There is no way to say "sync just this page" or "just this page-subtree"
+narrower than a full space.
 
-The user wants that narrower granularity — inspired by a prior project's (Mewsy)
-`fetch_sources.json` pattern of listing folder root page IDs and recursively syncing descendants —
-but explicitly **not** a checked-in config file (flat markdown/JSON "in the plan doc" was called out
-as the wrong home). The leading direction is a **DB-backed scope table** that extends this system's
-existing `reconciliation.py` diff/deactivate engine (§4.7) and composes with the `source_id`/RLS
-isolation model (§10) — consistent with PLAN.md §1.1's "easy per-source CRUD" product goal, and with
-this repo being Postgres-native everywhere else. Mewsy's deletion check has a real gap (only fires
-when a *whole folder* is removed from its config, not an individual page removed from Confluence
-inside a still-configured folder) — this repo's `reconciliation.py` already does that correctly and
-is the base to extend, not replace.
+The approved design adds a **DB-backed `source_scope` table** (roots carry `root_type`
+space\|page, `root_id`, and `tags` for bot scoping) plus a **zero-network resolver** — it tree-walks
+the `parent_id` Confluence already returns on every page from `list_space_pages`, so no new
+Confluence API call is needed to compute a page-subtree's descendants. The resolver feeds an
+optional narrower live-set into the existing, already-correct `reconciliation.py` diff/deactivate
+engine (§4.7) — removing a root purges its now-uncovered pages via the same `deactivate_page` path
+reconciliation already uses today, with no new deletion logic. `CONFLUENCE_SPACES` becomes a
+one-time migration seed rather than a runtime dependency.
 
-**Once decided, this will change:** §3 (a new table alongside the 7), §4 (sync narrows from
-whole-space to configured page-trees), and possibly §4.7 (reconciliation's per-source scan). This
-section is a pointer, not the design — full status, research findings, and open questions live in
-`docs/rag/PLAN.md` §0 ("Side-thread — Confluence source scoping") and `docs/rag/DESIGN.md` §10. This
-file gets its real update once a design is approved and implemented.
+**Once implemented, this will change:** §3 (a new `source_scope` table alongside the 7), §4 (sync
+narrows from whole-space to configured page-trees, tags propagate to `page_source`/`chunk.tags`),
+and §4.7 (reconciliation's per-source scan gains the narrowing parameter). Full schema, resolver
+contract, and test plan are in
+`docs/superpowers/specs/2026-08-10-confluence-source-scoping-design.md`; decision history is in
+`docs/rag/PLAN.md` §0. This section is a pointer, not the design — it becomes real §3/§4 content
+once a `writing-plans` implementation plan lands and ships (proposed PLAN.md sub-step 3.5.6).
 
 ---
 

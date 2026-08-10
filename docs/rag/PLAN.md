@@ -63,12 +63,32 @@ no-key-logging, the `query_trace` one-row-per-retrieval write path, and the `rag
 `decide_refusal`/`enforce_citations` tests — all assert real behavior (actual refusal below threshold,
 actual zero-rows on wrong scope), not smoke checks. **No gaps found; nothing to fix before 4.2.**
 
-### Side-thread (not blocking Phase 4.2) — Confluence source scoping, brainstorm IN PROGRESS
+### Side-thread (not blocking Phase 4.2) — Confluence source scoping, DESIGN APPROVED
 
-**Status 2026-08-10: mid-brainstorm, nothing decided, no code written.** Following
-`superpowers:brainstorming` (triggered because this is new-feature "let's build X" territory).
-**Does not block Phase 4.2** — this only affects *ingestion scope config*, a Phase-3.5.3-adjacent
-concern; resume 4.2 independently whenever.
+**Status 2026-08-10: brainstorm concluded, design approved, spec written and committed
+(`236eb68`); no implementation code written yet — next step is `writing-plans`.** Followed
+`superpowers:brainstorming` end to end (clarifying questions → 2 approaches proposed → design
+presented in 3 sections, each approved → spec written to
+`docs/superpowers/specs/2026-08-10-confluence-source-scoping-design.md` → self-reviewed → user
+approved the spec and the commit). **Does not block Phase 4.2** — this only affects *ingestion
+scope config*, a Phase-3.5.3-adjacent concern; resume 4.2 independently whenever.
+
+**Decisions (all confirmed by the user):** narrower-than-space scoping — yes; storage — a DB-backed
+`source_scope` table, explicitly not a checked-in config file; deletion semantics — purge
+already-ingested content when its covering root is removed; ownership — one-off (user supplies
+IDs, no self-service CRUD yet); each root also carries `tags` for bot scoping, propagated to
+`page_source`/`chunk.tags` at ingestion.
+
+**Chosen approach:** a zero-network resolver (reuses `parent_id`, already returned by
+`list_space_pages`, to tree-walk descendants in-memory — no new Confluence API call needed) feeds
+an optional `allowed_page_ids` narrowing into the existing `reconciliation.py` `_sweep_space` diff/
+deactivate engine. Full schema, resolver contract, reconciliation integration, migration
+(`0004_source_scope`, `down_revision="0003_query_trace"`), and test/acceptance plan are in the spec
+— this ledger entry is a pointer, not a duplicate.
+
+**Next step:** invoke `writing-plans` on the approved spec to produce an implementation plan —
+proposed as PLAN.md sub-step **3.5.6** (extends the already-closed 3.5.3 tagging/reconciliation
+work rather than reopening it). Not started this session; no go-ahead given yet.
 
 **Trigger.** User wants Confluence sources configurable more granularly than "sync the whole
 space" — individual pages and page-subtrees ("folders"), inspired by a prior Omniboost project
@@ -96,15 +116,11 @@ folder root IDs and recursively walks + syncs their descendants.
   but returns `text=""`; OCR is never invoked. Tracked here so it isn't lost; **not in scope now**,
   revisit alongside Phase 5 or whenever OCR becomes a concrete requirement.
 
-**Open question asked, not yet answered:** does the user want page/page-tree scoping narrower than
-a whole space (confirm yes/no), and if yes — storage approach. Leading candidate under
-consideration: a **DB-backed source-scope table** (extends the existing `reconciliation.py` diff
-engine + composes with the Phase 3.5 `source_id`/RLS model) instead of a static config file like
-Mewsy's — this repo is Postgres-native everywhere else, and PLAN.md §1 already commits to "easy
-per-source CRUD" as a product goal, which a checked-in file serves poorly (redeploy to change scope,
-no single source of truth). Not yet decided — still mid brainstorming-skill checklist (clarifying
-questions → propose approaches → present design → write spec → self-review → user-approves-spec
-→ only then `writing-plans`). **No implementation before spec approval.**
+**Resolved** (was: "open question, not yet answered" — see Decisions above). All clarifying
+questions answered, both proposed approaches evaluated, the DB-backed-table approach chosen (matches
+PLAN.md §1's "easy per-source CRUD" goal), design presented and approved section by section, spec
+written, self-reviewed, and approved by the user. **No implementation before a plan exists** —
+`writing-plans` is the next, not-yet-taken step.
 
 ### Progress (as of 2026-08-07, branch `feat/rag-phase-3.5`; re-verified 2026-08-10)
 

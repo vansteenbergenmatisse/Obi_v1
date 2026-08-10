@@ -347,12 +347,15 @@ ruff/pyright at the ADR-0003 D1 baseline (2/25 ruff, 31/1 pyright) — bring tou
 reformat untouched files. `make check` stays green. Migrations are reversible and ordered from
 `0001_core_schema`.
 
-## 10. Open design discussion (NOT decided) — Confluence source scoping
+## 10. Confluence source scoping — design approved, not yet implemented
 
-A brainstorm is in progress (per `superpowers:brainstorming`) on letting Confluence sync be scoped
-to individual pages / page-subtrees, not just whole spaces — inspired by a prior project's
-`fetch_sources.json` pattern, adapted to reuse this repo's already-correct
-`reconciliation.py` diff/deactivate logic rather than that project's weaker deletion check. **Nothing
-here is decided; no code exists yet.** Full research findings, the open question, and status live in
-`docs/rag/PLAN.md` §0 ("Side-thread — Confluence source scoping"). This section will be filled in
-(or this pointer removed in favor of real sections) once a design is approved.
+A brainstorm (per `superpowers:brainstorming`) on letting Confluence sync be scoped to individual
+pages / page-subtrees, not just whole spaces, concluded 2026-08-10 with an **approved design**: a
+DB-backed `source_scope` table + a zero-network resolver (tree-walks the `parent_id` already
+returned by `list_space_pages` — no new Confluence API call) feeding an optional narrowing into the
+existing, already-correct `reconciliation.py` diff/deactivate engine, with purge-on-removal and
+`tags`-based bot scoping. **No implementation code exists yet** — the full schema, resolver
+contract, reconciliation integration, migration, and test plan are in
+`docs/superpowers/specs/2026-08-10-confluence-source-scoping-design.md`; status/decision history is
+in `docs/rag/PLAN.md` §0. This section becomes real §3/§10 content once implemented (proposed
+PLAN.md sub-step 3.5.6).
