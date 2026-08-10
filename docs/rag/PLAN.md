@@ -31,7 +31,7 @@ Fresh context: read this ledger + `docs/rag/DESIGN.md` (§2 target pipeline, §5
 
 ### 4.2 — Answer workflow ✅ done (2026-08-10)
 
-**Status: implemented, unit- and integration-tested, not yet committed.** `AnswerService`
+**Status: implemented, unit- and integration-tested, committed (`4cc2ee2`).** `AnswerService`
 (`app/features/rag_agent/application/answer_service.py`) implements the fixed pipeline: rewrite
 (`AnthropicQueryRewriter`, fails open to the verbatim query on an `AnthropicError`) → RLS-scoped
 retrieve/RRF/rerank via `HybridRetriever.retrieve_with_context` (chunk ids + scores now surfaced,
@@ -200,7 +200,7 @@ OCR/image reading untouched.
 | **3.5.5** — measure rerank lift + Phase 3.5 exit gate | ✅ done | `1b6e94c` | 120 tests; `evaluate_rerank_lift` + live Cohere run; **lift −0.123 ndcg@10 on the saturated fixture — expected, real lift is a Phase-5 gold-set measurement** |
 | **4.1** — `rag_agent` scaffold: DTOs + refusal/citation domain core | ✅ done | `e4490aa` | 10 unit tests → 130 total; public root + FEATURES.md; boundaries clean; ruff/pyright 0 on new files |
 | **3.5.6** — Confluence source scoping (`source_scope` table) | ✅ done | `0f1a0d7` | 14 tests → 144 total; migration 0004 reversible; boundaries clean; no ruff/pyright regression |
-| **4.2** — answer workflow (`AnswerService`) | ✅ done | *(uncommitted)* | 20 tests → 164 total; boundaries clean; no ruff/pyright regression; DB-integration-tested, no live LLM calls |
+| **4.2** — answer workflow (`AnswerService`) | ✅ done | `4cc2ee2` | 20 tests → 164 total; boundaries clean; no ruff/pyright regression; DB-integration-tested, no live LLM calls |
 | **4.3–4.5** — principal ACL, `POST /chat`, web UI | ⏳ next | — | HTTP+LLM surface (4.4) → full security controls required |
 | **5** — optimization & proof | ⬜ todo | — | caching, adaptive routing, red-team, latency/cost |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
