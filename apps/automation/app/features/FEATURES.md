@@ -115,12 +115,12 @@ security_baseline:
       tier: STATE-MUTATING + LLM-CALL
       controls:
         C1_auth:        { status: covered, mechanism: "shared-secret chat_api_key via Authorization: Bearer, constant-time compare, fail-closed (503) when unset" }
-        C2_rate_limit:  { status: covered, mechanism: "SlidingWindowRateLimiter keyed by principal (if supplied) else client IP, chat_rate_limit_per_minute" }
+        C2_rate_limit:  { status: covered, mechanism: "SlidingWindowRateLimiter keyed by client IP only (never the caller-reported principal — PLAN 4.6.4 fix), chat_rate_limit_per_minute, bounded to chat_rate_limiter_max_tracked_keys tracked IPs" }
         C3_input:       { status: covered, mechanism: "Pydantic body (extra=forbid); history non-empty + ends on a user turn; chat_max_history_turns / chat_max_message_chars; all-digit principal rejected (PLAN 5.3 red-team finding)" }
         C4_timeout:     { status: covered, mechanism: "AnthropicMessagesClient timeout/retry/breaker (answer_timeout_seconds/max_retries/breaker_threshold); retrieval's embedder/reranker already covered (3.5.2/3)" }
         C5_output_rate: { status: covered, mechanism: "generation token cap + chat_output_max_answer_chars defensive re-cap + paced SSE chunks (chat_token_chunk_chars/chat_stream_interval_ms)" }
         C6_redaction:   { status: covered, mechanism: "redact_pii scrubs the assembled prompt before every rewrite/generation call" }
-        C7_idempotency: { status: covered, mechanism: "optional Idempotency-Key header, in-process TTL cache replays the cached Answer" }
+        C7_idempotency: { status: covered, mechanism: "optional Idempotency-Key header hashed with (principal, history) into an in-process TTL cache bounded by chat_idempotency_cache_max_entries (PLAN 4.6.3/4.6.4), replays the cached Answer" }
         C8_concurrency: { status: opted_out, justification: "each request creates its own query_trace row; no shared-resource read-modify-write" }
         C9_audit:       { status: covered, mechanism: "structured chat_request/chat_request_replayed log lines (conversation id, trace id, refused, citation count, latency) — never the raw message or answer text" }
         C10_abuse:      { status: covered, mechanism: "rate limit + history/message-length caps + AnthropicMessagesClient abuse cap (answer_max_input_chars) + breaker" }

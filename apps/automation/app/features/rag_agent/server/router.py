@@ -12,8 +12,10 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
                               compares always run, never short-circuited) so a key can rotate
                               through a bounded overlap window without an outage — see
                               `docs/runbooks/chat-api-key-rotation.md` (PLAN 5).
-  C2_rate_limit:  covered   - per-principal (if the caller supplies one) else per-client-IP
-                              sliding window (chat_rate_limit_per_minute).
+  C2_rate_limit:  covered   - per-client-IP sliding window (chat_rate_limit_per_minute). Keyed on
+                              IP only, never the caller-reported `principal` (PLAN 4.6.4 fix — a
+                              principal-first key let a caller bypass the limit entirely by
+                              rotating principal on every request).
   C3_input:       covered   - Pydantic body (extra=forbid); history non-empty + ends on a user
                               turn; per-turn length cap + history-length cap (chat_max_*); an
                               all-digit `principal` is rejected (PLAN 5.3 red-team finding — see
@@ -169,7 +171,10 @@ def get_writer_db() -> Iterator[Session]:
 def _chat_rate_limiter(request: Request, settings: Settings) -> SlidingWindowRateLimiter:
     limiter = getattr(request.app.state, "chat_rate_limiter", None)
     if limiter is None:
-        limiter = SlidingWindowRateLimiter(settings.chat_rate_limit_per_minute)
+        limiter = SlidingWindowRateLimiter(
+            settings.chat_rate_limit_per_minute,
+            max_tracked_keys=settings.chat_rate_limiter_max_tracked_keys,
+        )
         request.app.state.chat_rate_limiter = limiter
     return limiter
 
@@ -177,7 +182,10 @@ def _chat_rate_limiter(request: Request, settings: Settings) -> SlidingWindowRat
 def _idempotency_cache(request: Request, settings: Settings) -> TTLCache[str, Answer]:
     cache = getattr(request.app.state, "chat_idempotency_cache", None)
     if cache is None:
-        cache = TTLCache[str, Answer](settings.chat_idempotency_ttl_seconds)
+        cache = TTLCache[str, Answer](
+            settings.chat_idempotency_ttl_seconds,
+            max_entries=settings.chat_idempotency_cache_max_entries,
+        )
         request.app.state.chat_idempotency_cache = cache
     return cache
 
@@ -198,9 +206,11 @@ def _verify_api_key(request: Request, settings: Settings) -> None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or missing API key")
 
 
-def _rate_limit_key(request: Request, principal: str | None) -> str:
-    if principal:
-        return f"principal:{principal}"
+def _rate_limit_key(request: Request) -> str:
+    """Client IP only (PLAN 4.6.4 fix). A caller-reported `principal` is untrusted free text — an
+    earlier version keyed on it when present, so any caller could defeat the limit outright by
+    sending a different `principal` on every request; IP is the one dimension the caller cannot
+    freely rotate at will."""
     client_ip = request.client.host if request.client else "unknown"
     return f"ip:{client_ip}"
 
@@ -322,7 +332,7 @@ async def post_chat(
     _verify_api_key(request, settings)
 
     limiter = _chat_rate_limiter(request, settings)
-    if not limiter.allow(_rate_limit_key(request, body.principal)):
+    if not limiter.allow(_rate_limit_key(request)):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "rate limited")
 
     _validate_history(body, settings)
@@ -348,7 +358,7 @@ async def patch_chat_feedback(
     _verify_api_key(request, settings)
 
     limiter = _chat_rate_limiter(request, settings)
-    if not limiter.allow(_rate_limit_key(request, None)):
+    if not limiter.allow(_rate_limit_key(request)):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "rate limited")
 
     update_query_trace_feedback(session, trace_id, body.feedback)

@@ -27,12 +27,13 @@ one HIGH cross-principal cache leak, plus 12 more MEDIUM/LOW findings. **Phase 4
 remediation, see its own section below Phase 4) must fully complete — exit gate 4.6.16 green — before
 5.4 / the embedder bake-off / adaptive routing may resume.** Do Phase 4.6 next, in the order given.
 
-**4.6.1, 4.6.2, and 4.6.3 done (2026-08-10, see their own sections for detail) → 239 tests (was
-219), boundaries clean, no ruff/pyright regression.** 4.6.2 was implemented against the fixture
-gateway per the user's explicit "implement now, verify later" choice — **live Confluence
+**4.6.1, 4.6.2, 4.6.3, and 4.6.4 done (2026-08-10, see their own sections for detail) → 248 tests
+(was 219), boundaries clean, no ruff/pyright regression.** 4.6.2 was implemented against the
+fixture gateway per the user's explicit "implement now, verify later" choice — **live Confluence
 verification of the group-membership endpoint is still outstanding** (token still dead, blocker
-#3) and must happen before trusting 4.6.2's live behavior. **4.6.4 (rate-limiter/idempotency
-hardening batch, MEDIUM-HIGH + MEDIUM) is next** — no user input needed, pure code fix.
+#3) and must happen before trusting 4.6.2's live behavior. **4.6.5 (`rollback_to` doesn't restore
+`PageSource`'s cached hashes, MEDIUM-HIGH) is next** — has a "needs your input" item, see its
+section below.
 
 **Commit gap closed — 2026-08-10 (new session).** 4.6.1 (Confluence group-restriction fail-closed
 fix), plus ADR-0006/ADR-0007 and the six-agent `docs/rag/fixes/` audit itself, were all sitting
@@ -1413,21 +1414,63 @@ unchanged (34 errors, identical file list — none touch `router.py` or
 `test_chat_endpoint.py`, confirmed by listing error-file paths directly); `alembic current` →
 `0005_page_restriction (head)`, no migration (pure code fix, no schema change).
 
-### 4.6.4 — Rate-limiter/idempotency hardening batch (MEDIUM-HIGH + MEDIUM, batched)
+### 4.6.4 — Rate-limiter/idempotency hardening batch (MEDIUM-HIGH + MEDIUM, batched) ✅ done (2026-08-10)
 
-Same file cluster (`rag_agent/server/router.py`, `apps/automation/app/shared/rate_limiter.py`),
-reviewed together:
-- `_rate_limit_key` prefers the untrusted, caller-supplied `principal` over IP — trivially bypassed
-  by rotating `principal`, defeating `chat_rate_limit_per_minute`. Fix: key primarily on IP; fold
-  `principal` in only as a non-bypassable secondary suffix, or drop it from the key entirely.
-- `SlidingWindowRateLimiter` never prunes empty buckets → unbounded memory growth. Fix: prune
-  zero-length buckets in `allow()`, and/or add a bounded eviction policy.
-- The idempotency `TTLCache` in `router.py` has no `max_entries` bound (unlike its Phase-5 sibling).
-  Fix: add a `chat_idempotency_cache_max_entries` setting, mirroring `chat_answer_cache_max_entries`.
+**Status: implemented, tested (7 new `SlidingWindowRateLimiter` unit tests + 2 new
+`test_chat_endpoint.py` HTTP-level tests), boundaries clean, no ruff/pyright regression → 248 tests
+total (was 239). Pure code fix, no migration, exactly as scoped.**
 
-Tests: same IP + rotating `principal` within one window → the Nth request is 429; many distinct
-limiter keys pushed then drained → bucket count stays bounded; pushing more than the configured max
-distinct idempotency keys → oldest evicted. Pure code fix, no migration.
+**Fix 1 — `_rate_limit_key` dropped `principal` entirely, IP only.** The old key preferred
+`principal:{principal}` when supplied, else `ip:{client_ip}` — since `principal` is untrusted
+caller-self-reported free text (same trust class the 5.3 red-team finding already flagged), any
+caller could defeat `chat_rate_limit_per_minute` outright by sending a different `principal` on
+every request. `_rate_limit_key(request)` (`rag_agent/server/router.py`) now always returns
+`ip:{client_ip}` — the one dimension a caller cannot freely rotate. Both call sites (`POST /chat`,
+`PATCH /chat/{trace_id}/feedback`) updated; the `security_baseline` docstring and
+`FEATURES.md`'s YAML mirror both corrected (they previously documented the bypassable behavior as
+the intended design).
+
+**Fix 2 — `SlidingWindowRateLimiter` bounded memory (`app/shared/rate_limiter.py`).** Two
+complementary mechanisms, since either alone misses a case the other catches: a key whose bucket
+empties out (every hit aged past the window) is now dropped from the dict opportunistically the
+next time that same key is looked up — but a key that is looked up exactly once and never again
+(many distinct one-shot IPs) would never trigger that prune, so a new optional
+`max_tracked_keys` constructor param evicts the oldest-inserted key outright once the dict exceeds
+it, mirroring `TTLCache.max_entries`'s same oldest-first bound and rationale. New
+`chat_rate_limiter_max_tracked_keys` setting (default 1000) wires it for the chat limiter;
+`webhook.py`'s limiter is untouched (unbounded, `max_tracked_keys=None` default) — its key is
+already IP-only, and this fix's scope is the file cluster the finding named, not every consumer of
+the shared primitive. Added `__len__` for testability.
+
+**Fix 3 — idempotency `TTLCache` gained a `max_entries` bound.** New
+`chat_idempotency_cache_max_entries` setting (default 500, matching
+`chat_answer_cache_max_entries`'s existing precedent exactly); `_idempotency_cache` now passes it
+through. `TTLCache` itself already supported `max_entries` (built for the Phase-5 answer cache) —
+this was a wiring gap at one of its two call sites, not a missing capability.
+
+**Shipped (tests, by file):**
+- `app/shared/tests/test_rate_limiter.py` (new, 7 tests): window enforcement (allow-until-max,
+  re-allow after the window elapses, independent distinct keys); the two PLAN 4.6.4 fixes directly
+  — an expired bucket is pruned from the dict on next access, bucket count stays bounded across 50
+  distinct one-shot keys with `max_tracked_keys=10`, oldest-key-evicted-first, and unbounded
+  behavior is preserved when `max_tracked_keys` is `None` (the pre-existing webhook.py call site's
+  shape).
+- `confluence_sync/tests/test_chat_endpoint.py` (+2):
+  `test_rate_limit_is_keyed_by_ip_not_by_rotating_principal` (same IP, `principal` "acct-alice"
+  then "acct-bob" within a `chat_rate_limit_per_minute=1` window → the second request is 429, which
+  would have passed under the pre-fix principal-first key);
+  `test_idempotency_cache_evicts_the_oldest_key_once_max_entries_exceeded`
+  (`chat_idempotency_cache_max_entries=2`, three distinct `Idempotency-Key` headers, then replaying
+  the first (now-evicted) key returns a fresh trace id, not the original cached `Answer`).
+
+**Verification:** `make check` (from repo root) → **248 passed** (was 239), boundaries clean;
+`ruff check` unchanged (2 errors, both pre-existing in `alembic/env.py`/`0001_core_schema.py`);
+`ruff format --check` unchanged (17 unformatted — the new `test_rate_limiter.py` and the edited
+`test_chat_endpoint.py` were both formatted before this check, so the count didn't regress);
+`pyright` unchanged (34 errors, identical file list — none touch `router.py`, `settings.py`,
+`rate_limiter.py`, or either touched/new test file, confirmed by listing error-file paths
+directly); `alembic current` → `0005_page_restriction (head)`, no migration (pure code fix, no
+schema change).
 
 ### 4.6.5 — `rollback_to` doesn't restore `PageSource`'s cached hashes (MEDIUM-HIGH)
 

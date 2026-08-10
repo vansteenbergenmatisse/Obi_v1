@@ -181,6 +181,50 @@ def test_rate_limit_returns_429(gateway, settings: Settings) -> None:
     assert second.status_code == 429
 
 
+def test_rate_limit_is_keyed_by_ip_not_by_rotating_principal(gateway, settings: Settings) -> None:
+    """PLAN 4.6.4 fix: the limiter used to key on `principal` (if supplied) before falling back to
+    client IP — trivially bypassed by sending a different `principal` on every call. Keying on IP
+    only means a rotating principal from the same caller still hits the same bucket."""
+    chat_settings = _chat_settings(settings, chat_rate_limit_per_minute=1)
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+    first = client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": "hi"}], "principal": "acct-alice"},
+        headers=_auth(),
+    )
+    second = client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": "hi"}], "principal": "acct-bob"},
+        headers=_auth(),
+    )
+    assert first.status_code == 200
+    assert second.status_code == 429
+
+
+def test_idempotency_cache_evicts_the_oldest_key_once_max_entries_exceeded(
+    gateway, settings: Settings
+) -> None:
+    """PLAN 4.6.4 fix: the idempotency cache had no `max_entries` bound (unlike its Phase-5
+    sibling, the exact-match answer cache) — unbounded distinct Idempotency-Key headers would grow
+    it forever. Once the bound is exceeded, the oldest key stops being a cache hit."""
+    _index_corpus(gateway, settings)
+    chat_settings = _chat_settings(settings, chat_idempotency_cache_max_entries=2)
+    service = _grounded_service(gateway, chat_settings)
+    client = _client_with_service(chat_settings, service)
+    body = {"history": [{"role": "user", "content": "How do I request access?"}]}
+
+    first = _parse_sse(
+        client.post("/chat", json=body, headers={**_auth(), "idempotency-key": "k1"}).text
+    )
+    client.post("/chat", json=body, headers={**_auth(), "idempotency-key": "k2"})
+    client.post("/chat", json=body, headers={**_auth(), "idempotency-key": "k3"})  # evicts k1
+
+    replay = _parse_sse(
+        client.post("/chat", json=body, headers={**_auth(), "idempotency-key": "k1"}).text
+    )
+    assert replay[-1]["traceId"] != first[-1]["traceId"]  # k1 was evicted, not replayed
+
+
 def test_grounded_answer_streams_start_token_citations_done(gateway, settings: Settings) -> None:
     _index_corpus(gateway, settings)
     chat_settings = _chat_settings(settings)

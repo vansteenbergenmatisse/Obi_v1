@@ -100,13 +100,17 @@ class Settings(BaseSettings):
     # accepted alongside chat_api_key during a rotation's overlap window (PLAN 5); empty = no
     # second key accepted. Drop back to "" once every caller has switched to the new chat_api_key.
     chat_api_key_previous: str = ""
-    chat_rate_limit_per_minute: int = 20  # C2, keyed by principal (if supplied) else client IP
+    chat_rate_limit_per_minute: int = 20  # C2, keyed by client IP (never the caller-reported
+    # principal alone — that would let a caller bypass the limit by rotating principal, PLAN 4.6.4)
+    chat_rate_limiter_max_tracked_keys: int = 1000  # bounds in-process memory across distinct IPs
     chat_max_history_turns: int = 20  # C3/C10: caller-supplied conversation turns per request
     chat_max_message_chars: int = 4000  # C3: per-turn content length
     chat_output_max_answer_chars: int = 8000  # C5: defensive cap on the streamed answer size
     chat_token_chunk_chars: int = 40  # C5: SSE token-event chunk size (paces bytes/sec streamed)
     chat_stream_interval_ms: int = 15  # C5: delay between SSE token events
     chat_idempotency_ttl_seconds: float = 300.0  # C7: Idempotency-Key replay window
+    chat_idempotency_cache_max_entries: int = 500  # PLAN 4.6.4: bounds in-process memory, mirrors
+    # chat_answer_cache_max_entries below (the idempotency cache had no bound before this fix)
 
     # PLAN 5: exact-match answer cache in front of AnswerService (answer_cache.py). Same TTL
     # default/shape as chat_idempotency_ttl_seconds — a bounded staleness tradeoff already
