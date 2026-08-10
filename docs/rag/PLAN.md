@@ -16,18 +16,210 @@ fix here as the next task; update this ledger after each phase.
 
 ### ▶ Resume here (after `/compact-ultra`) — first things first
 
-**Phase 3.5 is COMPLETE (exit gate MET, verification re-run PASSED); 3.5.6 (Confluence source
-scoping) also shipped 2026-08-10, committed `0f1a0d7`. Phase 4 is IN PROGRESS: 4.1 + 4.2 done.**
-Next is **4.3** — real principal ACL storage (replace the fixture-backed `PrincipalPermissionPolicy`
-with persisted principal lists, enforced pre-search alongside RLS).
+**Phase 3.5 is COMPLETE. Phase 4 is IN PROGRESS: 4.1 + 4.2 + 4.3 + 4.4 done.**
+Next is **4.5** — the web chat UI (`apps/web/src/features/chat`) + extending the
+`packages/contracts` chat contract to match what 4.4 actually built (see 4.4's "contract gap"
+note below — this is real, not optional polish).
 
 Fresh context: read this ledger + `docs/rag/DESIGN.md` (§2 target pipeline, §5 accuracy stack) +
-`docs/adr/0005*`, then:
+`docs/adr/0005*` + `apps/automation/app/features/rag_agent/server/router.py`'s `security_baseline`
+docstring, then begin 4.5.
 
-1. **Begin Phase 4.3** — persist principal lists (not just the access-scope hash) and enforce them
-   pre-search, alongside the 3.5 RLS layer (both apply — see DESIGN.md §3). The `POST /chat` **HTTP+LLM
-   surface is 4.4** — invoke `securing-http-and-llm-endpoints` and apply the full control set there
-   (rule 2).
+**Blocker for 4.5/deploy (not code — a value only the user can set):** `CHAT_API_KEY` in `.env`
+is unset (placeholder `changeme` in `.env.example`). The endpoint fails closed (503) until it's
+set to a real shared secret, and the same value must be configured wherever `apps/web`'s
+`POST /api/chat` proxy runs so it can authenticate to the automation API.
+
+**Pre-4.5 verification gate — 2026-08-10, PASS (both 4.3 and 4.4 were implemented but sitting
+uncommitted; verified before committing, not after).** `make check` green at 194; `make boundaries`
+clean (checked directly via `tools/check_feature_boundaries.py`, not just through `make check`).
+Ruff/pyright diffed against the pre-4.3 baseline by file, not just by count: ruff-check unchanged
+(2 errors, both pre-existing in `alembic/env.py`/`0001_core_schema.py`); pyright unchanged (34
+errors, identical file list — zero new errors on any 4.3/4.4-touched or new file). Migration
+`0005_page_restriction` round-tripped `head → -1 → head`. Re-read `server/router.py`'s
+`security_baseline` docstring against the actual code: constant-time auth compare + fail-closed
+503 confirmed at `router.py`, `redact_pii` confirmed wired at both `llm_client.py` Anthropic call
+sites, audit log lines (`chat_request`/`chat_feedback`) confirmed to carry only ids/counts/latency
+— never raw message or answer text. Confirmed all 4 named 4.3 acceptance tests
+(`test_permission_enforcement_is_db_backed_not_fixture_fed`,
+`test_first_index_persists_restrictions`, `test_dropped_restriction_leaves_page_unrestricted`,
+`test_permission_change_is_metadata_only`) and the 4.4 breaker/abuse-cap adversarial tests
+(`test_circuit_breaker_opens_after_consecutive_failures`, `test_success_resets_the_breaker`,
+`test_input_abuse_cap_rejects_oversized_prompt`) exist and pass. **One real gap found and fixed:**
+the 4.3-added `restricted_principals` helper in `confluence_sync/tests/_helpers.py` was left
+ruff-unformatted (the file was already in the pre-existing unformatted baseline, so it didn't
+regress the count, but the new code wasn't brought clean) — formatted in place, dropping the repo
+unformatted-file count from 18 to 17, re-verified 194 tests still pass. Then split the combined
+uncommitted diff into two independently-verified commits, stashing each phase's files to confirm
+the *other* phase's commit stands alone and green before combining: **4.3 alone → 167 passed**
+(`da76af9`), **4.3+4.4 → 194 passed** (`f7c1bdb`), boundaries clean at both points. **No other gaps
+found; 4.5 may begin.**
+
+### 4.4 — `POST /chat` SSE + `PATCH /chat/{trace_id}/feedback` ✅ done (2026-08-10)
+
+**Status: implemented, tested (12 new endpoint tests + 5 new client/PII unit tests), boundaries
+clean, no ruff/pyright regression.** `app/features/rag_agent/server/router.py` wires the 4.2
+`AnswerService` (built from real settings via `main.build_answer_service`, sharing one
+`AnthropicMessagesClient` between the rewrite and generation calls) to a live HTTP surface with
+the full `securing-http-and-llm-endpoints` control set applied — see the module's
+`security_baseline` docstring for the per-control mechanism, mirrored into
+`FEATURES.md`'s YAML block.
+
+**Design decisions (the plan text left the concrete mechanism open):**
+1. **Streaming is chunked-replay, not per-model-token streaming.** `AnswerService.answer()` is a
+   synchronous, fully-buffered pipeline (rewrite → retrieve → CRAG → refusal → generate → citation
+   enforcement) — citation enforcement runs on the *complete* generated text, stripping uncited
+   sentences. Streaming raw model tokens as they generate would risk showing text that later gets
+   retracted. Instead, `POST /chat` runs the full pipeline once, then SSE-streams the final,
+   already-citation-enforced `Answer.text` in fixed-size chunks (`chat_token_chunk_chars`) paced
+   by `chat_stream_interval_ms` — a real incremental "typewriter" delivery for the UI, but not a
+   TTFT improvement. Genuine incremental generation-time streaming (needed to hit the Phase-5 TTFT
+   targets) is deferred to Phase 5, where it belongs per §3's proof list.
+2. **The server is stateless per request — no server-side conversation store.** The caller
+   (eventually `apps/web`) resends the full turn `history` on every call; there is no
+   `conversation_id`-keyed history table. `conversationId` is a caller-supplied-or-minted
+   correlation id only. This is *simpler* than adding a `query_trace.conversation_id` +
+   reconstruction path, and it matches `AnswerService.answer(history, scope)`'s existing,
+   already-tested signature exactly — no changes needed to 4.2's answer service or trace schema.
+3. **C1 auth is a shared secret (`CHAT_API_KEY`), not end-user login.** There is no end-user
+   identity/session system in this repo yet (confirmed: no auth/session code anywhere in
+   `apps/web` or `apps/automation`). `principal` in the request body is caller-self-reported and
+   trusted only as far as C1 trusts the calling web proxy. This is safe, not a hole: per
+   ADR-0004's default-deny model, `PrincipalPermissionPolicy.allowed()` already treats an
+   absent/unverified principal as "only unrestricted pages visible" — never a bypass. Real
+   per-user identity is a later, separate phase.
+4. **C6 PII redaction is pattern-based** (`rag_agent/domain/pii.py`: email/phone/SSN/card-number
+   regexes), applied to the fully-assembled prompt right before it leaves `llm_client.py`'s two
+   Anthropic call sites — not inside `AnswerService`, so retrieval/CRAG continue comparing the
+   verbatim query and 4.2's already-tested control flow is untouched. Scope is stated plainly in
+   the module docstring: this is a defensive net for the *user's* query text, not a
+   content-governance pass over the retrieved Confluence evidence (same posture ingestion's C6
+   opt-outs already take).
+5. **C4 breaker + abuse cap added to the shared `AnthropicMessagesClient`** (previously
+   timeout+retry only) — it now backs an HTTP-exposed call for the first time. Both default to
+   effectively-off (`breaker_threshold=1_000_000`, `max_input_chars=None`) so the existing
+   contextualization call site (Phase 3) is unaffected; 4.4's chat client construction sets both
+   explicitly.
+6. **`SlidingWindowRateLimiter` moved from `confluence_sync/server/webhook.py` to
+   `app/shared/rate_limiter.py`** — the chat endpoint is a second, independent consumer of a
+   generic technical primitive with no confluence-specific behavior (the exact "two consumers"
+   proportionality trigger for `shared/`). Generalized to accept a `window_seconds` param (default
+   60.0, matching prior behavior) so the same class serves both a per-minute and (if needed later)
+   a coarser window.
+7. **C7 idempotency is a real in-process TTL cache**, not a stub: an optional `Idempotency-Key`
+   header, when present, replays the cached `Answer` (same `trace_id`) within
+   `chat_idempotency_ttl_seconds` instead of re-running retrieval/generation — proven by a test
+   asserting the second call's `traceId` equals the first's.
+
+**Contract gap for 4.5 (real, not optional):** the Phase-1 hand-written `packages/contracts`
+`ChatRequest`/`ChatStreamEvent` types predate this design and don't match it —
+`ChatRequest` has no `history` field (4.4's endpoint requires one), and `ChatDoneEvent` has no
+`traceId` (needed by the feedback PATCH) or `refused` flag (needed by the UI to route to a human).
+`Citation.version` is also required in the TS contract but nothing in the retrieval pipeline
+surfaces a page version onto a citation — relax it to optional rather than threading a new field
+through `retriever.py`/`search_repo.py` for a nice-to-have. 4.5 must extend `chat.yaml` +
+`src/index.ts` to add `history`, `traceId`, `refused`, and relax `version`, matching what
+`POST /chat` actually emits (see `server/router.py`'s `_stream_answer`).
+
+**Shipped:**
+- `app/features/rag_agent/server/router.py` (new): `POST /chat` (SSE `start`/`token`/`citations`/
+  `done`/`error`) + `PATCH /chat/{trace_id}/feedback`; auth, rate limiting, input validation,
+  idempotency cache, audit logging all in this module.
+- `app/features/rag_agent/domain/pii.py` (new): `redact_pii`.
+- `app/features/rag_agent/infrastructure/llm_client.py`: both Anthropic call sites now redact
+  their assembled prompt before sending.
+- `app/platform/clients/anthropic_client.py`: `AnthropicMessagesClient` gains
+  `breaker_threshold`/`max_input_chars` (C4/C10), defaulting to off for existing call sites.
+- `app/shared/rate_limiter.py` (new, moved from `confluence_sync/server/webhook.py`):
+  `SlidingWindowRateLimiter`, generalized with a `window_seconds` param.
+- `app/main.py`: `build_answer_service(settings)` composes the real `HybridRetriever` +
+  `AnthropicQueryRewriter`/`AnthropicAnswerGenerator` + `AnswerService`; wired onto
+  `app.state.answer_service` and the chat router included alongside the confluence router.
+- `app/platform/config/settings.py`: `answer_*` (timeout/retries/breaker/abuse-cap) and `chat_*`
+  (api key, rate limit, history/message caps, output cap, streaming pace, idempotency TTL)
+  settings; mirrored in `.env.example`.
+- Tests: 6 PII unit tests, 4 llm_client redaction/fail-open tests, 5 `AnthropicMessagesClient`
+  breaker/abuse-cap tests, 12 `confluence_sync/tests/test_chat_endpoint.py` DB-integration tests
+  (auth missing/wrong/unconfigured, history-end-on-user-turn, history-length cap, message-length
+  cap, rate limit, the real SSE stream against the indexed corpus with token-reassembly matching
+  the done answer, refusal surfacing `refused: true`, idempotency replay, feedback PATCH persisting
+  to `query_trace`, feedback auth/validation) → **194 tests total** (was 167 at 4.3). `make
+  boundaries` clean. Ruff exactly at baseline (2 errors / 17 unformatted, ≤ 25/2 — fewer
+  unformatted than the 19 baseline; the pre-phase-4.5 verification pass additionally formatted a
+  4.3-added function in `confluence_sync/tests/_helpers.py` that had been missed). Pyright:
+  34 errors total, identical file list to the pre-4.4 baseline — zero new errors on any touched or
+  new file (verified by diffing the per-file error listing, not just the count).
+
+**Not done (explicit non-goals, deferred to where the plan already puts them):** the web chat UI
+and contract extension (4.5); genuine per-model-token streaming for TTFT (Phase 5); real end-user
+login/identity (a later, separate phase — not named in the plan yet); NER-grade PII detection
+(the regex pass is intentionally basic, documented in `pii.py`).
+
+### 4.3 — Real principal ACL storage ✅ done (2026-08-10)
+
+**Status: implemented, unit- and integration-tested, committed (`da76af9`).** Replaced the
+fixture-fed `PrincipalPermissionPolicy`'s data source with a real, queryable per-page ACL: a new
+`page_restriction` table (page_id, principal — presence restricts, absence means unrestricted),
+written by `confluence_sync`'s `handle_sync_page` whenever a page's restriction list actually
+changes (or on first index), and read fresh per search by `HybridRetriever._search` — never the
+whole corpus. Source-level RLS (3.5) and this page-level ACL are distinct, both-apply layers per
+ADR-0004/0005, exactly as designed.
+
+**Design decisions (not scope changes — the plan text left the concrete schema open):**
+1. **Schema:** `page_restriction(page_id, principal)`, composite PK, FK to `page_source.page_id
+   ON DELETE CASCADE`. Migration `0005_page_restriction`, raw DDL mirroring 0004's style
+   (schema-only, idempotent `CREATE TABLE IF NOT EXISTS`). `rag_reader`'s existing
+   `GRANT SELECT ON ALL TABLES` + `ALTER DEFAULT PRIVILEGES` (01-roles.sql) cover the new table
+   automatically — no separate grant migration needed.
+2. **Write path lives in `confluence_sync`, ownership stays with `ingestion`** — same convention
+   already established for `page_source`/`chunk`: `sync_service.py` writes the ORM model directly
+   (platform/db is shared vocabulary, ADR-0003 D5), `ingestion`'s FEATURES.md block documents it
+   as the table owner. Write is a full delete+insert replace (not a diff/append), guarded by
+   `local is None or decision.access_scope_hash != local.access_scope_hash` so an unchanged page
+   costs nothing extra on every reconcile tick. Deferred until *after* `stage_and_activate` on the
+   first-index path — `page_source` doesn't exist yet before that call, and the FK would reject an
+   earlier write.
+3. **Retriever wiring:** `HybridRetriever`'s constructor `policy: PrincipalPermissionPolicy`
+   parameter is unchanged in shape (zero call-site breakage across the eval harness), but its
+   `space_of`/`restrictions` data is no longer consulted for the `allowed()` decision — only its
+   stateless `space_id()` parsing is still used. `_search()` now calls a new
+   `search_repo.fetch_page_scopes(session, ranked)` (space_of from `page_source`, restrictions
+   from `page_restriction`, scoped to the current fused candidate set) and builds a fresh
+   request-scoped `PrincipalPermissionPolicy` for the `allowed()` filter. The pure domain class
+   (`permission.py`) is untouched — still framework-free and independently unit-tested.
+
+**Acceptance proof (the part that actually matters):** every existing DB-backed permission test
+(`test_permission_no_leak_and_authorized_access`, `test_retriever_wrong_source_scope_returns_zero`,
+etc.) still passes unchanged, because `_index_corpus` already runs the real sync path and now
+transparently populates `page_restriction` with the same data the tests' in-memory
+`_build_policy(gateway)` derives — proving the two paths agree. That alone isn't proof the DB is
+actually *doing* the enforcement, so a new test closes that gap directly:
+`test_permission_enforcement_is_db_backed_not_fixture_fed` constructs the retriever with a
+deliberately **empty** `PrincipalPermissionPolicy()` (no `space_of`, no `restrictions`) and
+confirms authorized/space-scoped/unauthorized access all still resolve correctly — which would
+fail under the pre-4.3 code (an empty policy is either wide-open for principal scope or
+all-denying for space scope). Also added: `test_first_index_persists_restrictions`,
+`test_dropped_restriction_leaves_page_unrestricted`, and an extended
+`test_permission_change_is_metadata_only` asserting the persisted ACL replaces (not appends) on
+change. **167 tests total** (was 164 at 4.2 — 3 new DB-integration tests). `make boundaries`
+clean.
+
+**Ruff/pyright reconciliation (git-stash-diffed against the pre-4.3 HEAD, not just re-counted):**
+`test_retrieval_eval.py` was reformatted after editing to stay at the ruff-format baseline (19
+unformatted, unchanged). Ruff-check unchanged (2 errors, both pre-existing in
+`alembic/env.py`/`0001_core_schema.py`, untouched by this phase). Pyright's raw count moved by a
+few, but a message-level diff (ignoring line numbers, which shifted from inserted code) shows
+**zero new error types** — the deltas are additional occurrences of two already-baseline,
+pre-existing patterns unrelated to this phase's logic: `ChangeDecision`'s `bytes | None` hash
+fields (pre-existing, `sync_service.py`) and `RunResult.outcome: object | None`'s loose typing
+(pre-existing, every other test in `test_worker_sync.py` already hits this same pattern) — my new
+test in that file added one more occurrence of the latter by following the file's own existing
+idiom. No new pattern, no new file, no regression on the actual logic touched.
+
+**Not done (explicit non-goals, per the plan's own phasing):** no CRUD API for restrictions (Confluence
+remains the source of truth, synced one-way); group-based principals are not modeled — the fixture
+gateway's `get_restrictions()` only ever returns user account ids (Confluence group expansion would
+be a separate, later enhancement, unchanged from pre-4.3 behavior). `POST /chat` is 4.4.
 
 ### 4.2 — Answer workflow ✅ done (2026-08-10)
 
@@ -201,14 +393,17 @@ OCR/image reading untouched.
 | **4.1** — `rag_agent` scaffold: DTOs + refusal/citation domain core | ✅ done | `e4490aa` | 10 unit tests → 130 total; public root + FEATURES.md; boundaries clean; ruff/pyright 0 on new files |
 | **3.5.6** — Confluence source scoping (`source_scope` table) | ✅ done | `0f1a0d7` | 14 tests → 144 total; migration 0004 reversible; boundaries clean; no ruff/pyright regression |
 | **4.2** — answer workflow (`AnswerService`) | ✅ done | `4cc2ee2` | 20 tests → 164 total; boundaries clean; no ruff/pyright regression; DB-integration-tested, no live LLM calls |
-| **4.3–4.5** — principal ACL, `POST /chat`, web UI | ⏳ next | — | HTTP+LLM surface (4.4) → full security controls required |
+| **4.3** — real principal ACL storage (`page_restriction`) | ✅ done | `da76af9` | 3 tests → 167 total; migration 0005 reversible; boundaries clean; no new pyright error type (git-stash-diffed) |
+| **4.4** — `POST /chat` SSE + feedback, full security control set | ✅ done | `f7c1bdb` | 27 tests → 194 total; boundaries clean; no ruff/pyright regression (verified by per-file diff) |
+| **4.5** — web chat UI + contract extension | ⏳ next | — | HTTP+LLM surface already secured (4.4) → UI + `packages/contracts` update |
 | **5** — optimization & proof | ⬜ todo | — | caching, adaptive routing, red-team, latency/cost |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
 
-Gate at each ✅: `make check` green (**164 tests** as of 4.2; was 144 at 3.5.6, 130 at 4.1, 120 at
-end-3.5, 99 pre-3.5), `make boundaries` clean, ruff/pyright at the ADR-0003 D1 baseline (no
-regression — 2 errors/19 unformatted ruff ≤ 25/2, pyright 31 errors, 0 on touched files). Reader/RLS
-isolation tests + all four migrations verified.
+Gate at each ✅: `make check` green (**194 tests** as of 4.4; was 167 at 4.3, 164 at 4.2, 144 at
+3.5.6, 130 at 4.1, 120 at end-3.5, 99 pre-3.5), `make boundaries` clean, ruff/pyright at the ADR-0003 D1
+baseline (no regression — 2 errors/17 unformatted ruff ≤ 25/2, pyright 34 errors — same file list as
+the 4.3 baseline, 0 new errors on touched files). Reader/RLS isolation tests + all five migrations
+verified — 0005 round-tripped `head → -1 → head` during the pre-4.5 verification pass.
 
 **Phase 3.5 exit gate — MET (2026-08-07):** `make check` green (120); `make eval` prints the before/after
 rerank table; isolation tests pass (RLS default-deny + wrong-source→0); pgvector 0.8.5 pinned; every

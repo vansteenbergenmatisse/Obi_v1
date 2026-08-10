@@ -14,11 +14,13 @@
 >
 > `TODAY` = shipped and verified. As of 2026-08-10 that is **Phases 1–3 + all of Phase 3.5** (reranker,
 > provider tags + RLS + reader role, `query_trace`, rerank-lift eval, Confluence source scoping) **and
-> Phase 4.1 + 4.2** — the `rag_agent` DTO contract + domain core, and now the full `AnswerService`
+> Phase 4.1 + 4.2 + 4.3 + 4.4** — the `rag_agent` DTO contract + domain core, the full `AnswerService`
 > answer workflow (rewrite → retrieve/rerank → CRAG retry → refusal → parent expansion → grounded
-> generation → citation enforcement) — **164 tests green**. `PLANNED` = specified here, gated on the
-> phase named (principal ACL storage, `POST /chat`, and the web UI — Phase 4.3–4.5 — are not built
-> yet). Every code claim is anchored `file:line` so it can be checked against the tree.
+> generation → citation enforcement), real, persisted principal ACL storage (`page_restriction`,
+> replacing the fixture-fed policy), and now a live, secured `POST /chat` SSE endpoint +
+> `PATCH /chat/{trace_id}/feedback` — **194 tests green**. `PLANNED` = specified here, gated on the
+> phase named (the web chat UI — Phase 4.5 — is not built yet). Every code claim is anchored
+> `file:line` so it can be checked against the tree.
 
 ---
 
@@ -60,8 +62,10 @@ pointer swap with instant rollback and GC beyond a retain window (`versioning.py
 cast for the >2000-dim model) ∥ **keyword** (`tsvector` GIN, implicit-AND rewritten to OR) each over
 `candidate_k=40` (`retriever.py:38`), fuse with **RRF** `Σ 1/(60+rank)` (`retrieval/domain/fusion.py`),
 tie-break by keyword rank, then **permission-filter** (`retrieval/domain/permission.py`) and return the
-top-`k` page ids. The filter is fixture-fed today — the DB stores an access-scope *hash*, not principal
-lists.
+top-`k` page ids. As of Phase 4.3 the filter is DB-backed: `page_restriction` persists the real
+principal list per page (written by `confluence_sync`'s `handle_sync_page`), queried fresh per search
+by `search_repo.fetch_page_scopes` and fed into a request-scoped `PrincipalPermissionPolicy` — never
+the whole corpus, never the fixture data the constructor-injected policy used to carry.
 
 **Storage** — 7 tables in `app/platform/db/models.py`: `page_source` (`:85`, one per Confluence page),
 `document`, `document_version` (immutable snapshot, ≤1 active per document), `chunk` (`:206`, parents +
@@ -77,8 +81,8 @@ and the custom eval harness with its injectable `RankFn` seam (`features/evaluat
 **Confirmed gaps** (each maps to a phase): no source/tenant column (only `space_id`); **no reranker**
 (the `reranker_*` settings at `settings.py:62-65` are dead — no client exists); pgvector image is the
 rolling `pg16` tag; no request tracing; no query rewrite / answer generation / citations / refusal /
-CRAG; principal ACL is fixture-only; `POST /chat` absent (the web route is a 501 stub); no caching;
-gold set is 12 synthetic cases.
+CRAG; `POST /chat` absent (the web route is a 501 stub); no caching; gold set is 12 synthetic cases.
+(Principal ACL was fixture-only through 4.2 — closed in Phase 4.3, see above.)
 
 ---
 
@@ -96,13 +100,13 @@ scope → conversational rewrite → embed → (RLS-scoped) dense ∥ keyword �
 | 2 | Embed | `retriever.py` (unchanged) | — | same provider as ingestion |
 | 3 | RLS-scoped dense ∥ keyword | `search_repo.py`, `retriever.py` | 3.5.1/3.5.3 | reader engine sets `app.allowed_sources` + HNSW GUCs per txn |
 | 4 | RRF fusion | `fusion.py` (unchanged) | — | `Σ 1/(60+rank)`, tie-break by keyword rank |
-| 5 | Permission filter | `permission.py` | 4.3 | fixture ACL → real persisted principal lists; runs **before** rerank |
+| 5 | Permission filter | `permission.py` ✅ 4.3 | 4.3 | real persisted principal lists (`page_restriction`), queried fresh per search; runs **before** rerank |
 | 6 | Cross-encoder rerank | `reranker_client.py`, `retriever.py` | 3.5.2 | `candidate_k` 40→75; rerank ≤75 → top-`k`; **after** the permission filter |
 | — | One CRAG retry | `rag_agent/application/answer_service.py` ✅ 4.2 | 4.2 | if the rewritten query's top score is weak, one retry with the verbatim query (`crag_max_retries`), keeping whichever scored higher — runs *between* retrieval and refusal, not after (see below) |
 | — | Refusal threshold | `rag_agent/domain/refusal.py` ✅ 4.1, wired ✅ 4.2 | 4.2 | top rerank score (post-CRAG) < `refusal_min_rerank_score` → refuse via `decide_refusal`, skip generation entirely |
 | 7 | Parent-context expansion | `rag_agent/application/answer_service.py` ✅ 4.2 | 4.2 | `HybridRetriever.fetch_parent_texts` joins `parent_chunk_id`; the *parent* text grounds the generator, not the matched child |
 | 8 | Grounded generation + forced citations | `rag_agent` ✅ 4.2 | 4.2 (citation core ✅ 4.1) | every claim cites a chunk; uncited claims stripped by `enforce_citations`; zero surviving citations degrades to refusal rather than an empty answer |
-| 11 | SSE stream | `POST /chat` in `main.py` | 4.4 | events `start`/`token`/`citations`/`done`, reader engine |
+| 11 | SSE stream | `rag_agent/server/router.py` ✅ 4.4 | 4.4 | events `start`/`token`/`citations`/`done`/`error`; chunked-replay of the fully citation-enforced answer, not per-model-token streaming (see PLAN 4.4 deviation 1) |
 
 Row order above matches the §2 diagram's presentation order (stage *concerns*), not runtime call
 order. The actual 4.2 call order is: rerank (6) → CRAG retry → refusal check → parent expansion (7) →
@@ -335,7 +339,7 @@ upgrade layers. Each was audited against the actual code. Verdict + one-line rat
 | Grounded generation + forced citations | **ADD (4)** | strip uncited claims; the anti-hallucination core |
 | Refusal / abstention threshold | **ADD (4)** | refuse below score, route to human |
 | CRAG (one corrective retry) | **ADD (4)** | bounded to 1 retry to protect p95 |
-| Real principal ACL storage | **UPGRADE (4)** | replace fixture-fed policy with persisted principal lists |
+| Real principal ACL storage | **DONE (4.3)** | `page_restriction` table replaces the fixture-fed policy's data source |
 | Embedder bake-off / Matryoshka | **UPGRADE (5)** | multi-provider code exists; re-embed via the version-stamp gate |
 | Caching (exact + semantic) | **ADD (5, gated)** | Redis only if the proportionality gate is met |
 | Adaptive routing (query difficulty) | **ADD (5, last)** | simple vs decompose; cheap wins first |
@@ -355,9 +359,10 @@ upgrade layers. Each was audited against the actual code. Verdict + one-line rat
   with the eval-harness update) → 3.5.4 tracing → 3.5.5 measure. **Exit gate:** `make check` green,
   `make eval` shows rerank lift, isolation tests pass, pgvector ≥ 0.8, every retrieval traced.
 - **Phase 4** — answer runtime + streaming chat (`rag_agent`, `POST /chat`, web UI). Fixed workflow.
-  4.1 (DTO contract + refusal/citation domain core) and 4.2 (the full `AnswerService` pipeline,
-  network-free-tested) are done; 4.3 (real principal ACL) → 4.4 (`POST /chat`, security controls) →
-  4.5 (web UI) remain.
+  4.1 (DTO contract + refusal/citation domain core), 4.2 (the full `AnswerService` pipeline,
+  network-free-tested), 4.3 (real, persisted principal ACL), and 4.4 (`POST /chat` +
+  `PATCH /chat/{trace_id}/feedback`, full `securing-http-and-llm-endpoints` control set) are done;
+  4.5 (web UI + contract extension) remains.
 - **Phase 5** — optimization + proof (embedder bake-off, caching, adaptive routing, red-team, latency/cost).
 
 **Cross-cutting rules (every phase).** Feature boundaries: export new cross-boundary symbols from the
