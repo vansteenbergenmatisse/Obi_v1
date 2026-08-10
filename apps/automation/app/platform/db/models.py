@@ -157,6 +157,25 @@ class PageSource(Base):
     )
 
 
+class PageRestriction(Base):
+    """Persisted per-page principal read ACL (PLAN 4.3; ADR-0004 §page-level ACL / ADR-0005 §9).
+
+    Presence of any row for a page means it is restricted to the listed principals; a page with
+    no rows here is unrestricted — the same contract ``PrincipalPermissionPolicy.restrictions``
+    already used when it was fixture-fed. Written by ``confluence_sync``'s ``handle_sync_page``
+    whenever a page's restriction list changes; read by ``retrieval`` alongside RLS as the
+    page-level security layer.
+    """
+
+    __tablename__ = "page_restriction"
+
+    page_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("page_source.page_id", ondelete="CASCADE"), primary_key=True
+    )
+    principal: Mapped[str] = mapped_column(String(128), primary_key=True)
+    created_at: Mapped[datetime] = _ts_created()
+
+
 class Document(Base):
     """Logical, immutable identity of a page's indexed doc (one per page)."""
 

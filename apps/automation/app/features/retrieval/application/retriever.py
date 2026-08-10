@@ -12,6 +12,12 @@ answer-workflow entry point: same ranking, but it also surfaces each hit's chunk
 expansion), rerank score (for the refusal threshold), and title/url (for citations) — the data
 ``retrieve()`` computed all along but discarded. Both share one internal search core, and both
 write the same ``query_trace`` row shape when tracing is enabled.
+
+PLAN 4.3: the page-level permission check is now backed by the persisted ``page_restriction``
+table, queried fresh per search for the current candidate set (never the whole corpus). The
+``policy`` constructor argument is kept only for its stateless ``space_id()`` scope parsing; its
+``space_of``/``restrictions`` data is no longer consulted for the ``allowed()`` decision — that
+decision runs against a request-scoped policy built from live DB data instead.
 """
 
 from __future__ import annotations
@@ -28,6 +34,7 @@ from app.features.retrieval.infrastructure.search_repo import (
     apply_hnsw_gucs,
     apply_source_scope,
     dense_search,
+    fetch_page_scopes,
     fetch_parent_context,
     fetch_rerank_texts,
     keyword_search,
@@ -126,7 +133,13 @@ class HybridRetriever:
 
             # tie-break by keyword rank so lexical relevance decides when RRF scores tie
             ranked = sorted(fused, key=lambda p: (-fused[p], kw_pos.get(p, 1_000_000), p))
-            allowed = [p for p in ranked if self._policy.allowed(p, scope)]
+
+            # PLAN 4.3: page-level ACL, loaded fresh for this candidate set (never the whole
+            # corpus — the injected `self._policy` no longer carries real data; it is queried
+            # live from page_source/page_restriction, alongside source-level RLS above).
+            space_of, restrictions = fetch_page_scopes(session, ranked)
+            live_policy = PrincipalPermissionPolicy(space_of=space_of, restrictions=restrictions)
+            allowed = [p for p in ranked if live_policy.allowed(p, scope)]
 
             # Cross-encoder rerank the permitted candidates (never a doc the scope can't see).
             # FakeReranker is order-preserving, so offline this is exactly the pre-rerank ranking.

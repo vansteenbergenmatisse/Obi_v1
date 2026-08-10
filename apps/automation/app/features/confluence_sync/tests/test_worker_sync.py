@@ -16,6 +16,7 @@ from ._helpers import (
     enqueue_sync,
     index_page,
     read,
+    restricted_principals,
 )
 
 
@@ -64,11 +65,18 @@ def test_version_guard_drops_stale_update(gateway, settings):
     assert count_versions(1001) == 1  # no downgrade, no new version
 
 
+def test_first_index_persists_restrictions(gateway, settings):
+    """PLAN 4.3: the real principal list, not just its hash, lands in page_restriction."""
+    index_page(gateway, settings, 2002, version=1)
+    assert restricted_principals(2002) == {"acct-carol"}  # fixture: page-2002.json
+
+
 def test_permission_change_is_metadata_only(gateway, settings):
     index_page(gateway, settings, 2002, version=1)
     before = active_child_chunks(2002)
     assert before, "expected active chunks after first index"
     scope_before = before[0].access_scope
+    assert restricted_principals(2002) == {"acct-carol"}
 
     gateway.set_restrictions(2002, ["acct-brand-new-person"])  # no version bump
     enqueue_sync(2002, 1, key="sync:2002:perm")
@@ -78,6 +86,21 @@ def test_permission_change_is_metadata_only(gateway, settings):
     assert count_versions(2002) == 1  # NO re-embed / new version
     after = active_child_chunks(2002)
     assert after and after[0].access_scope != scope_before  # scope propagated to chunks
+    # PLAN 4.3: the persisted ACL is a full replace, not an append — the old principal is gone
+    assert restricted_principals(2002) == {"acct-brand-new-person"}
+
+
+def test_dropped_restriction_leaves_page_unrestricted(gateway, settings):
+    """PLAN 4.3: clearing a page's restrictions removes its page_restriction rows entirely."""
+    index_page(gateway, settings, 2002, version=1)
+    assert restricted_principals(2002)  # starts restricted
+
+    gateway.set_restrictions(2002, [])  # no version bump
+    enqueue_sync(2002, 1, key="sync:2002:perm-cleared")
+    result = run_once(gateway, settings, owner="test")
+
+    assert result.outcome.action == "metadata_only"
+    assert restricted_principals(2002) == set()  # unrestricted now (no rows, not empty-set rows)
 
 
 def test_delete_deactivates_page(gateway, settings):

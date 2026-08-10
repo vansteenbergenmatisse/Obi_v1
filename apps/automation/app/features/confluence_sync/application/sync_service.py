@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import update
+from sqlalchemy import delete, insert, update
 from sqlalchemy.orm import Session
 
 from app.features.ingestion import (
@@ -25,7 +25,7 @@ from app.features.ingestion import (
 )
 from app.platform.clients import ConfluenceGateway
 from app.platform.config import Settings
-from app.platform.db.models import Chunk, PageSource
+from app.platform.db.models import Chunk, PageRestriction, PageSource
 
 _REBUILD_CLASSES = {
     ChangeClass.body_changed,
@@ -103,6 +103,13 @@ def handle_sync_page(
         deactivate_page(session, page_id=page_id, status=page_status)
         return SyncOutcome(action="deactivated", classes=["status_changed"], page_id=page_id)
 
+    # PLAN 4.3: persist the real principal list, not just its hash (ADR-0004/0005 page-level ACL).
+    # `restrictions` is fetched fresh above on every sync; only write when it actually changed (or
+    # on first index) to avoid a redundant delete+insert on every reconcile tick. Deferred until
+    # after `page_source` is guaranteed to exist (the FK target) — first index creates it below in
+    # `stage_and_activate`, so this can't run before branching on `rebuild`.
+    restrictions_changed = local is None or decision.access_scope_hash != local.access_scope_hash
+
     rebuild = local is None or bool(decision.classes & _REBUILD_CLASSES)
     if rebuild:
         if blocks is None:  # safety: rebuild requires the body
@@ -125,12 +132,16 @@ def handle_sync_page(
             services=services,
             tags=tags,
         )
+        if restrictions_changed:
+            _replace_restrictions(session, page_id=page_id, principals=restrictions)
         return SyncOutcome(
             action="indexed", classes=sorted(c.value for c in decision.classes), page_id=page_id
         )
 
     if decision.meaningful:
         _apply_metadata_only(session, meta, decision, page_status, tags=tags)
+        if restrictions_changed:
+            _replace_restrictions(session, page_id=page_id, principals=restrictions)
         return SyncOutcome(
             action="metadata_only",
             classes=sorted(c.value for c in decision.classes),
@@ -139,6 +150,18 @@ def handle_sync_page(
 
     _touch_reconciled(session, page_id)
     return SyncOutcome(action="no_change", classes=["no_change"], page_id=page_id)
+
+
+def _replace_restrictions(session: Session, *, page_id: int, principals: list[str]) -> None:
+    """Full replace of a page's persisted ACL — mirrors ``restrictions`` being the current,
+    complete list from Confluence, not a delta. An empty list correctly leaves zero rows
+    (unrestricted)."""
+    session.execute(delete(PageRestriction).where(PageRestriction.page_id == page_id))
+    if principals:
+        session.execute(
+            insert(PageRestriction),
+            [{"page_id": page_id, "principal": p} for p in dict.fromkeys(principals)],
+        )
 
 
 def handle_delete_page(session: Session, *, page_id: int, status: str) -> SyncOutcome:

@@ -124,6 +124,35 @@ def test_permission_no_leak_and_authorized_access(gateway, settings: Settings) -
     assert "2002" not in outsider
 
 
+def test_permission_enforcement_is_db_backed_not_fixture_fed(gateway, settings: Settings) -> None:
+    """PLAN 4.3: an EMPTY injected policy must not weaken enforcement — the retriever now reads
+    ``page_source``/``page_restriction`` live per search, so a policy object carrying no data at
+    all still gets the real, correct answer. This is the acceptance proof that closes the
+    "fixture-only ACL" gap ADR-0004/0005 called out.
+    """
+    _index_corpus(gateway, settings)
+    empty_policy = PrincipalPermissionPolicy()  # no space_of, no restrictions — deliberately bare
+    retr = HybridRetriever(
+        get_reader_sessionmaker(),
+        build_embedding_provider(settings),
+        empty_policy,
+        build_reranker(settings),
+    )
+
+    # authorized principal still retrieves the restricted page it is entitled to
+    alice = retr.retrieve("What are the production deploy steps?", "acct-alice", k=5)
+    assert "1002" in alice
+
+    # unauthorized scope is denied the restricted page a leaky policy would return
+    outsider = retr.retrieve(
+        "Show me the exact expense approval amounts.", "unauthorized-user", k=5
+    )
+    assert "2002" not in outsider
+
+    # space-level trust also comes from the DB (page_source.space_id), not the empty policy
+    assert retr.retrieve("How do I request access to core systems when I join?", "100", k=5)
+
+
 def test_rls_default_deny_on_reader_role(gateway, settings: Settings) -> None:
     """RLS alone (bare SELECT, no app-level source filter) enforces default-deny on the reader.
 

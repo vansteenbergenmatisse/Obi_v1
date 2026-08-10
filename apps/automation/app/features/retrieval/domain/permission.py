@@ -9,7 +9,9 @@ scope kinds:
   the principal is in its read-restriction set. This is what stops cross-scope leaks.
 
 The policy is fed plain data (space-of-page, restrictions-of-page) so it stays framework-free and
-testable; callers build it from whatever ACL source they have (fixtures here; a DB ACL later).
+testable; callers build it from whatever ACL source they have. In production, ``HybridRetriever``
+(PLAN 4.3) builds a fresh instance per search from ``page_source``/``page_restriction`` via
+``search_repo.fetch_page_scopes``; tests still build one directly from fixture data.
 """
 
 from __future__ import annotations

@@ -9,7 +9,7 @@ from app.platform.clients import ConfluenceGateway
 from app.platform.config import Settings
 from app.platform.db.engine import get_sessionmaker, session_scope
 from app.platform.db.enums import DocState
-from app.platform.db.models import KIND_CHILD, Chunk, DocumentVersion, PageSource
+from app.platform.db.models import KIND_CHILD, Chunk, DocumentVersion, PageRestriction, PageSource
 from app.platform.jobs import enqueue_job
 
 
@@ -62,11 +62,15 @@ def active_version(page_id: int) -> DocumentVersion | None:
 
 def active_versions_count(page_id: int) -> int:
     with read() as s:
-        doc_ids = s.execute(
-            select(DocumentVersion.id).where(
-                DocumentVersion.page_id == page_id, DocumentVersion.state == DocState.active
+        doc_ids = (
+            s.execute(
+                select(DocumentVersion.id).where(
+                    DocumentVersion.page_id == page_id, DocumentVersion.state == DocState.active
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         return len(doc_ids)
 
 
@@ -79,8 +83,21 @@ def active_child_chunks(page_id: int) -> list[Chunk]:
                     Chunk.is_active.is_(True),
                     Chunk.kind == KIND_CHILD,
                 )
-            ).scalars().all()
+            )
+            .scalars()
+            .all()
         )
+
+
+def restricted_principals(page_id: int) -> set[str]:
+    """The persisted ACL for a page (PLAN 4.3); empty means unrestricted."""
+    with read() as s:
+        rows = (
+            s.execute(select(PageRestriction.principal).where(PageRestriction.page_id == page_id))
+            .scalars()
+            .all()
+        )
+        return set(rows)
 
 
 def count_versions(page_id: int) -> int:

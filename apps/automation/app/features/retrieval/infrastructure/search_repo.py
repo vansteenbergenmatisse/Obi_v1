@@ -165,6 +165,34 @@ def fetch_rerank_texts(
     }
 
 
+def fetch_page_scopes(
+    session: Session, page_ids: Sequence[int]
+) -> tuple[dict[int, int], dict[int, set[str]]]:
+    """Space id + persisted restricted-principal set for each candidate page (PLAN 4.3).
+
+    Loaded fresh per search, scoped to the fused candidate set — never the whole corpus. A page's
+    principal list can change on any sync, so pre-loading it once at retriever construction would
+    go stale; this feeds a request-scoped ``PrincipalPermissionPolicy`` instead. A page with no
+    ``page_restriction`` rows is unrestricted, matching that policy's existing pure contract.
+    """
+    if not page_ids:
+        return {}, {}
+    space_of = {
+        int(pid): int(space_id)
+        for pid, space_id in session.execute(
+            text("SELECT page_id, space_id FROM page_source WHERE page_id = ANY(:page_ids)"),
+            {"page_ids": list(page_ids)},
+        )
+    }
+    restrictions: dict[int, set[str]] = {}
+    for pid, principal in session.execute(
+        text("SELECT page_id, principal FROM page_restriction WHERE page_id = ANY(:page_ids)"),
+        {"page_ids": list(page_ids)},
+    ):
+        restrictions.setdefault(int(pid), set()).add(str(principal))
+    return space_of, restrictions
+
+
 def fetch_parent_context(session: Session, chunk_ids: Sequence[int]) -> dict[int, str]:
     """Each child chunk's parent verbatim text, keyed by the *child* chunk id.
 

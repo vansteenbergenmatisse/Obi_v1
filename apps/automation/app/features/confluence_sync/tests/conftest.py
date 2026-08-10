@@ -24,6 +24,7 @@ _TABLES = [
     "chunk",
     "document_version",
     "document",
+    "page_restriction",
     "page_source",
     "job",
     "event_ledger",
