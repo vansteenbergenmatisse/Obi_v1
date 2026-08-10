@@ -1385,7 +1385,7 @@ exactly once (cache proof); a 403 from the member endpoint stays fail-closed, no
 `FixtureConfluenceGateway` expands via the new `group_members.json` fixture and via the
 `set_group_members` override.
 
-### 4.6.3 — Idempotency cache cross-principal leak (HIGH) ✅ done (2026-08-10)
+### 4.6.3 — Idempotency cache cross-principal leak (HIGH) ✅ done (2026-08-10, `7e841bf`)
 
 **Status: implemented, tested (2 new tests), boundaries clean, no ruff/pyright regression → 239
 tests total (was 237). Pure code fix, no migration, exactly as scoped.**
