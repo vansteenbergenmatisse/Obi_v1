@@ -16,19 +16,185 @@ fix here as the next task; update this ledger after each phase.
 
 ### ▶ Resume here (after `/compact-ultra`) — first things first
 
-**Phase 3.5 is COMPLETE. Phase 4 is IN PROGRESS: 4.1 + 4.2 + 4.3 + 4.4 done.**
-Next is **4.5** — the web chat UI (`apps/web/src/features/chat`) + extending the
-`packages/contracts` chat contract to match what 4.4 actually built (see 4.4's "contract gap"
-note below — this is real, not optional polish).
+**Phase 3.5 is COMPLETE. Phase 4 is COMPLETE: 4.1 + 4.2 + 4.3 + 4.4 + 4.5 all done.**
+**Phase 5.1 (`CHAT_API_KEY` rotation) and 5.2 (exact-match answer caching) are done (2026-08-10)**
+— see below. Remaining Phase 5 work, reordered at the user's direction (2026-08-10) around the
+5.2-scoping blocker: red-team/latency/cost proof next, then the embedder bake-off once the
+Confluence token is fixed (real gold set) and `VOYAGE_API_KEY` is provided; adaptive router stays
+last per the plan text.
 
 Fresh context: read this ledger + `docs/rag/DESIGN.md` (§2 target pipeline, §5 accuracy stack) +
-`docs/adr/0005*` + `apps/automation/app/features/rag_agent/server/router.py`'s `security_baseline`
-docstring, then begin 4.5.
+`docs/adr/0005*`, then continue Phase 5. The chat feature (backend + web UI) is done and
+live-verified end to end; both dev servers were confirmed running together again after 5.1
+(`uvicorn app.main:app` on :8000, `pnpm --filter web dev` on :3000, chat UI at `/chat`).
 
-**Blocker for 4.5/deploy (not code — a value only the user can set):** `CHAT_API_KEY` in `.env`
-is unset (placeholder `changeme` in `.env.example`). The endpoint fails closed (503) until it's
-set to a real shared secret, and the same value must be configured wherever `apps/web`'s
-`POST /api/chat` proxy runs so it can authenticate to the automation API.
+**Commit gap closed — 2026-08-10 (new session).** 4.5, 5.1, and 5.2 were implemented and
+live-verified in the prior session but never committed (`git status` showed them all still
+dirty/untracked at session start). Per `CLAUDE.local.md` §2, re-verified live before trusting the
+ledger's self-report and before committing: `make check` (from repo root) → **213 passed**,
+boundaries clean; `pnpm --filter web test` → **39/39 passed**; `tsc --noEmit` clean; ruff-check
+unchanged (2 errors, both pre-existing); ruff-format unchanged (17 unformatted, none of them new
+files); pyright unchanged (34 errors, same file list as the 4.3 baseline — confirmed by listing
+error-file paths directly, none touch `ttl_cache.py`/`answer_cache.py`/`rotate_chat_api_key.py`);
+`alembic current` → `0005_page_restriction (head)`, no pending migration. Read (not just ran)
+`_verify_api_key`'s dual `hmac.compare_digest` calls and `answer_cache.py`'s cache-key/principal
+scoping directly to confirm the security properties the ledger claims. **No gaps found.** Split
+into two commits: `8cbaf46` (4.5 — cleanly separable, web/contracts only) and `261ac1e` (5.1+5.2
+together — both touch `router.py`'s auth/idempotency plumbing and were verified as one gate pass,
+so a mechanical split would need a second full stash-diff verification for no real benefit).
+
+**Pre-5.1 verification gate — 2026-08-10, PASS.** Before starting Phase 5, re-verified Phase 4/4.5
+live rather than trusting the ledger's self-report: `make check` (boundaries + `pytest -q`) →
+**194 passed**, boundaries clean; `pnpm --filter web test` → **39/39 passed**; `alembic current` →
+`0005_page_restriction (head)`, no pending migrations. Started both dev servers
+(`uvicorn app.main:app` on :8000, `pnpm --filter web dev` on :3000) and confirmed `/docs`, `/`, and
+`/chat` all return 200 against the real Postgres/fixture corpus — not just a test-suite claim.
+**No gaps found; 5.1 may begin.**
+
+**Pre-5.2 verification gate — 2026-08-10, PASS.** Re-verified 5.1 live before starting the next
+sub-step: `make check` → **197 passed** (was 194; +3 for 5.1's rotation tests), boundaries clean;
+`pnpm --filter web test` → **39/39 passed** (5.1 touched backend only, web untouched); ruff-check
+unchanged (2 errors, both pre-existing); ruff-format unchanged (17 unformatted); pyright unchanged
+(34 errors, same file list); `alembic current` → `0005_page_restriction (head)`, no new migration
+needed for 5.1 (it's a settings/router change, not a schema change). **No gaps found in 5.1.**
+
+**Blocker found while scoping 5.2 (embedder bake-off) — recorded before doing dependent work, per
+CLAUDE.local.md §4.** The plan text assumes "the (now real) gold set" and that "multi-provider code
+already exists" for all four candidates. Neither holds on inspection:
+- **No real gold set exists yet.** Blocker #3 (Confluence token still dead) means the eval harness
+  still runs on `apps/automation/tests/fixtures/confluence` — a 14-document synthetic fixture
+  corpus — against `evaluation/datasets/{ambiguity,permission,retrieval_smoke}.json`, each just
+  **2 queries**. A 4-way embedder comparison on 6 total queries over 14 docs would produce noise,
+  not a real accuracy signal — running it and reporting a "winner" would be misleading.
+- **Only two of four candidates are actually wired.** `embeddings_client.py` has hosted providers
+  for OpenAI and Voyage only, plus a `local` sentence-transformers backend (lazy-imported, no
+  hosted key needed). Qwen3-8B and bge-m3 have no hosted provider — they'd have to run via
+  `local`. bge-m3 (568M params) is a light, realistic local run; **Qwen3-8B (8B params) is not** —
+  meaningful local inference likely needs a GPU this laptop may not have, an untested assumption
+  I won't paper over.
+- **`VOYAGE_API_KEY` is empty** in `.env` (confirmed presence/absence only, not the value) —
+  `EMBEDDING_PROVIDER=openai` / `text-embedding-3-large` / dim 3072 is the only candidate with a
+  live key right now (matches the plan's "OpenAI-3072 incumbent" framing).
+
+Asked the user how to sequence 5.2 given this (see chat) rather than guessing at cost/scaling
+numbers or silently running a bake-off that can't support its own conclusion.
+
+### 5.1 — `CHAT_API_KEY` rotation mechanism ✅ done (2026-08-10)
+
+**Status: implemented, tested (3 new endpoint tests), boundaries clean, no ruff/pyright
+regression, live-verified (both dev servers restarted on the new code, chat round-trip still
+works).** Closes the "raised, not yet designed" item below — the overlap-window shape it already
+recommended is exactly what got built, not a new design.
+
+**Shipped:**
+- `app/platform/config/settings.py`: `chat_api_key_previous: str = ""` — optional second secret
+  accepted in parallel during a rotation.
+- `app/features/rag_agent/server/router.py`: `_verify_api_key` now compares the caller's token
+  against **both** `chat_api_key` and `chat_api_key_previous` (both `hmac.compare_digest` calls
+  always run — never short-circuited — so a caller can't time-distinguish which one matched);
+  `security_baseline` docstring updated on both surfaces (C1 for `POST /chat` and
+  `PATCH /chat/{trace_id}/feedback`, which shares the same check).
+- `apps/automation/scripts/rotate_chat_api_key.py` (new): `--apply` generates a fresh 64-char hex
+  key, moves the current one into `CHAT_API_KEY_PREVIOUS`, writes the new value to both the root
+  `.env` and `apps/web/.env.local` (the proxy only ever sends one key — it jumps straight to the
+  new value; only the verifying side needs both); `--finish` blanks `CHAT_API_KEY_PREVIOUS` to
+  close the window. No flag = preview only, no writes.
+- `docs/runbooks/chat-api-key-rotation.md` (new): the procedure, plus the cadence reasoning
+  already in this file (below) — monthly/quarterly recommended, mechanism supports any cadence.
+- `.env.example`: documents `CHAT_API_KEY_PREVIOUS`.
+- Tests (`confluence_sync/tests/test_chat_endpoint.py`): previous key accepted alongside current
+  during overlap; a third, unrelated key still rejected; previous key stops working once cleared
+  (simulates rotation completion) → **197 tests total** (was 194).
+
+**Not done (explicitly out of scope for this sub-step):** no automated/scheduled rotation (cron)
+— there is no live deployment target yet (Phase 6), so wiring a scheduler against `.env` files on
+a laptop has nothing real to protect; the runbook says to swap the file-editing half for the
+deploy platform's secret store once Phase 6 exists, keeping the same overlap-window shape.
+
+### 5.2 — Exact-match answer caching ✅ done (2026-08-10)
+
+**Status: implemented, tested (6 new `CachingAnswerService` unit tests + 7 new `TTLCache` unit
+tests + 2 new HTTP-level tests proving no-rerun and no cross-principal leakage + 1 test proving
+`create_app` wires it by default → 213 tests total, was 197), boundaries clean, no ruff/pyright
+regression, live-verified against a real running server** (killed a stale leftover `uvicorn`
+process from an earlier session that was masking the new code on port 8000, then confirmed via
+the structured logs: first `/chat` call did real retrieval — `latency_ms=395`, a live
+`api.openai.com/v1/embeddings` call — second identical call logged `chat_answer_cache_hit` with
+`latency_ms=0` and the same `trace_id`; a third call with a different `principal` got a fresh
+`trace_id`, proving the cache never crosses a principal boundary).
+
+**Scope decision (reordering, not scope-cutting):** per the pre-5.2 gate above, only the
+exact-match half of the plan's "Caching: exact-match (Redis) + semantic cache ... ; keep prompt
+caching" bullet is built here:
+- **Exact-match:** built, in-process (see design decisions below).
+- **Prompt caching:** already existed before this sub-step —
+  `llm_client.AnthropicAnswerGenerator.generate` already passes
+  `system_blocks=[cached_system_block(ANSWER_SYSTEM_PROMPT)]` (Phase 4). Nothing to add; recorded
+  here only because the plan bullet named it.
+- **Semantic caching:** deliberately not built. A similarity-threshold cache risks serving a
+  plausible-but-wrong cached answer for a query that actually needed fresh retrieval — a real
+  accuracy regression risk against this project's accuracy-first mandate — and there is no
+  production traffic yet to tune a safe threshold against (no invented number). Deferred, not
+  dropped; see `answer_cache.py`'s module docstring for the same rationale in the code.
+
+**Design decisions (the plan text left the concrete mechanism open):**
+1. **In-process, not Redis.** No confirmed multi-instance deployment requirement exists yet (no
+   live deploy target — Phase 6 — and no concrete scaling number to justify one); the
+   Architecture Standard's proportionality gate says add Redis only for a confirmed cache/queue/
+   lock need, not ahead of one. Matches the precedent already set by `SlidingWindowRateLimiter`
+   and the `Idempotency-Key` cache.
+2. **`app.shared.ttl_cache.TTLCache[K, V]`** (new): the generic get/set/expire/max-entries-bound
+   logic factored out of `server/router.py`'s `_IdempotencyCache` once a second consumer
+   (`CachingAnswerService`) needed the exact same mechanism — the identical "two consumers"
+   proportionality trigger that already moved `SlidingWindowRateLimiter` to `shared/` in PLAN 4.4.
+   `_IdempotencyCache` itself is deleted; `router.py` now uses `TTLCache[str, Answer]` directly.
+   Eviction is insertion-order (oldest-first), not true LRU — a deliberate simplification, since
+   `max_entries` exists to bound memory, not maximize hit rate.
+3. **`CachingAnswerService`** (`application/answer_cache.py`, new): a decorator around any
+   `AnswerProvider` (a new `Protocol` in `answer_service.py` — the shape `router.py` actually
+   depends on, satisfied by both the real `AnswerService` and this wrapper). `main.create_app`
+   wraps `build_answer_service(settings)`'s result before assigning `app.state.answer_service`;
+   `build_answer_service` itself is untouched (still returns a raw `AnswerService`, so
+   `test_chat_endpoint.py`'s existing direct-construction tests needed zero changes).
+4. **Cache key = `sha256(json([(role, content) for turn in history]) + "|" + (principal or ""))`.**
+   Keyed on the *full* history, not just the final turn — the rewrite stage can use earlier turns
+   as context, so two calls whose final turn matches but whose earlier turns differ are not
+   guaranteed to produce the same answer. `principal` is part of the key so a hit can never leak
+   one principal's answer to another — `AnswerService.answer`'s own ACL enforcement already ran
+   once, at write time, before the cache ever stored the result.
+5. **Same bounded-staleness tradeoff as the pre-existing `Idempotency-Key` cache**, reusing the
+   same `TTLCache` and a matching 300s default (`chat_answer_cache_ttl_seconds`): a cached answer
+   can be up to `ttl_seconds` stale if a page's content or restrictions change during that window.
+   Already an accepted tradeoff for idempotency; not a new risk class.
+6. **`get_answer_service_dep`/`_stream_answer`'s type hints moved from `AnswerService` to
+   `AnswerProvider`** so the router accepts either the raw service or the cached wrapper — a
+   structural-typing change only, zero behavior change; `router.py`'s `security_baseline`
+   docstring gained a short addendum noting the cache is transparent to every control (C9 audit
+   logging in particular still fires once per HTTP call, cache hit or miss).
+
+**Shipped:**
+- `app/shared/ttl_cache.py` (new): `TTLCache[K, V]`.
+- `app/features/rag_agent/application/answer_service.py`: `AnswerProvider` protocol.
+- `app/features/rag_agent/application/answer_cache.py` (new): `CachingAnswerService`.
+- `app/features/rag_agent/server/router.py`: `_IdempotencyCache` deleted in favor of
+  `TTLCache[str, Answer]`; type hints widened to `AnswerProvider`; docstring addendum.
+- `app/features/rag_agent/__init__.py`: exports `AnswerProvider`, `CachingAnswerService`.
+- `app/main.py`: `create_app` wraps `build_answer_service(settings)` in `CachingAnswerService`.
+- `app/platform/config/settings.py` + `.env.example`: `chat_answer_cache_ttl_seconds` (300.0),
+  `chat_answer_cache_max_entries` (500).
+- Tests: `app/shared/tests/test_ttl_cache.py` (new), `app/features/rag_agent/tests/test_answer_cache.py`
+  (new), 3 new tests in `confluence_sync/tests/test_chat_endpoint.py`.
+
+**Not done (explicit scope decisions, not gaps):** semantic caching (see above); Redis (see
+above); cache invalidation tied to content/ACL changes (relies on the TTL bound instead, matching
+the idempotency cache's existing precedent).
+
+**Blocker for 4.5/deploy — RESOLVED 2026-08-10.** `CHAT_API_KEY` is now a real 64-char hex secret
+(`openssl rand -hex 32`) in both the root `.env` (`apps/automation`) and the new
+`apps/web/.env.local` (`AUTOMATION_API_BASE_URL` also set there) — confirmed identical, and
+confirmed `Settings.chat_api_key` actually loads it (`get_settings().chat_api_key` non-empty,
+64 chars). Key **rotation** is intentionally deferred to Phase 5 (see that section) — a naive
+single-key swap would cause an outage, so it needs a real dual-key mechanism, not a quick fix here.
 
 **Pre-4.5 verification gate — 2026-08-10, PASS (both 4.3 and 4.4 were implemented but sitting
 uncommitted; verified before committing, not after).** `make check` green at 194; `make boundaries`
@@ -55,7 +221,112 @@ the *other* phase's commit stands alone and green before combining: **4.3 alone 
 (`da76af9`), **4.3+4.4 → 194 passed** (`f7c1bdb`), boundaries clean at both points. **No other gaps
 found; 4.5 may begin.**
 
-### 4.4 — `POST /chat` SSE + `PATCH /chat/{trace_id}/feedback` ✅ done (2026-08-10)
+### 4.5 — Web chat UI + contract extension ✅ done (2026-08-10)
+
+**Status: implemented, tested (39 new vitest tests), typechecked, built, and live-verified end to
+end in a real browser against the real backend — twice (once with a throwaway test key while
+`CHAT_API_KEY` was still unset, once after the real key was generated and set).** Closes the
+contract gap 4.4 flagged and fleshes out the `apps/web/src/features/chat` scaffold into a real,
+working chat UI.
+
+**Contract changes (`packages/contracts`):** `ChatRequest.message` → `history: ChatTurn[]`
+(new `ChatTurn` type, deliberately not named `ChatMessage` — that name is already the feature's
+own render view-model, kept intentionally distinct); `ChatDoneEvent` gains `traceId` (nullable —
+`Answer.trace_id` can be `None`, mirrored) and `refused`; `Citation.version` relaxed to optional
+(never populated by retrieval) and its `format: uri` dropped (backend can emit `""`, which isn't a
+valid URI); added `FeedbackRequest`/`FeedbackResponse` for the feedback endpoint, and documented
+`PATCH /chat/{traceId}/feedback` in `chat.yaml` (previously undocumented).
+
+**Design decisions (the plan text left the concrete mechanism open):**
+1. **The proxy is a real feature-owned server module, not logic inlined in the route file.**
+   `features/chat/server/route-handlers.ts` (`handlePostChat`, `handlePatchFeedback`) is exported
+   from the feature's public root and composed by `app/api/chat/route.ts` +
+   `app/api/chat/[traceId]/feedback/route.ts` (Next 15 async `params`) — matching the repo
+   standard's "route files stay thin, features own their capability end to end" rule. The backend
+   base URL + shared secret live in a new `platform/automation-api` (generic external-client
+   capability per the standard's `platform/` definition — not gated on "two consumers", that gate
+   is for `shared/`), used by both routes.
+2. **`AUTOMATION_API_BASE_URL`/`CHAT_API_KEY` are read server-side only, no `NEXT_PUBLIC_` var
+   exists.** The plan text's own bullet ("`.env.local` — `NEXT_PUBLIC_API_BASE_URL`") turned out to
+   be wrong on inspection: the browser only ever calls this app's own same-origin `/api/chat`; only
+   the server-side route handler needs the backend's base URL, and exposing it (or the key) to the
+   browser via `NEXT_PUBLIC_` would be strictly worse for no benefit. Deviated deliberately.
+   Documented in `apps/web/.env.example` (new file — Next.js does not read the repo-root `.env`,
+   confirmed by testing) and the root README.
+3. **SSE parsing splits on `\n\n` over a growing string buffer**, not a line-by-line reader —
+   matches exactly what `router.py`'s `_sse()` emits and is proven correct against a chunk-boundary
+   split *inside* the `\n\n` separator itself (a dedicated test), not just the happy path.
+4. **The streaming response is a true byte passthrough** (`new Response(backendResponse.body, ...)`)
+   — no re-buffering, no re-chunking. The proxy adds no latency to the already-paced backend stream.
+5. **C2/C10 are explicitly opted out at the proxy layer, not silently skipped** — the backend
+   already enforces rate limiting and abuse caps on the exact same request; a second, weaker
+   in-memory limiter in a Next.js process (no shared store across instances) would be redundant and
+   could drift from the backend's real config. Documented as a `security_baseline` opt-out with
+   rationale in `route-handlers.ts`'s docstring, following the same format `router.py` uses.
+6. **Proxy-side input validation is structural, not a duplicate of the backend's business caps.**
+   `server/validation.ts` rejects malformed shape/JSON and a generous resource-exhaustion body-size
+   ceiling (200KB) — it deliberately does not hardcode the backend's `chat_max_history_turns`/
+   `chat_max_message_chars` numbers, so the two layers can't silently drift; the backend's real 400
+   is forwarded verbatim when its caps are exceeded.
+
+**Design-review findings (fe:design-reviewer agent, live browser audit) — all fixed before
+closing this phase:** non-text contrast failure on the new badge/citation-chip/feedback-button
+(border-only on the page background, ~1.37:1 — fixed with a `bg-surface-raised` fill matching the
+existing message-bubble precedent); refusal badge visually identical to decorative chips (fixed —
+distinct filled/bright-text treatment so it reads as status, not metadata); missing
+`focus-visible` ring on the new citation link and feedback buttons (fixed — added the same
+`focus-visible:ring-2 focus-visible:ring-accent` utility the shared `Button` already uses);
+citations with no URL rendering as hrefless (fake) links (fixed — render a `<span>` with an
+"unavailable" cue instead of an anchor with no `href`); the whole message list being one
+`aria-live="polite"` region that also received every streamed token mutation, which would cause
+screen readers to re-announce fragment-by-fragment instead of once per finished turn (fixed — the
+`<ul>` is no longer live; a separate visually-hidden region announces only the most recently
+*finished* turn). Not independently re-verified by a screen reader or a real narrow-viewport
+render — flagged by the reviewer as uncovered, not re-run here.
+
+**Shipped:**
+- `packages/contracts/src/openapi/chat.yaml` + `src/index.ts`: contract changes above.
+- `apps/web/src/platform/automation-api/{client,index}.ts` (new): authenticated, timeout-bounded
+  calls to `apps/automation`; fails closed (`AutomationApiConfigError`) if `CHAT_API_KEY` unset.
+- `apps/web/src/features/chat/server/{validation,route-handlers}.ts` (new): C3 input validation +
+  the proxy itself, exported from the feature's public root.
+- `apps/web/src/app/api/chat/route.ts` (rewritten, no longer a 501 stub) +
+  `apps/web/src/app/api/chat/[traceId]/feedback/route.ts` (new): thin route entrypoints.
+- `apps/web/src/features/chat/api/chat-client.ts` (rewritten): real SSE `streamChat` +
+  `sendFeedback`, replacing the Phase-1 `sendChat` stub (removed, not left as dead code).
+- `apps/web/src/features/chat/model/messages.ts`: `MessageStatus` gains `"refused"`; `ChatMessage`
+  gains `traceId`/`feedback`.
+- `apps/web/src/features/chat/ui/{chat-panel,message-list}.tsx` (rewritten): real streaming
+  state, citation chips, refusal badge, thumbs-up/down feedback with `aria-pressed`.
+- `apps/web/vitest.config.ts` + `package.json` (new test runner — none existed in `apps/web`
+  before this phase, as FEATURES.md's own "Test: None yet (test runner is wired in Phase 4)" note
+  anticipated): 39 tests across `validation.test.ts`, `chat-client.test.ts`,
+  `route-handlers.test.ts` — pure logic + SSE parsing + mocked-backend proxy behavior (auth-header
+  injection, idempotency-key forwarding, error/streaming passthrough, fail-closed 503). No
+  component-render tests (no jsdom/RTL added) — explicit scope decision, see "Not done" below.
+- `apps/web/.env.example` (new) + root `.env.example`/`README.md` updated to point at it.
+- `apps/web/src/features/chat/FEATURES.md`, `apps/web/src/platform/README.md` (new) updated/added.
+
+**Acceptance proof:** `pnpm --filter web test` → 39/39 passed; `tsc --noEmit` clean;
+`pnpm --filter web build` clean (both new routes compile as dynamic `ƒ`, as they must — they can't
+be statically generated). Backend untouched — `apps/automation`'s 194 tests and `make boundaries`
+re-confirmed green, unaffected. Live end-to-end verification via real browser + real running
+backend (not mocked): typed a question in `/chat`, observed the full `start → token × N →
+citations → done` stream render with the refusal badge, empty-citations state, and a working
+Helpful/Not-helpful toggle (`PATCH` round-trip confirmed via the UI and via direct `curl`); repeated
+the same round trip after the real `CHAT_API_KEY` replaced the throwaway test value, with zero
+code changes required — confirming the proxy reads real env, not a hardcoded test path.
+
+**Not done (explicit scope decisions, not gaps):** no component-render tests (`message-list.tsx`/
+`chat-panel.tsx` are exercised live in a real browser instead — adding jsdom+RTL for a first
+render-test pass wasn't judged proportional to this phase alone); no ESLint run (`pnpm --filter web
+lint` — confirmed pre-existing and unrelated: no ESLint config exists anywhere in `apps/web`, predating
+this phase, `next lint`'s interactive setup wizard has never been completed; flagged, not fixed,
+since standing up a whole lint toolchain is repo-wide tooling debt, not phase-4.5 scope); screen-reader
+and narrow-viewport verification (flagged by the design-review agent, not independently re-run);
+`CHAT_API_KEY` rotation mechanism (deferred to Phase 5, see that section).
+
+
 
 **Status: implemented, tested (12 new endpoint tests + 5 new client/PII unit tests), boundaries
 clean, no ruff/pyright regression.** `app/features/rag_agent/server/router.py` wires the 4.2
@@ -395,15 +666,21 @@ OCR/image reading untouched.
 | **4.2** — answer workflow (`AnswerService`) | ✅ done | `4cc2ee2` | 20 tests → 164 total; boundaries clean; no ruff/pyright regression; DB-integration-tested, no live LLM calls |
 | **4.3** — real principal ACL storage (`page_restriction`) | ✅ done | `da76af9` | 3 tests → 167 total; migration 0005 reversible; boundaries clean; no new pyright error type (git-stash-diffed) |
 | **4.4** — `POST /chat` SSE + feedback, full security control set | ✅ done | `f7c1bdb` | 27 tests → 194 total; boundaries clean; no ruff/pyright regression (verified by per-file diff) |
-| **4.5** — web chat UI + contract extension | ⏳ next | — | HTTP+LLM surface already secured (4.4) → UI + `packages/contracts` update |
-| **5** — optimization & proof | ⬜ todo | — | caching, adaptive routing, red-team, latency/cost |
+| **4.5** — web chat UI + contract extension | ✅ done | `8cbaf46` | 39 web tests; typecheck/build clean; live-verified end to end (real browser + real backend, real `CHAT_API_KEY`) |
+| **5.1** — `CHAT_API_KEY` rotation mechanism | ✅ done | `261ac1e` | 3 tests → 197 total; overlap-window auth, rotation script, runbook |
+| **5.2** — exact-match answer caching | ✅ done | `261ac1e` | 16 tests → 213 total; `TTLCache` extracted to `shared/`, `CachingAnswerService` wraps `AnswerService`, no cross-principal leak |
+| **5** (remaining) — optimization & proof | ⬜ todo | — | red-team/latency/cost proof, embedder bake-off, adaptive routing |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
 
-Gate at each ✅: `make check` green (**194 tests** as of 4.4; was 167 at 4.3, 164 at 4.2, 144 at
-3.5.6, 130 at 4.1, 120 at end-3.5, 99 pre-3.5), `make boundaries` clean, ruff/pyright at the ADR-0003 D1
-baseline (no regression — 2 errors/17 unformatted ruff ≤ 25/2, pyright 34 errors — same file list as
-the 4.3 baseline, 0 new errors on touched files). Reader/RLS isolation tests + all five migrations
-verified — 0005 round-tripped `head → -1 → head` during the pre-4.5 verification pass.
+Gate at each ✅: `make check` green (**213 backend tests** as of 4.4/4.5/5.1/5.2 — 4.5 touched no
+backend code; was 197 at 5.1, 194 at 4.4, 167 at 4.3, 164 at 4.2, 144 at 3.5.6, 130 at 4.1, 120 at
+end-3.5, 99 pre-3.5), `make boundaries` clean, ruff/pyright at the ADR-0003 D1 baseline (no
+regression — 2 errors/17 unformatted ruff ≤ 25/2, pyright 34 errors — same file list as the 4.3
+baseline, 0 new errors on touched files; re-verified live 2026-08-10 before committing 4.5/5.1/5.2).
+`apps/web` gained its first test runner at 4.5: **39 vitest tests**, `tsc --noEmit` clean, `next
+build` clean (no prior web-test baseline to regress against). Reader/RLS isolation tests + all five migrations
+verified — 0005 round-tripped `head → -1 → head` during the pre-4.5 verification pass; `alembic current`
+re-confirmed at `0005_page_restriction (head)` before committing 5.1/5.2 (neither needs a migration).
 
 **Phase 3.5 exit gate — MET (2026-08-07):** `make check` green (120); `make eval` prints the before/after
 rerank table; isolation tests pass (RLS default-deny + wrong-source→0); pgvector 0.8.5 pinned; every
@@ -875,6 +1152,17 @@ row. `make check` green; boundaries clean; no-regression on ruff/pyright.
 - **Proof:** config sweeps; prompt-injection + permission/isolation red-team; measured latency
   (TTFT p50 < 1.5s / p95 < 2.5s, e2e p95 < 10s) + cost; deploy/rollback runbooks in `docs/runbooks/`.
   Optional: fine-tune the embedder on real ticket pairs. **Graph RAG stays off.**
+- **`CHAT_API_KEY` rotation ✅ done (5.1, 2026-08-10).** Built exactly the shape raised here: a
+  bounded overlap window (`CHAT_API_KEY` + `CHAT_API_KEY_PREVIOUS`, both checked in
+  `_verify_api_key`, `router.py`), `scripts/rotate_chat_api_key.py` to run it, and
+  `docs/runbooks/chat-api-key-rotation.md` documenting the swap procedure. Cadence recommendation
+  unchanged: monthly-or-quarterly, not weekly — this is a private, never-logged,
+  never-browser-exposed, server-to-server secret, so the threat model that justifies weekly
+  rotation for a client-exposed or third-party-shared key doesn't apply here. The user raised
+  weekly/biweekly/daily as an option (2026-08-10); the mechanism supports any cadence the operator
+  picks — it's the overlap window that matters, not the interval — so this is a runtime choice,
+  not a rebuild. No scheduled/cron automation yet (see 5.1's "not done" note — no live deploy
+  target to run it against).
 
 ---
 

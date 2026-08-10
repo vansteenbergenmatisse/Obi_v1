@@ -72,9 +72,11 @@ Run the retrieval evaluation baseline (from the repo root):
 make eval
 ```
 
-Run the web app:
+Run the web app. Next.js does not read the repo-root `.env`, so the chat proxy needs its own
+copy (same `CHAT_API_KEY` value as the root `.env`, plus the automation API's base URL):
 
 ```bash
+cp apps/web/.env.example apps/web/.env.local  # then fill in CHAT_API_KEY to match the root .env
 pnpm install && pnpm --filter web dev
 ```
 
@@ -89,10 +91,10 @@ reranker settings, `DATABASE_URL`, retrieval budgets, and reconciliation schedul
 
 ## Phase status
 
-- **Phase 1 — Web shell + repo scaffolding.** Done. `apps/web` builds and renders a
-  placeholder page; contracts and design tokens exist; infra and docs are scaffolded.
-- **Phase 2 — Confluence sync + ingestion foundation.** In progress.
-- **Phase 3 — Embeddings + hybrid retrieval.** Not yet implemented (checkpoint after Phase 2).
-- **Phase 4 — Streaming chat runtime + chat UI.** Not yet implemented (checkpoint after Phase 2).
-- **Phase 5 — Reranking, reconciliation, evaluation hardening.** Not yet implemented
-  (checkpoint after Phase 2).
+This section predates `docs/rag/PLAN.md`'s phase numbering and tracking, which superseded it.
+**`docs/rag/PLAN.md` §0 (status ledger) is the single source of truth for current progress** —
+see it for what's shipped, what's next, and open blockers. As of this writing: Confluence sync,
+ingestion, hybrid retrieval + reranking + RLS isolation (PLAN Phase 3.5), and the grounded,
+cited, streaming chat runtime with a web UI (PLAN Phase 4, through 4.5) are implemented and
+tested; optimization/proof (Phase 5) and the Supabase deploy migration (Phase 6) are not yet
+started.

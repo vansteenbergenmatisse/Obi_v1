@@ -13,14 +13,21 @@
 > and [`../adr/0005-Reranking-And-Answer-Pipeline.md`](../adr/0005-Reranking-And-Answer-Pipeline.md).
 >
 > `TODAY` = shipped and verified. As of 2026-08-10 that is **Phases 1–3 + all of Phase 3.5** (reranker,
-> provider tags + RLS + reader role, `query_trace`, rerank-lift eval, Confluence source scoping) **and
-> Phase 4.1 + 4.2 + 4.3 + 4.4** — the `rag_agent` DTO contract + domain core, the full `AnswerService`
-> answer workflow (rewrite → retrieve/rerank → CRAG retry → refusal → parent expansion → grounded
-> generation → citation enforcement), real, persisted principal ACL storage (`page_restriction`,
-> replacing the fixture-fed policy), and now a live, secured `POST /chat` SSE endpoint +
-> `PATCH /chat/{trace_id}/feedback` — **194 tests green**. `PLANNED` = specified here, gated on the
-> phase named (the web chat UI — Phase 4.5 — is not built yet). Every code claim is anchored
-> `file:line` so it can be checked against the tree.
+> provider tags + RLS + reader role, `query_trace`, rerank-lift eval, Confluence source scoping),
+> **all of Phase 4** — the `rag_agent` DTO contract + domain core, the full `AnswerService` answer
+> workflow (rewrite → retrieve/rerank → CRAG retry → refusal → parent expansion → grounded generation
+> → citation enforcement), real, persisted principal ACL storage (`page_restriction`, replacing the
+> fixture-fed policy), a live, secured `POST /chat` SSE endpoint + `PATCH /chat/{trace_id}/feedback`,
+> and the web chat UI (`apps/web/src/features/chat`, live-verified end to end in a browser) — **and
+> Phase 5.1**, the `CHAT_API_KEY` rotation mechanism (dual-key overlap window, `scripts/
+> rotate_chat_api_key.py`, `docs/runbooks/chat-api-key-rotation.md`) — **and Phase 5.2**, an
+> in-process exact-match answer cache (`CachingAnswerService`, `app.shared.ttl_cache.TTLCache`) —
+> **213 backend tests green** (plus 39 `apps/web` vitest tests, its first test runner, added at
+> 4.5). `PLANNED` = specified here, gated on the phase named (Phase 5's remaining scope —
+> red-team/latency/cost proof, embedder bake-off, semantic caching (deliberately deferred, see
+> `answer_cache.py`), adaptive router — is not built yet). Every code claim is anchored `file:line`
+> so it can
+> be checked against the tree.
 
 ---
 
@@ -311,6 +318,10 @@ New / changed settings in `app/platform/config/settings.py` (safe defaults; docu
 | `rewrite_enabled` | `true` | 4 | conversational query rewrite on |
 | `refusal_min_rerank_score` | `0.10` provisional (set 3.5.5; re-tune Phase 5) | 4 | below → refuse + route to human |
 | `crag_max_retries` | `1` | 4 | corrective retrieval cap (protects p95) |
+| `chat_api_key` | `""` (fail-closed if unset) | 4.4 | shared secret, `POST /chat`/`PATCH .../feedback` auth (C1) |
+| `chat_api_key_previous` | `""` | 5.1 | second secret accepted in parallel during a rotation's overlap window — see `docs/runbooks/chat-api-key-rotation.md` |
+| `chat_answer_cache_ttl_seconds` | `300.0` | 5.2 | exact-match `CachingAnswerService` TTL, same bounded-staleness shape as `chat_idempotency_ttl_seconds` |
+| `chat_answer_cache_max_entries` | `500` | 5.2 | insertion-order eviction bound on the in-process answer cache |
 
 **Test fixture rule (critical).** The hermetic settings fixture MUST force `reranker_provider=fake`.
 `.env` carries a live Cohere key and `env=local`; the offline fallback only fires on an *empty* key, so
@@ -341,7 +352,7 @@ upgrade layers. Each was audited against the actual code. Verdict + one-line rat
 | CRAG (one corrective retry) | **ADD (4)** | bounded to 1 retry to protect p95 |
 | Real principal ACL storage | **DONE (4.3)** | `page_restriction` table replaces the fixture-fed policy's data source |
 | Embedder bake-off / Matryoshka | **UPGRADE (5)** | multi-provider code exists; re-embed via the version-stamp gate |
-| Caching (exact + semantic) | **ADD (5, gated)** | Redis only if the proportionality gate is met |
+| Caching (exact + semantic) | **DONE (5.2, exact-match only)** | in-process `TTLCache`, no confirmed multi-instance need for Redis yet; semantic caching deferred — accuracy risk, no traffic to tune a threshold |
 | Adaptive routing (query difficulty) | **ADD (5, last)** | simple vs decompose; cheap wins first |
 | HyDE / multi-query (RAG-fusion) | **DEFER (5)** | hard queries only; cost/latency not justified broadly |
 | Self-RAG / agent loop | **REJECT** | a fixed workflow is more testable and bounds latency (ADR-0005) |
@@ -360,10 +371,15 @@ upgrade layers. Each was audited against the actual code. Verdict + one-line rat
   `make eval` shows rerank lift, isolation tests pass, pgvector ≥ 0.8, every retrieval traced.
 - **Phase 4** — answer runtime + streaming chat (`rag_agent`, `POST /chat`, web UI). Fixed workflow.
   4.1 (DTO contract + refusal/citation domain core), 4.2 (the full `AnswerService` pipeline,
-  network-free-tested), 4.3 (real, persisted principal ACL), and 4.4 (`POST /chat` +
-  `PATCH /chat/{trace_id}/feedback`, full `securing-http-and-llm-endpoints` control set) are done;
-  4.5 (web UI + contract extension) remains.
-- **Phase 5** — optimization + proof (embedder bake-off, caching, adaptive routing, red-team, latency/cost).
+  network-free-tested), 4.3 (real, persisted principal ACL), 4.4 (`POST /chat` +
+  `PATCH /chat/{trace_id}/feedback`, full `securing-http-and-llm-endpoints` control set), and 4.5
+  (web chat UI + contract extension, live-verified end to end) are **all done**.
+- **Phase 5** — optimization + proof. **5.1 (`CHAT_API_KEY` rotation mechanism) and 5.2 (exact-match
+  answer caching) are done** — dual-key overlap window + rotation script + runbook (5.1);
+  `CachingAnswerService` wrapping `AnswerService`, semantic caching deliberately deferred (5.2).
+  Remaining, reordered around the 5.2-scoping blocker (2026-08-10): red-team/latency/cost proof
+  next, then the embedder bake-off (blocked on a real gold set — the Confluence token is still
+  dead — and `VOYAGE_API_KEY`), then adaptive routing last.
 
 **Cross-cutting rules (every phase).** Feature boundaries: export new cross-boundary symbols from the
 feature/capability root, never deep-import; run `make boundaries` before every commit. No-regression on
