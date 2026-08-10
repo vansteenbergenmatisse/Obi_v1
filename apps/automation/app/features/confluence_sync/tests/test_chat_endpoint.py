@@ -154,6 +154,23 @@ def test_message_too_long_is_rejected(gateway, settings: Settings) -> None:
     assert resp.status_code == 400
 
 
+def test_numeric_principal_is_rejected_not_treated_as_space_wide_trust(
+    gateway, settings: Settings
+) -> None:
+    """Red-team finding (PLAN 5.3): `PrincipalPermissionPolicy.allowed` treats an all-digit scope
+    as space-level trust, bypassing every page's `page_restriction` list. Nothing stopped a caller
+    from sending a numeric `principal` and claiming that trust level before this validator existed.
+    A 422 here — not a 200 that quietly grants space-wide access — is the fix."""
+    chat_settings = _chat_settings(settings)
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+    resp = client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": "hi"}], "principal": "100"},
+        headers=_auth(),
+    )
+    assert resp.status_code == 422
+
+
 def test_rate_limit_returns_429(gateway, settings: Settings) -> None:
     chat_settings = _chat_settings(settings, chat_rate_limit_per_minute=1)
     client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))

@@ -22,11 +22,14 @@
 > Phase 5.1**, the `CHAT_API_KEY` rotation mechanism (dual-key overlap window, `scripts/
 > rotate_chat_api_key.py`, `docs/runbooks/chat-api-key-rotation.md`) — **and Phase 5.2**, an
 > in-process exact-match answer cache (`CachingAnswerService`, `app.shared.ttl_cache.TTLCache`) —
-> **213 backend tests green** (plus 39 `apps/web` vitest tests, its first test runner, added at
+> **and Phase 5.3**, a deterministic prompt-injection + permission/isolation red-team pass that
+> found and fixed a real bypass (an unvalidated `principal` could claim numeric space-level trust
+> and skip page-level restrictions; closed with a `ChatRequestBody` validator) —
+> **219 backend tests green** (plus 39 `apps/web` vitest tests, its first test runner, added at
 > 4.5). `PLANNED` = specified here, gated on the phase named (Phase 5's remaining scope —
-> red-team/latency/cost proof, embedder bake-off, semantic caching (deliberately deferred, see
-> `answer_cache.py`), adaptive router — is not built yet). Every code claim is anchored `file:line`
-> so it can
+> a live-LLM adversarial pass + latency/cost proof (5.4), embedder bake-off, semantic caching
+> (deliberately deferred, see `answer_cache.py`), adaptive router — is not built yet). Every code
+> claim is anchored `file:line` so it can
 > be checked against the tree.
 
 ---
@@ -374,12 +377,15 @@ upgrade layers. Each was audited against the actual code. Verdict + one-line rat
   network-free-tested), 4.3 (real, persisted principal ACL), 4.4 (`POST /chat` +
   `PATCH /chat/{trace_id}/feedback`, full `securing-http-and-llm-endpoints` control set), and 4.5
   (web chat UI + contract extension, live-verified end to end) are **all done**.
-- **Phase 5** — optimization + proof. **5.1 (`CHAT_API_KEY` rotation mechanism) and 5.2 (exact-match
-  answer caching) are done** — dual-key overlap window + rotation script + runbook (5.1);
-  `CachingAnswerService` wrapping `AnswerService`, semantic caching deliberately deferred (5.2).
-  Remaining, reordered around the 5.2-scoping blocker (2026-08-10): red-team/latency/cost proof
-  next, then the embedder bake-off (blocked on a real gold set — the Confluence token is still
-  dead — and `VOYAGE_API_KEY`), then adaptive routing last.
+- **Phase 5** — optimization + proof. **5.1 (`CHAT_API_KEY` rotation mechanism), 5.2 (exact-match
+  answer caching), and 5.3 (prompt-injection + permission/isolation red-team) are done** — dual-key
+  overlap window + rotation script + runbook (5.1); `CachingAnswerService` wrapping `AnswerService`,
+  semantic caching deliberately deferred (5.2); deterministic architecture-level red-team tests that
+  found and fixed a real numeric-`principal` space-trust bypass (5.3, see PLAN.md §0). Remaining:
+  5.4 — a live-LLM adversarial pass (retrieved-content injection, system-prompt exfiltration,
+  multi-turn injection, reranker relevance-poisoning) + measured latency/cost proof, both requiring
+  real API spend — then the embedder bake-off (blocked on a real gold set — the Confluence token is
+  still dead — and `VOYAGE_API_KEY`), then adaptive routing last.
 
 **Cross-cutting rules (every phase).** Feature boundaries: export new cross-boundary symbols from the
 feature/capability root, never deep-import; run `make boundaries` before every commit. No-regression on

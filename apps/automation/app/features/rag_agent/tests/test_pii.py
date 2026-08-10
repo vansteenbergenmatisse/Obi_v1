@@ -37,3 +37,15 @@ def test_leaves_plain_text_untouched() -> None:
 def test_redacts_multiple_occurrences() -> None:
     out = redact_pii("email a@b.com or c@d.com")
     assert out.count("[REDACTED_EMAIL]") == 2
+
+
+def test_obfuscated_email_evades_redaction_documented_known_gap() -> None:
+    """Red-team (PLAN 5.3): documents, not fixes, a known limitation already stated in this
+    module's docstring ("pattern-based, not NER"). A trivially obfuscated email ('at'/'dot'
+    spelled out) does not match `_EMAIL_RE` and passes through unredacted. Recorded as an explicit
+    regression marker so a future change to the regex is a deliberate decision, not an accidental
+    behavior change caught by surprise; NER-grade detection is out of scope here (see module
+    docstring), and a real fix would need a live-model or NER pass, not a regex tweak."""
+    out = redact_pii("contact alice [at] example [dot] com for access")
+    assert "alice [at] example [dot] com" in out
+    assert "[REDACTED_EMAIL]" not in out

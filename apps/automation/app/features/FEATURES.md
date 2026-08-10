@@ -116,7 +116,7 @@ security_baseline:
       controls:
         C1_auth:        { status: covered, mechanism: "shared-secret chat_api_key via Authorization: Bearer, constant-time compare, fail-closed (503) when unset" }
         C2_rate_limit:  { status: covered, mechanism: "SlidingWindowRateLimiter keyed by principal (if supplied) else client IP, chat_rate_limit_per_minute" }
-        C3_input:       { status: covered, mechanism: "Pydantic body (extra=forbid); history non-empty + ends on a user turn; chat_max_history_turns / chat_max_message_chars" }
+        C3_input:       { status: covered, mechanism: "Pydantic body (extra=forbid); history non-empty + ends on a user turn; chat_max_history_turns / chat_max_message_chars; all-digit principal rejected (PLAN 5.3 red-team finding)" }
         C4_timeout:     { status: covered, mechanism: "AnthropicMessagesClient timeout/retry/breaker (answer_timeout_seconds/max_retries/breaker_threshold); retrieval's embedder/reranker already covered (3.5.2/3)" }
         C5_output_rate: { status: covered, mechanism: "generation token cap + chat_output_max_answer_chars defensive re-cap + paced SSE chunks (chat_token_chunk_chars/chat_stream_interval_ms)" }
         C6_redaction:   { status: covered, mechanism: "redact_pii scrubs the assembled prompt before every rewrite/generation call" }
@@ -142,3 +142,10 @@ caller-self-reported, trusted only as far as C1 trusts the calling web proxy. Pe
 default-deny model, an absent/unverified principal can only ever see *unrestricted* pages — never a
 blanket-access bypass. Real per-user identity is a later phase; the endpoint is already safe in its
 absence.
+
+**PLAN 5.3 red-team finding, fixed.** The claim above was not quite true before 5.3: an all-digit
+`principal` is read by `PrincipalPermissionPolicy.allowed` as **space-level trust**, granting every
+page in that space regardless of `page_restriction` — a real feature, needed by the eval harness's
+numeric space-scoping, but never meant to be reachable from an untrusted HTTP `principal`. Closed at
+the boundary with a `ChatRequestBody` validator rejecting all-digit `principal` values (422), not by
+changing the shared domain policy. See `server/router.py`'s docstring and PLAN.md §0's 5.3 entry.

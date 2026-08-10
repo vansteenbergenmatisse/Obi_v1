@@ -15,7 +15,9 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
   C2_rate_limit:  covered   - per-principal (if the caller supplies one) else per-client-IP
                               sliding window (chat_rate_limit_per_minute).
   C3_input:       covered   - Pydantic body (extra=forbid); history non-empty + ends on a user
-                              turn; per-turn length cap + history-length cap (chat_max_*).
+                              turn; per-turn length cap + history-length cap (chat_max_*); an
+                              all-digit `principal` is rejected (PLAN 5.3 red-team finding — see
+                              `ChatRequestBody`'s validator docstring).
   C4_timeout:     covered   - retrieval's embedder/reranker already carry timeout/retry/breaker
                               (3.5.2/3); the answer-runtime AnthropicMessagesClient now does too
                               (answer_timeout_seconds/max_retries/breaker_threshold, PLAN 4.4).
@@ -52,6 +54,19 @@ default-deny model, an absent/unverified principal can only ever see *unrestrict
 (`PrincipalPermissionPolicy.allowed`) — it is never a blanket-access bypass. Real per-user identity
 is a later phase; this endpoint is already safe in its absence.
 
+PLAN 5.3 red-team finding (fixed here, not just documented): `PrincipalPermissionPolicy.allowed`
+overloads the same `scope: str | None` type for two different trust levels — an all-digit scope is
+treated as **space-level trust**, granting every page in that space regardless of its
+`page_restriction` list (this is deliberate and still needed: it is how the eval harness scopes
+`retrieval_smoke.json`, see `retrieval/domain/permission.py`'s docstring). Nothing in the domain
+policy itself distinguishes "trusted internal space-scope caller" from "arbitrary HTTP caller who
+happened to type a digit", so an unvalidated `principal` would let any caller claim space-wide
+access by guessing a real `space_id` (small sequential integers, not a secret) — a genuine
+blanket-access bypass the paragraph above assumed couldn't happen. Closed at the HTTP boundary
+(`ChatRequestBody`'s validator below) rather than in the shared domain policy, since a real
+production principal is never a bare digit string in this system (fixture identities are
+`acct-alice`, `grp-hr`, etc.) and the eval harness never goes through this endpoint.
+
 PLAN 5 addendum: `get_answer_service_dep` may return either the real `AnswerService` or
 `answer_cache.CachingAnswerService` wrapping it (see `main.build_answer_service`'s call site).
 Transparent to this module and to every control above — the cache is keyed by (full history,
@@ -71,7 +86,7 @@ from collections.abc import AsyncIterator, Iterator
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
 
@@ -102,6 +117,18 @@ class ChatRequestBody(BaseModel):
     conversation_id: str | None = None
     history: list[ChatMessage] = Field(min_length=1)
     principal: str | None = None
+
+    @field_validator("principal")
+    @classmethod
+    def _reject_numeric_principal(cls, value: str | None) -> str | None:
+        """An all-digit `principal` would be read by `PrincipalPermissionPolicy.allowed` as a
+        `space_id` and granted space-wide access, bypassing every page-level restriction (PLAN
+        5.3 red-team finding — see this module's docstring). No real production principal is a
+        bare digit string, so rejecting the shape closes the bypass without touching the shared
+        domain policy the eval harness's legitimate numeric space-scoping still depends on."""
+        if value is not None and value.isdigit():
+            raise ValueError("principal must not be a bare digit string")
+        return value
 
 
 class FeedbackBody(BaseModel):
