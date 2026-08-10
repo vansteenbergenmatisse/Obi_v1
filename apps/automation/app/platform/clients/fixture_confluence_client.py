@@ -18,6 +18,7 @@ from app.platform.clients.confluence_client import (
     ConfluenceGateway,
     ConfluencePage,
     ConfluencePageMeta,
+    _resolve_read_restriction,
 )
 
 
@@ -178,8 +179,7 @@ class FixtureConfluenceGateway:
         data = _loader().load_restrictions(str(pid))
         if not data:
             return []
-        users = (data.get("restrictions", {}).get("user", {}) or {}).get("results", [])
-        return [u["accountId"] for u in users if u.get("accountId")]
+        return _resolve_read_restriction(data.get("restrictions", {}) or {})
 
     def get_attachments(self, page_id: int) -> list[dict]:
         data = _loader().load_attachments(str(int(page_id)))

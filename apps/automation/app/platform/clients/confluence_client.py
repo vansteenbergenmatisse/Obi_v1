@@ -52,6 +52,29 @@ class ConfluenceGateway(Protocol):
     def get_attachments(self, page_id: int) -> list[dict]: ...
 
 
+# Returned in place of a group-only restriction's principals. No real caller is ever this
+# literal string, so a page keyed by it is inaccessible to everyone but the sync/admin path —
+# fail-closed until group-membership expansion (PLAN 4.6.2) resolves it to real account ids.
+GROUP_RESTRICTED_SENTINEL = "__unresolved_group_restriction__"
+
+
+def _resolve_read_restriction(restrictions: dict) -> list[str]:
+    """Resolve one Confluence read-restriction record's principals.
+
+    Only individual-user restrictions are directly resolvable today — group membership isn't
+    looked up yet. A restriction expressed only via Confluence groups, with no resolvable user
+    principal alongside it, must fail closed rather than silently becoming unrestricted: dropping
+    ``restrictions.group`` entirely and returning ``[]`` (PLAN 4.6.1's finding) would let a page
+    restricted only by group sync as world-readable through the chatbot.
+    """
+    users = (restrictions.get("user") or {}).get("results", []) or []
+    groups = (restrictions.get("group") or {}).get("results", []) or []
+    principals = [u["accountId"] for u in users if u.get("accountId")]
+    if groups and not principals:
+        return [GROUP_RESTRICTED_SENTINEL]
+    return principals
+
+
 def _webui(base_url: str, links: dict) -> str:
     webui = links.get("webui", "")
     if webui.startswith("http"):
@@ -169,7 +192,5 @@ class HttpConfluenceClient:
         for r in resp.json().get("results", []):
             if r.get("operation") != "read":
                 continue
-            for u in (r.get("restrictions", {}).get("user", {}) or {}).get("results", []):
-                if u.get("accountId"):
-                    principals.append(u["accountId"])
+            principals.extend(_resolve_read_restriction(r.get("restrictions", {}) or {}))
         return principals

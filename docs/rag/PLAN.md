@@ -18,15 +18,43 @@ fix here as the next task; update this ledger after each phase.
 
 **Phase 3.5 is COMPLETE. Phase 4 is COMPLETE: 4.1 + 4.2 + 4.3 + 4.4 + 4.5 all done.**
 **Phase 5.1 (`CHAT_API_KEY` rotation), 5.2 (exact-match answer caching), and 5.3 (prompt-injection +
-permission/isolation red-team) are done.** Remaining Phase 5 work, sequenced at the user's direction
-(2026-08-10): live-LLM adversarial pass + latency/cost proof next (5.4 — real API calls, real spend,
-not yet started), then the embedder bake-off once the Confluence token is fixed (real gold set) and
-`VOYAGE_API_KEY` is provided; adaptive router stays last per the plan text.
+permission/isolation red-team) are done.**
+
+**⛔ BLOCKED before continuing Phase 5:** an independent same-day audit (`docs/rag/fixes/`, six
+agents, 2026-08-10) found real unresolved bugs in already-"done" Phases 0-4 that this ledger never
+tracked — one CRITICAL access-control bypass (Confluence group restrictions silently dropped) and
+one HIGH cross-principal cache leak, plus 12 more MEDIUM/LOW findings. **Phase 4.6 (fixes-backlog
+remediation, see its own section below Phase 4) must fully complete — exit gate 4.6.16 green — before
+5.4 / the embedder bake-off / adaptive routing may resume.** Do Phase 4.6 next, in the order given.
+
+**4.6.1 done (2026-08-10, see its own section for detail) → 229 tests (was 219), boundaries clean,
+no ruff/pyright regression.** **4.6.2 is next and needs your input before it can start** (Confluence
+group-members API scope/cost — see that section) — ask before doing other Phase-4.6 work, per
+`CLAUDE.local.md` §4.
+
+Independently, and not gating Phase 5: **Phase 4.7** (UI component refactor — rebuild `apps/web`'s
+chat UI to match the approved mockup at `/Users/matissevansteenbergen/Downloads/Obi chatbot UI
+mockups/` as real components, plus adopt its visuals as the real brand tokens) and **Phase 4.8**
+(frontend/backend repository separation — split `apps/web` and `apps/automation` into independent
+repos, `packages/contracts`/`design-tokens` become published versioned packages). **4.8 supersedes
+ADR-0006's deferral** — see `docs/adr/0007-Frontend-Backend-Repository-Separation.md` for the actual
+decision and why ADR-0006 no longer holds for the repo-split question. Do 4.7 before 4.8 (settle the
+widget's file layout before moving it to a new repo). Neither gates backend Phase 5; both are
+frontend/repo-topology work, disjoint from Phase 4.6's backend files.
+
+**No phase auto-starts.** Phases 4.6, 4.7, and 4.8 are all fully specced below and ready, but per the
+project's standing local working rule, a fresh session must stop and get an explicit go-ahead from
+the user before starting *any* phase/sub-step — including the first one. On resume: read this
+ledger, state that all three are ready, and ask which to start (4.6 recommended first — gating and
+security-sensitive; 4.7 before 4.8) rather than beginning any automatically. Phase 4.8 additionally
+has three unanswered "needs your input" decisions (registry choice, new repo names, origin-monorepo
+fate) that block it regardless of ordering.
 
 Fresh context: read this ledger + `docs/rag/DESIGN.md` (§2 target pipeline, §5 accuracy stack) +
-`docs/adr/0005*`, then continue Phase 5. The chat feature (backend + web UI) is done and
-live-verified end to end; both dev servers were confirmed running together again after 5.1
-(`uvicorn app.main:app` on :8000, `pnpm --filter web dev` on :3000, chat UI at `/chat`).
+`docs/adr/0005*` + `docs/adr/0007*`, then ask before starting Phase 4.6, 4.7, or 4.8. The chat
+feature (backend + web UI) is done and live-verified end to end; both dev servers were confirmed
+running together again after 5.1 (`uvicorn app.main:app` on :8000, `pnpm --filter web dev` on :3000,
+chat UI at `/chat`).
 
 **Commit gap closed — 2026-08-10 (new session, again).** 5.3 was implemented and self-reported
 done in the prior session but never committed (`git status` showed the same 7 files still dirty at
@@ -743,8 +771,11 @@ OCR/image reading untouched.
 | **5.1** — `CHAT_API_KEY` rotation mechanism | ✅ done | `261ac1e` | 3 tests → 197 total; overlap-window auth, rotation script, runbook |
 | **5.2** — exact-match answer caching | ✅ done | `261ac1e` | 16 tests → 213 total; `TTLCache` extracted to `shared/`, `CachingAnswerService` wraps `AnswerService`, no cross-principal leak |
 | **5.3** — prompt-injection + permission/isolation red-team | ✅ done | `92bbb7f` | 6 tests → 219 total; found + fixed a real numeric-principal space-trust bypass; no live LLM spend |
-| **5** (remaining) — 5.4 live-LLM red-team + latency/cost proof, embedder bake-off, adaptive routing | ⬜ todo | — | 5.4 needs real API calls/spend; bake-off blocked on Confluence token + `VOYAGE_API_KEY` |
+| **4.6** — fixes-backlog remediation (16 sub-steps + exit gate) | ⬜ todo | — | independent same-day audit (`docs/rag/fixes/`) found a CRITICAL ACL bypass + a HIGH cross-principal leak + 12 more findings in already-"done" phases 0-4; **gates 5.4/bake-off/adaptive-routing** until the 4.6.16 exit gate is green |
+| **5** (remaining) — 5.4 live-LLM red-team + latency/cost proof, embedder bake-off, adaptive routing | ⬜ todo (blocked on 4.6) | — | 5.4 needs real API calls/spend; bake-off blocked on Confluence token + `VOYAGE_API_KEY` |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
+| **4.7** — UI component refactor: Obi widget rebuild + brand tokens (4.7.1 → 4.7.4) | ⬜ todo | — | frontend-only, `apps/web`; does not gate Phase 5; source of truth `/Users/matissevansteenbergen/Downloads/Obi chatbot UI mockups/` |
+| **4.8** — Frontend/backend repository separation (4.8.1 → 4.8.7) | ⬜ todo (blocked on registry/repo-name/monorepo-fate decisions) | — | supersedes ADR-0006's deferral; see `docs/adr/0007-Frontend-Backend-Repository-Separation.md`; do after 4.7 |
 
 Gate at each ✅: `make check` green (**219 backend tests** as of 5.3 — 4.5 touched no backend code;
 was 213 at 5.1/5.2, 197 at 5.1, 194 at 4.4, 167 at 4.3, 164 at 4.2, 144 at 3.5.6, 130 at 4.1, 120 at
@@ -1215,6 +1246,444 @@ row. `make check` green; boundaries clean; no-regression on ruff/pyright.
 
 ---
 
+## Phase 4.6 — Fixes-backlog remediation (gates Phase 5.4) ⬜ todo
+
+**Origin.** Six independent audit agents re-ran tests/boundaries/ruff/pyright live and read code
+directly (not trusting this ledger's self-report) across Phases 0, 1, 2, 3, 3.5, and 4 on
+2026-08-10, writing findings to `docs/rag/fixes/` (`README.md` index + one file per phase). They
+found real unresolved bugs — including one CRITICAL access-control bypass and one HIGH
+cross-principal data leak — in phases this ledger had already marked ✅ done with "no gaps found."
+Phase 5 itself was excluded (5.4+ isn't built yet, no findings possible).
+
+**Gate.** `Phase 5.4` (live-LLM red-team + latency/cost proof), the embedder bake-off, and adaptive
+routing may **not** resume until every `4.6.x` sub-step below is ✅ and the 4.6.16 exit gate is
+green. Numbered `4.6` (not `5.0`) because every finding originates in already-shipped Phase 0–4
+code — this is closing out that phase's own debt, not new Phase-5 feature work.
+
+Severity-first order; CRITICAL/HIGH block everything else. Batched where low-risk/same-file,
+isolated where high-risk (signature changes, migrations, or a decision only the user can make).
+
+### 4.6.1 — Confluence group-restriction fail-closed mitigation (CRITICAL) ✅ done (2026-08-10)
+
+**Status: implemented, tested (10 new tests), boundaries clean, no ruff/pyright regression
+(file-level diffed, not just counted) → 229 tests total (was 219).** Pure code fix, no migration,
+exactly as scoped.
+
+**Fix.** New shared pure resolver `_resolve_read_restriction(restrictions: dict) -> list[str]`
+(`app/platform/clients/confluence_client.py`) — parses a Confluence read-restriction record's
+`user.results[].accountId` as before, but now also inspects `group.results`: if group entries
+exist and no user principal resolved, returns `[GROUP_RESTRICTED_SENTINEL]` (a literal string no
+real caller can ever be) instead of `[]`. A page keyed by the sentinel is inaccessible to every
+principal-scoped caller — fail-closed — until group-membership expansion (4.6.2) resolves it to
+real account ids. Both `HttpConfluenceClient.get_restrictions` (live REST v2) and
+`FixtureConfluenceGateway.get_restrictions` (offline/test double) now call this one resolver
+instead of each duplicating the same user-only parse — importing it by full submodule path per
+this package's own internal-imports rule (`platform/clients/__init__.py`'s docstring), not
+through the root.
+
+**Scope decision — did not touch the fixture corpus.** The plan's phrasing ("a fixture page
+restricted only by group persists as inaccessible") could be read as calling for a new
+group-only fixture page exercised through the full `handle_sync_page` → `page_restriction` →
+`PrincipalPermissionPolicy.allowed()` chain. Investigated and deliberately declined: the shared
+fixture corpus backs `_index_corpus`, reused across dozens of retrieval/eval/chat-endpoint tests
+(`test_retrieval_eval.py`, `test_answer_workflow.py`, `test_chat_endpoint.py`, evaluation
+datasets) — adding or repurposing a page risks perturbing exact-count/ranking assertions far
+outside this fix's blast radius, for a link (`page_restriction` row → denied access) already
+proven correct by the existing 4.3 tests. Proved the fix instead at its exact boundary — new
+`app/platform/clients/tests/test_confluence_client.py` (10 tests, none existed for either client
+before this sub-step): the pure resolver (group-only → sentinel; user-only → unaffected; mixed
+user+group → user kept, matching the still-deferred-to-4.6.2 limitation; empty → unrestricted)
+and both gateways end-to-end (`HttpConfluenceClient` via `httpx.MockTransport`;
+`FixtureConfluenceGateway` via a monkeypatched stub loader, including proving the test-only
+`set_restrictions` mutator still bypasses resolution for already-expanded principal sets).
+
+**Existing test fixed, not just re-asserted (per the audit finding).**
+`test_worker_sync.py::test_first_index_persists_restrictions` indexes fixture page 2002, which
+carries a resolvable user (`acct-carol`) *and* two unresolved groups (`grp-hr`/`grp-finance`) —
+under this fix the persisted ACL is unchanged (`{"acct-carol"}`, since a resolvable user is
+present), so the assertion value didn't need to change, but the audit correctly flagged that the
+test's docstring gave no indication the groups existed or were being dropped. Rewrote the
+docstring to state the accepted-for-now limitation explicitly and point at the new regression
+test that actually covers the group-only bypass.
+
+**Not done (deferred to 4.6.2, needs the user's input on API scope/cost before starting):**
+resolving group membership to real account ids. The sentinel is the permanent answer if that
+input says no; otherwise 4.6.2 replaces it with the expanded member set.
+
+`HttpConfluenceClient.get_restrictions` and `FixtureConfluenceGateway.get_restrictions`
+(`apps/automation/app/platform/clients/{confluence_client,fixture_confluence_client}.py`) parse
+only `restrictions.user.results[].accountId`, never `restrictions.group.results[]` — a page
+restricted **only** by a Confluence group syncs as fully unrestricted through the chatbot. Fix: when
+a restriction payload has group entries but no resolvable user principals, return a fail-closed
+sentinel (page stays inaccessible to everyone but the sync/admin path) instead of `[]`. Tests: a
+fixture page restricted only by group persists as inaccessible to a principal outside that group;
+fix the existing `test_worker_sync.py::test_first_index_persists_restrictions` assertion, which
+today encodes the bug as expected behavior. Pure code fix, no migration.
+
+### 4.6.2 — Confluence group-membership expansion (CRITICAL)
+
+The real fix once 4.6.1's mitigation is live: resolve each `group.results[].name`/`id` to member
+`accountId`s via the Confluence group-members API (cacheable per sync run) and union those into the
+persisted `page_restriction` principal set. **Needs your input before starting:** confirm the
+Confluence API token/scope can call the group-members endpoint, and accept the added per-sync API
+cost — if the token can't be granted that scope, 4.6.1's fail-closed behavior becomes the permanent
+answer and this sub-step is descoped (document as an accepted limitation, don't guess). Tests: a
+group member can retrieve the page; a non-member cannot; repeated pages sharing a group don't
+re-fetch membership every time.
+
+### 4.6.3 — Idempotency cache cross-principal leak (HIGH)
+
+`_idempotency_cache` in `apps/automation/app/features/rag_agent/server/router.py` keys only on the
+raw `Idempotency-Key` header string — a replay with a **different** `principal`/`history` silently
+returns the first caller's cached `Answer` including citations. Fix: bind the cache key to a hash of
+`(idempotency_key, principal, history)`, mirroring `answer_cache.py`'s already-correct
+`_cache_key` pattern. On a mismatch, recompute rather than serving the stale cache. Tests: replay
+same key + different principal → not the first caller's answer; replay same key + different history
+→ same; existing same-key/same-body regression test stays green. Pure code fix, no migration.
+
+### 4.6.4 — Rate-limiter/idempotency hardening batch (MEDIUM-HIGH + MEDIUM, batched)
+
+Same file cluster (`rag_agent/server/router.py`, `apps/automation/app/shared/rate_limiter.py`),
+reviewed together:
+- `_rate_limit_key` prefers the untrusted, caller-supplied `principal` over IP — trivially bypassed
+  by rotating `principal`, defeating `chat_rate_limit_per_minute`. Fix: key primarily on IP; fold
+  `principal` in only as a non-bypassable secondary suffix, or drop it from the key entirely.
+- `SlidingWindowRateLimiter` never prunes empty buckets → unbounded memory growth. Fix: prune
+  zero-length buckets in `allow()`, and/or add a bounded eviction policy.
+- The idempotency `TTLCache` in `router.py` has no `max_entries` bound (unlike its Phase-5 sibling).
+  Fix: add a `chat_idempotency_cache_max_entries` setting, mirroring `chat_answer_cache_max_entries`.
+
+Tests: same IP + rotating `principal` within one window → the Nth request is 429; many distinct
+limiter keys pushed then drained → bucket count stays bounded; pushing more than the configured max
+distinct idempotency keys → oldest evicted. Pure code fix, no migration.
+
+### 4.6.5 — `rollback_to` doesn't restore `PageSource`'s cached hashes (MEDIUM-HIGH)
+
+`apps/automation/app/features/confluence_sync/application/versioning.py::rollback_to` never copies
+the target `DocumentVersion`'s `content_hash`/`structure_hash`/`parser_version`/etc. back onto
+`PageSource` — a rollback can leave the corpus silently pinned to a stale version, because the next
+sync's freshly computed hashes wrongly match the stale cached ones and `classify()` reports
+`no_change`. Fix: copy those fields back on rollback. **Needs your input:** `PageSource` fields with
+no `DocumentVersion` counterpart (`title`, `labels_hash`, `access_scope_hash`, etc.) have nothing
+correct to restore — recommend leaving them as pre-rollback values (self-heals on the next
+reconciliation sweep) rather than forcing a metadata re-fetch; confirm before closing this out.
+Tests: rollback then sync an unchanged page → `classify()` reports `no_change` correctly; rollback
+then sync a page with a real newer revision → change is detected, not spuriously masked. No
+migration (no schema change, only which values get written).
+
+### 4.6.6 — `permission.py`'s overloaded `scope` string (MEDIUM)
+
+`apps/automation/app/features/retrieval/domain/permission.py`'s `allowed()` distinguishes
+space-wide vs. principal trust only via `.isdigit()` on one untyped `scope: str | None` — the root
+cause of the already-fixed 5.3 numeric-principal bypass, still unguarded at the domain layer, so any
+future direct caller could reintroduce the same bug class. Fix: replace with two explicit params
+(`space_id: int | None`, `principal: str | None`) or a tagged union; update the
+`retrieval/application/retriever.py` call site to pass the pre-classified value. Isolated (signature
+change, call-site fallout), not batched. Tests: a domain-layer regression test proving an all-digit
+principal id can never be reinterpreted as space-level trust; existing grant/block tests pass under
+the new signature.
+
+### 4.6.7 — Confluence client hardening batch (MEDIUM + INFO, batched)
+
+`apps/automation/app/platform/clients/confluence_client.py`, one review pass: add a
+consecutive-failure circuit breaker (mirroring `embeddings_client.py`'s pattern); fix the retry
+predicate to retry on 5xx (it currently excludes `httpx.HTTPStatusError` entirely, contradicting
+`how_this_works.md`'s documented "retry on 5xx" claim); the assigned-but-never-called `log` gets
+actual audit log lines (on retry, on 4xx/5xx). New dedicated test file (none exists today — every
+confluence_sync test runs against the fixture gateway only): 5xx is retried; breaker trips after N
+consecutive failures; 4xx is still not retried; a log line is emitted on retry/4xx/5xx.
+
+### 4.6.8 — Duplicate CHECK constraint from a naming-convention bug (MEDIUM)
+
+Migration-built vs. `create_all`-built schemas silently diverge: explicit `name="ck_chunk_source_type"`
+in `apps/automation/app/platform/db/models.py` collides with the naming-convention-generated name,
+producing a duplicate constraint (`ck_chunk_ck_chunk_source_type`) — harmless today (same predicate),
+risky if `source_type`'s allowed values are ever extended. Fix: wrap explicit constraint names in
+`sqlalchemy.schema.conv(...)` (or drop `name=` and let the convention generate it once); add a new
+Alembic migration dropping the erroneous duplicate on already-migrated DBs, with a tested, reversible
+`downgrade()`. Isolated — needs a migration, must be tested against a scratch DB, not the shared dev
+DB. Tests: `Base.metadata` produces exactly one CHECK constraint per table with the canonical name;
+migration up/down round-trip confirmed.
+
+### 4.6.9 — Pyright baseline reconciliation (MEDIUM, governance)
+
+The pyright baseline crept 31→34 errors across Phase 4, reported "unchanged" session-over-session
+but never reconciled against ADR-0003's actual recorded baseline. **Needs your input:** identify the
+3 regressed errors (git-bisect the relevant commits) and either (a) fix them and restore the true
+baseline of 31, or (b) formally amend ADR-0003's D1 baseline to 34 with a recorded justification in
+this ledger's "Deviations already taken" section — default to (a) unless investigation shows they're
+low-value/hard-to-fix, in which case propose (b) explicitly. Also fix root `CLAUDE.md`'s stale
+baseline numbers once reconciled (run this **before** 4.6.15, so 4.6.15's doc pass writes the final
+numbers, not another stale snapshot).
+
+### 4.6.10 — RLS reader-role no-op outside offline envs (LOW)
+
+`get_reader_engine()` (`apps/automation/app/platform/db/engine.py`) silently falls back to the
+RLS-bypassing writer connection when `DATABASE_READER_URL` is unset — only proven correct inside the
+test harness, which does wire a real `rag_reader`. Fix: extract the existing `_OFFLINE_ENVS`
+convention (currently duplicated in `embeddings_client.py`/`reranker_client.py`) to a shared
+`Settings.is_offline_env()`, then warn or fail-closed when the reader URL is unset **outside** that
+offline set. **Needs your input:** warn-only or fail-closed for a real deployment — small, cheap
+question. Tests: parametrized over offline-env + unset (no warning) vs. non-offline-env + unset
+(warning/raise per chosen behavior) vs. reader URL set (never warns, any env).
+
+### 4.6.11 — Event dedup ignores `delivery_id` collisions (LOW)
+
+`apps/automation/app/features/confluence_sync/infrastructure/event_repo.py::record_event` only
+guards the `payload_hash` unique constraint via `on_conflict_do_nothing`, not the separate
+`delivery_id` partial-unique index — a same-`delivery_id`/different-hash redelivery raises an
+uncaught `IntegrityError` (500) instead of deduping gracefully. Fix: catch that specific violation
+(or pre-check `delivery_id`) and return the same graceful `duplicate=True` outcome. Test: two
+envelopes, same `delivery_id`, different `payload_hash` → second delivery dedupes gracefully, not a
+500.
+
+### 4.6.12 — `Answer.refusal_reason` never reaches an observable surface (LOW)
+
+Computed and unit-tested but never reaches a log line, DB column, SSE event, or the TS contract.
+**Needs your input:** default to the minimal fix — add `refusal_reason` to the existing
+`chat_request` structured log line in `router.py` (operator-visibility only, no schema/contract
+change) — unless you want it exposed to end users via `query_trace`/SSE/the web contract, which is a
+larger, cross-boundary change overlapping the UI-refactor track. Test: the log line includes a
+populated `refusal_reason` on a refused answer, absent/null otherwise.
+
+### 4.6.13 — Dead-code disposition batch (no code risk)
+
+Record decisions, mostly "no action": `JobStatus.leased`/`.cancelled` (unused, backs a native PG
+enum — recreating the type for near-zero benefit isn't worth it, document as accepted no-op);
+`@runtime_checkable` protocols with zero `isinstance` call sites (harmless, document intent, no
+action); `evaluation/metrics/latency_metrics.py` (unwired — its wiring belongs to Phase 5.4 itself,
+not this backlog, no action here); `attachment_extraction.py` (fully built, zero call sites,
+attachment content not currently searchable — don't delete working code on spec; add a "PARKED" note
+wherever ingestion capabilities are described, folded into 4.6.15).
+
+### 4.6.14 — `how_this_works.md` staleness rewrite (doc drift, isolated)
+
+`docs/rag/how_this_works.md` still describes the pre-3.5 system in §§1–9: stale
+phase/test-count banner, dotted "PLANNED" pipeline stages that are actually shipped, §7's "not
+wired to HTTP yet" framing (Phase 4 is done), §7.2's false "principal ACL is fixture-only" claim
+(false since 4.3), a 9-vs-10-table undercount (missing `page_restriction`), and a dead TOC anchor.
+Full rewrite to match the shipped state `DESIGN.md`'s banner already correctly describes. Isolated
+as its own sub-step — the largest doc job, kept separate so 4.6.15's batch stays small.
+
+### 4.6.15 — Remaining doc-drift batch (batched, run after 4.6.9)
+
+`docs/rag/DESIGN.md` §1's self-contradicting "Confirmed gaps" paragraph (claims reranker/tracing/
+chat/citations/refusal/CRAG are absent; all shipped since 3.5.2–5.2); `evaluation/README.md`'s
+nonexistent `"security"` eval kind; `FEATURES.md`'s missing 3.5.5 rerank-lift exports; root
+`CLAUDE.md`'s stale ruff/pyright baseline (write the numbers 4.6.9 settled on, not another
+snapshot); `QueryTrace.rerank_scores`' stale "reserved for Phase 4" docstring (populated since 4.2);
+the `attachment_extraction.py` PARKED note carried over from 4.6.13.
+
+### 4.6.16 — Exit gate ⬜ todo
+
+Re-run `make check` (backend + web), `make boundaries`, `uv run ruff check .` / `ruff format --check
+.`, `uv run pyright` repo-wide. Confirm zero regressions vs. whatever 4.6.9 established as the final
+baseline; every new test added across 4.6.1–4.6.12 is green; this ledger has one row per `4.6.x`
+sub-step with commit ref + test-count delta + any deviations, per the existing convention. Only once
+this gate is green does Phase 5.4 / the embedder bake-off / adaptive routing resume.
+
+---
+
+## Phase 4.7 — UI component refactor (Obi widget) ⬜ todo *(independent; does not gate Phase 5)*
+
+**Source of design truth:** `/Users/matissevansteenbergen/Downloads/Obi chatbot UI mockups/`
+(specifically `Obi Assistant.dc.html` + `support.js`) — the user-supplied mockup this entire phase
+rebuilds. It's a proprietary prototyping-tool export (design/behavior reference only, not usable
+code): one floating widget (launcher → teaser → panel), a fake Stripe-style dashboard backdrop
+(irrelevant, ignore it), and zero real backend calls (all "AI" replies are canned keyword-matched
+strings) — only its UI/interaction shapes carry over, not any code or fake logic.
+
+**Goal.** Rebuild `apps/web`'s chat UI to look and behave exactly like that mockup, as a proper
+component library, without losing or forking any existing real functionality (SSE streaming,
+citations, refusal handling, feedback, security controls). Target: `apps/web` only. Nothing in
+`apps/automation` changes in this phase — the repo-separation work this enables is its own next
+phase, **4.8**.
+
+**Product decisions already made (binding, do not relitigate):**
+- Adopt the mockup's exact visuals now as the real Omniboost brand tokens — Stripe-style light
+  theme, `#635bff` purple accent, Inter font — applied app-wide, not scoped to just the widget.
+- The floating chat widget (launcher + teaser + panel) is the primary deliverable. The existing
+  full-page `/chat` route stays working (already built/tested) sharing the same live conversation
+  session as the widget, but gets no further design investment — all mockup-fidelity work targets
+  the widget.
+- Screenshot capture: dropped entirely — no button, no flash animation, no fake attach. Zero real
+  capability exists to back it (see `docs/future-ideas/IDEAS.md` idea #3 for what a real version
+  would need).
+- File attachment: shipped as an honest disabled stub (visible, not functional) — no upload endpoint
+  exists yet.
+- Language switcher (6 locales): shipped as a stub — menu renders, current locale shown, selecting
+  closes with no-op. No partial/fake translation.
+- "Developer docs"/"Support articles" menu items: disabled stubs until real URLs exist.
+- "Restart conversation": built real (trivial local-state reset).
+- Assistant display name: **"Obi" is the mockup's placeholder name, not a confirmed product
+  decision** — pass it as a prop/config value, confirm the real name with the user before ship.
+
+**Architecture decision (D0) — shared session, not two conversations.** Extract the conversation
+state machine currently inline in `apps/web/src/features/chat/ui/chat-panel.tsx` (`useState`/
+`useRef`/`streamChat`/`sendFeedback`) into a `ChatSessionProvider`/`useChatSession()` context,
+mounted once in `apps/web/src/app/layout.tsx`. Both the existing full-page `ChatPanel` and the new
+floating `ChatWidget` read the same live session — otherwise the widget and the page would run two
+independent, contradictory conversations the moment both are visible. Pure refactor of existing
+logic; SSE/citations/refusal/feedback behavior is unchanged. Write a characterization test of
+current `ChatPanel` behavior *before* extracting, to guarantee no regression.
+
+**Design tokens** (`packages/design-tokens/src/tokens.ts`, currently a "neutral for Phase 1"
+placeholder) — replace with the mockup's real values; add missing semantic groups: `color.accentHover`,
+`color.accentSecondary`, `color.surfaceSunken` (distinct fill for user-message bubbles vs. cards),
+`shadow.{sm,md,lg}` (no elevation scale exists today), `zIndex.{widget,widgetMenu}` (no overlay UI
+exists today), `motion.{fast,base,slow,easing}` (no motion tokens exist today). Existing `radius`
+and `spacing` tokens are already sufficient — reuse as-is. Font swap to Inter via
+`next/font/google` in `apps/web/src/app/layout.tsx` — flagged as app-wide since the home page shares
+the same layout.
+
+**Animation approach:** plain CSS `@keyframes` in `apps/web/src/app/globals.css`, driven by the new
+`motion.*` tokens — no animation library added (none exists today; repo precedent is a bare
+`motion-safe:animate-pulse` already in `message-list.tsx`). Every keyframe gets a `motion-reduce:`
+fallback. Keyframes needed: menu fade/slide, feedback-thumb bounce, typing shimmer, launcher
+pulse-ring. No screenshot-flash keyframe (feature dropped).
+
+**New components** (all in `apps/web/src/features/chat/ui/`, none promoted to
+`apps/web/src/components/` yet — each has exactly one consumer today; `Menu`/`IconButton` are the
+top promotion candidates the day a second feature needs a dropdown or icon button):
+`icon-button.tsx`, `assistant-mark.tsx`, `message-bubble.tsx` (extracted from current inline markup
+in `message-list.tsx`), `typing-indicator.tsx`, `suggestion-chip.tsx`, `menu.tsx` + `menu-item.tsx`
+(shared dropdown shell for both the "···" and language menus), `panel-header.tsx`,
+`language-menu.tsx`, `chat-launcher.tsx`, `teaser-popup.tsx`, `floating-frame.tsx`, `panel-body.tsx`
+(composition root shared by both `ChatPanel` and `ChatWidget`), `chat-session-provider.tsx` (D0),
+`use-widget-visibility.ts` (teaser timing: 3s after mount if closed, 20s after each close),
+`chat-widget.tsx` (new public export alongside existing `ChatPanel`).
+
+**Test infrastructure (new):** `@testing-library/react` + `@testing-library/jest-dom` added to
+`apps/web/package.json` — no existing pure-node vitest pattern can express DOM-rendering assertions.
+`apps/web/vitest.config.ts` gets `environmentMatchGlobs` so existing pure-node tests stay
+fast/unaffected while new `*.test.tsx` files run under jsdom.
+
+### 4.7.1 — Tokens, test tooling, base primitives ⬜ todo
+
+`packages/design-tokens/src/tokens.ts` + `tailwind-theme.ts` (new token groups above); `apps/web/tailwind.config.ts`
+spreads them; `apps/web/src/app/globals.css` gets the `@keyframes` block; `apps/web/src/app/layout.tsx`
+wires `next/font/google` Inter; add RTL + jsdom test infra (`package.json`, `vitest.config.ts`, new
+`apps/web/src/test-setup.ts`); new `icon-button.tsx`, `assistant-mark.tsx` + tests. No visible
+behavior change beyond typography/colors. **Gate:** tokens compile, Tailwind/Next build clean,
+existing 39 tests + new primitive tests green, no visual regression on `/chat` besides font/color.
+
+### 4.7.2 — Message rendering + composer ⬜ todo
+
+Write `chat-panel.test.tsx` (characterization) **before** touching logic. Extract
+`chat-session-provider.tsx` (`ChatSessionProvider`/`useChatSession`) from `chat-panel.tsx`; add real
+`restart()`. New `message-bubble.tsx`, `typing-indicator.tsx`, `suggestion-chip.tsx`; modify
+`message-list.tsx`, `composer.tsx` (disabled attach stub, autosize textarea). **Gate:** `/chat`
+visually matches the mockup's thread+composer; all prior + new tests green; `chat-client.ts`/
+`route-handlers.ts`/contracts untouched.
+
+### 4.7.3 — Panel chrome: header, menus, restart ⬜ todo
+
+New `menu.tsx`, `menu-item.tsx`, `panel-header.tsx`, `language-menu.tsx`; new `panel-body.tsx`
+composing header+list+composer; `chat-panel.tsx` now renders `PanelBody variant="page"`. Restart
+wired to real `useChatSession().restart()`; docs/support items disabled-stub; language items no-op.
+**Gate:** header/menu interactions match the mockup (minus screenshot, dropped by design); restart
+genuinely clears the thread; nothing pretends to work that doesn't.
+
+### 4.7.4 — Floating widget: launcher, teaser, global mount ⬜ todo
+
+New `use-widget-visibility.ts`, `chat-launcher.tsx`, `teaser-popup.tsx`, `floating-frame.tsx`,
+`chat-widget.tsx`. `apps/web/src/app/layout.tsx` mounts `ChatSessionProvider` around `{children}` and
+`<ChatWidget />` globally. `apps/web/src/features/chat/index.ts` exports `ChatWidget` alongside
+`ChatPanel`. Update `apps/web/src/features/chat/FEATURES.md`. **This is the primary deliverable —
+full launcher→teaser→panel flow, mockup-matching timing/animations.** **Gate:** run a
+visual-verification pass (live browser, not just tests) before calling this phase done.
+
+**4.7.5 (backlog, not built now):** real file-upload endpoint, real i18n system, real docs/support
+pages, real page-context/screenshot tool — each its own future-scoped decision, recorded in
+`docs/future-ideas/IDEAS.md`, not part of this phase.
+
+**Sequencing vs. Phase 4.6:** frontend-only (TypeScript), touches zero files in common with 4.6
+(backend Python) — may run before, after, or interleaved with it. Recommend finishing 4.6's
+CRITICAL/HIGH items (4.6.1–4.6.3) first simply to keep one security-sensitive thread open at a time;
+otherwise fully independent. Do not start 4.7.1 merely because 4.6 is done — like every phase here,
+it needs an explicit go-ahead each step. **Do this phase before 4.8** — split the repo once the
+widget's real file layout is settled, not mid-refactor.
+
+---
+
+## Phase 4.8 — Frontend/backend repository separation ⬜ todo *(supersedes ADR-0006's deferral — see ADR-0007)*
+
+**Decision context.** ADR-0006 (2026-08-10) recorded a deferral of repo/package splitting until a
+second real product deployment existed, per the global proportionality gate ("two independent
+consumers exist today"). The user has since directed this to happen regardless, for separation of
+concerns (frontend reusable across future products independent of any single deployment's timeline,
+backend independently deployable/versioned). **ADR-0006 is superseded by `docs/adr/0007-Frontend-
+Backend-Repository-Separation.md`, which records this reversal and the actual decision.** Do this
+phase after **4.7** — split the widget's real, settled file layout once, not mid-refactor.
+
+**Goal.** `apps/web` (frontend) and `apps/automation` (backend) become independently deployable and
+independently versioned — able to live in separate git repositories — with `packages/contracts` and
+`packages/design-tokens` as the *published, versioned* interface between them instead of pnpm
+workspace `workspace:*` links (which only resolve inside one monorepo checkout).
+
+### 4.8.1 — Publish `packages/contracts` and `packages/design-tokens` as versioned packages ⬜ todo
+
+Today `apps/web`'s `package.json` depends on both via `workspace:*` — that only resolves inside this
+one pnpm workspace. Before either app can leave the monorepo, both packages need a real publish
+target (a private npm registry or GitHub Packages — **needs your input**: which registry) and
+semantic versioning discipline (a breaking contract change is a major version bump, consumed
+explicitly by each app, not silently picked up). `apps/automation` defines its own Pydantic models
+against the same wire shapes directly (no codegen) per `packages/contracts`' existing design note —
+that stays true; only the *distribution* mechanism changes, not the "hand-authored on both sides"
+convention.
+
+### 4.8.2 — Extract `apps/web` into its own repository ⬜ todo
+
+New repo (name **needs your input** — e.g. `omniboost-rag-web`), git history preserved via
+`git subtree split` or `git filter-repo` (not a fresh copy — keep blame/history). Its `package.json`
+switches `@omniboost/contracts`/`@omniboost/design-tokens` from `workspace:*` to real published
+version ranges (4.8.1). New standalone CI (lint/typecheck/test/build) — currently piggybacks on the
+monorepo's root scripts, which won't exist once this repo is standalone.
+
+### 4.8.3 — Extract `apps/automation` into its own repository ⬜ todo
+
+New repo (name **needs your input** — e.g. `omniboost-rag-automation`), same history-preserving
+extraction. Its `Makefile`/`uv` toolchain and `alembic/` migrations move with it unchanged (already
+self-contained, per ADR-0003). New standalone CI (`make check`, `make boundaries`, ruff, pyright).
+
+### 4.8.4 — Decide the origin monorepo's fate ⬜ todo *(needs your input)*
+
+Options: (a) archive it once both extractions are verified working; (b) keep it as a thin umbrella —
+`infra/` (local Docker Postgres for combined local dev), `docs/adr/`, `docs/rag/`, root `CLAUDE.md` —
+referencing the two new repos as git submodules or just documentation links, for anyone who wants
+"run both together locally" without cloning three repos. Recommend (b) for local-dev ergonomics
+unless you'd rather each repo be fully self-contained for local dev too (bigger duplication, simpler
+mental model) — **confirm which before executing**.
+
+### 4.8.5 — CI/CD and secrets per repo ⬜ todo
+
+Each new repo gets its own pipeline (currently one root pipeline, if any exists — verify) and its own
+secrets scope (`CHAT_API_KEY`, `CONFLUENCE_*`, `ANTHROPIC_API_KEY`, etc. belong to the backend repo
+only; the frontend repo needs only `CHAT_API_KEY` + `AUTOMATION_API_BASE_URL` for its proxy). No
+secret should live in a repo that doesn't need it.
+
+### 4.8.6 — Update governing docs ⬜ todo
+
+Supersede or amend `docs/adr/0001-Archetype-And-Stack.md` (currently describes one monorepo archetype)
+to reflect the multi-repo topology; write the ADR-0007 superseding ADR-0006 (see decision context
+above — do this first, before 4.8.1, so the rest of this phase executes against a recorded decision,
+not tribal knowledge); update root `CLAUDE.md`'s "Layout" section once the split is real (it currently
+documents the monorepo `apps/`/`packages/` layout as fact).
+
+### 4.8.7 — Exit gate ⬜ todo
+
+Both repos build/lint/typecheck/test/deploy independently with zero references to the other by path
+(only by published package version); a deliberate breaking change to `packages/contracts` proves the
+version-bump workflow catches it in CI on the *other* repo, not silently at runtime; local combined
+dev (`make up && make migrate && make web-dev` or equivalent) still works per whatever 4.8.4 decided.
+
+**Open decisions needing your input before executing this phase:** registry choice (4.8.1), the two
+new repo names (4.8.2/4.8.3), and the origin monorepo's fate (4.8.4). Nothing here executes without
+those answers — this phase is fully specced but blocked on them, same as any other "needs your
+input" item in this plan.
+
+---
+
 ## Phase 5 — Optimization & proof
 
 - **Embedder bake-off** on the (now real) gold set: OpenAI-3072 incumbent vs Voyage-3.x vs Qwen3-8B
@@ -1342,6 +1811,10 @@ becomes its own ADR-gated phase** (mirroring how Supabase got Phase 6), not some
 | `features/evaluation/run_baseline.py` / `runner.py` | rerank-lift reporting | 3.5.5 |
 | `app/features/rag_agent/` (new), `app/main.py` | answer workflow, `POST /chat`, `PATCH /chat/{id}/feedback` | 4 |
 | `apps/web/src/features/chat/*`, `app/api/chat/route.ts`, `packages/contracts` | chat UI + SSE proxy + contract | 4 |
+| `docs/rag/fixes/*`, `app/features/{confluence_sync,retrieval,rag_agent}/**`, `shared/rate_limiter.py`, `platform/clients/confluence_client.py`, `platform/db/models.py` | 16-item remediation (ACL bypass, cache leak, rate-limiter bypass, rollback gap, schema dup, doc drift) | 4.6 |
+| `docs/adr/0006-Defer-Multi-Product-Extraction.md` (superseded), `docs/adr/0007-Frontend-Backend-Repository-Separation.md`, `docs/future-ideas/IDEAS.md` | deferred-then-superseded multi-deployment/repo-split decisions + corrected corpus-segmentation idea | 4.7 / 4.8 |
+| `packages/design-tokens/src/tokens.ts`, `apps/web/src/features/chat/ui/*` (new), `apps/web/src/app/layout.tsx` | brand-token adoption + Obi widget component rebuild | 4.7 |
+| `packages/contracts/package.json`, `packages/design-tokens/package.json`, new standalone repos | published versioned packages; frontend/backend repo extraction | 4.8 |
 
 ---
 

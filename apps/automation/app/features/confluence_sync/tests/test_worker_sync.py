@@ -66,7 +66,16 @@ def test_version_guard_drops_stale_update(gateway, settings):
 
 
 def test_first_index_persists_restrictions(gateway, settings):
-    """PLAN 4.3: the real principal list, not just its hash, lands in page_restriction."""
+    """PLAN 4.3: the real principal list, not just its hash, lands in page_restriction.
+
+    Fixture `page-2002.json` also carries `grp-hr`/`grp-finance` group restrictions alongside
+    the resolvable `acct-carol` user restriction. Per PLAN 4.6.1, a page with at least one
+    resolvable user principal keeps exactly that principal — group-membership expansion is
+    deferred to PLAN 4.6.2, an explicit, accepted-for-now limitation, not silently dropped data.
+    The actual bypass PLAN 4.6.1 closes — a page restricted ONLY by group syncing as fully
+    unrestricted — is covered by
+    `platform/clients/tests/test_confluence_client.py::test_group_only_restriction_fails_closed`.
+    """
     index_page(gateway, settings, 2002, version=1)
     assert restricted_principals(2002) == {"acct-carol"}  # fixture: page-2002.json
 
