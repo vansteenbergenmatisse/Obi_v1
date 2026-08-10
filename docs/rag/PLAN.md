@@ -27,12 +27,12 @@ one HIGH cross-principal cache leak, plus 12 more MEDIUM/LOW findings. **Phase 4
 remediation, see its own section below Phase 4) must fully complete — exit gate 4.6.16 green — before
 5.4 / the embedder bake-off / adaptive routing may resume.** Do Phase 4.6 next, in the order given.
 
-**4.6.1 and 4.6.2 done (2026-08-10, see their own sections for detail) → 237 tests (was 219),
-boundaries clean, no ruff/pyright regression.** 4.6.2 was implemented against the fixture
+**4.6.1, 4.6.2, and 4.6.3 done (2026-08-10, see their own sections for detail) → 239 tests (was
+219), boundaries clean, no ruff/pyright regression.** 4.6.2 was implemented against the fixture
 gateway per the user's explicit "implement now, verify later" choice — **live Confluence
 verification of the group-membership endpoint is still outstanding** (token still dead, blocker
-#3) and must happen before trusting 4.6.2's live behavior. **4.6.3 (idempotency cache
-cross-principal leak, HIGH) is next** — no user input needed, pure code fix.
+#3) and must happen before trusting 4.6.2's live behavior. **4.6.4 (rate-limiter/idempotency
+hardening batch, MEDIUM-HIGH + MEDIUM) is next** — no user input needed, pure code fix.
 
 **Commit gap closed — 2026-08-10 (new session).** 4.6.1 (Confluence group-restriction fail-closed
 fix), plus ADR-0006/ADR-0007 and the six-agent `docs/rag/fixes/` audit itself, were all sitting
@@ -1385,15 +1385,33 @@ exactly once (cache proof); a 403 from the member endpoint stays fail-closed, no
 `FixtureConfluenceGateway` expands via the new `group_members.json` fixture and via the
 `set_group_members` override.
 
-### 4.6.3 — Idempotency cache cross-principal leak (HIGH)
+### 4.6.3 — Idempotency cache cross-principal leak (HIGH) ✅ done (2026-08-10)
 
-`_idempotency_cache` in `apps/automation/app/features/rag_agent/server/router.py` keys only on the
-raw `Idempotency-Key` header string — a replay with a **different** `principal`/`history` silently
-returns the first caller's cached `Answer` including citations. Fix: bind the cache key to a hash of
-`(idempotency_key, principal, history)`, mirroring `answer_cache.py`'s already-correct
-`_cache_key` pattern. On a mismatch, recompute rather than serving the stale cache. Tests: replay
-same key + different principal → not the first caller's answer; replay same key + different history
-→ same; existing same-key/same-body regression test stays green. Pure code fix, no migration.
+**Status: implemented, tested (2 new tests), boundaries clean, no ruff/pyright regression → 239
+tests total (was 237). Pure code fix, no migration, exactly as scoped.**
+
+**Fix.** New `_idempotency_cache_key(idempotency_key, principal, history)`
+(`app/features/rag_agent/server/router.py`) hashes `sha256(idempotency_key + "|" +
+json(turns) + "|" + (principal or ""))` — mirroring `answer_cache._cache_key`'s already-correct
+binding. `_stream_answer` now computes this composite key once (`cache_key`) and uses it for both
+`cache.get`/`cache.set` instead of the raw `Idempotency-Key` header string, so a replay of the same
+header with a different `principal` or `history` is treated as a fresh request (a new trace id),
+never a hit on another caller's cached `Answer`. The `chat_request_replayed` log line still logs
+the raw header value (for operator correlation), not the hash.
+
+**Tests (`confluence_sync/tests/test_chat_endpoint.py`, +2):**
+`test_idempotency_key_replay_with_different_principal_is_not_the_first_callers_answer` (same
+`idempotency-key` header, `principal` "acct-alice" vs "acct-bob" → different trace ids) and
+`test_idempotency_key_replay_with_different_history_is_not_the_first_callers_answer` (same header,
+different final-turn content → different trace ids). The existing
+`test_idempotency_key_replays_cached_answer_without_rerunning` (same key + same body → same trace
+id) stays green, unchanged.
+
+**Verification:** `make check` (from repo root) → **239 passed** (was 237), boundaries clean;
+`ruff check`/`ruff format --check` unchanged (2 errors / 17 unformatted, same baseline); `pyright`
+unchanged (34 errors, identical file list — none touch `router.py` or
+`test_chat_endpoint.py`, confirmed by listing error-file paths directly); `alembic current` →
+`0005_page_restriction (head)`, no migration (pure code fix, no schema change).
 
 ### 4.6.4 — Rate-limiter/idempotency hardening batch (MEDIUM-HIGH + MEDIUM, batched)
 

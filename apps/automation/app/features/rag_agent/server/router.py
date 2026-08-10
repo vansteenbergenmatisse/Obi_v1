@@ -28,6 +28,10 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
                               generation call (llm_client.py); see rag_agent/domain/pii.py.
   C7_idempotency: covered   - optional `Idempotency-Key` header; a replay within the TTL window
                               returns the cached Answer without re-running retrieval/generation.
+                              The cache key binds the header to a hash of (principal, history) —
+                              not the raw header alone (PLAN 4.6.3 fix) — so a replayed key sent
+                              with a different principal or history can never return another
+                              caller's cached Answer; it is treated as a fresh request instead.
   C8_concurrency: opted_out - each request creates its own query_trace row; no shared-resource
                               read-modify-write.
   C9_audit:       covered   - one structured `chat_request` log line per call (conversation id,
@@ -78,6 +82,7 @@ coverage is unaffected.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import json
 import time
@@ -216,6 +221,20 @@ def _validate_history(body: ChatRequestBody, settings: Settings) -> None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "history must end with a user turn")
 
 
+def _idempotency_cache_key(
+    idempotency_key: str, principal: str | None, history: list[ChatMessage]
+) -> str:
+    """Binds the caller-supplied `Idempotency-Key` header to a hash of `(principal, history)` so a
+    replay of the same header value with a *different* principal or history is never served the
+    first caller's cached `Answer` (PLAN 4.6.3 fix — mirrors `answer_cache._cache_key`'s same
+    binding, without which the raw header alone was the whole cache key)."""
+    turns = [(m.role, m.content) for m in history]
+    payload = (
+        idempotency_key + "|" + json.dumps(turns, separators=(",", ":")) + "|" + (principal or "")
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
 def _sse(event: dict) -> str:
     return f"data: {json.dumps(event)}\n\n"
 
@@ -237,7 +256,12 @@ async def _stream_answer(
 ) -> AsyncIterator[str]:
     yield _sse({"type": "start", "conversationId": conversation_id})
 
-    cached = cache.get(idempotency_key) if idempotency_key else None
+    cache_key = (
+        _idempotency_cache_key(idempotency_key, body.principal, body.history)
+        if idempotency_key
+        else None
+    )
+    cached = cache.get(cache_key) if cache_key else None
     if cached is not None:
         answer = cached
         log.info(
@@ -264,8 +288,8 @@ async def _stream_answer(
             citation_count=len(answer.citations),
             latency_ms=latency_ms,
         )
-        if idempotency_key:
-            cache.set(idempotency_key, answer)
+        if cache_key:
+            cache.set(cache_key, answer)
 
     text = answer.text[: settings.chat_output_max_answer_chars]  # C5 defensive size cap
     chunk_size = max(1, settings.chat_token_chunk_chars)

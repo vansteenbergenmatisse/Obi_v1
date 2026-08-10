@@ -254,6 +254,60 @@ def test_idempotency_key_replays_cached_answer_without_rerunning(
     assert first_trace == second_trace  # replayed, not a fresh trace row
 
 
+def test_idempotency_key_replay_with_different_principal_is_not_the_first_callers_answer(
+    gateway, settings: Settings
+) -> None:
+    """PLAN 4.6.3 fix: the idempotency cache used to key only on the raw `Idempotency-Key` header,
+    so a replay with a different `principal` silently returned the first caller's cached Answer —
+    a cross-principal leak. Binding the key to (principal, history) means a mismatched principal
+    is treated as a fresh request (a distinct trace id), not a replay."""
+    _index_corpus(gateway, settings)
+    chat_settings = _chat_settings(settings)
+    service = _grounded_service(gateway, chat_settings)
+    client = _client_with_service(chat_settings, service)
+
+    body = {"history": [{"role": "user", "content": "How do I request access?"}]}
+    headers = {**_auth(), "idempotency-key": "shared-key"}
+
+    alice = _parse_sse(
+        client.post("/chat", json={**body, "principal": "acct-alice"}, headers=headers).text
+    )
+    bob = _parse_sse(
+        client.post("/chat", json={**body, "principal": "acct-bob"}, headers=headers).text
+    )
+
+    assert alice[-1]["traceId"] != bob[-1]["traceId"]
+
+
+def test_idempotency_key_replay_with_different_history_is_not_the_first_callers_answer(
+    gateway, settings: Settings
+) -> None:
+    """Same fix as above, for a mismatched `history` under the same reused idempotency key."""
+    _index_corpus(gateway, settings)
+    chat_settings = _chat_settings(settings)
+    service = _grounded_service(gateway, chat_settings)
+    client = _client_with_service(chat_settings, service)
+
+    headers = {**_auth(), "idempotency-key": "shared-key"}
+
+    first = _parse_sse(
+        client.post(
+            "/chat",
+            json={"history": [{"role": "user", "content": "How do I request access?"}]},
+            headers=headers,
+        ).text
+    )
+    second = _parse_sse(
+        client.post(
+            "/chat",
+            json={"history": [{"role": "user", "content": "A completely different question?"}]},
+            headers=headers,
+        ).text
+    )
+
+    assert first[-1]["traceId"] != second[-1]["traceId"]
+
+
 def test_answer_cache_replays_without_rerunning_retrieval(gateway, settings: Settings) -> None:
     """PLAN 5 exact-match cache: same history + principal, no Idempotency-Key header at all ->
     the second call is still a cache hit (same trace id, no fresh query_trace row)."""
