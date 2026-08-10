@@ -32,6 +32,19 @@ no ruff/pyright regression.** **4.6.2 is next and needs your input before it can
 group-members API scope/cost — see that section) — ask before doing other Phase-4.6 work, per
 `CLAUDE.local.md` §4.
 
+**Commit gap closed — 2026-08-10 (new session).** 4.6.1 (Confluence group-restriction fail-closed
+fix), plus ADR-0006/ADR-0007 and the six-agent `docs/rag/fixes/` audit itself, were all sitting
+uncommitted at this session's start. Per `CLAUDE.local.md` §2, re-verified live before committing:
+`make check` (from repo root) → **229 passed**, boundaries clean; `ruff check`/`ruff format --check`
+unchanged (2 errors/17 unformatted, same as the 5.3 baseline); `pyright` unchanged (34 errors — the
+one error inside `confluence_client.py` is at `list_space_pages`'s pre-existing `params = None`,
+outside this fix's diff, confirmed by `git diff`); `alembic current` → `0005_page_restriction
+(head)`, no migration needed (pure code fix). Read the new `test_confluence_client.py`'s 10 tests
+directly to confirm they exercise the fail-closed sentinel end to end on both gateways, not just the
+pure resolver. **No gaps found.** Split into two commits: `ede2ae2` (docs — ADR-0006/0007 + the
+fixes-backlog audit + the IDEAS.md #4 correction ADR-0006 required) and `4d0ba70` (the 4.6.1 code fix
++ this ledger's own 4.6 section). 4.6.2 remains blocked on your input below — not started.
+
 Independently, and not gating Phase 5: **Phase 4.7** (UI component refactor — rebuild `apps/web`'s
 chat UI to match the approved mockup at `/Users/matissevansteenbergen/Downloads/Obi chatbot UI
 mockups/` as real components, plus adopt its visuals as the real brand tokens) and **Phase 4.8**
@@ -771,7 +784,7 @@ OCR/image reading untouched.
 | **5.1** — `CHAT_API_KEY` rotation mechanism | ✅ done | `261ac1e` | 3 tests → 197 total; overlap-window auth, rotation script, runbook |
 | **5.2** — exact-match answer caching | ✅ done | `261ac1e` | 16 tests → 213 total; `TTLCache` extracted to `shared/`, `CachingAnswerService` wraps `AnswerService`, no cross-principal leak |
 | **5.3** — prompt-injection + permission/isolation red-team | ✅ done | `92bbb7f` | 6 tests → 219 total; found + fixed a real numeric-principal space-trust bypass; no live LLM spend |
-| **4.6** — fixes-backlog remediation (16 sub-steps + exit gate) | ⬜ todo | — | independent same-day audit (`docs/rag/fixes/`) found a CRITICAL ACL bypass + a HIGH cross-principal leak + 12 more findings in already-"done" phases 0-4; **gates 5.4/bake-off/adaptive-routing** until the 4.6.16 exit gate is green |
+| **4.6** — fixes-backlog remediation (16 sub-steps + exit gate) | 🔶 in progress (4.6.1/16 done) | `4d0ba70` | independent same-day audit (`docs/rag/fixes/`) found a CRITICAL ACL bypass + a HIGH cross-principal leak + 12 more findings in already-"done" phases 0-4; **gates 5.4/bake-off/adaptive-routing** until the 4.6.16 exit gate is green; 4.6.2 blocked on user input |
 | **5** (remaining) — 5.4 live-LLM red-team + latency/cost proof, embedder bake-off, adaptive routing | ⬜ todo (blocked on 4.6) | — | 5.4 needs real API calls/spend; bake-off blocked on Confluence token + `VOYAGE_API_KEY` |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
 | **4.7** — UI component refactor: Obi widget rebuild + brand tokens (4.7.1 → 4.7.4) | ⬜ todo | — | frontend-only, `apps/web`; does not gate Phase 5; source of truth `/Users/matissevansteenbergen/Downloads/Obi chatbot UI mockups/` |
@@ -1263,7 +1276,7 @@ code — this is closing out that phase's own debt, not new Phase-5 feature work
 Severity-first order; CRITICAL/HIGH block everything else. Batched where low-risk/same-file,
 isolated where high-risk (signature changes, migrations, or a decision only the user can make).
 
-### 4.6.1 — Confluence group-restriction fail-closed mitigation (CRITICAL) ✅ done (2026-08-10)
+### 4.6.1 — Confluence group-restriction fail-closed mitigation (CRITICAL) ✅ done (2026-08-10, `4d0ba70`)
 
 **Status: implemented, tested (10 new tests), boundaries clean, no ruff/pyright regression
 (file-level diffed, not just counted) → 229 tests total (was 219).** Pure code fix, no migration,
