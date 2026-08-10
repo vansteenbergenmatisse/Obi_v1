@@ -4,16 +4,16 @@ A fixed, testable workflow (not an agent loop, ADR-0005 §5): conversational rew
 RLS-scoped retrieve → RRF → cross-encoder rerank → parent-context expansion → grounded
 generation with forced citations → refusal threshold → at most one CRAG retry → SSE.
 
-Public surface: the DTOs `POST /chat` (Phase 4.4) will serialise (`Answer`/`ChatMessage`/
-`Citation`), the `AnswerService` orchestrator (Phase 4.2), and the `QueryRewriter`/
-`AnswerGenerator` collaborator protocols + their Anthropic-backed implementations, so Phase 4.4
-can wire real dependencies without reaching past this root. The refusal / citation / prompt
-domain logic stays internal.
+Public surface: the DTOs `POST /chat` serialises (`Answer`/`ChatMessage`/`Citation`), the
+`AnswerService` orchestrator (Phase 4.2), the `QueryRewriter`/`AnswerGenerator` collaborator
+protocols + their Anthropic-backed implementations, and — as of Phase 4.4 — `router` (the
+`POST /chat` + `PATCH /chat/{trace_id}/feedback` HTTP surface `app.main` includes). The refusal /
+citation / prompt / PII-redaction domain logic stays internal.
 
-Status (Phase 4.2): the answer workflow is built and unit/integration-tested against the
-fixture corpus (fake LLM collaborators — no network in tests). No HTTP surface yet (that's 4.4,
-which also applies the `securing-http-and-llm-endpoints` control set this internal workflow does
-not need yet).
+Status (Phase 4.4): the answer workflow (4.2) and persisted principal ACL (4.3) are wired to a
+real HTTP surface with the full `securing-http-and-llm-endpoints` control set applied (auth, rate
+limit, input validation, LLM timeout/retry/breaker, output pacing, PII redaction, idempotency,
+audit logging, abuse caps) — see `server/router.py`'s `security_baseline` docstring.
 
 Internal rule: modules inside this feature MUST NOT import through this root
 (`from app.features.rag_agent import X`) — that raises ImportError during init. They deep-
@@ -30,6 +30,7 @@ from .infrastructure.llm_client import (
     QueryRewriter,
 )
 from .schemas import Answer, ChatMessage, Citation
+from .server import router
 
 __all__ = [
     "Answer",
@@ -40,4 +41,5 @@ __all__ = [
     "AnswerGenerator",
     "AnthropicQueryRewriter",
     "AnthropicAnswerGenerator",
+    "router",
 ]

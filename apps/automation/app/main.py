@@ -20,20 +20,30 @@ from app import __version__
 from app.features.confluence_sync import (
     KIND_COMPLETE,
     KIND_LIGHTWEIGHT,
-    SlidingWindowRateLimiter,
     drain,
     reap,
     run_reconciliation,
 )
 from app.features.confluence_sync import router as confluence_router
+from app.features.rag_agent import (
+    AnswerService,
+    AnthropicAnswerGenerator,
+    AnthropicQueryRewriter,
+)
+from app.features.rag_agent import router as chat_router
+from app.features.retrieval import HybridRetriever, PrincipalPermissionPolicy
 from app.platform.clients import (
+    AnthropicMessagesClient,
     ConfluenceGateway,
     FixtureConfluenceGateway,
     HttpConfluenceClient,
+    build_embedding_provider,
+    build_reranker,
 )
 from app.platform.config import Settings, get_settings
-from app.platform.db.engine import session_scope
+from app.platform.db.engine import get_reader_sessionmaker, get_sessionmaker, session_scope
 from app.platform.logging import configure_logging, get_logger
+from app.shared.rate_limiter import SlidingWindowRateLimiter
 
 log = get_logger("main")
 
@@ -46,6 +56,47 @@ def build_gateway(settings: Settings) -> ConfluenceGateway:
         return HttpConfluenceClient(settings)
     log.info("gateway_offline", reason="confluence not configured — using fixture corpus")
     return FixtureConfluenceGateway()
+
+
+def build_answer_service(settings: Settings) -> AnswerService:
+    """The `rag_agent` answer runtime (PLAN 4.4), composed from settings.
+
+    Reads run against the non-owner `rag_reader` engine (RLS actually enforced, ADR-0004); the
+    policy is constructed empty — PLAN 4.3 made its injected data unused for the `allowed()`
+    decision, which is now built fresh per search from live `page_source`/`page_restriction` data
+    (see `retriever.py`). Merely constructing this (including the `AnthropicMessagesClient`) makes
+    no network call — `build_reranker`/`build_embedding_provider` already fall back to
+    deterministic offline providers when unconfigured, so this is safe to call unconditionally at
+    app startup, mirroring `build_gateway` above.
+    """
+    retriever = HybridRetriever(
+        get_reader_sessionmaker(),
+        build_embedding_provider(settings),
+        PrincipalPermissionPolicy(),
+        build_reranker(settings),
+        candidate_k=settings.rerank_candidate_k,
+        rerank_depth=settings.rerank_depth,
+        hnsw_ef_search=settings.hnsw_ef_search,
+        hnsw_iterative_scan=settings.hnsw_iterative_scan,
+        trace_sessionmaker=get_sessionmaker(),
+    )
+    client = AnthropicMessagesClient(
+        api_key=settings.anthropic_api_key,
+        timeout=settings.answer_timeout_seconds,
+        max_retries=settings.answer_max_retries,
+        breaker_threshold=settings.answer_breaker_threshold,
+        max_input_chars=settings.answer_max_input_chars,
+    )
+    return AnswerService(
+        retriever,
+        AnthropicQueryRewriter(client, settings.routing_model),
+        AnthropicAnswerGenerator(client, settings.answer_model),
+        get_sessionmaker(),
+        rewrite_enabled=settings.rewrite_enabled,
+        refusal_min_rerank_score=settings.refusal_min_rerank_score,
+        crag_max_retries=settings.crag_max_retries,
+        retrieve_k=settings.rerank_top_k,
+    )
 
 
 # -- scheduled tasks -------------------------------------------------------------------
@@ -118,7 +169,9 @@ def create_app(*, settings: Settings | None = None, start_scheduler: bool | None
     app.state.settings = settings
     app.state.gateway = gateway
     app.state.rate_limiter = SlidingWindowRateLimiter(settings.webhook_rate_limit_per_minute)
+    app.state.answer_service = build_answer_service(settings)
     app.include_router(confluence_router)
+    app.include_router(chat_router)
 
     @app.get("/health")
     def health() -> dict:

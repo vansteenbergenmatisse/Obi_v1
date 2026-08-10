@@ -86,6 +86,25 @@ class Settings(BaseSettings):
     rewrite_enabled: bool = True  # conversational query rewrite (routing_model), always on
     crag_max_retries: int = 1  # corrective-retrieval cap on a weak first result (protects p95)
 
+    # answer-runtime Anthropic call controls (PLAN 4.4, LLM-CALL tier: C4 timeout/retry/breaker,
+    # C10 abuse cap). Backs both the rewrite (routing_model) and generation (answer_model) calls —
+    # they share one AnthropicMessagesClient instance built from these settings.
+    answer_timeout_seconds: float = 30.0
+    answer_max_retries: int = 2
+    answer_breaker_threshold: int = 5  # consecutive failed calls -> open the fuse
+    answer_max_input_chars: int = 20_000  # abuse cap on a single create_message() call
+
+    # POST /chat + PATCH /chat/{trace_id}/feedback (PLAN 4.4). Both an HTTP and an LLM surface —
+    # see securing-http-and-llm-endpoints controls in FEATURES.md / PLAN.md.
+    chat_api_key: str = ""  # shared secret between the trusted web proxy and this API; fail-closed
+    chat_rate_limit_per_minute: int = 20  # C2, keyed by principal (if supplied) else client IP
+    chat_max_history_turns: int = 20  # C3/C10: caller-supplied conversation turns per request
+    chat_max_message_chars: int = 4000  # C3: per-turn content length
+    chat_output_max_answer_chars: int = 8000  # C5: defensive cap on the streamed answer size
+    chat_token_chunk_chars: int = 40  # C5: SSE token-event chunk size (paces bytes/sec streamed)
+    chat_stream_interval_ms: int = 15  # C5: delay between SSE token events
+    chat_idempotency_ttl_seconds: float = 300.0  # C7: Idempotency-Key replay window
+
     # retrieval / budgets
     evidence_token_budget: int = 7000
     provider_timeout_seconds: float = 8.0

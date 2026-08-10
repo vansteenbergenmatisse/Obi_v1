@@ -28,8 +28,6 @@ from __future__ import annotations
 
 import hmac
 import json
-import time
-from collections import deque
 from collections.abc import Iterator
 from hashlib import sha256
 
@@ -41,36 +39,13 @@ from app.features.confluence_sync.schemas.events import parse_webhook_payload
 from app.platform.config import Settings, get_settings
 from app.platform.db.engine import session_scope
 from app.platform.logging import get_logger
+from app.shared.rate_limiter import SlidingWindowRateLimiter
 
 log = get_logger("webhook")
 
 router = APIRouter(tags=["confluence"])
 
 _SIG_HEADER = "X-Hub-Signature-256"
-
-
-class SlidingWindowRateLimiter:
-    """In-process per-key sliding-window limiter. One instance per app (see main.create_app).
-
-    Adequate for the single-process Phase-2 service. Multi-instance deployment needs a shared
-    store (Redis) — that is a section-9 gate, intentionally deferred until horizontal scale.
-    """
-
-    def __init__(self, max_per_minute: int) -> None:
-        self._max = max_per_minute
-        self._window = 60.0
-        self._hits: dict[str, deque[float]] = {}
-
-    def allow(self, key: str, *, now: float | None = None) -> bool:
-        now = time.monotonic() if now is None else now
-        bucket = self._hits.setdefault(key, deque())
-        cutoff = now - self._window
-        while bucket and bucket[0] < cutoff:
-            bucket.popleft()
-        if len(bucket) >= self._max:
-            return False
-        bucket.append(now)
-        return True
 
 
 # -- dependencies (overridable in tests via app.dependency_overrides) ------------------
@@ -93,9 +68,7 @@ def _verify_signature(raw_body: bytes, header: str | None, settings: Settings) -
     secret = settings.confluence_webhook_secret
     if not secret:
         # fail closed: an unconfigured secret means the endpoint is not safe to accept
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE, "webhook secret not configured"
-        )
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "webhook secret not configured")
     if not header:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "missing signature")
     provided = header.split("=", 1)[1] if header.startswith("sha256=") else header

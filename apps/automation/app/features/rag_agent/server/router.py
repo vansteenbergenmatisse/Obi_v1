@@ -1,0 +1,313 @@
+"""Chat HTTP surface: `POST /chat` (SSE) + `PATCH /chat/{trace_id}/feedback` (PLAN 4.4).
+
+Both an HTTP and an LLM surface (ADR-0005 §10) — the full `securing-http-and-llm-endpoints`
+control set applies. `POST /chat` is STATE-MUTATING (writes/updates a `query_trace` row) AND
+LLM-CALL (rewrite + generation), so it satisfies the union of both tiers' required controls.
+`PATCH /chat/{trace_id}/feedback` is STATE-MUTATING only.
+
+security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
+  C1_auth:        covered   - shared-secret `chat_api_key` via `Authorization: Bearer`,
+                              constant-time compare; fail-closed (503) when unset.
+  C2_rate_limit:  covered   - per-principal (if the caller supplies one) else per-client-IP
+                              sliding window (chat_rate_limit_per_minute).
+  C3_input:       covered   - Pydantic body (extra=forbid); history non-empty + ends on a user
+                              turn; per-turn length cap + history-length cap (chat_max_*).
+  C4_timeout:     covered   - retrieval's embedder/reranker already carry timeout/retry/breaker
+                              (3.5.2/3); the answer-runtime AnthropicMessagesClient now does too
+                              (answer_timeout_seconds/max_retries/breaker_threshold, PLAN 4.4).
+  C5_output_rate: covered   - generation is token-capped (llm_client.py); the streamed answer is
+                              defensively re-capped (chat_output_max_answer_chars) and paced into
+                              fixed-size SSE chunks (chat_token_chunk_chars/stream_interval_ms).
+  C6_redaction:   covered   - `redact_pii` scrubs the assembled prompt before every rewrite/
+                              generation call (llm_client.py); see rag_agent/domain/pii.py.
+  C7_idempotency: covered   - optional `Idempotency-Key` header; a replay within the TTL window
+                              returns the cached Answer without re-running retrieval/generation.
+  C8_concurrency: opted_out - each request creates its own query_trace row; no shared-resource
+                              read-modify-write.
+  C9_audit:       covered   - one structured `chat_request` log line per call (conversation id,
+                              trace id, refused, citation count, latency) — never the raw message
+                              or answer text.
+  C10_abuse:      covered   - rate limit + history/message-length caps + the Anthropic client's
+                              abuse cap (answer_max_input_chars) + circuit breaker.
+
+security_baseline (surface: PATCH /chat/{trace_id}/feedback, tier STATE-MUTATING):
+  C1_auth:        covered   - same shared-secret check as POST /chat.
+  C2_rate_limit:  covered   - same limiter/key as POST /chat.
+  C3_input:       covered   - feedback constrained to Literal[-1, 1].
+  C4_timeout:     covered   - one bound UPDATE statement, no fan-out.
+  C7_idempotency: covered   - the UPDATE is naturally idempotent: replaying the same feedback
+                              value produces the same row state.
+  C8_concurrency: opted_out - single UPDATE by primary key; last-write-wins is the correct
+                              semantics for a thumbs up/down toggle, not a bug to fix with a lock.
+  C9_audit:       covered   - structured `chat_feedback` log line (trace id, value).
+  C10_abuse:      covered   - same rate limiter as POST /chat.
+
+Known, documented limitation (not a bug): there is no end-user login system yet, so `principal`
+is caller-self-reported, trusted only as far as C1 trusts the calling web proxy. Per ADR-0004's
+default-deny model, an absent/unverified principal can only ever see *unrestricted* pages
+(`PrincipalPermissionPolicy.allowed`) — it is never a blanket-access bypass. Real per-user identity
+is a later phase; this endpoint is already safe in its absence.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import hmac
+import json
+import time
+import uuid
+from collections.abc import AsyncIterator, Iterator
+from typing import Literal
+
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.orm import Session
+from starlette.responses import StreamingResponse
+
+from app.features.rag_agent.application.answer_service import AnswerService
+from app.features.rag_agent.schemas import Answer, ChatMessage, Citation
+from app.features.retrieval import update_query_trace_feedback
+from app.platform.config import Settings
+from app.platform.db.engine import session_scope
+from app.platform.logging import get_logger
+from app.shared.rate_limiter import SlidingWindowRateLimiter
+
+log = get_logger("rag_agent.chat")
+
+router = APIRouter(tags=["chat"])
+
+_AUTH_HEADER = "authorization"
+_BEARER_PREFIX = "Bearer "
+_IDEMPOTENCY_HEADER = "idempotency-key"
+
+
+class ChatRequestBody(BaseModel):
+    """`POST /chat` body. The caller owns conversation state and resends full turn history —
+    the server is stateless per request (no server-side conversation store exists)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    conversation_id: str | None = None
+    history: list[ChatMessage] = Field(min_length=1)
+    principal: str | None = None
+
+
+class FeedbackBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    feedback: Literal[-1, 1]
+
+
+class _IdempotencyCache:
+    """In-process replay cache for `Idempotency-Key` (C7). Single-process scope, like
+    `SlidingWindowRateLimiter` — a multi-instance deployment would need a shared store."""
+
+    def __init__(self, ttl_seconds: float) -> None:
+        self._ttl = ttl_seconds
+        self._entries: dict[str, tuple[float, Answer]] = {}
+
+    def get(self, key: str) -> Answer | None:
+        entry = self._entries.get(key)
+        if entry is None:
+            return None
+        stored_at, answer = entry
+        if time.monotonic() - stored_at > self._ttl:
+            del self._entries[key]
+            return None
+        return answer
+
+    def set(self, key: str, answer: Answer) -> None:
+        self._entries[key] = (time.monotonic(), answer)
+
+
+# -- dependencies (settings read from app.state; answer_service/db overridable in tests via
+# app.dependency_overrides or by mutating app.state directly) --------------------------
+
+
+def get_settings_dep(request: Request) -> Settings:
+    """Reads the `Settings` `main.create_app` stored on `app.state` for this app instance — not
+    the process-global `get_settings()` cache — so a test's `create_app(settings=...)` call is
+    the only override callers need (no `app.dependency_overrides` plumbing, and no cross-feature
+    test import: `confluence_sync/tests/test_chat_endpoint.py` reuses this feature's DB fixture
+    by construction, not by deep-importing rag_agent's internals)."""
+    return request.app.state.settings
+
+
+def get_answer_service_dep(request: Request) -> AnswerService:
+    """The singleton `AnswerService` built once at app startup (`main.build_answer_service`)."""
+    return request.app.state.answer_service
+
+
+def get_writer_db() -> Iterator[Session]:
+    with session_scope() as session:
+        yield session
+
+
+def _chat_rate_limiter(request: Request, settings: Settings) -> SlidingWindowRateLimiter:
+    limiter = getattr(request.app.state, "chat_rate_limiter", None)
+    if limiter is None:
+        limiter = SlidingWindowRateLimiter(settings.chat_rate_limit_per_minute)
+        request.app.state.chat_rate_limiter = limiter
+    return limiter
+
+
+def _idempotency_cache(request: Request, settings: Settings) -> _IdempotencyCache:
+    cache = getattr(request.app.state, "chat_idempotency_cache", None)
+    if cache is None:
+        cache = _IdempotencyCache(settings.chat_idempotency_ttl_seconds)
+        request.app.state.chat_idempotency_cache = cache
+    return cache
+
+
+def _verify_api_key(request: Request, settings: Settings) -> None:
+    configured = settings.chat_api_key
+    if not configured:
+        # fail closed: an unconfigured secret means the endpoint is not safe to accept
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "chat API key not configured")
+    header = request.headers.get(_AUTH_HEADER, "")
+    token = header[len(_BEARER_PREFIX) :] if header.startswith(_BEARER_PREFIX) else ""
+    if not token or not hmac.compare_digest(token, configured):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or missing API key")
+
+
+def _rate_limit_key(request: Request, principal: str | None) -> str:
+    if principal:
+        return f"principal:{principal}"
+    client_ip = request.client.host if request.client else "unknown"
+    return f"ip:{client_ip}"
+
+
+def _validate_history(body: ChatRequestBody, settings: Settings) -> None:
+    if len(body.history) > settings.chat_max_history_turns:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"history exceeds {settings.chat_max_history_turns} turns",
+        )
+    for turn in body.history:
+        if len(turn.content) > settings.chat_max_message_chars:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"a turn exceeds {settings.chat_max_message_chars} characters",
+            )
+    if body.history[-1].role != "user":
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "history must end with a user turn")
+
+
+def _sse(event: dict) -> str:
+    return f"data: {json.dumps(event)}\n\n"
+
+
+def _wire_citations(citations: list[Citation]) -> list[dict]:
+    return [
+        {"id": str(c.marker), "pageId": c.page_id, "title": c.title, "url": c.url or ""}
+        for c in citations
+    ]
+
+
+async def _stream_answer(
+    conversation_id: str,
+    body: ChatRequestBody,
+    service: AnswerService,
+    settings: Settings,
+    cache: _IdempotencyCache,
+    idempotency_key: str | None,
+) -> AsyncIterator[str]:
+    yield _sse({"type": "start", "conversationId": conversation_id})
+
+    cached = cache.get(idempotency_key) if idempotency_key else None
+    if cached is not None:
+        answer = cached
+        log.info(
+            "chat_request_replayed",
+            conversation_id=conversation_id,
+            trace_id=answer.trace_id,
+            idempotency_key=idempotency_key,
+        )
+    else:
+        started = time.perf_counter()
+        try:
+            answer = service.answer(body.history, body.principal)
+        except Exception as exc:  # generation failure surfaces as an SSE error, not a 5xx —
+            # the stream already committed to a 200 response by the time this runs.
+            log.error("chat_answer_failed", conversation_id=conversation_id, error=str(exc))
+            yield _sse({"type": "error", "error": "answer generation failed"})
+            return
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        log.info(
+            "chat_request",
+            conversation_id=conversation_id,
+            trace_id=answer.trace_id,
+            refused=answer.refused,
+            citation_count=len(answer.citations),
+            latency_ms=latency_ms,
+        )
+        if idempotency_key:
+            cache.set(idempotency_key, answer)
+
+    text = answer.text[: settings.chat_output_max_answer_chars]  # C5 defensive size cap
+    chunk_size = max(1, settings.chat_token_chunk_chars)
+    delay_seconds = settings.chat_stream_interval_ms / 1000
+    for i in range(0, len(text), chunk_size):
+        yield _sse({"type": "token", "delta": text[i : i + chunk_size]})
+        if delay_seconds:
+            await asyncio.sleep(delay_seconds)  # C5 pacing: bounds bytes/sec streamed
+
+    wire_citations = _wire_citations(answer.citations)
+    yield _sse({"type": "citations", "citations": wire_citations})
+    yield _sse(
+        {
+            "type": "done",
+            "answer": text,
+            "citations": wire_citations,
+            "traceId": answer.trace_id,
+            "refused": answer.refused,
+        }
+    )
+
+
+@router.post("/chat")
+async def post_chat(
+    request: Request,
+    body: ChatRequestBody,
+    settings: Settings = Depends(get_settings_dep),  # noqa: B008 — FastAPI dependency idiom
+    service: AnswerService = Depends(get_answer_service_dep),  # noqa: B008
+) -> StreamingResponse:
+    _verify_api_key(request, settings)
+
+    limiter = _chat_rate_limiter(request, settings)
+    if not limiter.allow(_rate_limit_key(request, body.principal)):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "rate limited")
+
+    _validate_history(body, settings)
+
+    conversation_id = body.conversation_id or _new_conversation_id()
+    idempotency_key = request.headers.get(_IDEMPOTENCY_HEADER)
+    cache = _idempotency_cache(request, settings)
+
+    return StreamingResponse(
+        _stream_answer(conversation_id, body, service, settings, cache, idempotency_key),
+        media_type="text/event-stream",
+    )
+
+
+@router.patch("/chat/{trace_id}/feedback")
+async def patch_chat_feedback(
+    trace_id: int,
+    body: FeedbackBody,
+    request: Request,
+    settings: Settings = Depends(get_settings_dep),  # noqa: B008
+    session: Session = Depends(get_writer_db),  # noqa: B008
+) -> dict:
+    _verify_api_key(request, settings)
+
+    limiter = _chat_rate_limiter(request, settings)
+    if not limiter.allow(_rate_limit_key(request, None)):
+        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "rate limited")
+
+    update_query_trace_feedback(session, trace_id, body.feedback)
+    log.info("chat_feedback", trace_id=trace_id, feedback=body.feedback)
+    return {"ok": True}
+
+
+def _new_conversation_id() -> str:
+    return uuid.uuid4().hex

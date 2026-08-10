@@ -1,8 +1,14 @@
 """Minimal Anthropic Messages client over httpx (no vendor SDK dependency).
 
-Used for Phase-3 chunk contextualization (cheap model) and, later, routing/answers. Supports
-prompt caching on system blocks so a page's document context is billed once and reused across all
-its chunks. Applies the LLM-CALL controls: finite timeout and bounded retry with backoff.
+Used for Phase-3 chunk contextualization (cheap model) and, from Phase 4.4, the chat answer
+runtime's query rewrite + grounded generation calls. Supports prompt caching on system blocks so a
+page's document context is billed once and reused across all its chunks. Applies the LLM-CALL
+controls: finite timeout, bounded retry with backoff, a consecutive-failure circuit breaker (C4),
+and an optional per-call input-size abuse cap (C10) — the same discipline `reranker_client.py` and
+`embeddings_client.py` apply to their hosted calls. The breaker/cap default to effectively-off
+(a high threshold, no cap) so the existing contextualization call sites are unaffected; Phase 4.4's
+chat client construction sets both explicitly, because that call sits behind an HTTP surface for
+the first time.
 """
 
 from __future__ import annotations
@@ -36,12 +42,17 @@ class AnthropicMessagesClient:
         api_key: str,
         timeout: float = 30.0,
         max_retries: int = 2,
+        breaker_threshold: int = 1_000_000,
+        max_input_chars: int | None = None,
         client: httpx.Client | None = None,
     ) -> None:
         self._key = api_key
         self._timeout = timeout
         self._max_retries = max(1, max_retries)
+        self._breaker_threshold = breaker_threshold
+        self._max_input_chars = max_input_chars
         self._client = client or httpx.Client(timeout=timeout)
+        self._consecutive_failures = 0
 
     def create_message(
         self,
@@ -54,6 +65,31 @@ class AnthropicMessagesClient:
         """Return the concatenated text of the assistant reply. Raises AnthropicError on failure."""
         if not self._key:
             raise AnthropicError("ANTHROPIC_API_KEY is not set")
+        if self._max_input_chars is not None and len(user_text) > self._max_input_chars:  # C10
+            raise AnthropicError(
+                f"create_message() input ({len(user_text)} chars) exceeds cap "
+                f"{self._max_input_chars}"
+            )
+        if self._consecutive_failures >= self._breaker_threshold:  # C4 circuit breaker
+            raise AnthropicError(
+                "anthropic circuit breaker open after "
+                f"{self._consecutive_failures} consecutive failures"
+            )
+        try:
+            text = self._create_message(model, user_text, system_blocks, max_tokens)
+        except AnthropicError:
+            self._consecutive_failures += 1
+            raise
+        self._consecutive_failures = 0
+        return text
+
+    def _create_message(
+        self,
+        model: str,
+        user_text: str,
+        system_blocks: Sequence[dict] | None,
+        max_tokens: int,
+    ) -> str:
         body: dict = {
             "model": model,
             "max_tokens": max_tokens,

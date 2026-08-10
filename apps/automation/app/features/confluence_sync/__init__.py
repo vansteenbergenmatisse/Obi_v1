@@ -2,8 +2,10 @@
 
 Public surface. `app.main` and any other external code wire this feature through
 `app.features.confluence_sync` — never through a deeper module. Composes the
-`server` sub-facade (router, SlidingWindowRateLimiter) with the worker and
-reconciliation operations.
+`server` sub-facade (router) with the worker and reconciliation operations. The
+generic `SlidingWindowRateLimiter` this feature's webhook uses now lives in
+`app.shared.rate_limiter` (PLAN 4.4) — it has a second consumer (the chat endpoint)
+and no feature-specific behavior, so it moved out of this feature's public surface.
 
 Internal rule: modules inside this feature MUST NOT import through this root
 (`from app.features.confluence_sync import X`) — that raises ImportError during
@@ -26,7 +28,7 @@ from .domain.scope_resolver import (
     resolve_scope_roots,
     resolve_space_scope,
 )
-from .server import SlidingWindowRateLimiter, router
+from .server import router
 
 __all__ = [
     "KIND_COMPLETE",
@@ -34,7 +36,6 @@ __all__ = [
     "ROOT_TYPE_PAGE",
     "ROOT_TYPE_SPACE",
     "ScopeResolution",
-    "SlidingWindowRateLimiter",
     "drain",
     "reap",
     "resolve_scope_roots",
