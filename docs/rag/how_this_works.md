@@ -23,6 +23,7 @@
 9. [A full worked example (end to end)](#9-a-full-worked-example-end-to-end)
 10. [What the PLAN adds (3.5 → 5)](#10-what-the-plan-adds-35--5)
 11. [How to evaluate "are we doing the right thing?"](#11-how-to-evaluate-are-we-doing-the-right-thing)
+12. [Open design discussion — Confluence source scoping](#12-open-design-discussion--confluence-source-scoping)
 
 ---
 
@@ -616,6 +617,32 @@ Use this doc as the reference and check each claim against reality:
 
 If any of the above disagrees with what this doc says, the doc (or the code) is wrong — file it, and
 fix whichever drifted. Keep this file updated as Phases 3.5–5 land so it stays the honest map.
+
+---
+
+## 12. Open design discussion — Confluence source scoping
+
+**Status: mid-brainstorm (`superpowers:brainstorming`), NOT decided, no code written.** Today (§4) a
+Confluence "source" is scoped at the **whole-space** level only — `settings.confluence_scope_list`
+(`CONFLUENCE_SPACES`) exists but has zero consumers anywhere in the app (confirmed by grep). There is
+no way to say "sync just this page" or "just this page-subtree" narrower than a full space.
+
+The user wants that narrower granularity — inspired by a prior project's (Mewsy)
+`fetch_sources.json` pattern of listing folder root page IDs and recursively syncing descendants —
+but explicitly **not** a checked-in config file (flat markdown/JSON "in the plan doc" was called out
+as the wrong home). The leading direction is a **DB-backed scope table** that extends this system's
+existing `reconciliation.py` diff/deactivate engine (§4.7) and composes with the `source_id`/RLS
+isolation model (§10) — consistent with PLAN.md §1.1's "easy per-source CRUD" product goal, and with
+this repo being Postgres-native everywhere else. Mewsy's deletion check has a real gap (only fires
+when a *whole folder* is removed from its config, not an individual page removed from Confluence
+inside a still-configured folder) — this repo's `reconciliation.py` already does that correctly and
+is the base to extend, not replace.
+
+**Once decided, this will change:** §3 (a new table alongside the 7), §4 (sync narrows from
+whole-space to configured page-trees), and possibly §4.7 (reconciliation's per-source scan). This
+section is a pointer, not the design — full status, research findings, and open questions live in
+`docs/rag/PLAN.md` §0 ("Side-thread — Confluence source scoping") and `docs/rag/DESIGN.md` §10. This
+file gets its real update once a design is approved and implemented.
 
 ---
 

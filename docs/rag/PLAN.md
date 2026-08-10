@@ -52,7 +52,61 @@ provisional. Keys confirmed present in `.env`: `RERANKER_PROVIDER=cohere` + `RER
 dev). See "Phase 6 — Supabase vector store migration & deploy" below; it's blocked on the user for the
 connection string, a pgvector ≥ 0.8 confirmation, and the `rag_reader`/RLS→Supabase-roles mapping.
 
-### Progress (as of 2026-08-07, branch `feat/rag-phase-3.5`)
+**Independent re-verification — 2026-08-10, PASS.** Re-checked Phase 0 + all of 3.5 + 4.1 against code
+and live command output, not the ledger's self-report: `make boundaries` clean; all 3 Alembic migrations
+round-tripped `head → base → head` with zero errors; `pytest -q` → **130 passed** (matches ledger); `ruff
+check` 2 errors / `ruff format --check` 22 unformatted, both pre-existing per `git blame` (≤ 25/2
+baseline, no regression); `pyright` 31/1 exactly at baseline, none of the errors touch
+`reranker_client.py`, `retriever.py`, `search_repo.py`, `rag_agent/*`, or `engine.py`. Read (not just
+counted) the RLS default-deny policy + isolation tests, the reranker's timeout/retry/breaker/abuse-cap +
+no-key-logging, the `query_trace` one-row-per-retrieval write path, and the `rag_agent`
+`decide_refusal`/`enforce_citations` tests — all assert real behavior (actual refusal below threshold,
+actual zero-rows on wrong scope), not smoke checks. **No gaps found; nothing to fix before 4.2.**
+
+### Side-thread (not blocking Phase 4.2) — Confluence source scoping, brainstorm IN PROGRESS
+
+**Status 2026-08-10: mid-brainstorm, nothing decided, no code written.** Following
+`superpowers:brainstorming` (triggered because this is new-feature "let's build X" territory).
+**Does not block Phase 4.2** — this only affects *ingestion scope config*, a Phase-3.5.3-adjacent
+concern; resume 4.2 independently whenever.
+
+**Trigger.** User wants Confluence sources configurable more granularly than "sync the whole
+space" — individual pages and page-subtrees ("folders"), inspired by a prior Omniboost project
+(Mewsy, `knowledge/fetch_sources.json` + `scraper/scrapers/confluence.ts`), which lets you list
+folder root IDs and recursively walks + syncs their descendants.
+
+**Research findings (both codebases read directly, not assumed):**
+- **Mewsy's approach:** a checked-in JSON config lists folder root page IDs; a TS scraper walks
+  `GET /wiki/rest/api/content/{id}/child/page` recursively, converts to markdown, dedupes via a
+  content-hash manifest. **Real gap found:** its deletion check (`runDeletionCheck`) only fires
+  when a *whole folder* is removed from the config file — an individual page deleted upstream
+  inside a still-configured folder is never cleaned up (silent staleness). **Do not copy this part
+  verbatim.**
+- **This repo already does the deletion/drift part correctly and better**, already shipped in
+  Phase 1–3: `confluence_sync/application/reconciliation.py` lists every live page in a space,
+  diffs against the DB registry, enqueues new/changed pages, and deactivates (versioned soft-
+  delete) pages that vanished from Confluence — two sweep speeds (lightweight/complete). Nothing
+  new needed for *that* part.
+- **The actual gap:** everything above operates at **whole-space granularity only**.
+  `settings.confluence_scope_list` (parses `CONFLUENCE_SPACES`) is defined but **never consumed
+  anywhere in the app** — confirmed by grep, zero other references. There is no existing concept
+  of "just this page" or "just this page-tree" narrower than a full space.
+- **Image/OCR reading** (separately raised by the user, "add later, not now"): already a known,
+  already-flagged gap — `ingestion/domain/attachment_extraction.py` marks images `needs_ocr=True`
+  but returns `text=""`; OCR is never invoked. Tracked here so it isn't lost; **not in scope now**,
+  revisit alongside Phase 5 or whenever OCR becomes a concrete requirement.
+
+**Open question asked, not yet answered:** does the user want page/page-tree scoping narrower than
+a whole space (confirm yes/no), and if yes — storage approach. Leading candidate under
+consideration: a **DB-backed source-scope table** (extends the existing `reconciliation.py` diff
+engine + composes with the Phase 3.5 `source_id`/RLS model) instead of a static config file like
+Mewsy's — this repo is Postgres-native everywhere else, and PLAN.md §1 already commits to "easy
+per-source CRUD" as a product goal, which a checked-in file serves poorly (redeploy to change scope,
+no single source of truth). Not yet decided — still mid brainstorming-skill checklist (clarifying
+questions → propose approaches → present design → write spec → self-review → user-approves-spec
+→ only then `writing-plans`). **No implementation before spec approval.**
+
+### Progress (as of 2026-08-07, branch `feat/rag-phase-3.5`; re-verified 2026-08-10)
 
 | Phase | Status | Commit | Proof |
 |---|---|---|---|
@@ -98,8 +152,25 @@ re-tune in Phase 5. **→ Phase 3.5 closed; Phase 4.1 shipped (`e4490aa`); next 
    `RERANKER_PROVIDER=cohere` + a live `RERANKER_API_KEY`; 3.5.5 measured a real lift with it (see the
    exit-gate note above). CI still forces `FakeReranker` via `conftest.py`, so the suite stays
    deterministic. No further action.
-3. **Confluence token** — still dead (401/403, no Confluence seat; `CONFLUENCE_SPACES` empty). Blocks
-   *live* ingestion only; all offline phases (3.5 → most of 4) run on the fixture corpus.
+3. **Confluence token** — still dead (401 Jira / 403 Confluence "caller cannot access Confluence").
+   Blocks *live* ingestion only; all offline phases (3.5 → most of 4) run on the fixture corpus. **Exact
+   fix needed from the user** (env vars live in `app/platform/config/settings.py:33-38` /
+   `.env.example:1-10`):
+   - Generate a **fresh Atlassian API token** at
+     `https://id.atlassian.com/manage-profile/security/api-tokens`, from an account that holds an actual
+     **Confluence Cloud product license/seat** — not just Jira. The 403 means the current token
+     authenticates but that account isn't licensed for Confluence; a fresh token from an unlicensed
+     account will fail the same way.
+   - `CONFLUENCE_EMAIL` must be that same licensed account's email (Basic Auth pairs `email` +
+     `api_token` in `confluence_client.py:72`).
+   - Confirm `CONFLUENCE_BASE_URL` is the real site's `/wiki` base, e.g.
+     `https://<your-org>.atlassian.net/wiki` (already set — just confirm it matches the account above).
+   - Set `CONFLUENCE_SPACES` (currently **empty**) to the comma-separated space keys / page IDs / tree
+     roots to sync, e.g. `ENG,PRODUCT`.
+   - `CONFLUENCE_WEBHOOK_SECRET` is already set — no action needed.
+   - `CONFLUENCE_SERVICE_ACCOUNT_ID` is optional — only used (`event_service.py:47-50`) to filter the
+     integration's own webhook events and avoid self-triggered loops; leave empty unless the sync
+     account also writes back to Confluence.
 4. **Phase 5 infra (later)** — Redis for caching only if the proportionality gate is met; Langfuse
    optional. Will re-ask when Phase 5 starts.
 
@@ -530,6 +601,18 @@ pgvector) as the production vector store, preserving the ADR-0004 source-isolati
 local pgvector until this phase. This is deploy/infra work, deliberately separated from the Phase 5
 accuracy/optimization work so neither blocks the other.
 
+**Why not sooner (revisited 2026-08-10 at the user's request).** Moving *dev* onto Supabase before
+Phase 4/5 land would trade a working, hermetic, zero-network test DB (`omniboost_rag_test`, spun up by
+`make up`) for a networked dependency in every dev/test loop, and risks the exact pgvector-version trap
+3.5.1 was built to avoid (Supabase may pin `< 0.8`, breaking `hnsw.iterative_scan`) — with no concrete
+deploy date forcing the move. Root `CLAUDE.md`'s proportionality gate says add infra when a concrete
+requirement exists, not ahead of one. **Recommendation: keep Phase 6 deploy-only, as already decided.**
+Also worth noting: the app talks to Postgres directly via `psycopg`, not Supabase's REST/JS SDK, so a
+Supabase project's `ANON_KEY`/`SERVICE_ROLE_KEY` are never needed here — only the Postgres connection
+string. If there's now a concrete ship date, say so and the Phase 6 blockers (connection string,
+pgvector≥0.8 confirmation, role mapping) can be pulled forward — that's information-gathering, not a
+dev-infra switch.
+
 **Blocked on the user (ask at phase start — never invent a DSN or key):**
 
 - **Connection string** → `DATABASE_URL` (writer) and `DATABASE_READER_URL` (reader). Use the
@@ -557,6 +640,22 @@ accuracy/optimization work so neither blocks the other.
 **Acceptance.** Isolation + eval pass against Supabase; `hnsw.iterative_scan` confirmed available (or a
 documented mitigation); connection uses the psycopg driver; no secret in logs. `make check` still green
 locally (dev unchanged).
+
+### Future direction (not yet a phase) — AWS Bedrock
+
+Noted per the user (2026-08-10): eventual integration with AWS Bedrock-hosted models (Claude via Bedrock
+instead of/alongside the direct Anthropic API; possibly Bedrock's Titan embeddings or its hosted Cohere
+Rerank) is a real future direction, **not built now** — no concrete AWS deployment decision exists yet,
+and building a second inference path today (IAM auth, region/model-ID config, a `FakeBedrock*` test
+double) for zero present benefit fails the same proportionality gate as an early Supabase move.
+
+The existing architecture already de-risks this for later: `embeddings_client.py`'s `EmbeddingProvider`
+Protocol and `reranker_client.py`'s `Reranker` Protocol + `build_reranker` factory are exactly the seam a
+`BedrockReranker` / Bedrock embedding provider would implement — adding one later is a contained,
+low-blast-radius change, not a rewrite. Supabase (where vectors live) and Bedrock (where inference runs)
+are orthogonal — either can pair with either. **When there's a concrete AWS deployment decision, this
+becomes its own ADR-gated phase** (mirroring how Supabase got Phase 6), not something folded into
+4.2/5/6 ad hoc.
 
 ---
 

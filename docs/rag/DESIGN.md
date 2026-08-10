@@ -346,3 +346,13 @@ feature/capability root, never deep-import; run `make boundaries` before every c
 ruff/pyright at the ADR-0003 D1 baseline (2/25 ruff, 31/1 pyright) — bring touched files clean, do not
 reformat untouched files. `make check` stays green. Migrations are reversible and ordered from
 `0001_core_schema`.
+
+## 10. Open design discussion (NOT decided) — Confluence source scoping
+
+A brainstorm is in progress (per `superpowers:brainstorming`) on letting Confluence sync be scoped
+to individual pages / page-subtrees, not just whole spaces — inspired by a prior project's
+`fetch_sources.json` pattern, adapted to reuse this repo's already-correct
+`reconciliation.py` diff/deactivate logic rather than that project's weaker deletion check. **Nothing
+here is decided; no code exists yet.** Full research findings, the open question, and status live in
+`docs/rag/PLAN.md` §0 ("Side-thread — Confluence source scoping"). This section will be filled in
+(or this pointer removed in favor of real sections) once a design is approved.
