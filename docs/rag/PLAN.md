@@ -17,17 +17,87 @@ fix here as the next task; update this ledger after each phase.
 ### ▶ Resume here (after `/compact-ultra`) — first things first
 
 **Phase 3.5 is COMPLETE (exit gate MET, verification re-run PASSED); 3.5.6 (Confluence source
-scoping) also shipped 2026-08-10. Phase 4 is IN PROGRESS: 4.1 done.**
-Next is **4.2** — the answer workflow (rewrite → retrieve → rerank → parent expansion → ground → refuse
-→ CRAG).
+scoping) also shipped 2026-08-10, committed `0f1a0d7`. Phase 4 is IN PROGRESS: 4.1 + 4.2 done.**
+Next is **4.3** — real principal ACL storage (replace the fixture-backed `PrincipalPermissionPolicy`
+with persisted principal lists, enforced pre-search alongside RLS).
 
 Fresh context: read this ledger + `docs/rag/DESIGN.md` (§2 target pipeline, §5 accuracy stack) +
 `docs/adr/0005*`, then:
 
-1. **Begin Phase 4.2** — the fixed answer workflow in `rag_agent/application/` reusing the 3.5
-   reader-engine + RLS scoping and the `refusal`/`citations` domain core already built in 4.1. Add the
-   `rewrite_enabled` + `crag_max_retries` settings then. The `POST /chat` **HTTP+LLM surface is 4.4** —
-   invoke `securing-http-and-llm-endpoints` and apply the full control set there (rule 2).
+1. **Begin Phase 4.3** — persist principal lists (not just the access-scope hash) and enforce them
+   pre-search, alongside the 3.5 RLS layer (both apply — see DESIGN.md §3). The `POST /chat` **HTTP+LLM
+   surface is 4.4** — invoke `securing-http-and-llm-endpoints` and apply the full control set there
+   (rule 2).
+
+### 4.2 — Answer workflow ✅ done (2026-08-10)
+
+**Status: implemented, unit- and integration-tested, not yet committed.** `AnswerService`
+(`app/features/rag_agent/application/answer_service.py`) implements the fixed pipeline: rewrite
+(`AnthropicQueryRewriter`, fails open to the verbatim query on an `AnthropicError`) → RLS-scoped
+retrieve/RRF/rerank via `HybridRetriever.retrieve_with_context` (chunk ids + scores now surfaced,
+not discarded) → one CRAG retry with the verbatim query if the rewritten query's top score is weak →
+refusal via the 4.1 `decide_refusal` core → parent-context expansion (`fetch_parent_texts`, children
+retrieve/parents ground) → grounded generation (`AnthropicAnswerGenerator`) → citation enforcement
+via the 4.1 `enforce_citations` core, degrading to refusal if nothing survives → `query_trace` UPDATE
+with the rewritten query/answer/citations.
+
+**Deviation from the plan text (a refinement, not a scope change):** the plan said to "refactor
+`retrieve`'s return"; instead, `retrieve()` kept its original `list[str]` signature (the eval
+harness's `RankFn` seam and several already-verified 3.5 tests depend on that exact shape) and a new
+`retrieve_with_context()` was added alongside it, sharing one private `_search()` core. Both write
+the same richer `query_trace` row now (chunk ids + rerank scores were previously discarded even by
+`retrieve()`) — so the acceptance criterion (those columns non-NULL) is met either way, with zero
+regression risk to already-verified retrieval tests.
+
+**CRAG semantics (a design decision the plan left open):** one retry, triggered only when
+`rewrite_enabled` actually changed the query (retrying an identical query returns an identical
+result) and the first result's top score is below `refusal_min_rerank_score`; retries with the
+user's verbatim last turn and keeps whichever result scored higher. Ordering: the retry runs
+*between* retrieval and the refusal check (refusing before ever retrying would defeat the point),
+even though DESIGN.md's stage table lists refusal (5) before CRAG (6) — that table enumerates
+concerns, not call order.
+
+**Shipped:**
+- `retrieval/infrastructure/search_repo.py`: `fetch_rerank_texts` now returns a `RerankCandidate`
+  (chunk_id + title + source_url + text) per page instead of a bare string; new
+  `fetch_parent_context` joins a child's `parent_chunk_id` to its parent's `display_content`.
+- `retrieval/infrastructure/trace_repo.py`: `write_query_trace` accepts + persists
+  `retrieved_chunk_ids`/`rerank_scores` and returns the new row's id; new
+  `update_query_trace_answer`/`update_query_trace_feedback` UPDATE writers.
+- `retrieval/application/retriever.py`: new `RetrievedHit`/`RetrievalResult` DTOs,
+  `retrieve_with_context()`, `fetch_parent_texts()`; `retrieve()` unchanged in shape.
+- `retrieval/__init__.py` root now also exports `RetrievedHit`, `RetrievalResult`,
+  `update_query_trace_answer`, `update_query_trace_feedback`.
+- `rag_agent/domain/prompt.py` (new): pure rewrite-prompt/evidence-block/answer-prompt builders.
+- `rag_agent/infrastructure/llm_client.py` (new): `QueryRewriter`/`AnswerGenerator` protocols +
+  `AnthropicQueryRewriter`/`AnthropicAnswerGenerator`.
+- `rag_agent/application/answer_service.py` (new): `AnswerService`.
+- `rag_agent/__init__.py` root now also exports `AnswerService`, `QueryRewriter`, `AnswerGenerator`,
+  `AnthropicQueryRewriter`, `AnthropicAnswerGenerator`.
+- Settings: `rewrite_enabled` (default `true`), `crag_max_retries` (default `1`).
+- Tests: 5 pure prompt tests, 9 `AnswerService` orchestration tests (fake retriever/rewriter/
+  generator — no network, no DB), 3 retrieval-layer DB-integration tests (chunk ids/scores in the
+  trace, `fetch_parent_texts` real join, `update_query_trace_answer`/`_feedback`), 3
+  `test_answer_workflow.py` DB-integration tests (grounded citation flow, source-scope refusal,
+  no-grounded-claim refusal) — all against the real fixture corpus with fake LLM collaborators →
+  **164 tests total** (was 144). `make boundaries` clean; ruff 2 errors/19 unformatted, pyright 31
+  errors — both exactly at the ADR-0003 D1 no-regression baseline, none of the new errors on touched
+  files (verified directly, not just counted).
+
+**Not done (deferred, per the plan's own phasing):** `POST /chat` wiring, real Anthropic client
+construction from settings, and the `securing-http-and-llm-endpoints` control set are Phase 4.4 —
+this phase only builds and tests the internal workflow, with no HTTP surface and no test hitting a
+real LLM.
+
+**Pre-existing gap noticed, not fixed here (out of scope for 4.2):** the "hermetic settings fixture
+MUST force `reranker_provider=fake`" rule documented in §4 is not actually enforced as a blanket
+override in `conftest.py` — `test_smoke_maintains_recall_and_beats_ranking` and
+`test_rerank_lift_before_vs_after`'s "after" side both call `build_reranker(settings)` with whatever
+is in the developer's real `.env` (currently `RERANKER_PROVIDER=cohere` + a live key), so local
+`make test` runs do make live Cohere calls in those two tests (harmless — deterministic-enough
+assertions are guarded by `if ... == "fake"` — but not what the doc claims). Flagged for a future
+session; 4.2's own new LLM calls avoid the same trap by injecting fake collaborators directly in
+every test rather than going through a settings-driven factory.
 
 **Phase 4.1 done (`e4490aa`):** new `rag_agent` feature scaffolded per the repo
 standard — public root exporting the `Answer`/`Citation`/`ChatMessage` DTO contract; pure domain core
@@ -130,14 +200,15 @@ OCR/image reading untouched.
 | **3.5.5** — measure rerank lift + Phase 3.5 exit gate | ✅ done | `1b6e94c` | 120 tests; `evaluate_rerank_lift` + live Cohere run; **lift −0.123 ndcg@10 on the saturated fixture — expected, real lift is a Phase-5 gold-set measurement** |
 | **4.1** — `rag_agent` scaffold: DTOs + refusal/citation domain core | ✅ done | `e4490aa` | 10 unit tests → 130 total; public root + FEATURES.md; boundaries clean; ruff/pyright 0 on new files |
 | **3.5.6** — Confluence source scoping (`source_scope` table) | ✅ done | `0f1a0d7` | 14 tests → 144 total; migration 0004 reversible; boundaries clean; no ruff/pyright regression |
-| **4.2–4.5** — answer workflow, principal ACL, `POST /chat`, web UI | ⏳ next | — | HTTP+LLM surface (4.4) → full security controls required |
+| **4.2** — answer workflow (`AnswerService`) | ✅ done | *(uncommitted)* | 20 tests → 164 total; boundaries clean; no ruff/pyright regression; DB-integration-tested, no live LLM calls |
+| **4.3–4.5** — principal ACL, `POST /chat`, web UI | ⏳ next | — | HTTP+LLM surface (4.4) → full security controls required |
 | **5** — optimization & proof | ⬜ todo | — | caching, adaptive routing, red-team, latency/cost |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
 
-Gate at each ✅: `make check` green (**144 tests** as of 3.5.6; was 130 at 4.1, 120 at end-3.5, 99
-pre-3.5), `make boundaries` clean, ruff/pyright at the ADR-0003 D1 baseline (no regression — 22/2
-ruff ≤ 25/2, pyright 0/0 on touched files). Reader/RLS isolation tests + all four migrations
-verified.
+Gate at each ✅: `make check` green (**164 tests** as of 4.2; was 144 at 3.5.6, 130 at 4.1, 120 at
+end-3.5, 99 pre-3.5), `make boundaries` clean, ruff/pyright at the ADR-0003 D1 baseline (no
+regression — 2 errors/19 unformatted ruff ≤ 25/2, pyright 31 errors, 0 on touched files). Reader/RLS
+isolation tests + all four migrations verified.
 
 **Phase 3.5 exit gate — MET (2026-08-07):** `make check` green (120); `make eval` prints the before/after
 rerank table; isolation tests pass (RLS default-deny + wrong-source→0); pgvector 0.8.5 pinned; every

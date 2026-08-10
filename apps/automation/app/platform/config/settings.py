@@ -82,6 +82,10 @@ class Settings(BaseSettings):
     # [0, 1]. Provisional floor from the 3.5.5 fixture run; re-tune on the Phase-5 gold set.
     refusal_min_rerank_score: float = 0.10
 
+    # answer workflow (PLAN 4.2)
+    rewrite_enabled: bool = True  # conversational query rewrite (routing_model), always on
+    crag_max_retries: int = 1  # corrective-retrieval cap on a weak first result (protects p95)
+
     # retrieval / budgets
     evidence_token_budget: int = 7000
     provider_timeout_seconds: float = 8.0

@@ -4,12 +4,16 @@ A fixed, testable workflow (not an agent loop, ADR-0005 §5): conversational rew
 RLS-scoped retrieve → RRF → cross-encoder rerank → parent-context expansion → grounded
 generation with forced citations → refusal threshold → at most one CRAG retry → SSE.
 
-Public surface. Only the answer contract crosses this boundary today: the DTOs that
-`POST /chat` (Phase 4.4) serialises. The answer service is added to this root in Phase 4.2
-once its pipeline exists; the refusal / citation domain logic stays internal.
+Public surface: the DTOs `POST /chat` (Phase 4.4) will serialise (`Answer`/`ChatMessage`/
+`Citation`), the `AnswerService` orchestrator (Phase 4.2), and the `QueryRewriter`/
+`AnswerGenerator` collaborator protocols + their Anthropic-backed implementations, so Phase 4.4
+can wire real dependencies without reaching past this root. The refusal / citation / prompt
+domain logic stays internal.
 
-Status (Phase 4.1): scaffold — DTO contract + pure domain core (refusal, citation
-enforcement) with unit tests. No LLM, DB, or HTTP surface yet.
+Status (Phase 4.2): the answer workflow is built and unit/integration-tested against the
+fixture corpus (fake LLM collaborators — no network in tests). No HTTP surface yet (that's 4.4,
+which also applies the `securing-http-and-llm-endpoints` control set this internal workflow does
+not need yet).
 
 Internal rule: modules inside this feature MUST NOT import through this root
 (`from app.features.rag_agent import X`) — that raises ImportError during init. They deep-
@@ -18,6 +22,22 @@ import each other by full submodule path.
 
 from __future__ import annotations
 
+from .application.answer_service import AnswerService
+from .infrastructure.llm_client import (
+    AnswerGenerator,
+    AnthropicAnswerGenerator,
+    AnthropicQueryRewriter,
+    QueryRewriter,
+)
 from .schemas import Answer, ChatMessage, Citation
 
-__all__ = ["Answer", "ChatMessage", "Citation"]
+__all__ = [
+    "Answer",
+    "ChatMessage",
+    "Citation",
+    "AnswerService",
+    "QueryRewriter",
+    "AnswerGenerator",
+    "AnthropicQueryRewriter",
+    "AnthropicAnswerGenerator",
+]

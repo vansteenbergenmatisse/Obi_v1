@@ -12,12 +12,13 @@
 > [`../adr/0004-Multi-Source-Provider-Tagging-And-RLS.md`](../adr/0004-Multi-Source-Provider-Tagging-And-RLS.md)
 > and [`../adr/0005-Reranking-And-Answer-Pipeline.md`](../adr/0005-Reranking-And-Answer-Pipeline.md).
 >
-> `TODAY` = shipped and verified. As of 2026-08-07 that is **Phases 1–3 + all of Phase 3.5**
-> (reranker, provider tags + RLS + reader role, `query_trace`, rerank-lift eval) **and the Phase 4.1
-> `rag_agent` scaffold** (DTO contract + pure refusal/citation domain core) — **130 tests green**.
-> `PLANNED` = specified here, gated on the phase named (the Phase 4.2+ answer workflow, `POST /chat`,
-> and web UI are not built yet). Every code claim is anchored `file:line` so it can be checked against
-> the tree.
+> `TODAY` = shipped and verified. As of 2026-08-10 that is **Phases 1–3 + all of Phase 3.5** (reranker,
+> provider tags + RLS + reader role, `query_trace`, rerank-lift eval, Confluence source scoping) **and
+> Phase 4.1 + 4.2** — the `rag_agent` DTO contract + domain core, and now the full `AnswerService`
+> answer workflow (rewrite → retrieve/rerank → CRAG retry → refusal → parent expansion → grounded
+> generation → citation enforcement) — **164 tests green**. `PLANNED` = specified here, gated on the
+> phase named (principal ACL storage, `POST /chat`, and the web UI — Phase 4.3–4.5 — are not built
+> yet). Every code claim is anchored `file:line` so it can be checked against the tree.
 
 ---
 
@@ -91,17 +92,23 @@ scope → conversational rewrite → embed → (RLS-scoped) dense ∥ keyword �
 
 | # | Stage | Where | Phase | Notes |
 |---|---|---|---|---|
-| 1 | Conversational rewrite | `rag_agent` (new) | 4 | multi-turn history → standalone query; one cheap LLM call (`routing_model`), always on |
+| 1 | Conversational rewrite | `rag_agent/infrastructure/llm_client.py` ✅ 4.2 | 4.2 | multi-turn history → standalone query; one cheap LLM call (`routing_model`), always on (`rewrite_enabled`); fails open to the verbatim query on an `AnthropicError` |
 | 2 | Embed | `retriever.py` (unchanged) | — | same provider as ingestion |
 | 3 | RLS-scoped dense ∥ keyword | `search_repo.py`, `retriever.py` | 3.5.1/3.5.3 | reader engine sets `app.allowed_sources` + HNSW GUCs per txn |
 | 4 | RRF fusion | `fusion.py` (unchanged) | — | `Σ 1/(60+rank)`, tie-break by keyword rank |
-| 5 | Permission filter | `permission.py` | 4 | fixture ACL → real persisted principal lists; runs **before** rerank |
-| 6 | Cross-encoder rerank | `reranker_client.py` (new), `retriever.py` | 3.5.2 | `candidate_k` 40→75; rerank ≤75 → top-`k`; **after** the permission filter |
-| 7 | Parent-context expansion | `rag_agent` | 4 | join `parent_chunk_id`; feed the *parent* text to the generator |
-| 8 | Grounded generation + forced citations | `rag_agent` | 4 (citation core ✅ 4.1) | every claim cites a chunk; uncited claims stripped by `enforce_citations`; generation is 4.2 |
-| 9 | Refusal threshold | `rag_agent` | 4 (core ✅ 4.1) | top rerank score < `refusal_min_rerank_score` → refuse via `decide_refusal`; live wiring 4.2 |
-| 10 | One CRAG retry | `rag_agent` | 4 | at most one corrective retrieval (`crag_max_retries=1`) to protect p95 |
-| 11 | SSE stream | `POST /chat` in `main.py` | 4 | events `start`/`token`/`citations`/`done`, reader engine |
+| 5 | Permission filter | `permission.py` | 4.3 | fixture ACL → real persisted principal lists; runs **before** rerank |
+| 6 | Cross-encoder rerank | `reranker_client.py`, `retriever.py` | 3.5.2 | `candidate_k` 40→75; rerank ≤75 → top-`k`; **after** the permission filter |
+| — | One CRAG retry | `rag_agent/application/answer_service.py` ✅ 4.2 | 4.2 | if the rewritten query's top score is weak, one retry with the verbatim query (`crag_max_retries`), keeping whichever scored higher — runs *between* retrieval and refusal, not after (see below) |
+| — | Refusal threshold | `rag_agent/domain/refusal.py` ✅ 4.1, wired ✅ 4.2 | 4.2 | top rerank score (post-CRAG) < `refusal_min_rerank_score` → refuse via `decide_refusal`, skip generation entirely |
+| 7 | Parent-context expansion | `rag_agent/application/answer_service.py` ✅ 4.2 | 4.2 | `HybridRetriever.fetch_parent_texts` joins `parent_chunk_id`; the *parent* text grounds the generator, not the matched child |
+| 8 | Grounded generation + forced citations | `rag_agent` ✅ 4.2 | 4.2 (citation core ✅ 4.1) | every claim cites a chunk; uncited claims stripped by `enforce_citations`; zero surviving citations degrades to refusal rather than an empty answer |
+| 11 | SSE stream | `POST /chat` in `main.py` | 4.4 | events `start`/`token`/`citations`/`done`, reader engine |
+
+Row order above matches the §2 diagram's presentation order (stage *concerns*), not runtime call
+order. The actual 4.2 call order is: rerank (6) → CRAG retry → refusal check → parent expansion (7) →
+generation (8) — refusing before ever attempting the corrective retry would defeat its purpose, so
+the retry sits between retrieval and the refusal decision even though the diagram lists refusal before
+CRAG.
 
 Every request writes one `query_trace` row: retrieval fields in 3.5, answer/feedback fields in 4.
 
@@ -215,20 +222,24 @@ same trace row (writer engine).
   retriever deals in page ids only, a `fetch_rerank_texts` refactor in `search_repo.py` (subject to the
   same `_base_filters` + source scope) precedes wiring; rerank is inserted **after** the permission
   filter, **before** the top-`k` slice.
-- **Parent-context expansion (Phase 4).** Children retrieve; parents ground. Join `parent_chunk_id` and
-  send the parent chunk text to the generator, so the model has enough surrounding context to answer.
-- **Forced citations (Phase 4).** Every claim cites a retrieved chunk; **uncited claims are stripped**
-  before returning. *Domain core built in 4.1* — `enforce_citations`
-  (`features/rag_agent/domain/citations.py`) keeps a sentence only if it cites a valid numbered marker,
-  drops hallucinated-source markers, and returns the markers actually used; the generator that produces
-  the cited text (which this pass then enforces) is 4.2.
-- **Refusal threshold (Phase 4).** If the top rerank score < `refusal_min_rerank_score`, refuse ("not in
-  the docs") and route to a human rather than hallucinate. The threshold is tuned from the 3.5.5 numbers.
-  *Domain core built in 4.1* — `decide_refusal` (`features/rag_agent/domain/refusal.py`) refuses below
-  threshold or when retrieval returned nothing; wiring it to the live top rerank score is 4.2 (it needs
-  the retriever-return refactor that surfaces scores — see §6).
-- **One CRAG retry (Phase 4).** On a weak result, exactly one corrective retrieval (`crag_max_retries=1`),
-  to protect p95. Not an agent loop — a fixed workflow (ADR-0005).
+- **Parent-context expansion (✅ Phase 4.2).** Children retrieve; parents ground.
+  `HybridRetriever.fetch_parent_texts` joins `parent_chunk_id` and `AnswerService` sends the parent
+  chunk text to the generator, so the model has enough surrounding context to answer.
+- **Forced citations (✅ Phase 4.2, core built 4.1).** Every claim cites a retrieved chunk; **uncited
+  claims are stripped** before returning. `enforce_citations` (`features/rag_agent/domain/citations.py`)
+  keeps a sentence only if it cites a valid numbered marker, drops hallucinated-source markers, and
+  returns the markers actually used. `AnswerService` now drives the real generator
+  (`AnthropicAnswerGenerator`) that produces the cited text this pass enforces; if nothing survives
+  enforcement, the answer degrades to a refusal rather than returning an empty string.
+- **Refusal threshold (✅ Phase 4.2, core built 4.1).** If the top rerank score (after the CRAG retry,
+  if one ran) is below `refusal_min_rerank_score`, refuse ("not in the docs") and route to a human
+  rather than hallucinate, skipping generation entirely. `decide_refusal`
+  (`features/rag_agent/domain/refusal.py`) refuses below threshold or when retrieval returned nothing;
+  `AnswerService` now wires it to the live top rerank score from `retrieve_with_context`.
+- **One CRAG retry (✅ Phase 4.2).** On a weak result, exactly one corrective retrieval
+  (`crag_max_retries`, default 1): retries with the user's verbatim last turn (in case the rewrite hurt
+  retrieval) and keeps whichever result scored higher. A no-op when rewrite is disabled/unchanged.
+  Not an agent loop — a fixed workflow (ADR-0005).
 
 **Proof of lift (Phase 3.5.5).** `make eval` reports Precision@5 and NDCG@10 **before vs after** rerank
 on `retrieval_smoke.json`, keeping the report format comparable to the existing baseline. The mechanism
@@ -264,14 +275,19 @@ recall@k, precision@k, MRR, NDCG@k, hit_rate@k. The reranker plugs into the same
 3.5.5 adds a before/after rerank-lift table. Datasets: `retrieval_smoke.json` (relevance),
 `permission.json` (isolation/no-leak), `ambiguity.json`. A real-ticket gold set is a Phase 5 deliverable.
 
-**Tracing.** A new `QueryTrace` ORM model + `query_trace` table, written via the **writer** engine (so
-RLS never blocks the insert and Phase-4 feedback can `UPDATE` the row). Populated **now** (3.5.4
-retrieval): `id`, `raw_query`, `retrieved_page_ids`, `allowed_sources` (isolation audit),
-`embedding_model`, `reranker_model`, `latency_ms`, `created_at`. **Nullable, filled in Phase 4**:
-`retrieved_chunk_ids` and `rerank_scores` (the retriever currently returns page ids only and discards the
-rerank scores; Phase 4.2 refactors its return to surface both, and persists them here), plus
-`rewritten_query`, `answer`, `citations`, `feedback`. structlog stays for ops logging; Langfuse is a
-possible future exporter, not built here.
+**Tracing.** A `QueryTrace` ORM model + `query_trace` table, written via the **writer** engine (so RLS
+never blocks the insert and the answer runtime / feedback endpoint can `UPDATE` the row).
+Populated at retrieval (3.5.4, extended 4.2): `id`, `raw_query`, `retrieved_page_ids`,
+`allowed_sources` (isolation audit), `embedding_model`, `reranker_model`, `latency_ms`, `created_at`,
+and now `retrieved_chunk_ids` + `rerank_scores` too — every `retrieve()`/`retrieve_with_context()`
+call fills them, not just the latter. **Deviation from the original plan:** rather than refactoring
+`retrieve()`'s return type (which the eval harness's `RankFn` seam and several already-verified 3.5
+tests depend on), 4.2 added `retrieve_with_context()` alongside it, sharing one private search core —
+both write the same richer trace row. Filled by the answer workflow itself (✅ 4.2, via
+`update_query_trace_answer`): `rewritten_query`, `answer`, `citations` (as `{"markers": [...]}`).
+Still nullable, filled by the Phase 4.4 feedback endpoint (via `update_query_trace_feedback`, already
+built): `feedback`. structlog stays for ops logging; Langfuse is a possible future exporter, not built
+here.
 
 ---
 
@@ -339,6 +355,9 @@ upgrade layers. Each was audited against the actual code. Verdict + one-line rat
   with the eval-harness update) → 3.5.4 tracing → 3.5.5 measure. **Exit gate:** `make check` green,
   `make eval` shows rerank lift, isolation tests pass, pgvector ≥ 0.8, every retrieval traced.
 - **Phase 4** — answer runtime + streaming chat (`rag_agent`, `POST /chat`, web UI). Fixed workflow.
+  4.1 (DTO contract + refusal/citation domain core) and 4.2 (the full `AnswerService` pipeline,
+  network-free-tested) are done; 4.3 (real principal ACL) → 4.4 (`POST /chat`, security controls) →
+  4.5 (web UI) remain.
 - **Phase 5** — optimization + proof (embedder bake-off, caching, adaptive routing, red-team, latency/cost).
 
 **Cross-cutting rules (every phase).** Feature boundaries: export new cross-boundary symbols from the

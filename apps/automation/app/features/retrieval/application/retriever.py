@@ -5,12 +5,20 @@ after removing any page the caller scope may not see. Status is already enforced
 current pages have active chunks); permission is enforced here, and the cross-encoder rerank runs
 *after* the permission filter so a doc the principal can't see is never scored. Keyword rank breaks
 RRF ties so lexical relevance wins when the dense signal is weak (e.g. the offline Fake embedder).
+
+``retrieve()`` is the original, eval-harness-facing shape (page ids only) and stays unchanged so the
+`RankFn` seam and its existing assertions keep working. ``retrieve_with_context()`` is the Phase 4.2
+answer-workflow entry point: same ranking, but it also surfaces each hit's chunk id (for parent
+expansion), rerank score (for the refusal threshold), and title/url (for citations) — the data
+``retrieve()`` computed all along but discarded. Both share one internal search core, and both
+write the same ``query_trace`` row shape when tracing is enabled.
 """
 
 from __future__ import annotations
 
 import time
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
@@ -20,11 +28,39 @@ from app.features.retrieval.infrastructure.search_repo import (
     apply_hnsw_gucs,
     apply_source_scope,
     dense_search,
+    fetch_parent_context,
     fetch_rerank_texts,
     keyword_search,
 )
 from app.features.retrieval.infrastructure.trace_repo import write_query_trace
 from app.platform.clients import EmbeddingProvider, Reranker
+
+
+@dataclass(frozen=True)
+class RetrievedHit:
+    """One ranked, permitted, reranked page — with the extra fields Phase 4 needs."""
+
+    page_id: str
+    chunk_id: int
+    score: float
+    title: str
+    url: str
+
+
+@dataclass(frozen=True)
+class RetrievalResult:
+    """The answer workflow's view of a retrieval: hits plus the trace row they were logged under."""
+
+    hits: list[RetrievedHit] = field(default_factory=list)
+    trace_id: int | None = None
+
+    @property
+    def page_ids(self) -> list[str]:
+        return [h.page_id for h in self.hits]
+
+    @property
+    def top_score(self) -> float | None:
+        return self.hits[0].score if self.hits else None
 
 
 def _dedupe(pairs: Sequence[tuple[int, float]]) -> list[int]:
@@ -64,8 +100,7 @@ class HybridRetriever:
         # optional WRITER sessionmaker: when set, each retrieve writes one query_trace row (3.5.4)
         self._trace_sessionmaker = trace_sessionmaker
 
-    def retrieve(self, query: str, scope: str | None, k: int = 5) -> list[str]:
-        started = time.perf_counter()
+    def _search(self, query: str, scope: str | None, k: int) -> list[RetrievedHit]:
         space_id = self._policy.space_id(scope)
         query_vec = self._embedder.embed([query])[0]
         sources = self._allowed_sources
@@ -96,23 +131,58 @@ class HybridRetriever:
             # Cross-encoder rerank the permitted candidates (never a doc the scope can't see).
             # FakeReranker is order-preserving, so offline this is exactly the pre-rerank ranking.
             to_rerank = allowed[: self._rerank_depth]
-            texts = fetch_rerank_texts(session, to_rerank, space_id, sources)
-            docs = [(pid, texts[pid]) for pid in to_rerank if pid in texts]
+            candidates = fetch_rerank_texts(session, to_rerank, space_id, sources)
+            docs = [(pid, candidates[pid].text) for pid in to_rerank if pid in candidates]
 
         reranked = self._reranker.rerank(query, docs, top_k=k)
-        page_ids = [pid for pid, _score in reranked]
+        return [
+            RetrievedHit(
+                page_id=str(pid),
+                chunk_id=candidates[pid].chunk_id,
+                score=score,
+                title=candidates[pid].title,
+                url=candidates[pid].source_url,
+            )
+            for pid, score in reranked
+            if pid in candidates
+        ]
 
-        if self._trace_sessionmaker is not None:
-            latency_ms = int((time.perf_counter() - started) * 1000)
-            with self._trace_sessionmaker() as trace_session:
-                write_query_trace(
-                    trace_session,
-                    raw_query=query,
-                    retrieved_page_ids=page_ids,
-                    allowed_sources=sources,
-                    embedding_model=self._embedder.model,
-                    reranker_model=self._reranker.model,
-                    latency_ms=latency_ms,
-                )
+    def _trace(self, query: str, hits: Sequence[RetrievedHit], started: float) -> int | None:
+        if self._trace_sessionmaker is None:
+            return None
+        latency_ms = int((time.perf_counter() - started) * 1000)
+        with self._trace_sessionmaker() as trace_session:
+            return write_query_trace(
+                trace_session,
+                raw_query=query,
+                retrieved_page_ids=[int(h.page_id) for h in hits],
+                retrieved_chunk_ids=[h.chunk_id for h in hits],
+                rerank_scores=[h.score for h in hits],
+                allowed_sources=self._allowed_sources,
+                embedding_model=self._embedder.model,
+                reranker_model=self._reranker.model,
+                latency_ms=latency_ms,
+            )
 
-        return [str(pid) for pid in page_ids]
+    def retrieve(self, query: str, scope: str | None, k: int = 5) -> list[str]:
+        started = time.perf_counter()
+        hits = self._search(query, scope, k)
+        self._trace(query, hits, started)
+        return [h.page_id for h in hits]
+
+    def retrieve_with_context(self, query: str, scope: str | None, k: int = 5) -> RetrievalResult:
+        """Phase 4.2 entry point: hits carry chunk id + score + title/url, plus the trace row id."""
+        started = time.perf_counter()
+        hits = self._search(query, scope, k)
+        trace_id = self._trace(query, hits, started)
+        return RetrievalResult(hits=hits, trace_id=trace_id)
+
+    def fetch_parent_texts(self, chunk_ids: Sequence[int]) -> dict[int, str]:
+        """Each retrieved child chunk's parent text, keyed by chunk id (children retrieve, parents
+        ground). Re-applies the source-scope GUC on this fresh session — a new transaction starts
+        with no GUC set, and the chunk table is RLS-protected regardless of parent/child kind."""
+        if not chunk_ids:
+            return {}
+        with self._session_factory() as session:
+            apply_source_scope(session, self._allowed_sources)
+            return fetch_parent_context(session, chunk_ids)

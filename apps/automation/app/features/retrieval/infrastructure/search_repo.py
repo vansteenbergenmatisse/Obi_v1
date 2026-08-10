@@ -9,6 +9,7 @@ matching child) and is de-duplicated by the caller.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
@@ -119,22 +120,33 @@ def dense_search(
     return [(int(pid), float(dist)) for pid, dist in session.execute(sql, params)]
 
 
+@dataclass(frozen=True)
+class RerankCandidate:
+    """One page's representative child chunk, ready for the cross-encoder + later grounding."""
+
+    chunk_id: int
+    title: str
+    source_url: str
+    text: str
+
+
 def fetch_rerank_texts(
     session: Session,
     page_ids: Sequence[int],
     space_id: int | None,
     sources: Sequence[str] | None = None,
-) -> dict[int, str]:
-    """One representative text per page for the cross-encoder, keyed by page id.
+) -> dict[int, RerankCandidate]:
+    """One representative child chunk per page for the cross-encoder, keyed by page id.
 
-    The retriever deals in page ids; reranking needs text. This returns, per page, the earliest
-    active child chunk's ``title + retrieval_content`` (truncated to 4000 chars), under the same
-    pre-model filters as search — so a page the filters would exclude never gets reranked in.
+    The retriever deals in page ids; reranking needs text, and Phase 4 grounding needs that same
+    chunk's id (to join its parent) plus title/url (for citations) — one query serves all three,
+    keyed by page id. Picks the earliest active child chunk under the same pre-model filters as
+    search, so a page the filters would exclude never gets reranked in.
     """
     if not page_ids:
         return {}
     sql = text(
-        f"SELECT DISTINCT ON (page_id) page_id, "
+        f"SELECT DISTINCT ON (page_id) page_id, id AS chunk_id, title, source_url, "
         f"left(title || ' ' || retrieval_content, 4000) AS txt "
         f"FROM chunk "
         f"WHERE {_base_filters(space_id, sources)} AND page_id = ANY(:page_ids) "
@@ -145,4 +157,29 @@ def fetch_rerank_texts(
         params["space_id"] = space_id
     if sources is not None:
         params["sources"] = list(sources)
-    return {int(pid): str(txt) for pid, txt in session.execute(sql, params)}
+    return {
+        int(pid): RerankCandidate(
+            chunk_id=int(cid), title=str(title), source_url=str(url), text=str(txt)
+        )
+        for pid, cid, title, url, txt in session.execute(sql, params)
+    }
+
+
+def fetch_parent_context(session: Session, chunk_ids: Sequence[int]) -> dict[int, str]:
+    """Each child chunk's parent verbatim text, keyed by the *child* chunk id.
+
+    Children retrieve, parents ground (PLAN 4.2): the generator is fed the parent's
+    ``display_content`` for surrounding context, not the narrow child window that matched. No
+    extra scope filter is needed — a chunk id here already came from a scoped, permitted search,
+    and its parent shares the same page/doc-version. A child whose parent is missing (should not
+    happen post-ingestion, but the FK is nullable) is simply absent from the result.
+    """
+    if not chunk_ids:
+        return {}
+    sql = text(
+        "SELECT c.id AS child_id, p.display_content AS parent_text "
+        "FROM chunk c JOIN chunk p ON p.id = c.parent_chunk_id "
+        "WHERE c.id = ANY(:chunk_ids)"
+    )
+    rows = session.execute(sql, {"chunk_ids": list(chunk_ids)})
+    return {int(cid): str(txt) for cid, txt in rows}

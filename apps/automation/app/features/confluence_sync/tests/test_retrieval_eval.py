@@ -24,7 +24,12 @@ from app.features.evaluation import (
     load_dataset,
     write_rerank_lift_reports,
 )
-from app.features.retrieval import HybridRetriever, PrincipalPermissionPolicy
+from app.features.retrieval import (
+    HybridRetriever,
+    PrincipalPermissionPolicy,
+    update_query_trace_answer,
+    update_query_trace_feedback,
+)
 from app.platform.clients import Reranker, build_embedding_provider, build_reranker
 from app.platform.config import Settings
 from app.platform.db.engine import get_reader_sessionmaker, get_sessionmaker
@@ -157,7 +162,7 @@ def test_retriever_wrong_source_scope_returns_zero(gateway, settings: Settings) 
 
 
 def test_retrieval_writes_one_query_trace_row(gateway, settings: Settings) -> None:
-    """3.5.4: a traced retrieval writes exactly one query_trace row via the writer engine."""
+    """3.5.4 (+4.2): a traced retrieval writes one query_trace row with chunk ids + scores."""
     _index_corpus(gateway, settings)
     retr = HybridRetriever(
         get_reader_sessionmaker(),
@@ -173,7 +178,7 @@ def test_retrieval_writes_one_query_trace_row(gateway, settings: Settings) -> No
         rows = s.execute(
             text(
                 "SELECT raw_query, retrieved_page_ids, allowed_sources, embedding_model, "
-                "reranker_model, latency_ms FROM query_trace"
+                "reranker_model, latency_ms, retrieved_chunk_ids, rerank_scores FROM query_trace"
             )
         ).all()
 
@@ -184,6 +189,110 @@ def test_retrieval_writes_one_query_trace_row(gateway, settings: Settings) -> No
     assert list(row.allowed_sources) == ["confluence:default"]
     assert row.reranker_model == "fake"
     assert row.latency_ms >= 0
+    # PLAN 4.2: these were deferred/NULL at 3.5.4; retrieve() now always fills them.
+    assert row.retrieved_chunk_ids is not None
+    assert len(row.retrieved_chunk_ids) == len(result)
+    assert row.rerank_scores is not None
+    assert len(row.rerank_scores) == len(result)
+
+
+def test_retrieve_with_context_surfaces_chunk_ids_scores_and_parent_text(
+    gateway, settings: Settings
+) -> None:
+    """4.2: retrieve_with_context exposes what retrieve() discards, and its chunk ids resolve to
+    real parent text via fetch_parent_texts (children retrieve, parents ground)."""
+    _index_corpus(gateway, settings)
+    retr = HybridRetriever(
+        get_reader_sessionmaker(),
+        build_embedding_provider(settings),
+        _build_policy(gateway),
+        build_reranker(settings),
+        trace_sessionmaker=get_sessionmaker(),
+    )
+    result = retr.retrieve_with_context(
+        "How do I request access to core systems when I join?", "100", k=5
+    )
+
+    assert result.hits
+    assert result.page_ids == [h.page_id for h in result.hits]
+    assert result.top_score == result.hits[0].score
+    for hit in result.hits:
+        assert hit.chunk_id > 0
+        assert hit.title
+        assert hit.url
+    assert isinstance(result.trace_id, int)
+
+    with get_sessionmaker()() as s:
+        row = s.execute(
+            text("SELECT retrieved_chunk_ids, rerank_scores FROM query_trace WHERE id = :id"),
+            {"id": result.trace_id},
+        ).one()
+    assert list(row.retrieved_chunk_ids) == [h.chunk_id for h in result.hits]
+    assert list(row.rerank_scores) == [h.score for h in result.hits]
+
+    parents = retr.fetch_parent_texts([h.chunk_id for h in result.hits])
+    assert set(parents) == {h.chunk_id for h in result.hits}
+    for text_ in parents.values():
+        assert text_  # every child in this fixture corpus has a real parent
+
+
+def test_retrieve_with_context_empty_on_no_hits(gateway, settings: Settings) -> None:
+    """No candidates -> empty RetrievalResult; fetch_parent_texts([]) is a no-op, not a crash."""
+    _index_corpus(gateway, settings)
+    wrong = HybridRetriever(
+        get_reader_sessionmaker(),
+        build_embedding_provider(settings),
+        _build_policy(gateway),
+        build_reranker(settings),
+        allowed_sources=("confluence:nonexistent",),
+    )
+    result = wrong.retrieve_with_context("How do I request access?", "100", k=5)
+    assert result.hits == []
+    assert result.top_score is None
+    assert result.trace_id is None  # no trace_sessionmaker configured
+    assert wrong.fetch_parent_texts([]) == {}
+
+
+def test_update_query_trace_answer_and_feedback(gateway, settings: Settings) -> None:
+    """4.2/4.4: the answer runtime UPDATEs the row retrieval inserted; feedback UPDATEs it again."""
+    _index_corpus(gateway, settings)
+    retr = HybridRetriever(
+        get_reader_sessionmaker(),
+        build_embedding_provider(settings),
+        _build_policy(gateway),
+        build_reranker(settings),
+        trace_sessionmaker=get_sessionmaker(),
+    )
+    result = retr.retrieve_with_context("How do I request access to core systems?", "100", k=5)
+    assert result.trace_id is not None
+
+    with get_sessionmaker()() as s:
+        update_query_trace_answer(
+            s,
+            result.trace_id,
+            rewritten_query="How do I get access to internal systems?",
+            answer="You request access via the onboarding portal [1].",
+            citations=[{"marker": 1, "page_id": result.hits[0].page_id}],
+        )
+        update_query_trace_feedback(s, result.trace_id, 1)
+
+    with get_sessionmaker()() as s:
+        row = s.execute(
+            text(
+                "SELECT rewritten_query, answer, citations, feedback "
+                "FROM query_trace WHERE id = :id"
+            ),
+            {"id": result.trace_id},
+        ).one()
+    assert row.rewritten_query == "How do I get access to internal systems?"
+    assert row.answer == "You request access via the onboarding portal [1]."
+    assert row.citations == {"markers": [{"marker": 1, "page_id": result.hits[0].page_id}]}
+    assert row.feedback == 1
+
+    # updating a nonexistent trace id is a silent no-op, not an error (defensive against a stale/
+    # forged trace_id reaching PATCH /chat/{trace_id}/feedback in 4.4)
+    with get_sessionmaker()() as s:
+        update_query_trace_feedback(s, -1, -1)
 
 
 def test_rerank_lift_before_vs_after(gateway, settings: Settings) -> None:
