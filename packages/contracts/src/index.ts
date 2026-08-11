@@ -13,12 +13,33 @@
 // ---- Chat: request ----------------------------------------------------------
 
 /**
+ * An inline image attached to a chat turn (file-picker/clipboard-paste
+ * attachment or a page screenshot capture). `data` is base64-encoded, no
+ * data URI prefix. Per ADR-0009 decision 2, the web client only ever puts
+ * `images` on the newest turn when resending `history` — the backend does
+ * not enforce that shape structurally, it simply passes through whatever a
+ * caller sends.
+ */
+export interface ImageAttachment {
+  /** MIME type of the image, e.g. `image/png`. */
+  mediaType: string;
+  /** Base64-encoded image bytes. */
+  data: string;
+}
+
+/**
  * One turn of conversation history. Distinct from `apps/web`'s feature-owned
  * render view-model (also named `ChatMessage` there) — this is the wire shape.
  */
 export interface ChatTurn {
   role: "user" | "assistant";
   content: string;
+  /**
+   * Images attached to this turn (ADR-0009). Optional — most turns carry
+   * none; when present, sent through a second, independent vision-analysis
+   * call, never through citation enforcement (ADR-0009 decision 4).
+   */
+  images?: ImageAttachment[];
 }
 
 export interface ChatRequest {
@@ -100,6 +121,13 @@ export interface ChatDoneEvent {
    * should route to a human instead of treating `answer` as grounded.
    */
   refused: boolean;
+  /**
+   * Vision-analysis text for any images on the turn (ADR-0009 decision 5),
+   * appended after the grounded answer and rendered as its own labeled
+   * block — never itself carrying a citation marker. Optional: absent/null
+   * when the turn had no image, or before the backend implements 7.3.
+   */
+  imageAnalysis?: string | null;
 }
 
 /** Terminal error event. */

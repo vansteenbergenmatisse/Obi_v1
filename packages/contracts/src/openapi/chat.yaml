@@ -133,6 +133,23 @@ paths:
 
 components:
   schemas:
+    ImageAttachment:
+      type: object
+      required:
+        - mediaType
+        - data
+      description: >
+        An inline image attached to a chat turn (ADR-0009). Per decision 2,
+        the web client only ever puts this on the newest turn when resending
+        history; the backend does not enforce that shape structurally.
+      properties:
+        mediaType:
+          type: string
+          description: MIME type of the image, e.g. image/png.
+        data:
+          type: string
+          description: Base64-encoded image bytes (no data URI prefix).
+
     ChatTurn:
       type: object
       required:
@@ -145,6 +162,14 @@ components:
         content:
           type: string
           minLength: 1
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImageAttachment"
+          description: >
+            Images attached to this turn (ADR-0009). Sent through a second,
+            independent vision-analysis call, never through citation
+            enforcement (decision 4).
 
     ChatRequest:
       type: object
@@ -247,6 +272,12 @@ components:
         refused:
           type: boolean
           description: True when the pipeline refused below `refusal_min_rerank_score`; the UI should route to a human instead of treating `answer` as grounded.
+        imageAnalysis:
+          type: ["string", "null"]
+          description: >
+            Vision-analysis text for any images on the turn (ADR-0009
+            decision 5), appended after the grounded answer as its own
+            labeled block. Absent/null when the turn had no image.
 
     ChatErrorEvent:
       type: object

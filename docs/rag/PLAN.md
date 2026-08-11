@@ -136,6 +136,15 @@ cost/scaling number); image-borne prompt injection flagged as a new threat class
 live-model adversarial pass before shipping. Full sub-step roadmap (7.2–7.7) recorded in Phase 7's
 own section. Documentation only, no code — **uncommitted**, ask before committing.
 
+**New session (2026-08-12): 7.1 committed, 7.2 (contract change) done.** Asked the user which to
+start; answer was commit 7.1 then start 7.2. Committed 7.1 as `eb30837` (design doc + ADR-0009,
+no code, nothing else changed). Then built 7.2 per ADR-0009 decisions 1/2/5: `packages/contracts`
+gained `ImageAttachment`, `ChatTurn.images?`, `ChatDoneEvent.imageAnalysis?` (both optional, not
+required-nullable — see Phase 7's own 7.2 entry for why that reading of the ADR is correct).
+Zero-touch outside `packages/contracts` confirmed, not assumed: backend `make check` → 312 passed
+unchanged, boundaries clean; web `tsc --noEmit` clean, `pnpm --filter web test` → 115/115 passed
+unchanged, `pnpm --filter web build` clean. **7.2 is uncommitted — ask before committing next.**
+
 #### 4.6 progress snapshot — ✅ all 16 of 16 sub-steps done, exit gate green (2026-08-11)
 
 Test count climbed 219 → 274 across the sub-steps that added tests (4.6.13–4.6.16 were doc/comment-
@@ -2609,7 +2618,7 @@ becomes its own ADR-gated phase** (mirroring how Supabase got Phase 6), not some
 
 ---
 
-## Phase 7 — Vision-grounded image analysis (attachments + screenshot capture) ⬜ todo *(7.1 done, 2026-08-11)*
+## Phase 7 — Vision-grounded image analysis (attachments + screenshot capture) ⬜ todo *(7.1-7.2 done, 2026-08-11/12)*
 
 **Scoped 2026-08-11; 7.1 (design doc + ADR-0009) done the same day — nothing else started.**
 Raised by the user after observing (elsewhere, not in this repo) that an attached or screenshotted
@@ -2639,7 +2648,7 @@ code, since this touches contracts, the answer pipeline's refusal logic, and a n
 control set — same gate Phase 9's 9.1 used. The remaining sub-steps are the roadmap for turning
 that design into code, not started:
 
-1. **7.1 — Design doc + ADR-0009 ✅ done (2026-08-11, uncommitted; no code, per the gate).**
+1. **7.1 — Design doc + ADR-0009 ✅ done (2026-08-11, committed `eb30837`; no code, per the gate).**
    `docs/adr/0009-Vision-Grounded-Image-Analysis.md` + `docs/rag/DESIGN.md` §12 lock: **inline
    base64 on the newest `ChatTurn` only**, not a separate upload endpoint and not replayed on every
    history resend (no new persistent storage, bounds resend cost); **retrieval still runs — only
@@ -2653,8 +2662,24 @@ that design into code, not started:
    are required but their concrete values are explicitly not decided by this ADR** (no invented
    cost/scaling number); **image-borne prompt injection is a new threat class flagged for a
    required live-model adversarial pass** before shipping, not solved by the design.
-2. **7.2 — Contract change.** `packages/contracts`: `ChatTurn.images`, `ChatDoneEvent.imageAnalysis`
-   (`chat.yaml` + `src/index.ts`), per ADR-0009 decisions 1/2/5.
+2. **7.2 — Contract change ✅ done (2026-08-12), uncommitted.** `packages/contracts`: new
+   `ImageAttachment { mediaType: string; data: string }` type; `ChatTurn` gains optional
+   `images?: ImageAttachment[]`; `ChatDoneEvent` gains optional `imageAnalysis?: string | null` —
+   both `src/index.ts` and `chat.yaml` (`ImageAttachment` schema + the two property additions), per
+   ADR-0009 decisions 1/2/5. **Both fields are optional, not required-nullable** — matches the
+   ADR's own Consequences wording ("grow one more *optional* field") over decision 5's looser prose
+   ("`Answer` gains `imageAnalysis: string | null`"); optional is correct at this sub-step because
+   no backend code emits the field yet (that's 7.3) and a required field nothing ever sends would
+   make the type lie. No backend/frontend code touched — `apps/automation` defines its own Pydantic
+   models directly rather than generating from this contract (unaffected until 7.3), and
+   `apps/web`'s composer/render path still doesn't send or read either field (that's 7.5).
+   **Verified:** `chat.yaml` re-parses clean (loaded via `uv run python -c "yaml.safe_load(...)"`
+   from `apps/automation`, since no top-level `pyyaml`/Node yaml linter exists in this repo);
+   `pnpm --filter web exec tsc --noEmit` clean; `pnpm --filter web test` → **115/115 passed**;
+   `pnpm --filter web build` clean (both API routes still compile as dynamic `ƒ`); backend
+   `make check` (repo root) → **312 passed**, boundaries clean — confirming a contracts-only change
+   really is zero-touch for `apps/automation`, not just assumed. No ruff/pyright change (no Python
+   file touched). Not yet committed — ask before committing, same as 7.1.
 3. **7.3 — Backend multimodal wiring.** `AnthropicMessagesClient.create_message` accepts image
    content blocks; `AnswerGenerator.generate_image_analysis` (new); `decide_refusal`'s `has_image`
    gate; `AnswerService.answer` composes the grounded + image-analysis text. Per ADR-0009 decisions
