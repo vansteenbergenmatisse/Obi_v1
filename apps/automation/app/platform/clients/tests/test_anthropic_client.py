@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import json
+
 import httpx
 import pytest
 
-from app.platform.clients.anthropic_client import AnthropicError, AnthropicMessagesClient
+from app.platform.clients.anthropic_client import (
+    AnthropicError,
+    AnthropicMessagesClient,
+    ImageBlock,
+)
 
 
 def _ok_transport() -> httpx.MockTransport:
@@ -50,6 +56,49 @@ def test_circuit_breaker_opens_after_consecutive_failures() -> None:
     # breaker now open — fails fast, without attempting the request
     with pytest.raises(AnthropicError, match="circuit breaker open"):
         client.create_message(model="m", user_text="hello")
+
+
+def test_create_message_with_images_puts_image_blocks_before_text() -> None:
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={"content": [{"type": "text", "text": "hi"}]})
+
+    client = AnthropicMessagesClient(
+        api_key="k", client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    out = client.create_message(
+        model="m",
+        user_text="what is this?",
+        images=[ImageBlock(media_type="image/png", data="ZmFrZQ==")],
+    )
+
+    assert out == "hi"
+    content = seen[0]["messages"][0]["content"]
+    assert content == [
+        {
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/png", "data": "ZmFrZQ=="},
+        },
+        {"type": "text", "text": "what is this?"},
+    ]
+
+
+def test_create_message_without_images_keeps_the_original_single_text_block_shape() -> None:
+    """No behavior change for the existing text-only call sites — content stays a one-item list."""
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={"content": [{"type": "text", "text": "hi"}]})
+
+    client = AnthropicMessagesClient(
+        api_key="k", client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    client.create_message(model="m", user_text="hello")
+
+    assert seen[0]["messages"][0]["content"] == [{"type": "text", "text": "hello"}]
 
 
 def test_success_resets_the_breaker() -> None:

@@ -39,6 +39,9 @@ class _CitingGenerator:
     def generate_small_talk(self, query: str) -> str:
         return "Hi! Ask me anything about the documentation."
 
+    def generate_image_analysis(self, query: str, images) -> str:
+        raise AssertionError("generate_image_analysis must not be called: no test turn has images")
+
 
 class _SilentGenerator:
     """Deterministic stand-in that cites nothing — exercises the no-grounded-claim refusal path."""
@@ -48,6 +51,17 @@ class _SilentGenerator:
 
     def generate_small_talk(self, query: str) -> str:
         raise AssertionError("generate_small_talk must not be called for a real question")
+
+    def generate_image_analysis(self, query: str, images) -> str:
+        raise AssertionError("generate_image_analysis must not be called: no test turn has images")
+
+
+class _ImageAnalyzingGenerator(_CitingGenerator):
+    """Like `_CitingGenerator`, but actually answers `generate_image_analysis` instead of
+    asserting it is never called — for the handful of tests that deliberately send an image."""
+
+    def generate_image_analysis(self, query: str, images) -> str:
+        return "I see a diagram of the access-request flow."
 
 
 class _SmallTalkOnlyGenerator:
@@ -59,6 +73,9 @@ class _SmallTalkOnlyGenerator:
 
     def generate_small_talk(self, query: str) -> str:
         return "Hi! Ask me anything about the documentation."
+
+    def generate_image_analysis(self, query: str, images) -> str:
+        raise AssertionError("generate_image_analysis must not be called: no test turn has images")
 
 
 def _build_retriever(

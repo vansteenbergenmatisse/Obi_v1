@@ -11,6 +11,12 @@ content-governance pass over the *retrieved Confluence evidence* (that text is f
 corpus content the org already chose to index, the same posture `ingestion`'s C6 opt-outs take for
 the embedding/contextualization calls) — though the regexes run over the whole assembled prompt, so
 an accidental match inside the evidence block is caught too, as a bonus, not a guarantee.
+
+PLAN 7.3/7.4 addendum (ADR-0009 decision 6): C6 does not extend to image bytes. `redact_pii` is
+text-only — there is no NER/CV redaction pass in this repo, and building one is out of scope for
+Phase 7. An image attached to a chat turn is sent to `generate_image_analysis`
+(`infrastructure/llm_client.py`) as-is, never scanned for personal information. This is a real,
+accepted risk, disclosed here and in the widget's composer copy (PLAN 7.5), not a silent gap.
 """
 
 from __future__ import annotations

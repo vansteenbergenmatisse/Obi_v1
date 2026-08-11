@@ -25,6 +25,7 @@ from .test_answer_workflow import (
     _build_retriever,
     _CitingGenerator,
     _EchoRewriter,
+    _ImageAnalyzingGenerator,
     _SilentGenerator,
 )
 from .test_retrieval_eval import _index_corpus
@@ -157,6 +158,83 @@ def test_message_too_long_is_rejected(gateway, settings: Settings) -> None:
         headers=_auth(),
     )
     assert resp.status_code == 400
+
+
+def test_too_many_images_on_a_turn_is_rejected(gateway, settings: Settings) -> None:
+    """PLAN 7.4, ADR-0009 decision 7."""
+    chat_settings = _chat_settings(settings, chat_max_images_per_turn=1)
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+    resp = client.post(
+        "/chat",
+        json={
+            "history": [
+                {
+                    "role": "user",
+                    "content": "what's in these?",
+                    "images": [
+                        {"mediaType": "image/png", "data": "YQ=="},
+                        {"mediaType": "image/png", "data": "Yg=="},
+                    ],
+                }
+            ]
+        },
+        headers=_auth(),
+    )
+    assert resp.status_code == 400
+
+
+def test_oversized_image_is_rejected(gateway, settings: Settings) -> None:
+    """PLAN 7.4, ADR-0009 decision 7."""
+    chat_settings = _chat_settings(settings, chat_max_image_bytes=4)
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+    resp = client.post(
+        "/chat",
+        json={
+            "history": [
+                {
+                    "role": "user",
+                    "content": "what's in this?",
+                    "images": [{"mediaType": "image/png", "data": "ZmFrZQ=="}],
+                }
+            ]
+        },
+        headers=_auth(),
+    )
+    assert resp.status_code == 400
+
+
+def test_image_within_caps_is_accepted_and_analysis_reaches_the_done_event(
+    gateway, settings: Settings
+) -> None:
+    """PLAN 7.3/7.4, ADR-0009: an image-bearing turn is accepted, the vision-analysis call runs,
+    and its text arrives on the SSE `done` event's `imageAnalysis` field, distinct from `answer`."""
+    _index_corpus(gateway, settings)
+    chat_settings = _chat_settings(settings)
+    service = AnswerService(
+        _build_retriever(gateway, chat_settings),
+        _EchoRewriter(),
+        _ImageAnalyzingGenerator(),
+        get_sessionmaker(),
+    )
+    client = _client_with_service(chat_settings, service)
+    resp = client.post(
+        "/chat",
+        json={
+            "history": [
+                {
+                    "role": "user",
+                    "content": "How do I request access to core systems?",
+                    "images": [{"mediaType": "image/png", "data": "ZmFrZQ=="}],
+                }
+            ],
+        },
+        headers=_auth(),
+    )
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    done = next(e for e in events if e["type"] == "done")
+    assert done["imageAnalysis"] == "I see a diagram of the access-request flow."
+    assert "I see a diagram" not in done["answer"]  # kept separate, not merged (decision 5)
 
 
 def test_numeric_principal_is_rejected_not_treated_as_space_wide_trust(

@@ -17,8 +17,10 @@ from app.features.rag_agent.application.answer_service import (
     _REFUSAL_TEXT,
     AnswerService,
 )
-from app.features.rag_agent.schemas import ChatMessage
+from app.features.rag_agent.schemas import ChatMessage, ImageAttachment
 from app.features.retrieval import RetrievalResult, RetrievedHit
+
+_IMAGE = ImageAttachment(mediaType="image/png", data="ZmFrZQ==")
 
 _HIT_A = RetrievedHit(page_id="101", chunk_id=501, score=0.9, title="Onboarding Guide", url="u/101")
 _HIT_B = RetrievedHit(page_id="102", chunk_id=502, score=0.5, title="Access Policy", url="u/102")
@@ -54,11 +56,18 @@ class _RaisingRewriter:
 
 
 class _FakeGenerator:
-    def __init__(self, text: str, small_talk_text: str = "Hi there!") -> None:
+    def __init__(
+        self,
+        text: str,
+        small_talk_text: str = "Hi there!",
+        image_analysis_text: str = "I see a cat.",
+    ) -> None:
         self._text = text
         self._small_talk_text = small_talk_text
+        self._image_analysis_text = image_analysis_text
         self.called_with: list[tuple[str, str]] = []
         self.small_talk_called_with: list[str] = []
+        self.image_analysis_called_with: list[tuple[str, tuple]] = []
 
     def generate(self, query: str, evidence_block: str) -> str:
         self.called_with.append((query, evidence_block))
@@ -68,6 +77,10 @@ class _FakeGenerator:
         self.small_talk_called_with.append(query)
         return self._small_talk_text
 
+    def generate_image_analysis(self, query: str, images) -> str:
+        self.image_analysis_called_with.append((query, tuple(images)))
+        return self._image_analysis_text
+
 
 class _RaisingGenerator:
     def generate(self, query: str, evidence_block: str) -> str:
@@ -75,6 +88,11 @@ class _RaisingGenerator:
 
     def generate_small_talk(self, query: str) -> str:
         raise AssertionError("generate_small_talk must not be called for a real question")
+
+    def generate_image_analysis(self, query: str, images) -> str:
+        raise AssertionError(
+            "generate_image_analysis must not be called when the turn has no image"
+        )
 
 
 class _FakeTraceRow:
@@ -386,3 +404,68 @@ def test_rejects_empty_history() -> None:
         pass
     else:
         raise AssertionError("expected ValueError for empty history")
+
+
+def test_no_image_never_calls_generate_image_analysis() -> None:
+    retriever = _FakeRetriever(
+        {"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, parent_texts={501: "text"}
+    )
+    generator = _FakeGenerator("Answer [1].")
+    service, _ = _service(retriever, _FakeRewriter("q"), generator)
+
+    result = service.answer([ChatMessage(role="user", content="q")], scope=None)
+
+    assert generator.image_analysis_called_with == []
+    assert result.image_analysis is None
+
+
+def test_image_on_turn_with_no_retrieved_candidates_does_not_refuse() -> None:
+    """ADR-0009 decision 3: a turn whose text retrieval found nothing can still produce a real
+    answer from the attached image alone — `decide_refusal`'s `has_image` gate must prevent the
+    no-candidates refusal that would otherwise fire here."""
+    retriever = _FakeRetriever({"q": RetrievalResult(hits=[], trace_id=3)}, parent_texts={})
+    generator = _FakeGenerator("I don't have documentation evidence for that.")
+    service, _ = _service(retriever, _FakeRewriter("q"), generator)
+
+    history = [ChatMessage(role="user", content="q", images=[_IMAGE])]
+    result = service.answer(history, scope=None)
+
+    assert generator.image_analysis_called_with == [("q", (_IMAGE,))]
+    assert result.image_analysis == "I see a cat."
+
+
+def test_image_analysis_survives_a_citation_enforcement_refusal() -> None:
+    """ADR-0009 decision 3: `no_citations` (citation enforcement stripped every claim) is
+    unaffected by `has_image` — the grounded text still degrades to refusal, but the
+    independently-generated image analysis is not blocked by that and rides along regardless."""
+    retriever = _FakeRetriever(
+        {"q": RetrievalResult(hits=[_HIT_A], trace_id=9)}, parent_texts={501: "text"}
+    )
+    generator = _FakeGenerator("This sentence cites nothing at all.")
+    service, _ = _service(retriever, _FakeRewriter("q"), generator)
+
+    history = [ChatMessage(role="user", content="q", images=[_IMAGE])]
+    result = service.answer(history, scope=None)
+
+    assert result.refused
+    assert result.refusal_reason == _NO_GROUNDED_CLAIM_REASON
+    assert result.text == _REFUSAL_TEXT
+    assert result.image_analysis == "I see a cat."
+
+
+def test_image_analysis_is_never_passed_through_citation_enforcement() -> None:
+    """The image-analysis text must never end up in `citations` or gain a marker — it is a
+    separate, uncited field, per ADR-0009 decision 4."""
+    retriever = _FakeRetriever(
+        {"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, parent_texts={501: "Grounding text."}
+    )
+    generator = _FakeGenerator("Answer [1].", image_analysis_text="A screenshot with no markers.")
+    service, _ = _service(retriever, _FakeRewriter("q"), generator)
+
+    history = [ChatMessage(role="user", content="q", images=[_IMAGE])]
+    result = service.answer(history, scope=None)
+
+    assert not result.refused
+    assert result.image_analysis == "A screenshot with no markers."
+    assert [c.marker for c in result.citations] == [1]
+    assert result.text == "Answer [1]."  # unchanged — image analysis is not appended into it

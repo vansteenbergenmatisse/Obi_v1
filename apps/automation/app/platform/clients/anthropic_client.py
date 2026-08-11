@@ -8,13 +8,15 @@ and an optional per-call input-size abuse cap (C10) — the same discipline `rer
 `embeddings_client.py` apply to their hosted calls. The breaker/cap default to effectively-off
 (a high threshold, no cap) so the existing contextualization call sites are unaffected; Phase 4.4's
 chat client construction sets both explicitly, because that call sits behind an HTTP surface for
-the first time.
+the first time. From PLAN 7.3, `create_message` also accepts optional multimodal `images`
+(`ImageBlock`) content blocks for the vision-grounded image analysis call (ADR-0009).
 """
 
 from __future__ import annotations
 
 import time
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import httpx
 
@@ -33,6 +35,19 @@ class AnthropicError(RuntimeError):
 
 class _Transient(Exception):
     pass
+
+
+@dataclass(frozen=True)
+class ImageBlock:
+    """One inline image for a multimodal `create_message` call (PLAN 7.3, ADR-0009 decision 4).
+
+    A platform-local shape, not `rag_agent`'s `ImageAttachment` — this module is `platform/**`
+    and imports no features (repo boundary rule); callers convert their own DTO into this at the
+    call site.
+    """
+
+    media_type: str
+    data: str
 
 
 class AnthropicMessagesClient:
@@ -60,9 +75,17 @@ class AnthropicMessagesClient:
         model: str,
         user_text: str,
         system_blocks: Sequence[dict] | None = None,
+        images: Sequence[ImageBlock] | None = None,
         max_tokens: int = 256,
     ) -> str:
-        """Return the concatenated text of the assistant reply. Raises AnthropicError on failure."""
+        """Return the concatenated text of the assistant reply. Raises AnthropicError on failure.
+
+        ``images`` (PLAN 7.3) adds multimodal content blocks alongside ``user_text`` — the C10
+        abuse cap below still only measures ``user_text`` length; per-image count/byte caps are a
+        separate control (C3/C10) enforced by the caller at the request-validation boundary
+        (`rag_agent/server/router.py`'s `chat_max_images_per_turn`/`chat_max_image_bytes`), not
+        here, since this client has no notion of a "turn".
+        """
         if not self._key:
             raise AnthropicError("ANTHROPIC_API_KEY is not set")
         if self._max_input_chars is not None and len(user_text) > self._max_input_chars:  # C10
@@ -76,7 +99,7 @@ class AnthropicMessagesClient:
                 f"{self._consecutive_failures} consecutive failures"
             )
         try:
-            text = self._create_message(model, user_text, system_blocks, max_tokens)
+            text = self._create_message(model, user_text, system_blocks, images, max_tokens)
         except AnthropicError:
             self._consecutive_failures += 1
             raise
@@ -88,12 +111,24 @@ class AnthropicMessagesClient:
         model: str,
         user_text: str,
         system_blocks: Sequence[dict] | None,
+        images: Sequence[ImageBlock] | None,
         max_tokens: int,
     ) -> str:
+        # Images precede the text block (Anthropic's own guidance for multimodal requests); a
+        # call with no images keeps the exact single-text-block shape every existing call site
+        # already sends, so this is additive, not a behavior change for text-only callers.
+        content: list[dict] = [
+            {
+                "type": "image",
+                "source": {"type": "base64", "media_type": img.media_type, "data": img.data},
+            }
+            for img in (images or [])
+        ]
+        content.append({"type": "text", "text": user_text})
         body: dict = {
             "model": model,
             "max_tokens": max_tokens,
-            "messages": [{"role": "user", "content": [{"type": "text", "text": user_text}]}],
+            "messages": [{"role": "user", "content": content}],
         }
         if system_blocks:
             body["system"] = list(system_blocks)

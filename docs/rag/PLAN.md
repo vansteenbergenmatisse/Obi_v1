@@ -144,8 +144,19 @@ required-nullable — see Phase 7's own 7.2 entry for why that reading of the AD
 Zero-touch outside `packages/contracts` confirmed, not assumed: backend `make check` → 312 passed
 unchanged, boundaries clean; web `tsc --noEmit` clean, `pnpm --filter web test` → 115/115 passed
 unchanged, `pnpm --filter web build` clean. Asked before committing; user said yes — **7.2 committed
-`7ffd916`.** Next up in the 7.2→7.7 roadmap is **7.3 (backend multimodal wiring)** — not started,
-needs an explicit go-ahead per the standing "no phase auto-starts" rule.
+`7ffd916`.**
+
+**Same session, continued: user explicitly authorized proceeding to the next step — 7.3+7.4 built
+together.** Invoked `securing-http-and-llm-endpoints` before writing any of 7.3, since it adds a
+new LLM call reachable through the already-live `POST /chat`; the skill's LLM-CALL tier has no
+"add the abuse cap later" opt-out, and an uncapped `ChatMessage.images` would be exactly that the
+moment 7.3 alone shipped — so 7.4's caps were folded in immediately rather than sequenced after,
+see Phase 7's own 7.3+7.4 entry for the full narrative. **Both done (2026-08-12), uncommitted —
+327 tests passed (was 312), boundaries clean, ruff/pyright unchanged at the 2/15/34 baseline**
+(after fixing 7 real new pyright errors and reverting 13 files an over-broad `ruff format`
+accidentally reformatted — both caught before this count, not after). Next up in the 7.1→7.7
+roadmap is **7.5 (Obi widget send + render path)** — not started, needs an explicit go-ahead per
+the standing "no phase auto-starts" rule, and ask before committing 7.3+7.4.
 
 #### 4.6 progress snapshot — ✅ all 16 of 16 sub-steps done, exit gate green (2026-08-11)
 
@@ -2620,7 +2631,7 @@ becomes its own ADR-gated phase** (mirroring how Supabase got Phase 6), not some
 
 ---
 
-## Phase 7 — Vision-grounded image analysis (attachments + screenshot capture) ⬜ todo *(7.1-7.2 done, 2026-08-11/12)*
+## Phase 7 — Vision-grounded image analysis (attachments + screenshot capture) ⬜ todo *(7.1-7.4 done, 2026-08-11/12)*
 
 **Scoped 2026-08-11; 7.1 (design doc + ADR-0009) done the same day — nothing else started.**
 Raised by the user after observing (elsewhere, not in this repo) that an attached or screenshotted
@@ -2682,23 +2693,91 @@ that design into code, not started:
    `make check` (repo root) → **312 passed**, boundaries clean — confirming a contracts-only change
    really is zero-touch for `apps/automation`, not just assumed. No ruff/pyright change (no Python
    file touched). **Committed `7ffd916`**, per the user's explicit go-ahead this session.
-3. **7.3 — Backend multimodal wiring.** `AnthropicMessagesClient.create_message` accepts image
-   content blocks; `AnswerGenerator.generate_image_analysis` (new); `decide_refusal`'s `has_image`
-   gate; `AnswerService.answer` composes the grounded + image-analysis text. Per ADR-0009 decisions
-   3/4.
-4. **7.4 — Image input controls (C3/C10) + `redact_pii` docstring addendum.** New
-   `chat_max_images_per_turn`/`chat_max_image_bytes` settings (values decided here against whatever
-   real constraint is available at implementation time — see ADR-0009 decision 7), enforced in
-   `server/router.py` alongside the existing history/message-length checks.
-5. **7.5 — Obi widget send + render path.** `composer.tsx` stops dropping attachments before
+3. **7.3+7.4 — Backend multimodal wiring + image input controls ✅ done (2026-08-12), uncommitted.**
+   Built together, not sequentially, once implementing 7.3 surfaced a real C10 gap: the moment
+   `ChatMessage.images` exists and `AnswerService.answer` calls a real vision API unconditionally
+   whenever a turn has images, `POST /chat` (already live with a real `CHAT_API_KEY` per this
+   ledger) becomes an uncapped LLM-CALL cost/abuse surface — `securing-http-and-llm-endpoints`
+   (invoked before writing any of this) has no "add the cap in a later sub-step" opt-out for that.
+   Folding 7.4 in immediately, rather than shipping 7.3 alone, was the only way to keep this
+   sub-step itself passing its own security gate.
+
+   **7.3 shipped:** `platform/clients/anthropic_client.py` — new `ImageBlock` dataclass (platform-
+   local, not `rag_agent`'s `ImageAttachment` — `platform/**` imports no features);
+   `create_message` gains an `images` param, building image content blocks *before* the text block
+   (Anthropic's own multimodal guidance) — a call with no images keeps the exact prior single-
+   text-block body, zero behavior change for every existing text-only call site.
+   `rag_agent/schemas.py` — `ImageAttachment` (`media_type` aliased to the wire's `mediaType`,
+   since `apps/web`'s proxy passes turn content straight through without renaming nested fields);
+   `ChatMessage.images: list[ImageAttachment] | None`; `Answer.image_analysis: str | None`.
+   `domain/refusal.py` — `decide_refusal` gains a **required** `has_image` param (no default, per
+   ADR-0009's own "real signature change" note) that short-circuits to never-refuse when true;
+   both call sites (`answer_service.py`, `test_refusal.py`) updated. `domain/prompt.py` —
+   `IMAGE_ANALYSIS_SYSTEM_PROMPT`, including a basic instruction to treat text inside the image as
+   content, not a command (a mitigation for the decision-8 threat class, not a fix — 7.6 still
+   owns the required live-model adversarial pass). `infrastructure/llm_client.py` —
+   `AnswerGenerator.generate_image_analysis` (Protocol + `AnthropicAnswerGenerator`
+   implementation): redacts the query text (not the image bytes — C6 scope, decision 6), fails
+   open to a short notice on `AnthropicError`, same shape as `generate_small_talk`.
+   `application/answer_service.py` — `answer()` reads `images = history[-1].images or []`;
+   `generate_image_analysis` is called whenever `has_image`, independent of whatever
+   `decide_refusal`/citation-enforcement later decide about the *grounded* text; `image_analysis`
+   rides on every `Answer` return branch, including both refusal paths — decision 3 explicitly
+   leaves `no_citations` unaffected by `has_image`, so a citation-enforcement refusal must not
+   silently drop an already-generated image analysis too. **Deliberately did NOT** concatenate
+   `image_analysis` into `Answer.text` — decision 5's own "rather than indistinguishably merged
+   into answer" reasoning, and the ADR's Consequences section calling it an *optional* field (not
+   decision 5's own looser "Answer gains imageAnalysis: string | null" phrasing), both point the
+   same way: keep the two fields separate. **Disclosed, not decided by ADR-0009:** a small-talk-
+   classified turn ("hi" + a screenshot) still short-circuits before any of this runs, silently
+   dropping the image — `is_small_talk` only ever looks at message text; revisit if raised as a
+   real gap (documented in `answer_service.py`'s module docstring).
+
+   **7.4 shipped:** `platform/config/settings.py` (+ root `.env.example`) —
+   `chat_max_images_per_turn: int = 4` (not invented — matches `apps/web/.../composer.tsx`'s
+   already-shipped `MAX_ATTACHMENTS`), `chat_max_image_bytes: int = 5_000_000` (a *provisional*
+   ceiling under Anthropic's own documented ~5MB per-image API limit — an external technical
+   constraint, not an invented cost/scaling number; ADR-0009 decision 7 explicitly leaves the
+   real, usage-tuned value undecided, so this is a safety floor, not the final number).
+   `server/router.py` — `_validate_history` now checks both caps on **every** turn's `images`, not
+   just the newest (an unvalidated older turn would otherwise be a way to smuggle an oversized
+   payload past a newest-turn-only check); `_stream_answer`'s `done` payload gains `imageAnalysis`
+   (C5-capped the same way `answer` already is) — deliberately **not** streamed as additional
+   `token` events (a literal reading of decision 5's streaming language), since that would make
+   `done.answer` (grounded text only) diverge from what a token-accumulating client sees; the
+   widget renders `imageAnalysis` straight from the `done` field instead (PLAN 7.5).
+   `domain/pii.py` — module docstring addendum disclosing the C6 image-bytes gap.
+   `rag_agent/__init__.py` exports `ImageAttachment`. `apps/automation/app/features/FEATURES.md`
+   updated (What it does / public surface / input validation / tests / `security_baseline` YAML).
+
+   **Verified:** 15 new tests (3 `test_refusal.py`, 4 `test_answer_service.py`, 3
+   `test_llm_client.py`, 2 `test_anthropic_client.py`, 3 `test_chat_endpoint.py` — count/byte caps
+   rejecting, plus a full HTTP round trip proving `imageAnalysis` reaches `done` distinct from
+   `answer`) → **327 passed** (was 312); `make boundaries` clean; ruff-check/format and pyright
+   unchanged at the 2/15/34 baseline — confirmed by diffing pyright's error list directly, not
+   just the count, after fixing 7 real new errors surfaced by the check: three test-double
+   generator classes in `confluence_sync/tests/test_answer_workflow.py`
+   (`_CitingGenerator`/`_SilentGenerator`/`_SmallTalkOnlyGenerator`) didn't structurally satisfy
+   the now-widened `AnswerGenerator` Protocol — added `generate_image_analysis` (raising, since no
+   test turn in that file sends an image) to each, plus a new `_ImageAnalyzingGenerator` subclass
+   for the tests that do. **Also caught and fixed before this count:** a blanket `ruff format
+   app/` accidentally reformatted 13 files this session never touched (the pre-existing 15-
+   unformatted baseline) — reverted with `git checkout --` before running the real gate, per the
+   standing "do not reformat files you did not otherwise touch" rule.
+
+   **Not done, explicit scope decision:** no ESLint/apps/web changes — the widget still drops
+   attachments before `onSend` and never reads `imageAnalysis` (PLAN 7.5, not started). No live-
+   model adversarial pass for image-borne injection (PLAN 7.6, not started) — `IMAGE_ANALYSIS_
+   SYSTEM_PROMPT`'s anti-injection line is a mitigation, not a substitute for that required step.
+4. **7.5 — Obi widget send + render path.** `composer.tsx` stops dropping attachments before
    `onSend`; sends `images` on the newest turn only; `message-list.tsx` renders the sent image
    (reusing `image-lightbox.tsx`'s 4.7.8 click-to-zoom) plus a labeled "Obi looked at your image"
    section for `imageAnalysis`. Composer copy discloses the C6 gap (images are not scanned for PII)
    — through `copywriting-rules`/`anti-ai-writing`.
-6. **7.6 — Security review**, per `securing-http-and-llm-endpoints`: the live-model adversarial
+5. **7.6 — Security review**, per `securing-http-and-llm-endpoints`: the live-model adversarial
    pass for image-borne prompt injection flagged at 7.1, plus confirming the new caps and the
    `has_image` refusal gate behave as designed under adversarial input.
-7. **7.7 — Exit gate.** Full regression (`make check`, `pnpm --filter web test`), zero regressions
+6. **7.7 — Exit gate.** Full regression (`make check`, `pnpm --filter web test`), zero regressions
    vs. the Phase 4.6/4.7 baseline, ledger + `FEATURES.md` updated, ADR-0009 closed.
 
 **Non-goals, explicitly (ADR-0009).** No real image PII redaction (CV/NER) — a documented gap, not

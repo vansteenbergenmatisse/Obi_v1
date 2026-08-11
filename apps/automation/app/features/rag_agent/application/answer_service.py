@@ -15,6 +15,16 @@ is a narrow, closed exact-match classifier (never fuzzy/substring/LLM-based) so 
 question is never misrouted here; anything that doesn't match runs the full grounded pipeline below,
 refusal included. This path skips rewrite, retrieval, CRAG, refusal, and citation enforcement
 entirely, and writes no `query_trace` row — it isn't a retrieval event.
+
+Image analysis (PLAN 7.3, ADR-0009): unlike small-talk, an image on the newest turn does not skip
+retrieval — a query can legitimately need both Confluence evidence and image content. What it does
+change is `decide_refusal`'s `has_image` gate (a text-empty-but-image-answerable turn should not
+refuse) and adds a second, independent `generate_image_analysis` call whose output rides alongside
+`text` on `Answer.image_analysis`, never merged into it and never passed through citation
+enforcement. **Disclosed gap, not decided by ADR-0009:** a turn classified as small-talk still
+short-circuits before this logic even runs, so a greeting with an attached image ("hi" + a
+screenshot) gets the small-talk reply and the image is silently dropped — `is_small_talk` only
+ever looks at message text. Revisit if this is raised as a real product gap.
 """
 
 from __future__ import annotations
@@ -70,6 +80,8 @@ class AnswerService:
         if not history or history[-1].role != "user":
             raise ValueError("history must be non-empty and end with a user turn")
         original_query = history[-1].content
+        images = history[-1].images or []
+        has_image = bool(images)
 
         if is_small_talk(original_query):
             text = self._generator.generate_small_talk(original_query)
@@ -80,12 +92,20 @@ class AnswerService:
         result = self._retriever.retrieve_with_context(rewritten, scope, k=self._retrieve_k)
         result = self._apply_crag_retry(result, original_query, rewritten, scope)
 
-        decision = decide_refusal(result.top_score, self._refusal_min_rerank_score)
+        image_analysis = (
+            self._generator.generate_image_analysis(original_query, images) if has_image else None
+        )
+
+        decision = decide_refusal(result.top_score, self._refusal_min_rerank_score, has_image)
         trace_id = str(result.trace_id) if result.trace_id is not None else None
         if decision.refuse:
             self._persist(result.trace_id, rewritten, _REFUSAL_TEXT, [])
             return Answer(
-                text=_REFUSAL_TEXT, refused=True, refusal_reason=decision.reason, trace_id=trace_id
+                text=_REFUSAL_TEXT,
+                refused=True,
+                refusal_reason=decision.reason,
+                trace_id=trace_id,
+                image_analysis=image_analysis,
             )
 
         parent_texts = self._retriever.fetch_parent_texts([h.chunk_id for h in result.hits])
@@ -99,12 +119,15 @@ class AnswerService:
             # Every sentence was uncited/mis-cited -> nothing survived grounding. Returning the
             # empty string would be a broken response, and this fixed workflow does not retry
             # generation (only retrieval, via CRAG) — so this degrades to a refusal instead.
+            # `image_analysis` (if any) still rides along — the citation-enforcement refusal is
+            # about the grounded claim only and is unaffected by has_image (ADR-0009 decision 3).
             self._persist(result.trace_id, rewritten, _REFUSAL_TEXT, [])
             return Answer(
                 text=_REFUSAL_TEXT,
                 refused=True,
                 refusal_reason=_NO_GROUNDED_CLAIM_REASON,
                 trace_id=trace_id,
+                image_analysis=image_analysis,
             )
 
         citations = [
@@ -117,7 +140,13 @@ class AnswerService:
             for m in used_markers
         ]
         self._persist(result.trace_id, rewritten, cleaned, citations)
-        return Answer(text=cleaned, citations=citations, refused=False, trace_id=trace_id)
+        return Answer(
+            text=cleaned,
+            citations=citations,
+            refused=False,
+            trace_id=trace_id,
+            image_analysis=image_analysis,
+        )
 
     def _apply_crag_retry(
         self,

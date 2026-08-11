@@ -19,7 +19,11 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
   C3_input:       covered   - Pydantic body (extra=forbid); history non-empty + ends on a user
                               turn; per-turn length cap + history-length cap (chat_max_*); an
                               all-digit `principal` is rejected (PLAN 5.3 red-team finding — see
-                              `ChatRequestBody`'s validator docstring).
+                              `ChatRequestBody`'s validator docstring). PLAN 7.3/7.4 (ADR-0009):
+                              per-turn image count cap (chat_max_images_per_turn) + per-image byte
+                              cap (chat_max_image_bytes), checked on every turn's `images`, not
+                              just the newest — a caller could otherwise stuff an oversized image
+                              on an older turn to dodge a newest-turn-only check.
   C4_timeout:     covered   - retrieval's embedder/reranker already carry timeout/retry/breaker
                               (3.5.2/3); the answer-runtime AnthropicMessagesClient now does too
                               (answer_timeout_seconds/max_retries/breaker_threshold, PLAN 4.4).
@@ -28,6 +32,9 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
                               fixed-size SSE chunks (chat_token_chunk_chars/stream_interval_ms).
   C6_redaction:   covered   - `redact_pii` scrubs the assembled prompt before every rewrite/
                               generation call (llm_client.py); see rag_agent/domain/pii.py.
+                              PLAN 7.3 (ADR-0009 decision 6): does NOT extend to image bytes on
+                              `ChatMessage.images` — a disclosed, accepted gap, not a silent one;
+                              see pii.py's module docstring addendum.
   C7_idempotency: covered   - optional `Idempotency-Key` header; a replay within the TTL window
                               returns the cached Answer without re-running retrieval/generation.
                               The cache key binds the header to a hash of (principal, history) —
@@ -41,7 +48,11 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
                               the raw message or answer text; `refusal_reason` is a static,
                               templated diagnostic string (never user query or retrieved content).
   C10_abuse:      covered   - rate limit + history/message-length caps + the Anthropic client's
-                              abuse cap (answer_max_input_chars) + circuit breaker.
+                              abuse cap (answer_max_input_chars) + circuit breaker. PLAN 7.3
+                              (ADR-0009 decision 7): `generate_image_analysis` is a second,
+                              unconditional LLM call whenever a turn has images — the per-turn
+                              image-count/byte caps above are this call's own abuse control,
+                              since `answer_max_input_chars` only ever measures text length.
 
 security_baseline (surface: PATCH /chat/{trace_id}/feedback, tier STATE-MUTATING):
   C1_auth:        covered   - same shared-secret check (current + previous) as POST /chat.
@@ -228,6 +239,21 @@ def _validate_history(body: ChatRequestBody, settings: Settings) -> None:
                 status.HTTP_400_BAD_REQUEST,
                 f"a turn exceeds {settings.chat_max_message_chars} characters",
             )
+        # PLAN 7.4 (ADR-0009 decision 7): checked on every turn, not just the newest — the
+        # pipeline only ever *analyzes* the newest turn's images (ADR-0009 decision 2), but an
+        # unvalidated older turn would still let a caller smuggle an oversized payload through.
+        images = turn.images or []
+        if len(images) > settings.chat_max_images_per_turn:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"a turn exceeds {settings.chat_max_images_per_turn} images",
+            )
+        for image in images:
+            if len(image.data) > settings.chat_max_image_bytes:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    f"an image exceeds {settings.chat_max_image_bytes} bytes",
+                )
     if body.history[-1].role != "user":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "history must end with a user turn")
 
@@ -312,6 +338,15 @@ async def _stream_answer(
             await asyncio.sleep(delay_seconds)  # C5 pacing: bounds bytes/sec streamed
 
     wire_citations = _wire_citations(answer.citations)
+    # PLAN 7.3 (ADR-0009 decision 5): imageAnalysis rides only on `done`, not as extra `token`
+    # events — streaming it as more token deltas would make `done.answer` (the grounded text
+    # alone) diverge from what a token-accumulating client sees, a real client/server mismatch.
+    # The widget renders it as its own labeled block straight from this field (PLAN 7.5).
+    image_analysis = (
+        answer.image_analysis[: settings.chat_output_max_answer_chars]  # C5, same cap as `text`
+        if answer.image_analysis
+        else None
+    )
     yield _sse({"type": "citations", "citations": wire_citations})
     yield _sse(
         {
@@ -320,6 +355,7 @@ async def _stream_answer(
             "citations": wire_citations,
             "traceId": answer.trace_id,
             "refused": answer.refused,
+            "imageAnalysis": image_analysis,
         }
     )
 

@@ -37,13 +37,14 @@ from .infrastructure.llm_client import (
     AnthropicQueryRewriter,
     QueryRewriter,
 )
-from .schemas import Answer, ChatMessage, Citation
+from .schemas import Answer, ChatMessage, Citation, ImageAttachment
 from .server import chat_router_module, router
 
 __all__ = [
     "Answer",
     "ChatMessage",
     "Citation",
+    "ImageAttachment",
     "AnswerService",
     "AnswerProvider",
     "CachingAnswerService",

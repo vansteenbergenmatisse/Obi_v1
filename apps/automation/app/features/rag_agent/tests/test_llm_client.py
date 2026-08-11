@@ -12,7 +12,7 @@ from app.features.rag_agent.infrastructure.llm_client import (
     AnthropicAnswerGenerator,
     AnthropicQueryRewriter,
 )
-from app.features.rag_agent.schemas import ChatMessage
+from app.features.rag_agent.schemas import ChatMessage, ImageAttachment
 from app.platform.clients.anthropic_client import AnthropicMessagesClient
 
 
@@ -100,3 +100,53 @@ def test_generate_small_talk_fails_open_to_a_static_greeting_on_error() -> None:
     out = generator.generate_small_talk("hi")
 
     assert "Obi" in out  # the static fallback, not a raised AnthropicError
+
+
+def test_generate_image_analysis_redacts_query_and_sends_image_blocks() -> None:
+    seen: list[dict] = []
+    generator = AnthropicAnswerGenerator(_client_capturing(seen), "answer-model")
+    images = [ImageAttachment(mediaType="image/png", data="ZmFrZQ==")]
+
+    out = generator.generate_image_analysis("what's in this, alice@example.com?", images)
+
+    body = seen[0]
+    content = body["messages"][0]["content"]
+    sent_text = content[-1]["text"]
+    assert "alice@example.com" not in sent_text
+    assert "[REDACTED_EMAIL]" in sent_text
+    assert content[0] == {
+        "type": "image",
+        "source": {"type": "base64", "media_type": "image/png", "data": "ZmFrZQ=="},
+    }
+    assert "never use numbered citation markers" in body["system"][0]["text"].lower()
+    assert out == "ok"  # the mocked transport's canned reply
+
+
+def test_generate_image_analysis_never_reaches_enforce_citations_shape() -> None:
+    """Structural check, not a citations-module test: the call site never passes an evidence
+    block or citation-instruction prompt (ADR-0009 decision 4) — confirms the prompt sent is just
+    the redacted query, no `Evidence:`/marker-instruction text like `build_answer_prompt` adds."""
+    seen: list[dict] = []
+    generator = AnthropicAnswerGenerator(_client_capturing(seen), "answer-model")
+    generator.generate_image_analysis(
+        "what is this?", [ImageAttachment(mediaType="image/png", data="x")]
+    )
+
+    sent_text = seen[0]["messages"][0]["content"][-1]["text"]
+    assert sent_text == "what is this?"
+    assert "Evidence:" not in sent_text
+
+
+def test_generate_image_analysis_fails_open_to_a_short_notice_on_error() -> None:
+    client = AnthropicMessagesClient(
+        api_key="k",
+        client=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(500, json={}))),
+        max_retries=1,
+    )
+    generator = AnthropicAnswerGenerator(client, "answer-model")
+
+    out = generator.generate_image_analysis(
+        "what is this?", [ImageAttachment(mediaType="image/png", data="x")]
+    )
+
+    assert "couldn't look at that image" in out.lower()
