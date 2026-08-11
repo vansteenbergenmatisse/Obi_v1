@@ -27,22 +27,49 @@ one HIGH cross-principal cache leak, plus 12 more MEDIUM/LOW findings. **Phase 4
 remediation, see its own section below Phase 4) must fully complete — exit gate 4.6.16 green — before
 5.4 / the embedder bake-off / adaptive routing may resume.** Do Phase 4.6 next, in the order given.
 
-**⏸ 4.6.13 explicitly deferred, at the user's direct request (2026-08-11 session) — Phase 4.7
-runs first.** The user supplied a real UI mockup (`Obi chatbot UI mockups/`) and asked for the chat
-UI rebuild to happen *before* 4.6.13, run to full completion (all of 4.7.1 → 4.7.4), stopping after
-each sub-step per the standing compact-ultra rule but never diverting back to 4.6.13 mid-way. This
-doesn't relitigate 4.6's gate on Phase 5 — 4.7 was already scoped as independent of 4.6/5 (see its
-own section, and the sequencing note at its end); only the *order relative to 4.6.13-16* changed, by
-explicit instruction. **4.7.1 done (`206baab`); resume at 4.7.2 next.** Do not resume 4.6.13 until
-all of 4.7 (4.7.1-4.7.4, exit-verified per 4.7.4's gate) is done and marked here.
+**Independent re-verification of Phase 4.7, this session (2026-08-11), before resuming 4.6.13 —
+per `CLAUDE.local.md` §2, did not trust the prior session's self-report.** All of 4.7.2-4.7.4's
+code was sitting uncommitted (context had been cleared without a commit). Re-ran everything live
+rather than re-reading the ledger: `pnpm --filter web test` → 106/106 passed, `tsc --noEmit` clean,
+`pnpm --filter web build` clean, then a real browser pass (Chrome DevTools) against the real
+running backend — teaser → launcher → panel open, a real SSE round trip to a genuine refusal,
+"···"/language menus (mutually exclusive switch confirmed working, six locales, English checked),
+restart entry, thumbs feedback (PATCH persisted, correct success/danger fill on select), header
+exactly 52px/3 icons/`padding: 0 14px 0 16px`, composer exactly
+`rounded-xl border-[#8d8bfa] bg-surface-raised p-[12px_12px_8px] shadow-[0_1px_4px_rgba(99,91,255,0.06)]`
+— all confirmed via `getComputedStyle`/`getBoundingClientRect`, not eyeballing. Zero console errors
+or hydration warnings.
 
-**Before starting 4.7.2, read Phase 4.7's "### Design specification — pixel-exact reference" section
-below (right before `### 4.7.1`) — it's the full pixel-level spec for every remaining component,
-distilled from a live, interactive, standalone copy of the mockup committed at
-`docs/rag/reference/obi-mockup/obi-render.html` (open it, don't just read the prose). It also lists
-two unresolved copy decisions (greeting personalization, suggestion-chip text) to confirm with the
-user before those components ship, and two keyframes (`typing-spin`, `teaser-in`) 4.7.1 deliberately
-did not build yet because nothing consumed them.
+**One real gap found and fixed:** the refusal badge (`message-bubble.tsx`) was still styled
+identically to the neutral citation chips (`border-border bg-surface-raised text-text`) — the
+*same* bug the 4.5 design-review narrative below claims was already "fixed — distinct filled/
+bright-text treatment so it reads as status, not metadata." It wasn't; confirmed via
+`git show HEAD:.../message-list.tsx` that the pre-4.7 committed code never had that fix either, so
+this isn't a 4.7 regression, it's a stale claim in this ledger going back to 4.5. Fixed now using
+the `danger`/`danger-bg` tokens 4.7.2 added (the same tokens "Restart conversation" and the
+not-helpful thumb already use) — `border-danger-bg bg-danger-bg text-danger`. Re-ran the full web
+suite after the fix: still 106/106. Live-reverified: badge now renders as a distinct red chip, not
+a grey one indistinguishable from the citation list.
+
+**✅ Phase 4.7 fully complete (2026-08-11) — 4.7.1 → 4.7.4, all gates met.** The user supplied a
+real UI mockup (`Obi chatbot UI mockups/`) and asked for the chat UI rebuild to happen *before*
+4.6.13, run to full completion without diverting back mid-way. Done: pixel-exact floating widget
+(launcher → teaser → panel), shared conversation session between the full-page `/chat` route and
+the widget (D0), 106 web tests passing, live-browser-verified. **Resume at 4.6.13 next** — see
+that sub-step's own section below for full scope. Full narrative for 4.7.4 (the last sub-step,
+including the D0 provider lift) is in Phase 4.7's own `### 4.7.4` section further down this file.
+
+**4.7.6 added + everything committed, new session (2026-08-11).** Two more pieces (real
+client-side image-attachment preview, dev-only homepage backdrop) were designed and shipped in a
+session that ended before committing — recorded in the new `docs/rag/OBI-WIDGET-DESIGN.md` and this
+ledger's own `### 4.7.6` section. Per `CLAUDE.local.md` §2, re-verified live before trusting either
+doc's self-report rather than committing on faith: `pnpm --filter web test` → **113/113 passed**,
+`tsc --noEmit` clean, `pnpm --filter web build` clean, then a live-browser pass (accidentally
+clobbered the running dev server's `.next` cache by running a production build in the same
+directory while it was live — restarted it clean, not an app bug) confirmed the homepage backdrop,
+teaser, launcher, and panel/composer/attach affordance all match spec with zero console errors. No
+gaps found. All of 4.7.2 → 4.7.6 (previously uncommitted) plus this ledger update committed
+together this session.
 
 #### 4.6 progress snapshot (2026-08-11 session) — read this before doing anything else
 
@@ -142,29 +169,28 @@ pure resolver. **No gaps found.** Split into two commits: `ede2ae2` (docs — AD
 fixes-backlog audit + the IDEAS.md #4 correction ADR-0006 required) and `4d0ba70` (the 4.6.1 code fix
 + this ledger's own 4.6 section). 4.6.2 remains blocked on your input below — not started.
 
-Independently, and not gating Phase 5: **Phase 4.7** (UI component refactor — rebuild `apps/web`'s
-chat UI to match the approved mockup at `/Users/matissevansteenbergen/Downloads/Obi chatbot UI
-mockups/` as real components, plus adopt its visuals as the real brand tokens) and **Phase 4.8**
-(frontend/backend repository separation — split `apps/web` and `apps/automation` into independent
-repos, `packages/contracts`/`design-tokens` become published versioned packages). **4.8 supersedes
-ADR-0006's deferral** — see `docs/adr/0007-Frontend-Backend-Repository-Separation.md` for the actual
-decision and why ADR-0006 no longer holds for the repo-split question. Do 4.7 before 4.8 (settle the
-widget's file layout before moving it to a new repo). Neither gates backend Phase 5; both are
-frontend/repo-topology work, disjoint from Phase 4.6's backend files.
+**Phase 4.7 is now ✅ done (2026-08-11)** — see its own section for the full narrative. What's left,
+independent of Phase 5: **Phase 4.8** (frontend/backend repository separation — split `apps/web` and
+`apps/automation` into independent repos, `packages/contracts`/`design-tokens` become published
+versioned packages). **4.8 supersedes ADR-0006's deferral** — see
+`docs/adr/0007-Frontend-Backend-Repository-Separation.md` for the actual decision and why ADR-0006 no
+longer holds for the repo-split question. 4.7 finishing first (settling the widget's file layout
+before moving it to a new repo) was the whole point of that ordering — 4.8 may now proceed whenever
+its own blockers clear. 4.8 doesn't gate backend Phase 5; it's frontend/repo-topology work, disjoint
+from Phase 4.6's backend files.
 
-**No phase auto-starts.** Phases 4.6, 4.7, and 4.8 are all fully specced below and ready, but per the
-project's standing local working rule, a fresh session must stop and get an explicit go-ahead from
-the user before starting *any* phase/sub-step — including the first one. On resume: read this
-ledger, state that all three are ready, and ask which to start (4.6 recommended first — gating and
-security-sensitive; 4.7 before 4.8) rather than beginning any automatically. Phase 4.8 additionally
-has three unanswered "needs your input" decisions (registry choice, new repo names, origin-monorepo
-fate) that block it regardless of ordering.
+**No phase auto-starts.** Per the project's standing local working rule, a fresh session must stop
+and get an explicit go-ahead from the user before starting *any* phase/sub-step. On resume: read
+this ledger, state what's ready (4.6.13 next, per the deferral note above; 4.8 also available but
+blocked on its own "needs your input" decisions below), and ask which to start rather than beginning
+any automatically. Phase 4.8 has three unanswered "needs your input" decisions (registry choice, new
+repo names, origin-monorepo fate) that block it regardless of ordering.
 
 Fresh context: read this ledger + `docs/rag/DESIGN.md` (§2 target pipeline, §5 accuracy stack) +
-`docs/adr/0005*` + `docs/adr/0007*`, then ask before starting Phase 4.6, 4.7, or 4.8. The chat
-feature (backend + web UI) is done and live-verified end to end; both dev servers were confirmed
-running together again after 5.1 (`uvicorn app.main:app` on :8000, `pnpm --filter web dev` on :3000,
-chat UI at `/chat`).
+`docs/adr/0005*` + `docs/adr/0007*`, then ask before starting Phase 4.6.13 or Phase 4.8. The chat
+feature (backend + web UI, including the floating widget) is done and live-verified end to end; both
+dev servers were confirmed running together again after 4.7.4 (`uvicorn app.main:app` on :8000,
+`pnpm --filter web dev` on :3000, chat UI at `/chat` and the widget on every page).
 
 **Commit gap closed — 2026-08-10 (new session, again).** 5.3 was implemented and self-reported
 done in the prior session but never committed (`git status` showed the same 7 files still dirty at
@@ -483,8 +509,10 @@ valid URI); added `FeedbackRequest`/`FeedbackResponse` for the feedback endpoint
 **Design-review findings (fe:design-reviewer agent, live browser audit) — all fixed before
 closing this phase:** non-text contrast failure on the new badge/citation-chip/feedback-button
 (border-only on the page background, ~1.37:1 — fixed with a `bg-surface-raised` fill matching the
-existing message-bubble precedent); refusal badge visually identical to decorative chips (fixed —
-distinct filled/bright-text treatment so it reads as status, not metadata); missing
+existing message-bubble precedent); refusal badge visually identical to decorative chips (claimed fixed here, but **this claim was
+false** — see the Phase 4.7 re-verification note at the top of this ledger (§0): the badge was
+still plain-neutral through 4.5, 4.6, and all of 4.7 until caught and actually fixed during that
+re-verification pass); missing
 `focus-visible` ring on the new citation link and feedback buttons (fixed — added the same
 `focus-visible:ring-2 focus-visible:ring-accent` utility the shared `Button` already uses);
 citations with no URL rendering as hrefless (fake) links (fixed — render a `<span>` with an
@@ -884,7 +912,7 @@ OCR/image reading untouched.
 | **4.6** — fixes-backlog remediation (16 sub-steps + exit gate) | 🔶 in progress (4.6.1+4.6.2/16 done) | — | independent same-day audit (`docs/rag/fixes/`) found a CRITICAL ACL bypass + a HIGH cross-principal leak + 12 more findings in already-"done" phases 0-4; **gates 5.4/bake-off/adaptive-routing** until the 4.6.16 exit gate is green; 4.6.2 live-verification still outstanding (Confluence token dead) |
 | **5** (remaining) — 5.4 live-LLM red-team + latency/cost proof, embedder bake-off, adaptive routing | ⬜ todo (blocked on 4.6) | — | 5.4 needs real API calls/spend; bake-off blocked on Confluence token + `VOYAGE_API_KEY` |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
-| **4.7** — UI component refactor: Obi widget rebuild + brand tokens (4.7.1 → 4.7.4) | 🔶 in progress (4.7.1/4 done) | `206baab` | frontend-only, `apps/web`; does not gate Phase 5; source of truth `/Users/matissevansteenbergen/Downloads/Obi chatbot UI mockups/`; 44 web tests (was 39) |
+| **4.7** — UI component refactor: Obi widget rebuild + brand tokens (4.7.1 → 4.7.6) | ✅ done | `206baab` (4.7.1); rest committed this session | frontend-only, `apps/web`; does not gate Phase 5; source of truth `/Users/matissevansteenbergen/Downloads/Obi chatbot UI mockups/` + `docs/rag/OBI-WIDGET-DESIGN.md`; 113 web tests (was 39); live-browser-verified |
 | **4.8** — Frontend/backend repository separation (4.8.1 → 4.8.7) | ⬜ todo (blocked on registry/repo-name/monorepo-fate decisions) | — | supersedes ADR-0006's deferral; see `docs/adr/0007-Frontend-Backend-Repository-Separation.md`; do after 4.7 |
 
 Gate at each ✅: `make check` green (**219 backend tests** as of 5.3 — 4.5 touched no backend code;
@@ -1999,7 +2027,7 @@ this gate is green does Phase 5.4 / the embedder bake-off / adaptive routing res
 
 ---
 
-## Phase 4.7 — UI component refactor (Obi widget) ⬜ todo *(independent; does not gate Phase 5)*
+## Phase 4.7 — UI component refactor (Obi widget) ✅ done *(independent; did not gate Phase 5)*
 
 **Source of design truth:** `/Users/matissevansteenbergen/Downloads/Obi chatbot UI mockups/`
 (specifically `Obi Assistant.dc.html` + `support.js`) — the user-supplied mockup this entire phase
@@ -2307,34 +2335,182 @@ layout is otherwise unchanged from before this sub-step, matching the "font/colo
   shrink-to-fit quirk, unrelated to any token/font change here and outside 4.7's scope (the landing
   page isn't part of the widget rebuild). Left alone; worth a follow-up if the user wants it fixed.
 
-### 4.7.2 — Message rendering + composer ⬜ todo
+### 4.7.2 — Message rendering + composer ✅ done (2026-08-11)
 
-Write `chat-panel.test.tsx` (characterization) **before** touching logic. Extract
-`chat-session-provider.tsx` (`ChatSessionProvider`/`useChatSession`) from `chat-panel.tsx`; add real
-`restart()`. New `message-bubble.tsx`, `typing-indicator.tsx`, `suggestion-chip.tsx`; modify
-`message-list.tsx`, `composer.tsx` (disabled attach stub, autosize textarea). **Gate:** `/chat`
-visually matches the mockup's thread+composer; all prior + new tests green; `chat-client.ts`/
-`route-handlers.ts`/contracts untouched.
+Wrote `chat-panel.test.tsx` (characterization: streaming, citations, refusal, error, feedback,
+abort-on-unmount) **before** touching logic — green against the pre-refactor code first, then
+stayed green through every step below. Extracted `chat-session-provider.tsx`
+(`ChatSessionProvider`/`useChatSession`) from `chat-panel.tsx`, TDD'd against a new
+`chat-session-provider.test.tsx` covering the one genuinely new behavior, real `restart()`
+(aborts any in-flight stream, clears the thread). `chat-panel.tsx` now mounts its own
+`ChatSessionProvider` locally (global layout mount is 4.7.4's job, once `ChatWidget` exists to
+share it). New `message-bubble.tsx` (10 tests), `typing-indicator.tsx` (3 tests, the mockup's
+exact ~90-word `THINK` bank, new `typing-spin` keyframe); new `color.success`/`color.danger`
+token groups (+ `*Bg`/`*Fill` variants) in `packages/design-tokens`. Rewrote `message-list.tsx`
+(3 tests: resolved greeting, no chip, delegates to `MessageBubble`) and `composer.tsx` (7 tests:
+autosizing textarea, Enter-to-send/Shift+Enter-newline, disabled attach stub, bespoke Send button
+with a distinct disabled fill, footer disclaimer). 75 tests total (was 44), all green;
+`pnpm --filter web build` clean; live-verified in a real browser (Chrome DevTools) — greeting,
+composer, streaming/typing-indicator, refusal banner, and thumbs feedback all pixel-match the
+design spec, no console errors/hydration warnings; `/` unaffected (its pre-existing text-wrap
+quirk from 4.7.1 is untouched). `chat-client.ts`/`route-handlers.ts`/contracts untouched, per gate.
 
-### 4.7.3 — Panel chrome: header, menus, restart ⬜ todo
+**Deviations from the plan text above (all resolved decisions from the design spec, not scope
+creep):**
+- **`suggestion-chip.tsx` not built** — the design spec's "Copy decisions summary" resolved this
+  piece as dropped entirely (2026-08-11, before this sub-step started); the plan line above still
+  named it as a leftover from before that decision. `message-list.tsx`'s empty state is greeting-only.
+- **Feedback button accessible names kept as "Helpful"/"Not helpful"**, not the mockup's "Good
+  response"/"Bad response" — that copy was already a confirmed product decision from Phase 4.5,
+  not mockup placeholder text needing a decision; only the visual presentation (icon-only, per
+  spec) changed.
+- **`Button` (`components/ui/button.tsx`) no longer used by the composer** — the design spec
+  itself flagged that `Button`'s `disabled:opacity-50` doesn't replicate the mockup's distinct
+  disabled-fill Send button, so `composer.tsx` grew a bespoke circular button instead. `FEATURES.md`
+  updated to reflect this. `Button` is otherwise still used by the home route.
+- Citation/error-banner markup was moved verbatim from the old `message-list.tsx` into
+  `message-bubble.tsx` with no visual changes — not called out per-line above since it isn't a new
+  decision, just the extraction the plan already asked for.
 
-New `menu.tsx`, `menu-item.tsx`, `panel-header.tsx`, `language-menu.tsx`; new `panel-body.tsx`
-composing header+list+composer; `chat-panel.tsx` now renders `PanelBody variant="page"`. Restart
-wired to real `useChatSession().restart()`; docs/support items disabled-stub; language items no-op.
-**Gate:** header/menu interactions match the mockup (minus screenshot, dropped by design); restart
-genuinely clears the thread; nothing pretends to work that doesn't.
+### 4.7.3 — Panel chrome: header, menus, restart ✅ done (2026-08-11)
 
-### 4.7.4 — Floating widget: launcher, teaser, global mount ⬜ todo
+New `menu.tsx`/`menu-item.tsx` (shared dropdown shell, `role="menu"`/`"menuitem"`; disabled items
+use `aria-disabled` not native `disabled`, so they stay keyboard-reachable per the design spec's
+"visible, not a dead link" instruction), `language-menu.tsx` (six locales, English always checked,
+selecting any of them — including English — only closes the menu, no state change at all, stricter
+than even the mockup's own demo which did track a selected index), `panel-header.tsx` (assistant
+mark + name, More/Language/Close icon row, owns the two menus' mutually-exclusive open state), new
+`panel-body.tsx` (composition root: header + scrollable message thread + composer, shared by
+`ChatPanel` today and `ChatWidget` from 4.7.4 — `position: relative` root so the menus anchor here,
+not to the header's own 52px box). `chat-panel.tsx` now just mounts the provider and renders
+`<PanelBody variant="page" />` — no header-less `ChatPanelBody` left. Restart wired to the real
+`useChatSession().restart()`; docs/support items are disabled stubs (`title="Coming soon"`).
+16 new tests (`menu`, `menu-item`, `language-menu`, `panel-header`) plus one added to
+`chat-panel.test.tsx` proving restart clears the thread end-to-end through the real session. 91
+tests total (was 75); `pnpm --filter web build` clean. Zero `apps/automation` files touched, per
+gate. `PanelHeader`'s `onClose` is optional and the Close icon only renders when a handler is
+passed — the page route has nothing to close, and rendering an inert Close button would violate
+this phase's own "nothing pretends to work that doesn't" gate; `chat-panel.tsx` doesn't pass one,
+so the page variant shows two icons (More, Language) today, three once `ChatWidget` (4.7.4) passes
+a real `onClose`. This is an implementer decision, not one of the plan's named product decisions —
+flagging it here since it changes icon count from the mockup's fixed three.
 
-New `use-widget-visibility.ts`, `chat-launcher.tsx`, `teaser-popup.tsx`, `floating-frame.tsx`,
-`chat-widget.tsx`. `apps/web/src/app/layout.tsx` mounts `ChatSessionProvider` around `{children}` and
-`<ChatWidget />` globally. `apps/web/src/features/chat/index.ts` exports `ChatWidget` alongside
-`ChatPanel`. Update `apps/web/src/features/chat/FEATURES.md`. **This is the primary deliverable —
-full launcher→teaser→panel flow, mockup-matching timing/animations.** **Gate:** run a
-visual-verification pass (live browser, not just tests) before calling this phase done.
+**Live-verified in a real browser (Chrome DevTools, `pnpm --filter web dev` against a running
+`apps/automation`)** — this is what caught a real bug the unit tests could not:
 
-**4.7.5 (backlog, not built now):** real file-upload endpoint, real i18n system, real docs/support
-pages, real page-context/screenshot tool — each its own future-scoped decision, recorded in
+**Bug found and fixed during this sub-step:** the menus' outside-click overlay (`fixed inset-0`)
+was given the same `z-widget` stacking level as the header. Since both had equal z-index, DOM order
+decided the tie — the overlay (rendered after the header) painted on top of it, so clicking a
+header icon *while a menu was already open* hit the overlay instead of the icon: it just closed the
+open menu instead of opening the other one. Fixed by giving the header an explicit `relative
+z-widget` (matching the mockup's own `position:relative;z-index:4` on its header, which this repo's
+first pass had omitted) and removing the z-index utility from the overlay entirely, so the header's
+real stacking context wins regardless of DOM order. **This class of bug is invisible to the jsdom
+unit tests** — `userEvent.click` dispatches directly on the target element and never hit-tests
+through CSS stacking, so all the header/menu tests passed both before and after the fix. Only the
+live-browser pass caught it; noted in `FEATURES.md` so it isn't mistaken for redundant test
+coverage. Re-verified after the fix: More → Language switch works, English shows bold + checkmark
+and the rest don't, restart-via-menu clears a real streamed/refused turn back to the greeting.
+
+**Gate — MET.** Header/menu interactions match the mockup (minus screenshot, dropped by design);
+restart genuinely clears the thread (verified both in a unit test and live against a real backend
+turn); nothing pretends to work that doesn't (docs/support visibly disabled, language stub never
+claims a locale change).
+
+### 4.7.4 — Floating widget: launcher, teaser, global mount ✅ done (2026-08-11)
+
+**Status: implemented, tested (19 new tests: 6 `use-widget-visibility`, 2 `chat-launcher`, 2
+`teaser-popup`, 5 `chat-widget`, plus 4 `chat-panel.test.tsx` cases updated for the D0 provider
+lift → 106 tests total, was 91 at 4.7.3), `tsc --noEmit` clean, `pnpm --filter web build` clean,
+live-verified end to end in a real browser against the real running backend.**
+
+New `use-widget-visibility.ts` (the launcher/teaser timing state machine — 3000ms initial teaser,
+20000ms repeat, mirroring the mockup's own `scheduleTeaser`/`onOpen`/`onClose`/`onDismissTeaser`
+exactly; tested with `vi.useFakeTimers()`, not real delays), `chat-launcher.tsx` (closed-state
+52×52 circle, pulses via the already-built `launcher-pulse` keyframe exactly while the teaser is
+visible), `teaser-popup.tsx` (new `teaser-in` keyframe added to `globals.css`, springy
+`cubic-bezier(0.2,0.9,0.3,1.2)` entrance per the design spec — deliberately not `menu-in`),
+`floating-frame.tsx` (fixed-position overlay per the design spec's explicit "Panel frame"
+architecture note — pinned to the right edge, full height, `clamp(360px,29%,440px)` width, on top
+of page content, *not* the mockup's flex-sibling layout), `chat-widget.tsx` (composes
+`useWidgetVisibility` + `ChatLauncher`/`TeaserPopup` while closed, `FloatingFrame` wrapping
+`PanelBody` variant="widget" while open).
+
+**D0 (shared session) landed in this sub-step, not earlier:** `chat-panel.tsx` no longer
+self-mounts `ChatSessionProvider` — it now reads the ambient one. `apps/web/src/app/layout.tsx`
+mounts `ChatSessionProvider` once around `{children}` + `<ChatWidget />`, so the full-page
+`/chat` route and the floating widget genuinely read one live conversation, not two independent
+ones. `chat-panel.test.tsx` updated to wrap `ChatPanel` in an explicit `ChatSessionProvider`
+(`renderPanel()` helper) to match; `chat-session-provider.test.tsx` needed no change (it already
+wrapped explicitly). `apps/web/src/features/chat/index.ts` exports `ChatWidget` and
+`ChatSessionProvider` alongside `ChatPanel` (both needed by `layout.tsx`, external code, so must
+cross the feature's public root, not a deep import). `FEATURES.md` updated.
+
+**Live-verified in a real browser (Chrome DevTools, `pnpm --filter web dev` against a running
+`apps/automation`)** on both `/` and `/chat`:
+- Teaser popup appeared ~3s after page load (pixel-matches the mockup: card, sparkle icon, copy,
+  dismiss ×); dismissing it hid it without opening the panel; clicking the launcher (and
+  separately, clicking the teaser card itself) opened the floating panel as a right-edge overlay
+  on top of page content, not a layout-shifting flex sibling.
+- **D0 proven live, not just by unit test:** sent a real question through `/chat`'s full-page
+  panel (real SSE round trip against the real backend — refused, "not found in the docs," since
+  the fixture corpus has nothing relevant), then opened the floating widget on the same page and
+  confirmed it showed the *exact same* turn — proving one shared session, not two. Opened the
+  "···" menu (Developer docs / Support articles greyed out, "Restart conversation" in red) and
+  restarted from the widget — both the page's thread and the widget's thread cleared back to the
+  greeting simultaneously. Opened the language menu — six locales, English bold with a checkmark,
+  rest plain, pixel-matches the mockup. Closed the widget via its Close icon — returned cleanly to
+  the launcher (no immediate teaser, correctly deferred to the 20000ms reschedule).
+- No console errors or hydration warnings on any of the above (checked via
+  `read_console_messages`, `onlyErrors: true`, after a fresh page load).
+- `git status` confirmed zero `apps/automation` files touched by this sub-step, per gate.
+
+**Not independently re-verified:** the 20000ms teaser-reschedule-after-close timing in a live
+browser (proven by the `use-widget-visibility` fake-timer unit tests instead — waiting 20 real
+seconds in an interactive session wasn't worth the wall-clock for a value already covered
+deterministically); a narrow-viewport/mobile render of the floating widget (no mobile layout
+requirement has been raised for this phase).
+
+**Phase 4.7 is now fully complete (4.7.1 → 4.7.4, all gates met).** Resume at Phase 4.6.13 next
+per the deferral note at the top of this ledger (§0) — 4.7 was run to completion first at the
+user's explicit request, without diverting back to 4.6.13 mid-way, exactly as instructed.
+
+### 4.7.6 — Post-4.7 additions: real attachment preview + dev-preview backdrop ✅ done (2026-08-11)
+
+Two pieces raised after 4.7.4 closed, both scoped and shipped in the same session. Full design
+narrative, options considered, and resolutions live in `docs/rag/OBI-WIDGET-DESIGN.md` §6–§7
+(new doc — a standalone as-built reference for the whole widget, not just this addendum); summarized
+here because the plan is the ledger of record:
+
+- **Real client-side image attachment (reopens two 4.7 product decisions, see §5 of that doc).**
+  New `attachment-strip.tsx` + `composer.tsx` changes: file-picker (paperclip un-stubbed) and
+  clipboard-paste both add images (capped at 4, `image/*` only), 40×40 thumbnail previews with a
+  remove button render above the textarea, Send enables on an attachment alone. **Option 6.2
+  (client-side only, no backend change)** — on send, attachments are dropped with a 4s inline
+  notice ("Image attachments aren't answered yet — sent as text only."); text still sends. No
+  `apps/automation` change, no new endpoint — the real vision-grounded version (option 6.3: upload
+  contract, vision-capable model call, retrieval-grounding decision, a
+  `securing-http-and-llm-endpoints` pass) stays exactly where 4.7.5 already puts it, as future,
+  unscoped backend work off `docs/future-ideas/IDEAS.md` idea #3 — not built here.
+- **Dev-only placeholder backdrop.** New `apps/web/src/app/dev-preview-backdrop.tsx`, rendered by
+  `app/page.tsx` in place of the old bare hero — a static, stateless skeleton block so the floating
+  widget previews in visual context (mirrors the mockup's fake dashboard). Route-owned, one
+  consumer, marked "safe to delete" in its own doc comment; not a feature, not promoted to
+  `components/`. Surfaced and fixed one pre-existing, unrelated bug while building it: this repo's
+  `max-w-*` scale resolves against the `spacing` tokens, not Tailwind's default (`max-w-md` computed
+  to 16px, not 28rem) — worked around with a bracket value (`max-w-[28rem]`), same pattern already
+  used elsewhere in the widget; the underlying scale mismatch itself is not fixed globally, flagged
+  only.
+
+**Verification (this session, re-run live, not trusted from the doc alone):** `pnpm --filter web
+test` → **113 passed** (was 106 at 4.7.4); `tsc --noEmit` clean; `pnpm --filter web build` clean;
+live-browser pass against a real running dev server confirmed the homepage backdrop + teaser +
+launcher render exactly as specified and the panel/composer/attach affordance match the doc, zero
+console errors. Zero `apps/automation` files touched.
+
+**4.7.5 (backlog, still not built):** the real vision-grounded attachment pipeline (option 6.3
+above — upload endpoint, vision model, retrieval-grounding decision, security pass), real i18n
+system, real docs/support pages — each its own future-scoped decision, recorded in
 `docs/future-ideas/IDEAS.md`, not part of this phase.
 
 **Sequencing vs. Phase 4.6:** frontend-only (TypeScript), touches zero files in common with 4.6

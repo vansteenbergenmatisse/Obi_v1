@@ -42,6 +42,33 @@
   }
 }
 
+/* The typing indicator's icon, separate from the shimmering label text above (which
+   `typing-shimmer` covers) — mirrors the mockup's `obi-think`. */
+@keyframes typing-spin {
+  0%,
+  100% {
+    transform: scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.18) rotate(90deg);
+    opacity: 0.75;
+  }
+}
+
+/* Teaser popup entrance (4.7.4) — deliberately not `menu-in`: this overshoots slightly (springy)
+   where every other menu/message fade is a plain ease-out. Mirrors the mockup's `obi-teaser`. */
+@keyframes teaser-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* The two rgba literals below are intentional, not a token miss: this animates between two
    *distinct* compound box-shadow states (a base elevation plus an expanding accent ring) that
    don't reduce to a single reusable `shadow.*`/`color.*` tier — it's a one-off decorative pulse

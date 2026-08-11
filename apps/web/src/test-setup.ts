@@ -7,3 +7,12 @@ import "@testing-library/jest-dom/vitest";
 afterEach(() => {
   cleanup();
 });
+
+// jsdom doesn't implement the Blob URL registry (no-op stubs, not real object URLs) — needed by
+// any *.test.tsx exercising the composer's image-attachment previews.
+if (typeof URL.createObjectURL !== "function") {
+  URL.createObjectURL = () => "blob:mock-url";
+}
+if (typeof URL.revokeObjectURL !== "function") {
+  URL.revokeObjectURL = () => {};
+}

@@ -31,6 +31,18 @@ export const color = {
   accentContrast: "#ffffff",
   /** Hairline borders and dividers. */
   border: "#e6e8ee",
+  /** Positive feedback (e.g. a selected "helpful" thumbs-up). */
+  success: "#1f7a45",
+  /** Fill behind a selected positive-feedback control. */
+  successBg: "#e6f6ee",
+  /** Fill behind a selected positive-feedback control once it's the active/pressed state. */
+  successFill: "#d3f0df",
+  /** Negative/destructive actions (e.g. a selected "not helpful" thumbs-down, restart). */
+  danger: "#df1b41",
+  /** Fill behind a selected negative-feedback control. */
+  dangerBg: "#fdf2f4",
+  /** Fill behind a selected negative-feedback control once it's the active/pressed state. */
+  dangerFill: "#fbdde4",
 } as const;
 
 /** 4px base spacing scale. Keys are the design step, values are CSS lengths. */

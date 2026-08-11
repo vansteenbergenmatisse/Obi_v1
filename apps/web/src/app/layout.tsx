@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
+import { ChatSessionProvider, ChatWidget } from "@/features/chat";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-sans", display: "swap" });
@@ -17,7 +18,10 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={inter.variable}>
       <body className="bg-surface text-text font-sans antialiased">
-        {children}
+        <ChatSessionProvider>
+          {children}
+          <ChatWidget />
+        </ChatSessionProvider>
       </body>
     </html>
   );

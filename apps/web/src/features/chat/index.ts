@@ -6,5 +6,7 @@
  * or `server/` directly. Internals stay free to move behind this surface.
  */
 export { ChatPanel } from "./ui/chat-panel";
+export { ChatWidget } from "./ui/chat-widget";
+export { ChatSessionProvider } from "./ui/chat-session-provider";
 export type { ChatMessage, MessageRole, MessageStatus } from "./model/messages";
 export { handlePostChat, handlePatchFeedback } from "./server/route-handlers";

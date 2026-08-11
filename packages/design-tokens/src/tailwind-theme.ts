@@ -20,6 +20,12 @@ export const tailwindTheme = {
     "accent-secondary": color.accentSecondary,
     "accent-contrast": color.accentContrast,
     border: color.border,
+    success: color.success,
+    "success-bg": color.successBg,
+    "success-fill": color.successFill,
+    danger: color.danger,
+    "danger-bg": color.dangerBg,
+    "danger-fill": color.dangerFill,
   },
   spacing: {
     none: spacing.none,
