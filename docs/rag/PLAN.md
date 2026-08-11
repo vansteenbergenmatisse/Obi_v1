@@ -32,8 +32,8 @@ tests (was 219), boundaries clean, no ruff/pyright regression.** 4.6.2 was imple
 fixture gateway per the user's explicit "implement now, verify later" choice — **live Confluence
 verification of the group-membership endpoint is still outstanding** (token still dead, blocker
 #3) and must happen before trusting 4.6.2's live behavior. 4.6.5 has a "needs your input" item
-flagged for confirmation (not blocking) — see its section below. **4.6.6 (`permission.py`'s
-overloaded `scope` string, MEDIUM) is next.**
+flagged for confirmation (not blocking) — see its section below. **4.6.6 done (2026-08-11) → 253
+tests (was 251). 4.6.7 (Confluence client hardening batch, MEDIUM+INFO) is next.**
 
 **Commit gap closed — 2026-08-10 (new session).** 4.6.1 (Confluence group-restriction fail-closed
 fix), plus ADR-0006/ADR-0007 and the six-agent `docs/rag/fixes/` audit itself, were all sitting
@@ -1527,17 +1527,53 @@ both pre-existing, on the unmodified `test_rollback_restores_prior_version`, con
 number); `alembic current` → `0005_page_restriction (head)`, no migration (pure code fix, matches
 the plan's own "no migration" expectation).
 
-### 4.6.6 — `permission.py`'s overloaded `scope` string (MEDIUM)
+### 4.6.6 — `permission.py`'s overloaded `scope` string (MEDIUM) ✅ done (2026-08-11)
 
-`apps/automation/app/features/retrieval/domain/permission.py`'s `allowed()` distinguishes
-space-wide vs. principal trust only via `.isdigit()` on one untyped `scope: str | None` — the root
-cause of the already-fixed 5.3 numeric-principal bypass, still unguarded at the domain layer, so any
-future direct caller could reintroduce the same bug class. Fix: replace with two explicit params
-(`space_id: int | None`, `principal: str | None`) or a tagged union; update the
-`retrieval/application/retriever.py` call site to pass the pre-classified value. Isolated (signature
-change, call-site fallout), not batched. Tests: a domain-layer regression test proving an all-digit
-principal id can never be reinterpreted as space-level trust; existing grant/block tests pass under
-the new signature.
+**Status: implemented, tested (2 new tests), boundaries clean, no ruff/pyright regression → 253
+tests total (was 251). Pure code fix, no migration, exactly as scoped.**
+
+**Fix.** `PrincipalPermissionPolicy.allowed()` (`retrieval/domain/permission.py`) no longer takes a
+raw `scope: str | None` and re-derives trust kind from `.isdigit()` — it now takes explicit
+keyword-only `space_id: int | None` and `principal: str | None`. The `.isdigit()` classification
+itself moved to a new pure module-level function, `classify_scope(scope) -> tuple[int | None, str |
+None]`, called exactly **once** per search — in `HybridRetriever._search`
+(`retrieval/application/retriever.py`), which replaces its old `self._policy.space_id(scope)` call
+(the `space_id()` method is deleted, not deprecated) and passes the classified pair to both the
+existing space-scoped `keyword_search`/`dense_search` calls and the new `allowed(space_id=...,
+principal=...)` call. This closes the actual root cause the 5.3 finding only patched at one caller
+(`ChatRequestBody.principal`'s HTTP-boundary validator): the domain layer itself can no longer
+reinterpret an all-digit *principal* string as space-level trust, because `allowed()` never inspects
+string shape at all anymore — that decision is made once, upstream, and handed in pre-classified.
+
+**Scope decision — kept `HybridRetriever`'s `policy` constructor parameter unchanged.** It was
+already documented (PLAN 4.3) as unused for the live `allowed()` decision — the request-scoped
+`live_policy` built fresh from `page_source`/`page_restriction` per search does the real work — and
+`test_permission_enforcement_is_db_backed_not_fixture_fed` specifically exercises passing a bare
+`PrincipalPermissionPolicy()` as an acceptance proof that this is true. Removing the parameter would
+delete that proof's premise for no benefit 4.6.6's finding actually asked for; the finding is about
+`allowed()`'s signature, not about this pre-existing, already-tested dead-parameter status.
+
+**Shipped (tests, by file):**
+- `retrieval/tests/test_fusion_and_permission.py`: `test_classify_scope_splits_digit_strings_from_principal_ids`
+  (new); `test_space_scope_grants_space_and_blocks_others`/`test_principal_scope_blocks_unauthorized`
+  updated to the new keyword-only signature;
+  `test_numeric_principal_argument_is_never_reinterpreted_as_space_trust` (new) — the actual
+  regression proof: a restricted page's `allowed()` check with `principal="200"` (an all-digit
+  string passed directly, bypassing `classify_scope`) is denied, not silently granted as space
+  trust.
+- `confluence_sync/tests/test_retrieval_eval.py`: `test_permission_no_leak_and_authorized_access`'s
+  direct `policy.allowed(...)` assertion updated to classify `case.scope` first via the now-exported
+  `classify_scope`.
+- `retrieval/__init__.py`: exports `classify_scope` (consumed cross-feature by the
+  `confluence_sync` eval test, per the boundary rule — root-only).
+
+**Verification:** `make check` (from repo root) → **253 passed** (was 251), boundaries clean;
+`ruff check` unchanged (2 errors, both pre-existing in `alembic/env.py`/`0001_core_schema.py`);
+`ruff format` applied to the touched files (`retriever.py`, `test_retrieval_eval.py`) to stay at
+the baseline — format-unformatted count actually **dropped** 17→16 (no regression, net
+improvement); `pyright` unchanged (34 errors, identical file list — none touch `permission.py`,
+`retriever.py`, `__init__.py`, or either touched test file); `alembic current` →
+`0005_page_restriction (head)`, no migration (pure code fix, no schema change).
 
 ### 4.6.7 — Confluence client hardening batch (MEDIUM + INFO, batched)
 

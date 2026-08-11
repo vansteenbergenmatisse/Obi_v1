@@ -17,7 +17,7 @@ Internal rule: modules inside this feature MUST NOT import through this root
 from __future__ import annotations
 
 from .application.retriever import HybridRetriever, RetrievalResult, RetrievedHit
-from .domain.permission import PrincipalPermissionPolicy
+from .domain.permission import PrincipalPermissionPolicy, classify_scope
 from .infrastructure.trace_repo import update_query_trace_answer, update_query_trace_feedback
 
 __all__ = [
@@ -25,6 +25,7 @@ __all__ = [
     "PrincipalPermissionPolicy",
     "RetrievedHit",
     "RetrievalResult",
+    "classify_scope",
     "update_query_trace_answer",
     "update_query_trace_feedback",
 ]

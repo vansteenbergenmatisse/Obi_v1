@@ -27,6 +27,7 @@ from app.features.evaluation import (
 from app.features.retrieval import (
     HybridRetriever,
     PrincipalPermissionPolicy,
+    classify_scope,
     update_query_trace_answer,
     update_query_trace_feedback,
 )
@@ -109,8 +110,11 @@ def test_permission_no_leak_and_authorized_access(gateway, settings: Settings) -
 
     for case in dataset.cases:
         returned = retr.retrieve(case.question, case.scope, k=5)
+        space_id, principal = classify_scope(case.scope)
         for pid in returned:
-            assert policy.allowed(int(pid), case.scope), f"{case.id} leaked page {pid}"
+            assert policy.allowed(int(pid), space_id=space_id, principal=principal), (
+                f"{case.id} leaked page {pid}"
+            )
 
     # authorized principal still retrieves the restricted page it is entitled to
     alice = retr.retrieve("What are the production deploy steps?", "acct-alice", k=5)

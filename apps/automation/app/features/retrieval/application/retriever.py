@@ -15,9 +15,13 @@ write the same ``query_trace`` row shape when tracing is enabled.
 
 PLAN 4.3: the page-level permission check is now backed by the persisted ``page_restriction``
 table, queried fresh per search for the current candidate set (never the whole corpus). The
-``policy`` constructor argument is kept only for its stateless ``space_id()`` scope parsing; its
-``space_of``/``restrictions`` data is no longer consulted for the ``allowed()`` decision — that
-decision runs against a request-scoped policy built from live DB data instead.
+``policy`` constructor argument's ``space_of``/``restrictions`` data is no longer consulted for
+the ``allowed()`` decision — that decision runs against a request-scoped policy built from live DB
+data instead.
+
+PLAN 4.6.6: the raw ``scope`` string is classified into an explicit ``(space_id, principal)`` pair
+exactly once per search, via ``permission.classify_scope`` — never re-derived from string shape
+again once split.
 """
 
 from __future__ import annotations
@@ -29,7 +33,7 @@ from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
 from app.features.retrieval.domain.fusion import reciprocal_rank_fusion
-from app.features.retrieval.domain.permission import PrincipalPermissionPolicy
+from app.features.retrieval.domain.permission import PrincipalPermissionPolicy, classify_scope
 from app.features.retrieval.infrastructure.search_repo import (
     apply_hnsw_gucs,
     apply_source_scope,
@@ -108,7 +112,7 @@ class HybridRetriever:
         self._trace_sessionmaker = trace_sessionmaker
 
     def _search(self, query: str, scope: str | None, k: int) -> list[RetrievedHit]:
-        space_id = self._policy.space_id(scope)
+        space_id, principal = classify_scope(scope)
         query_vec = self._embedder.embed([query])[0]
         sources = self._allowed_sources
         with self._session_factory() as session:
@@ -139,7 +143,9 @@ class HybridRetriever:
             # live from page_source/page_restriction, alongside source-level RLS above).
             space_of, restrictions = fetch_page_scopes(session, ranked)
             live_policy = PrincipalPermissionPolicy(space_of=space_of, restrictions=restrictions)
-            allowed = [p for p in ranked if live_policy.allowed(p, scope)]
+            allowed = [
+                p for p in ranked if live_policy.allowed(p, space_id=space_id, principal=principal)
+            ]
 
             # Cross-encoder rerank the permitted candidates (never a doc the scope can't see).
             # FakeReranker is order-preserving, so offline this is exactly the pre-rerank ranking.
