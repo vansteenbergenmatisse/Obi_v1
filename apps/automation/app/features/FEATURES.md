@@ -122,7 +122,7 @@ security_baseline:
         C6_redaction:   { status: covered, mechanism: "redact_pii scrubs the assembled prompt before every rewrite/generation call" }
         C7_idempotency: { status: covered, mechanism: "optional Idempotency-Key header hashed with (principal, history) into an in-process TTL cache bounded by chat_idempotency_cache_max_entries (PLAN 4.6.3/4.6.4), replays the cached Answer" }
         C8_concurrency: { status: opted_out, justification: "each request creates its own query_trace row; no shared-resource read-modify-write" }
-        C9_audit:       { status: covered, mechanism: "structured chat_request/chat_request_replayed log lines (conversation id, trace id, refused, citation count, latency) — never the raw message or answer text" }
+        C9_audit:       { status: covered, mechanism: "structured chat_request/chat_request_replayed log lines (conversation id, trace id, refused, refusal reason, citation count, latency) — never the raw message or answer text" }
         C10_abuse:      { status: covered, mechanism: "rate limit + history/message-length caps + AnthropicMessagesClient abuse cap (answer_max_input_chars) + breaker" }
     - id: PATCH /chat/{trace_id}/feedback
       tier: STATE-MUTATING

@@ -46,57 +46,34 @@ baseline was reconciled 31→34 at 4.6.9, see ADR-0003 D1). Commit refs, one per
 | 4.6.9 | Pyright baseline reconciled 31→34 (ADR-0003 D1 amendment, doc-only) | `b6974ef` |
 | 4.6.10 | RLS reader-role fails closed outside offline envs | `d897a40` |
 | 4.6.11 | Event dedup: `delivery_id` collision no longer a 500 | `0a61fb4` |
+| 4.6.12 | `refusal_reason` on the `chat_request` log line (+ a real `chat_router.log` monkeypatch bug found via `pyright` and fixed before any test ran) | *(this session, pending commit)* |
 
 Full narrative for each — root cause, design decisions, exact diff, verification commands and
 output — is in that sub-step's own `### 4.6.x` section further down this file. Read those, not
 just this table, before touching any of that code again.
 
-**In progress, UNCOMMITTED, UNVERIFIED — 4.6.12 (`Answer.refusal_reason` observability, LOW).**
-Code is written but the local Postgres (`infra/foundation/docker-compose.yml`, Docker Desktop) went
-down mid-session and would not come back up after a restart attempt; the two new tests for this
-sub-step have never actually been run. **Do not trust this as done.** Working tree right now has
-three uncommitted files:
-- `apps/automation/app/features/rag_agent/server/router.py` — the `chat_request` structured log
-  line (`_stream_answer`, inside the non-cached branch) gained a `refusal_reason=answer.refusal_reason`
-  field; the `C9_audit` line in the `security_baseline` docstring above it was updated to mention
-  `refusal_reason` and note it's a static templated string (never user query/retrieved content).
-- `apps/automation/app/features/FEATURES.md` — mirrored the same `C9_audit` mechanism string
-  (the line documenting `rag_agent`'s chat endpoint) to also say "refusal reason".
-- `apps/automation/app/features/confluence_sync/tests/test_chat_endpoint.py` — added a
-  `_LogRecorder` test helper (wraps the real `chat_router.log` bound logger and records every call
-  while still forwarding to it — needed because `structlog.testing.capture_logs()` is unreliable
-  here: `configure_logging`'s `cache_logger_on_first_use=True` means router.py's module-level `log`
-  proxy resolves its processor chain on its first-ever call in the whole test run, and by the time
-  a new test's `capture_logs()` context runs, dozens of earlier chat tests have already warmed it
-  against the real renderer, so the later context swap has no effect — confirmed by hitting this
-  exact failure mode while writing the test) plus two new tests:
-  `test_chat_request_log_includes_refusal_reason_when_refused` and
-  `test_chat_request_log_has_no_refusal_reason_when_not_refused`. Also added the import
-  `from app.features.rag_agent import router as chat_router` (imported at the feature's public
-  root, per the boundary rule — `router` is already re-exported from `rag_agent/__init__.py`).
+**4.6.12 — done and verified this session (2026-08-11), commit pending.** Docker Desktop's backend
+was genuinely hung (not just the container: a socket ping to `~/.docker/run/docker.sock` timed out
+rather than erroring) — fixed by force-killing the stuck `com.docker.backend`/`docker-agent`
+processes and relaunching clean; `omniboost_rag_pg` came up healthy on :5434 afterward, `alembic
+current` → `0006_dedupe_source_type_check (head)`, no pending migration.
 
-**Exact next steps once Postgres is back up (`docker compose -f infra/foundation/docker-compose.yml
-ps` shows `omniboost_rag_pg` healthy):**
-1. `cd apps/automation && uv run pytest app/features/confluence_sync/tests/test_chat_endpoint.py -q -k refusal_reason` — confirm both new tests pass.
-2. Run the full gate from repo root: `make check` (expect 274 passed — 272 + 2 new), then from
-   `apps/automation`: `uv run python tools/check_feature_boundaries.py`, `uv run ruff check .`,
-   `uv run ruff format --check .`, `uv run pyright` — confirm no regression vs. 4.6.11's readout
-   (2 ruff-check errors / 15 unformatted / 34 pyright errors, all pre-existing baseline).
-3. If green: write the `### 4.6.12` section body (status/fix/shipped/verification, matching the
-   style of every other `✅ done` sub-step below), update this snapshot's table, `git add` the three
-   files above, commit (`fix(rag): surface refusal_reason on the chat_request log line (PLAN
-   4.6.12)`).
-4. If a test fails: fix it first — do not commit broken tests, do not mark 4.6.12 done.
-5. Continue to 4.6.13 (dead-code disposition batch — no code risk, mostly a documentation
-   decision, does not need the DB), 4.6.14 (`how_this_works.md` rewrite — doc-only, does not need
-   the DB), 4.6.15 (remaining doc-drift batch — doc-only, run *after* 4.6.9, which is already
-   done), then 4.6.16 (the exit gate — needs the DB for the final full-suite re-run). **4.6.13 and
-   4.6.14 can be done right now, without Postgres, while waiting for Docker** — see their sections
-   below for full scope; nothing about them is blocked.
+While the DB was still down, ran the full non-DB gate (`make boundaries`, `ruff check`, `ruff
+format --check`, `pyright`) on the uncommitted diff as a substitute sanity pass and found a real
+bug via `pyright` (36 errors, not the 34 baseline): the tests monkeypatched `chat_router.log` where
+`chat_router` was `rag_agent`'s exported **`APIRouter` instance**, not the **module** whose
+module-global `log.info(...)` calls `router.py`'s code actually makes — patching the instance would
+have silently no-op'd, both tests logging zero entries and failing on first real run. Fixed by
+adding a `chat_router_module` export (`sys.modules[...]` lookup — immune to the instance-shadowing
+footgun and to isort reordering, see `### 4.6.12` below for the full mechanics) and repointing the
+tests at it. Confirmed via `pyright` (back to 34) and an empirical `python -c` check before Postgres
+came back, then confirmed for real once it did: both new tests pass, `make check` → **274 passed**
+(was 272), boundaries clean, ruff/pyright unchanged at the 2/15/34 baseline. Full narrative in
+`### 4.6.12` below.
 
-**What's left after 4.6.12: 4.6.13, 4.6.14, 4.6.15, 4.6.16 (the exit gate) — all still ⬜ todo,
-full scope already specified in their own sections below, unchanged from the original plan text.**
-Only once 4.6.16 is green does Phase 5.4 / the embedder bake-off / adaptive routing resume.
+**What's left: 4.6.13, 4.6.14, 4.6.15, 4.6.16 (the exit gate) — all still ⬜ todo, full scope
+already specified in their own sections below, unchanged from the original plan text.** Only once
+4.6.16 is green does Phase 5.4 / the embedder bake-off / adaptive routing resume.
 
 **4.6.2 caveat, still open:** implemented against the fixture gateway per the user's explicit
 "implement now, verify later" choice — **live Confluence verification of the group-membership
@@ -1884,14 +1861,66 @@ of the touched files among them); `pyright` unchanged (34 errors — a transient
 the second envelope's `cf_version` instead of arithmetic on an optional); no migration (pure code
 fix, no schema change).
 
-### 4.6.12 — `Answer.refusal_reason` never reaches an observable surface (LOW)
+### 4.6.12 — `Answer.refusal_reason` never reaches an observable surface (LOW) ✅ done (2026-08-11)
 
-Computed and unit-tested but never reaches a log line, DB column, SSE event, or the TS contract.
-**Needs your input:** default to the minimal fix — add `refusal_reason` to the existing
-`chat_request` structured log line in `router.py` (operator-visibility only, no schema/contract
-change) — unless you want it exposed to end users via `query_trace`/SSE/the web contract, which is a
-larger, cross-boundary change overlapping the UI-refactor track. Test: the log line includes a
-populated `refusal_reason` on a refused answer, absent/null otherwise.
+**Status: implemented, tested (2 new tests), boundaries clean, no ruff/pyright regression → 274
+tests total (was 272). Took the minimal fix, per the default called out below — operator-visibility
+only, no schema/contract change.**
+
+**Fix.** `Answer.refusal_reason` (computed since 4.1, unit-tested since 4.2) was never surfaced
+anywhere observable outside the process. Added it to the existing `chat_request` structured log
+line in `_stream_answer` (`router.py`, non-cached branch): `refusal_reason=answer.refusal_reason`
+— `None` when not refused, a static templated string (never user query/retrieved content, so no
+new PII-redaction or log-injection surface) when it is. Mirrored in the `C9_audit` line of the
+`security_baseline` docstring above it and in `FEATURES.md`'s chat-endpoint entry.
+
+**A real bug found and fixed mid-flight, entirely without the DB.** Wrote 2 new tests wrapping the
+real bound `log` object (`_LogRecorder`, forwards while recording — `structlog.testing.
+capture_logs()` doesn't work here: `cache_logger_on_first_use=True` means the module's `log` proxy
+resolves its processor chain on its first-ever call across the whole test run, so a later
+`capture_logs()` context has no effect once dozens of earlier chat tests have already warmed it).
+The first draft imported `router` from `rag_agent`'s public root and monkeypatched
+`chat_router.log` — but that `router` is the **`APIRouter` instance**
+(`server/router.py:112`), not the **module**; `router.py`'s own code logs via the bare
+module-global `log.info(...)`, resolved through the module's own `__dict__`, a different object
+entirely. Patching the instance would have silently no-op'd — both tests would have recorded zero
+log entries and failed the first time they ran. Caught by `pyright` (36 errors, not the 34
+baseline — both new, both `Cannot access attribute "log" for class "APIRouter"`) while Postgres was
+still down and no test could run yet; confirmed the type-checker's read was correct via an
+empirical, DB-free `python -c` check before trusting it.
+
+**The actual fix:** recovering the real module by import statement alone doesn't work either — a
+plain `import a.b.c as x` still resolves through the same shadowed package attribute (`server/
+__init__.py`'s `from ...router import (..., router)` overwrites the package's own submodule
+reference with the instance, since the imported name collides with the submodule's filename — a
+standard Python footgun). Only `sys.modules[...]` is immune, since it's a direct cache lookup by
+dotted string name, never subject to attribute shadowing:
+
+```python
+chat_router_module = sys.modules[f"{__name__}.router"]  # server/__init__.py
+```
+
+Re-exported from `rag_agent/__init__.py` alongside `router`, documented there as test-only.
+Deliberately not the "capture the module before the shadowing import runs" ordering trick — that
+also works, but `ruff check --fix`'s isort rule wants to reorder those two imports, and reordering
+silently breaks it with no error signal; `sys.modules` can't be un-done by an autofix.
+
+**Shipped:**
+- `app/features/rag_agent/server/router.py`: `refusal_reason` field on the `chat_request` log line
+  + `security_baseline` docstring update.
+- `app/features/FEATURES.md`: mirrored `C9_audit` mechanism string.
+- `app/features/rag_agent/server/__init__.py`, `app/features/rag_agent/__init__.py`: new
+  `chat_router_module` export (test-only handle on the real `router.py` module, see fix above).
+- `app/features/confluence_sync/tests/test_chat_endpoint.py` (+2): `_LogRecorder` helper;
+  `test_chat_request_log_includes_refusal_reason_when_refused`,
+  `test_chat_request_log_has_no_refusal_reason_when_not_refused`.
+
+**Verification:** `uv run pytest .../test_chat_endpoint.py -q -k refusal_reason` → 2 passed. `make
+check` (from repo root) → **274 passed** (was 272), boundaries clean. `ruff check` unchanged (2
+errors, pre-existing); `ruff format --check` unchanged (15 unformatted); `pyright` unchanged (**34**
+errors — was transiently 36 with the bug above, confirmed back to baseline by diffing the
+pre-fix/post-fix error-file lists, not just the count). `alembic current` →
+`0006_dedupe_source_type_check (head)`, no migration (pure code + log field, no schema change).
 
 ### 4.6.13 — Dead-code disposition batch (no code risk)
 

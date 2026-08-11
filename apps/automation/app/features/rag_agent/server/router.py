@@ -37,8 +37,9 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
   C8_concurrency: opted_out - each request creates its own query_trace row; no shared-resource
                               read-modify-write.
   C9_audit:       covered   - one structured `chat_request` log line per call (conversation id,
-                              trace id, refused, citation count, latency) — never the raw message
-                              or answer text.
+                              trace id, refused, refusal reason, citation count, latency) — never
+                              the raw message or answer text; `refusal_reason` is a static,
+                              templated diagnostic string (never user query or retrieved content).
   C10_abuse:      covered   - rate limit + history/message-length caps + the Anthropic client's
                               abuse cap (answer_max_input_chars) + circuit breaker.
 
@@ -295,6 +296,7 @@ async def _stream_answer(
             conversation_id=conversation_id,
             trace_id=answer.trace_id,
             refused=answer.refused,
+            refusal_reason=answer.refusal_reason,
             citation_count=len(answer.citations),
             latency_ms=latency_ms,
         )

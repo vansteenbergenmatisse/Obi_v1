@@ -11,7 +11,12 @@ import json
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
-from app.features.rag_agent import AnswerProvider, AnswerService, CachingAnswerService
+from app.features.rag_agent import (
+    AnswerProvider,
+    AnswerService,
+    CachingAnswerService,
+    chat_router_module,
+)
 from app.main import create_app
 from app.platform.config import Settings
 from app.platform.db.engine import get_sessionmaker
@@ -277,6 +282,81 @@ def test_refusal_streams_done_with_refused_true(gateway, settings: Settings) -> 
     assert done["type"] == "done"
     assert done["refused"] is True
     assert done["citations"] == []
+
+
+class _LogRecorder:
+    """Wraps the real bound logger, recording every call while still forwarding to it.
+
+    Avoids relying on ``structlog.testing.capture_logs()``'s global processor swap, which is
+    unreliable here: ``configure_logging``'s ``cache_logger_on_first_use=True`` means router.py's
+    module-level ``log`` proxy resolves its processor chain on its *first-ever* call in the whole
+    test run — by the time these tests run, dozens of earlier chat tests have already warmed it
+    against the real console/JSON renderer, so a later ``capture_logs()`` context has no effect.
+    """
+
+    def __init__(self, real) -> None:
+        self._real = real
+        self.entries: list[dict] = []
+
+    def __getattr__(self, name: str):
+        real_method = getattr(self._real, name)
+
+        def wrapper(event=None, **kwargs):
+            self.entries.append({"event": event, **kwargs})
+            return real_method(event, **kwargs)
+
+        return wrapper
+
+
+def test_chat_request_log_includes_refusal_reason_when_refused(
+    gateway, settings: Settings, monkeypatch
+) -> None:
+    """PLAN 4.6.12: refusal_reason (computed since PLAN 4.1, tested since PLAN 4.2) reaches an
+    observable surface — the chat_request structured log line — instead of only ever being
+    checked by an assertion inside the process."""
+    _index_corpus(gateway, settings)
+    chat_settings = _chat_settings(settings)
+    service = AnswerService(
+        _build_retriever(gateway, chat_settings, allowed_sources=("confluence:nonexistent",)),
+        _EchoRewriter(),
+        _SilentGenerator(),
+        get_sessionmaker(),
+    )
+    client = _client_with_service(chat_settings, service)
+    recorder = _LogRecorder(chat_router_module.log)
+    monkeypatch.setattr(chat_router_module, "log", recorder)
+
+    client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": "How do I request access?"}]},
+        headers=_auth(),
+    )
+
+    chat_request_logs = [e for e in recorder.entries if e["event"] == "chat_request"]
+    assert len(chat_request_logs) == 1
+    assert chat_request_logs[0]["refused"] is True
+    assert chat_request_logs[0]["refusal_reason"]  # populated, not None/empty
+
+
+def test_chat_request_log_has_no_refusal_reason_when_not_refused(
+    gateway, settings: Settings, monkeypatch
+) -> None:
+    _index_corpus(gateway, settings)
+    chat_settings = _chat_settings(settings)
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+    recorder = _LogRecorder(chat_router_module.log)
+    monkeypatch.setattr(chat_router_module, "log", recorder)
+
+    client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": "How do I request access to core systems?"}]},
+        headers=_auth(),
+    )
+
+    chat_request_logs = [e for e in recorder.entries if e["event"] == "chat_request"]
+    assert len(chat_request_logs) == 1
+    assert chat_request_logs[0]["refused"] is False
+    assert chat_request_logs[0]["refusal_reason"] is None
 
 
 def test_idempotency_key_replays_cached_answer_without_rerunning(

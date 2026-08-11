@@ -12,6 +12,11 @@ protocols + their Anthropic-backed implementations, and — as of Phase 4.4 — 
 `POST /chat` + `PATCH /chat/{trace_id}/feedback` HTTP surface `app.main` includes). The refusal /
 citation / prompt / PII-redaction domain logic stays internal.
 
+`chat_router_module` (Phase 4.6.12) is the `server/router.py` module itself, exported solely so
+tests outside this feature can `monkeypatch.setattr(chat_router_module, "log", ...)` and intercept
+the module-global structured logger `router.py`'s handlers call — patching the `router` APIRouter
+instance above has no effect, since it isn't the same object as the module. Not for production use.
+
 Status (Phase 4.4): the answer workflow (4.2) and persisted principal ACL (4.3) are wired to a
 real HTTP surface with the full `securing-http-and-llm-endpoints` control set applied (auth, rate
 limit, input validation, LLM timeout/retry/breaker, output pacing, PII redaction, idempotency,
@@ -33,7 +38,7 @@ from .infrastructure.llm_client import (
     QueryRewriter,
 )
 from .schemas import Answer, ChatMessage, Citation
-from .server import router
+from .server import chat_router_module, router
 
 __all__ = [
     "Answer",
@@ -47,4 +52,5 @@ __all__ = [
     "AnthropicQueryRewriter",
     "AnthropicAnswerGenerator",
     "router",
+    "chat_router_module",
 ]

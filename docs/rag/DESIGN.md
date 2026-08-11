@@ -25,7 +25,7 @@
 > **and Phase 5.3**, a deterministic prompt-injection + permission/isolation red-team pass that
 > found and fixed a real bypass (an unvalidated `principal` could claim numeric space-level trust
 > and skip page-level restrictions; closed with a `ChatRequestBody` validator) —
-> **and Phase 4.6.1 through 4.6.11** (fixes-backlog remediation, gating Phase 5.4 — see
+> **and Phase 4.6.1 through 4.6.12** (fixes-backlog remediation, gating Phase 5.4 — see
 > `PLAN.md`'s "4.6 progress snapshot" for the full table): a CRITICAL Confluence
 > group-restriction bypass closed fail-closed then resolved via real group-membership expansion; a
 > HIGH cross-principal idempotency-cache leak closed; the rate limiter/idempotency cache hardened
@@ -37,10 +37,11 @@
 > DB's `chunk`/`page_source` tables since the Phase-1 baseline) was found and removed (migration
 > `0006_dedupe_source_type_check`); the pyright baseline was formally reconciled 31→34
 > (ADR-0003 D1); the RLS reader role now fails closed instead of silently running as the
-> RLS-bypassing writer outside local/test/dev/ci; and a same-`delivery_id`/different-hash webhook
-> redelivery now dedupes gracefully instead of a 500 —
-> **272 backend tests green** (plus 39 `apps/web` vitest tests, its first test runner, added at
-> 4.5). `PLANNED` = specified here, gated on the phase named: **4.6.12 through 4.6.16** (the
+> RLS-bypassing writer outside local/test/dev/ci; a same-`delivery_id`/different-hash webhook
+> redelivery now dedupes gracefully instead of a 500; and `refusal_reason` now reaches the
+> `chat_request` structured log line (4.6.12) —
+> **274 backend tests green** (plus 39 `apps/web` vitest tests, its first test runner, added at
+> 4.5). `PLANNED` = specified here, gated on the phase named: **4.6.13 through 4.6.16** (the
 > fixes-backlog exit gate) are still open — see `PLAN.md` for exact remaining scope — and Phase 5's
 > remaining scope (a live-LLM adversarial pass + latency/cost proof (5.4), embedder bake-off,
 > semantic caching (deliberately deferred, see `answer_cache.py`), adaptive router) is not built yet
