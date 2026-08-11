@@ -36,6 +36,14 @@ own section, and the sequencing note at its end); only the *order relative to 4.
 explicit instruction. **4.7.1 done (`206baab`); resume at 4.7.2 next.** Do not resume 4.6.13 until
 all of 4.7 (4.7.1-4.7.4, exit-verified per 4.7.4's gate) is done and marked here.
 
+**Before starting 4.7.2, read Phase 4.7's "### Design specification — pixel-exact reference" section
+below (right before `### 4.7.1`) — it's the full pixel-level spec for every remaining component,
+distilled from a live, interactive, standalone copy of the mockup committed at
+`docs/rag/reference/obi-mockup/obi-render.html` (open it, don't just read the prose). It also lists
+two unresolved copy decisions (greeting personalization, suggestion-chip text) to confirm with the
+user before those components ship, and two keyframes (`typing-spin`, `teaser-in`) 4.7.1 deliberately
+did not build yet because nothing consumed them.
+
 #### 4.6 progress snapshot (2026-08-11 session) — read this before doing anything else
 
 **Done, verified, committed — 4.6.1 through 4.6.11 (11 of 16 sub-steps).** Test count climbed
@@ -2064,6 +2072,204 @@ in `message-list.tsx`), `typing-indicator.tsx`, `suggestion-chip.tsx`, `menu.tsx
 `apps/web/package.json` — no existing pure-node vitest pattern can express DOM-rendering assertions.
 `apps/web/vitest.config.ts` gets `environmentMatchGlobs` so existing pure-node tests stay
 fast/unaffected while new `*.test.tsx` files run under jsdom.
+
+### Design specification — pixel-exact reference (read this before 4.7.2 onward)
+
+**Live, interactive reference — open this, don't just read prose.** The mockup's own
+`Obi Assistant.dc.html` cannot render standalone (its runtime expects `window.React`/`window.ReactDOM`
+injected by the tool's own preview iframe — opening it directly throws
+`dc-runtime: window.React is not available yet`). A working, fully interactive standalone copy —
+identical markup/behavior, plus two `<script>` tags loading React/ReactDOM from a CDN — is committed
+at `docs/rag/reference/obi-mockup/obi-render.html`, alongside the original files and the user's three
+reference screenshots. See that folder's `README.md`. Open it (`python3 -m http.server 8901` from
+that directory, then the URL) and click through every state before building each sub-step below —
+menus, language switcher, thumbs feedback, restart, the teaser popup — it is the real prototype, not
+a facsimile. This is the single source of visual truth for the rest of Phase 4.7; the spec below is a
+distillation of it (with exact values pulled from its inline styles) for quick reference while coding,
+not a replacement for opening it.
+
+**What "done" means for this phase:** pixel-for-pixel visual match — colors, spacing, radii, shadows,
+typography, motion timing — with the copy/content decisions below resolved (the mockup's copy is
+Stripe/payments-flavored placeholder text; this product is a Confluence RAG bot, so some strings
+cannot just be copied verbatim — flagged explicitly, not silently invented).
+
+#### Already built (4.7.1, `206baab`) — do not redo
+
+Real brand tokens live in `packages/design-tokens/src/tokens.ts` now, not placeholders: `surface
+#f6f8fa`, `surfaceRaised #ffffff`, `surfaceSunken #f0f1f5`, `text #30313d`, `textMuted #687385`,
+`accent #635bff`, `accentHover #4f47e6`, `accentSecondary #8f8af7`, `accentContrast #ffffff`, `border
+#e6e8ee`; `shadow.{sm,md,lg}`; `zIndex.{widget,widgetMenu}`; `motion.{fast,base,slow,easing}`. Inter
+is wired app-wide via `next/font/google`. Four keyframes exist in `globals.css`: `menu-in`,
+`feedback-pop`, `typing-shimmer`, `launcher-pulse`. Two primitives exist:
+`features/chat/ui/icon-button.tsx`, `features/chat/ui/assistant-mark.tsx` (the two-tone sparkle mark,
+`aria-hidden`, sized via a `size` prop, colored via `text-accent`/`text-accent-secondary` — never
+hardcoded hex, per this repo's token discipline).
+
+**Two keyframes the mockup uses that 4.7.1 did *not* yet build — needed later, don't assume they
+exist:**
+- The thinking indicator's *icon* has its own rotate/scale animation, separate from the shimmering
+  text (which `typing-shimmer` already covers): mockup's `obi-think` —
+  `0%,100% { transform: scale(1) rotate(0deg); opacity: 1 } 50% { transform: scale(1.18) rotate(90deg); opacity: .75 }`,
+  1.4s ease-in-out infinite, `transform-origin: 11px 10px` (i.e. roughly the mark's own center at the
+  16-20px size it's used at). Add as e.g. `typing-spin` in 4.7.2 when `typing-indicator.tsx` is built.
+- The teaser popup's entrance is bouncier than the plain `menu-in` fade: mockup's `obi-teaser` —
+  `from { opacity: 0; transform: translateY(10px) scale(.96) } to { opacity: 1; transform: none }`,
+  300ms, `cubic-bezier(.2, .9, .3, 1.2)` (overshoots slightly, springy). Add as e.g. `teaser-in` in
+  4.7.4 when `teaser-popup.tsx` is built — don't reuse `menu-in`, the easing is deliberately different
+  from every other menu/message fade.
+
+#### Panel frame — architecture difference from the mockup, not a visual one
+
+The mockup's demo harness lays the panel out as a **flex sibling** of its fake dashboard (`width:
+clamp(360px, 29%, 440px)`, host content `flex: 1`) — the dashboard visually shrinks to make room.
+**Do not copy that layout mechanism.** This app's real pages aren't designed to share width with a
+docked panel. `floating-frame.tsx` (4.7.4) must be a **fixed-position overlay** (`position: fixed`,
+pinned to the right edge, full height) that sits *on top of* page content, not a flex item that
+resizes it — same visual width/shadow/border as the mockup (`clamp(360px, 29%, 440px)`, `bg-surface-
+raised`, `border-l border-border`, `shadow-lg`-equivalent using the mockup's exact
+`-4px 0 16px rgba(35,38,59,0.04)`), different containing mechanism.
+
+#### Header (52px)
+
+Height 52px, flex row, `gap-sm` (mockup: 10px), padding `0 14px 0 16px`, `border-b border-border`,
+`bg-surface-raised`, `z-index: widget` (stacking above page content, below its own dropdown menus).
+`AssistantMark` at 20px + assistant name text (15px/600/`#1a1b25`-equivalent — close enough to `text`
+token to just reuse `text-text`, don't add a token for one-off use). Icon row `margin-left: auto`,
+`gap` 2px: **More (⋯)**, **Language** (globe), **Close** (X) — each a 30×30 `IconButton`. **Screenshot
+icon is dropped entirely** (product decision, see above) — three icons in the real header, not four.
+
+#### "···" menu / language menu (shared `Menu`/`MenuItem` shell, 4.7.3)
+
+Invisible full-viewport overlay (`fixed inset-0`) below the menu but above page content, closing the
+menu on outside click — both menus are mutually exclusive (opening one closes the other). Menu panel:
+`absolute`, `top-[46px] right-11` (44px), `z-index: widget-menu`, `bg-surface-raised`, `border
+border-border`, `rounded-lg` (10px ≈ `radius.lg` 0.75rem, close enough — reuse, don't add a token),
+`shadow-md`, `min-width` 200px ("···") / 190px (language), `py-1.5` (6px), animate `motion-safe:animate-
+[menu-in_180ms_ease-out]`.
+
+**"···" items** (13.5px, `px-4 py-2.5`): "Developer docs" and "Support articles" — **disabled stubs**
+(product decision: no real URLs yet — render visibly, `aria-disabled`, no-op or a "coming soon"
+affordance, not a dead link); "Restart conversation" in `#df1b41`-equivalent — this repo has no
+`color.danger` token yet (see the two feedback-thumb colors below, same gap) — **built real**, wired
+to `useChatSession().restart()`.
+
+**Language items** (13.5px, `py-2.5 px-4`, flex row `justify-between gap-4`, `font-weight: 600` if
+active else `400`, checkmark SVG 14px `stroke-accent` at `opacity: 1` if active else `0`): English,
+Nederlands, Deutsch, Français, Español, Italiano — **stub** (product decision): menu renders, current
+locale checked, selecting any item just closes the menu with no locale change and no translated
+strings. Don't build partial i18n.
+
+#### Message thread
+
+Scroll container `flex-1 overflow-y-auto`, padding `16px 16px 12px`, `flex flex-col gap-md` (16px).
+Skip the mockup's decorative wavy-line SVG background (`stroke: #edeff6`, pure ambient decoration,
+zero functional/informational value — not worth the implementation cost for this phase; can be a
+`4.7.5`-backlog nice-to-have if ever prioritized).
+
+**Greeting** (shown once, above the thread): 14px, `line-height: 1.55`, `text-text`, `max-w-[95%]`,
+product name bold inline. **Copy decision needed, not resolved yet:** mockup text is `Hi {userName},
+how can I help you with **{productName}**? The more details you provide, the better.` —
+`{productName}` maps cleanly to "Omniboost", but `{userName}` has no real source: per PLAN 4.3/4.4,
+`principal` on `POST /chat` is just a caller-self-reported string for page-ACL, not an identity record
+with a display name — there is no real name to personalize with. Recommend dropping the personalized
+name (generic "Hi there, ...") rather than inventing an identity source; confirm before 4.7.2 ships
+the greeting.
+
+**Suggestion chip** (shown only pre-first-message): pill, `border border-[#8d8bfa]` (a violet-tinted
+border distinct from the neutral `border` token — this is intentional in the mockup, wherever the
+composer/chip wants to read as "interactive accent-adjacent" rather than a plain divider; either add
+this as `color.accentBorder` when 4.7.2 builds it, or reuse `accent` at reduced opacity — implementer's
+call, not worth a full token debate for one shade), `bg-surface-raised`, 13px, `px-4 py-2`, `rounded-
+full`, hover: `border-accent`, `-translate-y-px`, `shadow-sm`-ish glow. **Copy decision needed:**
+mockup's chip is "My verification status" (Stripe/payments-specific) — meaningless for a Confluence
+RAG bot. Needs a real product-relevant sample question, or drop the chip. Not resolved — ask before
+4.7.2 ships it, don't invent a fake sample question.
+
+**User message bubble**: right-aligned, `bg-surface-sunken` (the `#f0f1f5` token added in 4.7.1 —
+this is its first real consumer), `text-text`, 14px, `line-height: 1.5`, `px-[15px] py-[9px]`,
+`rounded-2xl`-ish (18px), `max-w-[82%]`. Animate in with `motion-safe:animate-[menu-in_180ms_ease-out]`
+(reuse — same fade+slight-rise as the mockup's `obi-in`, no need for a second identical keyframe under
+a different name).
+
+**Bot message**: plain text, no bubble/background at all (deliberate — only the user's own messages
+get a bubble fill). 14px, `line-height: 1.6`, `text-text`, `whitespace-pre-line`, `max-w-[96%]`.
+Feedback row below, right-aligned, `gap-1`: two 26×26 icon buttons (thumbs up/down, the down icon is
+the same path rotated 180°, not a separate asset). **New tokens needed here, deliberately deferred
+from 4.7.1 (no consumer existed yet):** `color.success` (`#1f7a45` icon / `#e6f6ee` bg / `#d3f0df`
+fill when selected) and `color.danger` (`#df1b41` icon / `#fdf2f4` bg / `#fbdde4` fill when selected —
+also what "Restart conversation" above should use once it exists). Add both to `tokens.ts` +
+`tailwind-theme.ts` in 4.7.2, same pattern as every other color group. Selected state animates
+`motion-safe:animate-[feedback-pop_350ms_ease]` (already built in 4.7.1).
+
+**Typing indicator** (replaces the greeting/thread while waiting for the *first* token, citations, or
+`done` event on the live SSE stream — this is real backend timing, not the mockup's fake 3.2-5s
+`setTimeout`): flex row, `gap-[9px]`, `AssistantMark`-sized icon (17px) animating the new `typing-spin`
+keyframe above; shimmering label using the already-built `typing-shimmer` keyframe, 13.5px/500,
+gradient `#9aa1b2 30% → #30313d 50% → #9aa1b2 70%` via `bg-clip-text` + `text-transparent`. **Word
+bank**: reuse the mockup's exact ~90-word list verbatim (Thinking, Pondering, Mulling, Noodling,
+Percolating, Brewing, Cogitating, ... — full list in
+`docs/rag/reference/obi-mockup/Obi Assistant.dc.html` around the `THINK` constant) — it's
+personality/flavor text with no product-specific content, safe to copy as-is, no decision needed.
+Cycle every 3800ms, picking a random word different from the last, appending "…"; stop cycling (and
+unmount the indicator) the moment real content starts arriving.
+
+#### Composer
+
+Outer box: `border border-[#8d8bfa]` (same violet-tinted accent border as the chip — again, either a
+new `accentBorder` token or reused `accent` at low opacity, implementer's call), `rounded-xl` (12px),
+`bg-surface-raised`, `p-[12px_12px_8px]`, `flex flex-col gap-1`, `shadow-sm`-ish
+(`0 1px 4px rgba(99,91,255,0.06)` — accent-tinted, not the neutral `shadow.sm` — a second implementer
+call on whether this deserves its own token or is a one-off `style`/arbitrary-value case; lean toward
+one-off, it's a single component). Textarea: 2 rows visible, autosizing (plan's own 4.7.2 note),
+border none, transparent bg, 14px, `line-height: 1.5`, `min-h-[42px]`. **Placeholder copy decision
+already resolved, no action needed:** keep this repo's existing, product-correct copy ("Ask about
+your Confluence workspace…") — do **not** port the mockup's Stripe-flavored placeholders
+("How do I activate new payment methods?" / "Ask a question").
+
+Toolbar row, `justify-end items-center gap-[10px]`: **Attach** (paperclip, 28×28) — **disabled stub**
+(visible, `disabled`, no upload endpoint exists); **Send** (30×30 circle) — `bg-accent`/`text-accent-
+contrast` when there's content to send, `bg-surface-sunken`/`text-text-muted` when empty (this is
+already exactly what `Button`'s `disabled:opacity-50` on the `primary` variant does *not* quite
+replicate — the mockup's disabled state is a distinct grey fill, not the accent at reduced opacity;
+`composer.tsx`'s Send button in 4.7.2 needs its own disabled-state color handling, not just
+`disabled:opacity-50`, to match). Hover: `scale-105`-ish (mockup: 1.08). Footer disclaimer below the
+box, centered, 12px, `text-text-muted`: **"AI may make mistakes. Verify important information."** —
+copy already resolved, generic and safe to port verbatim, no decision needed.
+
+#### Launcher (closed state)
+
+`fixed bottom-6 right-6` (24px), 52×52 circle, `border border-border`, `bg-surface-raised`, `shadow-
+lg`-equivalent (mockup: `0 6px 20px rgba(35,38,59,0.16)` — this is the "one-off compound shadow" case
+already flagged in 4.7.1's `globals.css` comment for `launcher-pulse`, not a plain `shadow.lg`),
+`z-index: widget`. `AssistantMark` at 24px, centered. Hover: `scale-[1.06]`, `border-color` shifts
+toward accent-tinted. Pulses continuously (`launcher-pulse`, already built) exactly while the teaser
+popup is visible — not otherwise.
+
+#### Teaser popup
+
+`fixed bottom-[92px] right-6`, `z-index: widget-menu` (must render above the launcher), `bg-surface-
+raised`, `border border-border`, `rounded-2xl`-ish (14px), `shadow-lg`, `p-[14px_16px]`, `max-w-
+[290px]`, cursor pointer (clicking it opens the panel, same as clicking the launcher). Content: flex
+row, `gap-[10px]`, `items-start`; `AssistantMark` 20px; text 13px/`line-height:1.5`/`text-text`;
+small dismiss (×) button top-right. Entrance uses the new `teaser-in` keyframe (see above — don't
+reuse `menu-in`). **Timing** (already specified in the plan's `use-widget-visibility.ts` line, restated
+here for completeness): appears 3000ms after mount if the panel is closed; dismissing it or closing
+the panel reschedules it to reappear after 20000ms of being closed. **Copy decision needed:** mockup's
+"Hey, I'm Obi. Need help with onboarding or support?" is generic boilerplate, not obviously wrong for
+this product but also not confirmed — cheap enough to just reuse verbatim unless the user objects,
+lower-stakes than the greeting/chip copy above (no fabricated identity or fake product feature
+involved). Flagging for visibility, not blocking on it the way the greeting/chip are.
+
+#### Copy decisions summary (don't resolve silently — confirm before the relevant sub-step ships)
+
+| String | Mockup text | Status |
+|---|---|---|
+| Greeting personalization | `Hi {userName}, ...` | **Needs a decision** — no real user-name source exists; recommend dropping personalization |
+| Suggestion chip | "My verification status" | **Needs a decision** — Stripe-specific, meaningless here; needs a real sample question or drop the chip |
+| Teaser popup | "Hey, I'm Obi. Need help with onboarding or support?" | Low-stakes, reuse verbatim unless told otherwise |
+| Footer disclaimer | "AI may make mistakes. Verify important information." | Resolved — reuse verbatim |
+| Composer placeholder | (mockup's Stripe placeholders) | Resolved — keep this repo's existing "Ask about your Confluence workspace…" |
+| Thinking-word bank | ~90 whimsical words | Resolved — reuse verbatim, no product content |
 
 ### 4.7.1 — Tokens, test tooling, base primitives ✅ done (2026-08-11, `206baab`)
 
