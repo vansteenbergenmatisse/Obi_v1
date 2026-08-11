@@ -1,12 +1,22 @@
 # How This Works — Omniboost RAG, A-to-Z
 
-> The single explainer for how the Confluence RAG system ingests, stores, retrieves, and (soon)
-> answers. It describes **what runs today** (Phases 1–3, verified: 99 tests green) and, marked
-> clearly, **what the plan adds** (Phases 3.5 → 5). The plan itself is [`PLAN.md`](./PLAN.md); this
-> doc is the map you read alongside it to evaluate "are we building the right thing?".
+> The single explainer for how the Confluence RAG system ingests, stores, retrieves, answers, and
+> streams a chat response. It describes **what runs today** — Phases 1–3, 3.5, and 4 are all
+> shipped: ingestion/versioning, hybrid retrieval with reranking, source-isolation RLS, the
+> `rag_agent` answer runtime (query rewrite → retrieve/rerank → CRAG retry → refusal → parent-
+> context expansion → grounded generation → forced citations), a live `POST /chat` SSE endpoint +
+> feedback, real persisted principal ACLs, and the `apps/web` chat UI — plus Phase 5.1 (`CHAT_API_KEY`
+> rotation), 5.2 (exact-match answer caching), 5.3 (a prompt-injection/isolation red-team pass), and
+> 4.6.1–4.6.13 of a fixes-backlog remediation (see `PLAN.md` §0 for the live ledger). **274 backend
+> tests green.** What's left — 4.6.14–4.6.16 (this backlog's own exit gate), then Phase 5.4's
+> live-LLM red-team, the embedder bake-off, and adaptive routing — is marked `PLANNED` below. The
+> plan itself is [`PLAN.md`](./PLAN.md); this doc is the map you read alongside it to evaluate "are
+> we building the right thing?".
 >
 > Every claim is anchored to a file so you can check it against the code. `TODAY` = shipped;
-> `PLANNED` = specified in `PLAN.md`, not yet built.
+> `PLANNED` = specified in `PLAN.md`, not yet built. This file drifted badly behind the shipped
+> system through Phases 3.5–4.6 and was rewritten from a direct code read at PLAN 4.6.14
+> (2026-08-11) to match `DESIGN.md`'s banner, which stayed accurate throughout.
 
 ---
 
@@ -14,16 +24,16 @@
 
 1. [The 60-second picture](#1-the-60-second-picture)
 2. [Where the code lives](#2-where-the-code-lives)
-3. [The data model (the 7 tables)](#3-the-data-model-the-7-tables)
+3. [The data model (the 10 tables)](#3-the-data-model-the-10-tables)
 4. [Getting data IN — Confluence sync](#4-getting-data-in--confluence-sync)
 5. [Turning a page into chunks — ingestion](#5-turning-a-page-into-chunks--ingestion)
 6. [Versioning, activation, rollback](#6-versioning-activation-rollback)
-7. [Getting answers OUT — retrieval](#7-getting-answers-out--retrieval)
+7. [Getting answers OUT — retrieval, the answer runtime, and chat](#7-getting-answers-out--retrieval-the-answer-runtime-and-chat)
 8. [Measuring quality — evaluation](#8-measuring-quality--evaluation)
 9. [A full worked example (end to end)](#9-a-full-worked-example-end-to-end)
 10. [What the PLAN adds (3.5 → 5)](#10-what-the-plan-adds-35--5)
 11. [How to evaluate "are we doing the right thing?"](#11-how-to-evaluate-are-we-doing-the-right-thing)
-12. [Open design discussion — Confluence source scoping](#12-open-design-discussion--confluence-source-scoping)
+12. [Confluence source scoping — implemented](#12-confluence-source-scoping--implemented-plan-356)
 
 ---
 
@@ -40,27 +50,34 @@ flowchart LR
     SYNC --> CHUNK[chunk → contextualize → embed]
     CHUNK --> VER[stage new version → atomic activate]
   end
-  subgraph DB[(Postgres + pgvector)]
-    T1[page_source]
+  subgraph DB[(Postgres + pgvector, RLS-isolated by source_id)]
+    T1[page_source + page_restriction]
     T2[document_version]
     T3[chunk: parents + children<br/>embedding + tsv]
   end
   VER --> DB
-  subgraph OUT["RETRIEVAL  (read path)"]
-    Q[user question] --> R[HybridRetriever]
-    R -->|dense ∥ keyword → RRF → permission| DB
-    DB --> RANK[ranked page ids]
+  subgraph OUT["RETRIEVAL + ANSWER  (read path — TODAY)"]
+    Q[user question] --> RW[query rewrite]
+    RW --> R[HybridRetriever]
+    R -->|dense ∥ keyword → RRF → permission → rerank| DB
+    DB --> CRAG[weak result? one CRAG retry]
+    CRAG --> REF[refusal threshold]
+    REF --> PX[parent-context expansion]
+    PX --> GEN[grounded generation + forced citations]
+    GEN --> SSE[POST /chat, SSE stream]
   end
-  RANK -.PLANNED.-> RER[rerank → parent expand → grounded answer → SSE chat]
 ```
 
 - **Write path (ingestion)** is fully built and verified. Confluence changes flow through a webhook,
   a crash-safe job queue, and an idempotent, version-aware indexer that produces **parent + child
-  chunks** with **dense embeddings** and **keyword vectors**.
-- **Read path (retrieval)** is built as a library (`HybridRetriever`) and exercised by the
-  evaluation harness, but **not yet wired to an HTTP endpoint** — that is Phase 4.
-- Everything to the right of the dotted line (rerank, grounded answers, streaming chat, per-source
-  security isolation) is **PLANNED** — see [§10](#10-what-the-plan-adds-35--5) and `PLAN.md`.
+  chunks** with **dense embeddings** and **keyword vectors**, isolated per source by Postgres RLS.
+- **Read + answer path** is fully built and wired to HTTP: `HybridRetriever` (dense ∥ keyword → RRF
+  → permission filter → cross-encoder rerank) feeds the `rag_agent` answer runtime (query rewrite →
+  one corrective retry on a weak result → refusal decision → parent-context expansion → grounded
+  generation with forced citations), streamed to the browser over `POST /chat`'s SSE response.
+- Still **PLANNED**: this backlog's own exit gate (4.6.14–4.6.16), then Phase 5's remaining scope —
+  a live-LLM adversarial red-team pass with a latency/cost proof (5.4), an embedder bake-off, and
+  adaptive routing — see [§10](#10-what-the-plan-adds-35--5) and `PLAN.md`.
 
 **Core design choices** (why it looks the way it does):
 
@@ -78,18 +95,19 @@ flowchart LR
 
 ```
 apps/automation/app/
-├── main.py                     # FastAPI wiring: gateway choice, webhook router, scheduler
+├── main.py                     # FastAPI wiring: gateway choice, webhook + chat routers, scheduler
 ├── features/
 │   ├── confluence_sync/        # IN: webhook, job queue/worker, reconciliation
 │   ├── ingestion/              # transform: chunking, contextualization, versioning, change-detect
-│   ├── retrieval/              # OUT: hybrid search + permission filtering
+│   ├── retrieval/              # OUT: hybrid search + rerank + permission filtering
+│   ├── rag_agent/              # answer runtime + POST /chat SSE + feedback (PLAN 4)
 │   └── evaluation/             # quality: metrics + datasets + baseline runner
 ├── platform/
-│   ├── clients/                # Confluence, embeddings, Anthropic, (PLANNED) reranker
-│   ├── db/                     # models.py (the 7 tables), engine.py (sessions)
+│   ├── clients/                # Confluence, embeddings, Anthropic, reranker (Cohere/Fake)
+│   ├── db/                     # models.py (the 10 tables), engine.py (sessions)
 │   ├── jobs/                   # the generic job queue (claim/complete/fail/reap)
 │   └── config/settings.py      # all env-driven config
-└── shared/hashing.py           # sha256 helpers used across features
+└── shared/                     # hashing.py, rate_limiter.py, ttl_cache.py — cross-feature primitives
 ```
 
 Each feature exposes **one public `__init__.py`**; other code imports only through that root
@@ -99,13 +117,14 @@ reaching into `app.features.ingestion.application.versioning` from outside would
 
 ---
 
-## 3. The data model (the 9 tables)
+## 3. The data model (the 10 tables)
 
 Defined in `app/platform/db/models.py`. The relationships:
 
 ```mermaid
 erDiagram
   PAGE_SOURCE ||--|| DOCUMENT : "1 per page"
+  PAGE_SOURCE ||--o{ PAGE_RESTRICTION : "0..n allowed principals"
   DOCUMENT ||--o{ DOCUMENT_VERSION : "many versions"
   DOCUMENT_VERSION ||--o{ CHUNK : "parents + children"
   CHUNK ||--o{ CHUNK : "parent_chunk_id (child→parent)"
@@ -118,6 +137,10 @@ erDiagram
     enum page_status "current/trashed/deleted…"
     bytea content_hash "change detection"
     bytea access_scope_hash "ACL fingerprint"
+  }
+  PAGE_RESTRICTION {
+    bigint page_id PK_FK "→ page_source"
+    string principal PK "allowed reader; any row = page is restricted"
   }
   DOCUMENT_VERSION {
     bigint id PK
@@ -144,6 +167,7 @@ Table by table:
 | Table | One row per | Purpose |
 |---|---|---|
 | **`page_source`** | Confluence page | canonical registry: title, space, `active_doc_version_id` pointer, change-detection hashes, pipeline version stamps |
+| **`page_restriction`** | (page, allowed principal) | persisted per-page read ACL (PLAN 4.3) — a page with zero rows is unrestricted; queried fresh per search alongside RLS as the page-level security layer, replacing the old fixture-fed policy |
 | **`document`** | page | stable logical identity (survives across versions) |
 | **`document_version`** | (page × cf_version × pipeline-config) | immutable snapshot; `state` ∈ staging/active/superseded/failed; **at most one `active` per document** (partial unique index) |
 | **`chunk`** | parent section OR child window | the searchable rows. `kind=0` parent (not embedded), `kind=1` child (embedded + `tsv`). Hot-path filter columns (`is_active`, `space_id`, `page_status`) are denormalized here so search never joins |
@@ -151,7 +175,7 @@ Table by table:
 | **`job`** | unit of background work | crash-safe queue. Unique on `idempotency_key` |
 | **`reconciliation_run`** | drift sweep | report: pages scanned, drift detected, jobs enqueued |
 | **`source_scope`** | a configured sync root | `space` or `page` root narrowing/tagging reconciliation (PLAN 3.5.6); unique on `(root_type, root_id)` |
-| **`query_trace`** | retrieval request | tracing scoreboard (PLAN 3.5.4): retrieved page ids, allowed sources, models, latency; answer/citation columns reserved for Phase 4 |
+| **`query_trace`** | retrieval + answer request | tracing scoreboard (PLAN 3.5.4, extended by Phase 4): retrieved page/chunk ids, allowed sources, models, rerank scores, latency, plus the Phase-4 answer columns (`rewritten_query`, `answer`, `citations`, `feedback`) written by the answer runtime on the same row |
 
 **Two search indexes on `chunk`** (both partial — they only cover *active child* rows, which keeps
 them small and fast; `models.py:58-74, 267-272`):
@@ -456,14 +480,17 @@ content stays in the DB (for audit / undo) but leaves the live index immediately
 
 ---
 
-## 7. Getting answers OUT — retrieval
+## 7. Getting answers OUT — retrieval, the answer runtime, and chat
 
-`app/features/retrieval/`. Today this is a **library**, exercised by the evaluation harness. It is
-**not yet wired to an HTTP endpoint** (`retrieval/__init__.py:8-10`) — that is Phase 4.
+`app/features/retrieval/` is the hybrid search engine; `app/features/rag_agent/` (PLAN 4) is the
+answer workflow and the `POST /chat` HTTP surface built on top of it. Both are live: `rag_agent`'s
+router is mounted in `main.py` (`app.include_router(chat_router)`), and it is `retrieval`'s only
+consumer — there's no separate "wire it to HTTP" step left to do.
 
-### 7.1 The pipeline (`application/retriever.py`)
+### 7.1 The retrieval pipeline (`retrieval/application/retriever.py`)
 
-`HybridRetriever.retrieve(query, scope, k=5)` (`retriever.py:45-62`):
+`HybridRetriever.retrieve_with_context(query, scope, k=5)` (the answer workflow's entry point;
+`retrieve()` is the older, page-ids-only shape the eval harness's `RankFn` seam still uses):
 
 ```mermaid
 flowchart LR
@@ -474,7 +501,8 @@ flowchart LR
   K --> F
   F --> TB[tie-break by keyword rank]
   TB --> P[permission filter<br/>drop pages the scope can't see]
-  P --> TOP[top-k page ids]
+  P --> RR[cross-encoder rerank<br/>Cohere rerank-v3.5 / Fake]
+  RR --> TOP[top-k hits: page id, chunk id,<br/>score, title, url]
 ```
 
 1. **Embed** the query with the same provider used at ingestion.
@@ -489,21 +517,84 @@ flowchart LR
    the two retrievers using totally different score scales.
 5. **Tie-break** by keyword rank, so lexical relevance decides when RRF scores tie (important when
    the offline `Fake` embedder gives weak dense signal).
-6. **Permission filter** — drop any page the scope may not see (see below), then return the top `k`
-   **page ids as strings** (the id space the evaluation set uses).
+6. **Permission filter** — drop any page the scope may not see (§7.2), *then*
+7. **Rerank** (PLAN 3.5.2, `platform/clients/reranker_client.py`) — a cross-encoder (Cohere
+   `rerank-v3.5`, or `Fake` offline) rescoring only the pages the caller may actually see, so a
+   restricted doc is never scored or paid for. Returns `RetrievedHit`s (page id, chunk id, rerank
+   score, title, url) — the extra fields `retrieve_with_context` surfaces that `retrieve()` computed
+   all along but discarded.
 
-### 7.2 Permission model (`domain/permission.py`)
+Both entry points write the same `query_trace` row shape when tracing is enabled
+(`infrastructure/trace_repo.py`).
+
+### 7.2 Permission model (`retrieval/domain/permission.py`) — real, persisted, DB-backed
 
 `PrincipalPermissionPolicy` decides visibility from plain data (so it's framework-free and testable).
-Two scope kinds (`permission.py:1-13, 31-37`):
+Two scope kinds, classified exactly once at the boundary by `classify_scope` (PLAN 4.6.6 — nothing
+downstream re-derives trust kind from string shape again):
 
 - **Space scope** (numeric, e.g. `"100"`) — space-level trust: every page in that space is visible.
   This is how the retrieval smoke set is scoped.
 - **Principal scope** (e.g. `"acct-alice"`) — a page is visible only if it is unrestricted **or** the
   principal is in the page's read-restriction set. This is what stops cross-scope leaks.
 
-> Today the policy is fed by **fixtures** (the DB stores only an access-scope *hash*, not principal
-> lists). Phase 4 replaces this with real, queryable principal-list storage. See [§10](#10-what-the-plan-adds-35--5).
+**Real since Phase 4.3** — `HybridRetriever` builds a fresh policy per search from live
+`page_source`/`page_restriction` rows (`search_repo.fetch_page_scopes`), not fixtures. This is the
+**page-level** ACL layer; Postgres **RLS** keyed by `source_id` (PLAN 3.5.3) is the separate
+**source-level** isolation layer underneath it — both always apply (see [§10](#10-what-the-plan-adds-35--5)).
+Only tests still build a policy directly from fixture data, to exercise the pure decision logic in
+isolation.
+
+### 7.3 The answer runtime (`rag_agent/application/answer_service.py`, PLAN 4.2)
+
+`AnswerService.answer(history, scope)` is a plain deterministic function pipeline, not an agent
+loop (ADR-0005 §5 — every stage's latency is bounded and each stage unit-tests with a fake
+collaborator):
+
+```mermaid
+flowchart LR
+  H[chat history] --> RW[query rewrite<br/>optional, LLM]
+  RW --> RET[HybridRetriever.retrieve_with_context]
+  RET --> WEAK{top rerank score<br/>below threshold?}
+  WEAK -->|yes, first try| CRAG[CRAG: one corrective retry]
+  CRAG --> REF
+  WEAK -->|no| REF{refusal threshold<br/>default 0.10}
+  REF -->|below threshold| RFS[refuse: hand off to a human]
+  REF -->|above threshold| PX[parent-context expansion<br/>join parent_chunk_id]
+  PX --> GEN[grounded generation<br/>Anthropic, evidence-blocked prompt]
+  GEN --> CITE[citation enforcement<br/>drop any uncited claim]
+  CITE --> ANS[Answer: text + citations]
+```
+
+- **Rewrite** turns multi-turn history into one standalone query (skippable via
+  `rewrite_enabled=False`).
+- **CRAG retry** (`crag_max_retries`, default 1) runs **between** retrieval and the refusal check —
+  a weak first result gets one corrective retry before refusal is decided, even though `DESIGN.md`'s
+  stage table lists refusal before CRAG; that table enumerates concerns, not call order, and
+  refusing before ever retrying would defeat the point of a corrective retry.
+- **Refusal** (`domain/refusal.py`) fires below `refusal_min_rerank_score` (default 0.10) — the
+  literal reply is *"I don't have that in the documentation I can search — routing this to a
+  human."*
+- **Parent-context expansion** joins each winning **child** hit to its **parent** chunk
+  (`parent_chunk_id`, §5.1/§6) so the model sees full section context, not an isolated 400-token
+  window.
+- **Grounded generation** builds an evidence block from the expanded parents and calls the
+  configured `AnswerGenerator` (Anthropic, or `Fake` offline).
+- **Citation enforcement** (`domain/citations.py`) drops any generated claim that doesn't trace back
+  to a numbered citation in the evidence block — an ungrounded answer degrades to the refusal text
+  instead of shipping an uncited claim.
+
+### 7.4 Chat HTTP surface (`rag_agent/server/router.py`, PLAN 4.4)
+
+- **`POST /chat`** — SSE stream of an `AnswerService` (or `CachingAnswerService`, PLAN 5.2) run.
+  State-mutating and an LLM call, so it carries the full `security_baseline` control set: shared-
+  secret auth (dual-key rotation window, PLAN 5.1), rate limiting, input validation, timeout/retry,
+  output caps, and audit logging (see the router's own `security_baseline` docstring for the exact
+  control-by-control mapping).
+- **`PATCH /chat/{trace_id}/feedback`** — records `+1`/`-1` on the `query_trace` row an answer was
+  logged under; same auth/rate-limit posture as `POST /chat`.
+- **`apps/web`**'s chat UI (the Obi floating widget, PLAN 4.7) is the only caller in this repo, but
+  the endpoint is a plain authenticated HTTP/SSE contract — nothing here couples it to that UI.
 
 ---
 
@@ -578,19 +669,22 @@ The case's `relevant_chunk_ids` is `["1001"]`. Since `1001` is rank 1, this case
 **MRR = 1.0, recall@5 = 1.0, hit_rate@5 = 1.0**. Averaged across all 12 cases, that's the retrieval
 baseline `make eval` reports.
 
-### 9.4 What Phase 4 will add on top
+### 9.4 What the answer runtime adds on top (Phase 4, shipped)
 
 The same retrieval, then: rerank the survivors with a cross-encoder → expand each winning child to
 its **parent** text → send parents to the answer model → generate a grounded answer with a numbered
-citation to page 1001's *Getting Access* section → stream it to the chat UI. See below.
+citation to page 1001's *Getting Access* section → stream it over `POST /chat` to the widget UI. See
+§7.3–7.4 above for the full pipeline and PLAN.md's live-verification notes for the actual browser
+round trip this was checked against.
 
 ---
 
 ## 10. What the PLAN adds (3.5 → 5)
 
-Everything above is **TODAY**. `PLAN.md` layers accuracy + multi-source security + a real chatbot on
-top, without rebuilding what works (RRF, parent/child chunking, contextual retrieval, versioning are
-all kept). Target pipeline:
+Sections 1–9 above are **TODAY**: `PLAN.md`'s accuracy + multi-source security + real-chatbot layer
+is built on top of the original Phase 1–3 pipeline without rebuilding what already worked (RRF,
+parent/child chunking, contextual retrieval, versioning are all kept as originally designed). The
+target pipeline from the original plan is now the **as-shipped** one:
 
 ```
 scope → conversational rewrite → embed → (RLS-scoped) dense ∥ keyword → RRF
@@ -600,17 +694,19 @@ scope → conversational rewrite → embed → (RLS-scoped) dense ∥ keyword �
 
 Mapped to where it lands in this system:
 
-| PLAN item | What changes here | Phase |
-|---|---|---|
-| **Provider tagging** | add `source_type` / `source_id` / `tags` to `page_source` + `chunk`; ingestion writes `source_id="confluence:default"` at the activation point (§6) | 3.5.3 |
-| **Row-Level Security** | Postgres RLS on `chunk` keyed by `source_id`; a non-owner **`rag_reader`** role for retrieval; **default-deny** when the scope GUC is unset. Writer path (§4, §6) stays `rag_writer`/`BYPASSRLS` | 3.5.3 |
-| **Reranker** | new `platform/clients/reranker_client.py` (Cohere `rerank-v3.5` + `Fake`), a `fetch_rerank_texts` refactor in `search_repo.py`, inserted into `retriever.py` **after** the permission filter (§7.1) | 3.5.2 |
-| **pgvector 0.8 + iterative scan** | pin the image; set `hnsw.iterative_scan` per-txn so narrow RLS scopes don't silently under-return | 3.5.1 |
-| **Request tracing** | a `query_trace` table written on every retrieval (retrieved ids, rerank scores, `allowed_sources`, latency) | 3.5.4 |
-| **Answer runtime** | new **`rag_agent`** feature: query rewrite → retrieve → rerank → **parent-context expansion** (join `parent_chunk_id`, feed parent text, §5.1) → grounded generation with **forced citations** → **refusal** below a score threshold → **one CRAG retry** | 4 |
-| **Real principal ACL** | replace the fixture-backed policy (§7.2) with persisted, queryable principal lists, enforced pre-search alongside RLS | 4 |
-| **Chat** | `POST /chat` SSE endpoint on the reader engine; `PATCH /chat/{trace_id}/feedback`; the `apps/web` chat UI wired to it | 4 |
-| **Optimization + proof** | embedder bake-off (§5.5 gate makes this safe), caching, adaptive routing, red-team, latency/cost proof | 5 |
+| PLAN item | What changes here | Phase | Status |
+|---|---|---|---|
+| **Provider tagging** | `source_type` / `source_id` / `tags` on `page_source` + `chunk`; ingestion writes `source_id="confluence:default"` at the activation point (§6) | 3.5.3 | ✅ shipped |
+| **Row-Level Security** | Postgres RLS on `chunk` keyed by `source_id`; a non-owner **`rag_reader`** role for retrieval; **default-deny** when the scope GUC is unset (fails closed outside offline envs, PLAN 4.6.10). Writer path (§4, §6) stays `rag_writer`/`BYPASSRLS` | 3.5.3 | ✅ shipped |
+| **Reranker** | `platform/clients/reranker_client.py` (Cohere `rerank-v3.5` + `Fake`), `fetch_rerank_texts` in `search_repo.py`, run in `retriever.py` **after** the permission filter (§7.1) | 3.5.2 | ✅ shipped |
+| **pgvector 0.8 + iterative scan** | pinned image; `hnsw.iterative_scan` set per-txn so narrow RLS scopes don't silently under-return | 3.5.1 | ✅ shipped |
+| **Request tracing** | `query_trace` written on every retrieval + answer (retrieved ids, rerank scores, `allowed_sources`, latency, then the Phase-4 answer/citation/feedback columns on the same row) | 3.5.4 | ✅ shipped |
+| **Answer runtime** | `rag_agent` feature (§7.3): query rewrite → retrieve → rerank → **parent-context expansion** → grounded generation with **forced citations** → **refusal** below a score threshold → **one CRAG retry** | 4 | ✅ shipped |
+| **Real principal ACL** | `page_restriction` table (§3) replaces the fixture-backed policy (§7.2); enforced pre-search alongside RLS | 4 | ✅ shipped |
+| **Chat** | `POST /chat` SSE endpoint (§7.4); `PATCH /chat/{trace_id}/feedback`; the `apps/web` Obi widget wired to it (PLAN 4.7) | 4 | ✅ shipped |
+| **Key rotation, answer caching, red-team** | `CHAT_API_KEY` dual-key rotation; in-process exact-match `CachingAnswerService`; a prompt-injection/isolation red-team pass that found and fixed a numeric-principal bypass | 5.1–5.3 | ✅ shipped |
+| **Fixes-backlog remediation** | 13 findings from an independent audit of already-shipped Phases 0–4 (ACL bypass, cache leak, rate-limiter hardening, rollback gap, schema dup, doc drift — see `PLAN.md`'s "4.6 progress snapshot") | 4.6.1–4.6.13 | ✅ shipped; 4.6.14–4.6.16 (this backlog's own doc-drift + exit gate) still open |
+| **Optimization + proof** | embedder bake-off (§5.5's reuse gate makes this safe), adaptive routing, a live-LLM red-team pass with a latency/cost proof | 5.4+ | ⬜ **PLANNED**, blocked on 4.6.16 |
 
 **Two layered security controls** (both always apply): source-level **RLS** (3.5) isolates whole
 source systems; page-level **principal ACL** (4) enforces per-page read restrictions. RLS is the
@@ -623,21 +719,23 @@ planner-friendliness.
 
 Use this doc as the reference and check each claim against reality:
 
-- **Ingestion correctness** — `make test` (99 tests). Chunk sizes/overlap match §5.1? Re-embed reuse
-  fires only when config is unchanged (§5.5)?
+- **Ingestion correctness** — `make check` (274 backend tests). Chunk sizes/overlap match §5.1?
+  Re-embed reuse fires only when config is unchanged (§5.5)?
 - **Atomicity** — is the live corpus ever half-rebuilt? (It shouldn't be — §6. `is_active` flips in
   the activation transaction.)
-- **Retrieval quality** — `make eval`. Does real `HybridRetriever` beat the naive baseline? After
-  Phase 3.5, does the report show **rerank lift** (Precision@5 / NDCG@10 before vs after)?
-- **Isolation (post-3.5)** — a query scoped to `confluence:default` returns rows; a **wrong**
-  `source_id` returns **zero** (RLS default-deny); the reader role cannot see unscoped rows.
-- **Groundedness (post-4)** — does every answer carry a citation to a real chunk? Does refusal fire
+- **Retrieval quality** — `make eval`. Does real `HybridRetriever` beat the naive baseline? Does the
+  report show **rerank lift** (Precision@5 / NDCG@10 before vs after) now that reranking (§7.1) runs?
+- **Isolation** — a query scoped to `confluence:default` returns rows; a **wrong** `source_id`
+  returns **zero** (RLS default-deny); the reader role cannot see unscoped rows and fails closed
+  outside an offline env if misconfigured (PLAN 4.6.10).
+- **Groundedness** — does every answer carry a citation to a real chunk (§7.3)? Does refusal fire
   when nothing is relevant, instead of hallucinating?
-- **The gate** — from `apps/automation`, `make check` (boundaries + `pytest -q`) stays green and
-  `make boundaries` exits 0 on every change.
+- **The gate** — from `apps/automation`, `make check` (boundaries + `pytest -q`) stays green and, from
+  the repo root, `make boundaries` exits 0 on every change.
 
 If any of the above disagrees with what this doc says, the doc (or the code) is wrong — file it, and
-fix whichever drifted. Keep this file updated as Phases 3.5–5 land so it stays the honest map.
+fix whichever drifted. Keep this file updated as Phases 4.6.14+ and 5.4+ land so it stays the honest
+map.
 
 ---
 
@@ -673,8 +771,8 @@ status ledger are in `docs/rag/PLAN.md` §0.
 
 | Concept | File |
 |---|---|
-| App wiring, gateway choice, scheduler | `app/main.py` |
-| The 7 tables + indexes | `app/platform/db/models.py` |
+| App wiring, gateway choice, scheduler, chat router mount | `app/main.py` |
+| The 10 tables + indexes | `app/platform/db/models.py` |
 | Webhook + security controls | `app/features/confluence_sync/server/webhook.py` |
 | Job queue (claim/complete/fail/reap) | `app/platform/jobs/queue.py` |
 | Worker 3-transaction discipline | `app/features/confluence_sync/application/worker.py` |
@@ -682,10 +780,17 @@ status ledger are in `docs/rag/PLAN.md` §0.
 | Chunk sizing + keys | `app/features/ingestion/domain/chunking.py` |
 | Contextual retrieval | `app/features/ingestion/application/contextualizer.py` |
 | Versioning / activation / rollback | `app/features/ingestion/application/versioning.py` |
-| Hybrid retriever | `app/features/retrieval/application/retriever.py` |
+| Hybrid retriever (dense ∥ keyword → RRF → permission → rerank) | `app/features/retrieval/application/retriever.py` |
 | Dense + keyword SQL | `app/features/retrieval/infrastructure/search_repo.py` |
 | RRF | `app/features/retrieval/domain/fusion.py` |
-| Permission policy | `app/features/retrieval/domain/permission.py` |
+| Permission policy (real, DB-backed since 4.3) | `app/features/retrieval/domain/permission.py` |
+| Reranker client (Cohere / Fake) | `app/platform/clients/reranker_client.py` |
+| Answer runtime (rewrite → CRAG → refusal → expand → generate → cite) | `app/features/rag_agent/application/answer_service.py` |
+| Refusal threshold | `app/features/rag_agent/domain/refusal.py` |
+| Citation enforcement | `app/features/rag_agent/domain/citations.py` |
+| Chat HTTP surface (`POST /chat`, feedback) | `app/features/rag_agent/server/router.py` |
+| Answer caching (PLAN 5.2) | `app/features/rag_agent/application/answer_cache.py` |
 | Eval runner + metrics | `app/features/evaluation/runner.py`, `metrics/retrieval_metrics.py` |
 | All config | `app/platform/config/settings.py` |
-| The upgrade plan | `docs/rag/PLAN.md` |
+| The upgrade plan + status ledger | `docs/rag/PLAN.md` |
+| The design of record | `docs/rag/DESIGN.md` |

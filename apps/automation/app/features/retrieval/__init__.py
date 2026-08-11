@@ -6,9 +6,10 @@ callers construct), the `RetrievedHit`/`RetrievalResult` DTOs `retrieve_with_con
 writers Phase 4 UPDATEs with once an answer is grounded. Fusion and the low-level search functions
 stay internal — no consumer needs them directly.
 
-Status: not yet wired into `app.main`; exercised by the evaluation integration test and, from
-Phase 4.2, the `rag_agent` answer workflow. Internal modules import each other by full submodule
-path, never through this root.
+Status: wired into `app.main` transitively — `rag_agent`'s router is the mounted HTTP surface and
+this feature's only production consumer (since Phase 4.2); also exercised directly by the
+evaluation integration test. Internal modules import each other by full submodule path, never
+through this root.
 
 Internal rule: modules inside this feature MUST NOT import through this root
 (`from app.features.retrieval import X`) — that raises ImportError during init.

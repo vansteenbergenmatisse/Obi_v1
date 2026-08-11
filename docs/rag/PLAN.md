@@ -2015,14 +2015,54 @@ turned out to be stated too broadly and is corrected below.
 changed), boundaries clean; `ruff check`/`ruff format --check` unchanged (2 errors / 15 unformatted,
 same baseline as 4.6.12); `pyright` unchanged (34 errors, same file list); no migration.
 
-### 4.6.14 — `how_this_works.md` staleness rewrite (doc drift, isolated)
+### 4.6.14 — `how_this_works.md` staleness rewrite (doc drift, isolated) ✅ done (2026-08-11)
 
-`docs/rag/how_this_works.md` still describes the pre-3.5 system in §§1–9: stale
-phase/test-count banner, dotted "PLANNED" pipeline stages that are actually shipped, §7's "not
-wired to HTTP yet" framing (Phase 4 is done), §7.2's false "principal ACL is fixture-only" claim
-(false since 4.3), a 9-vs-10-table undercount (missing `page_restriction`), and a dead TOC anchor.
-Full rewrite to match the shipped state `DESIGN.md`'s banner already correctly describes. Isolated
-as its own sub-step — the largest doc job, kept separate so 4.6.15's batch stays small.
+**Status: doc-only rewrite, one bonus code-comment fix (`retrieval/__init__.py`, no logic change).
+274 tests unchanged; boundaries clean; ruff/pyright unchanged (2/15/34 baseline).**
+
+Rewrote every stale section identified, verifying each replacement against the running code first
+(not just against `DESIGN.md`'s banner, which itself warns its own file:line anchors predate 4.6.x):
+
+- **Banner (§ intro)** — replaced the "Phases 1–3, 99 tests" framing with the current shipped scope
+  (Phases 1–4, 3.5, 5.1–5.3, 4.6.1–4.6.13; 274 backend tests) and what's still `PLANNED`
+  (4.6.14–4.6.16, then 5.4+).
+- **§1 diagram** — the dotted "PLANNED" segment (rerank → parent expand → grounded answer → SSE
+  chat) is solid/shipped now; redrawn as one continuous read+answer flow with RLS noted on the DB
+  subgraph.
+- **§3** — title and TOC corrected **9 → 10 tables**; added the missing `page_restriction` table
+  (row + ER-diagram entity), confirmed against `models.py`'s actual `__tablename__` list (10, not
+  9); the `query_trace` row description updated from "answer/citation columns reserved for Phase 4"
+  to "written by the answer runtime on the same row" (Phase 4 is done).
+- **§7** — retitled "retrieval, the answer runtime, and chat"; corrected the "not yet wired to an
+  HTTP endpoint" claim (`rag_agent`'s router *is* `retrieval`'s only consumer and is mounted in
+  `main.py`); added rerank as pipeline stage 7 (previously undocumented — the reranker runs inside
+  `retriever.py`, after the permission filter); corrected §7.2's "fed by fixtures" claim (real,
+  `page_restriction`-backed since 4.3); added **new §7.3** (the `rag_agent` answer runtime: rewrite →
+  CRAG retry → refusal → parent expansion → generation → citation enforcement) and **§7.4** (the
+  `POST /chat`/feedback HTTP surface) — neither existed in this doc before, despite being Phase 4's
+  main deliverable.
+- **§9.4, §10, §11** — updated from future tense ("Phase 4 will add", "target pipeline") to past
+  tense with a per-item shipped/planned status column; §11's "post-3.5"/"post-4" framing and its
+  `make test` (99 tests) reference corrected to `make check` (274 tests).
+- **Two dead TOC anchors found and fixed** — the plan only named one (§3's "the-7-tables" target
+  against a heading that already said "9 tables"); grepped every TOC anchor against every heading's
+  actual slug and found a second, unrelated one at §12 (TOC still read "Open design discussion —
+  Confluence source scoping", a leftover from before that section was rewritten to "implemented" —
+  target and link text both wrong). Verified the fix with a slugify script that confirms zero
+  remaining mismatches, not by eye.
+- **§2 code-tree diagram** — `rag_agent` was missing from `features/`, the reranker client was
+  still marked `(PLANNED)` under `platform/clients/`, `shared/` listed only `hashing.py` (also has
+  `rate_limiter.py`, `ttl_cache.py`), and the table count repeated the stale "7 tables" — all fixed
+  against the actual directory listing.
+- **Anchor index (bottom table)** — added the reranker client, `rag_agent`'s answer service/
+  refusal/citations/router/cache, and `DESIGN.md`; corrected "7 tables" → "10 tables".
+- **Bonus fix, same root cause as the §7 finding**: `app/features/retrieval/__init__.py`'s own
+  docstring still said "Status: not yet wired into `app.main`" — corrected in the same pass since
+  it's the identical stale claim living in code instead of docs, zero behavior change.
+
+**Verification:** `make check` → **274 passed** (unchanged), boundaries clean; `ruff check`/`ruff
+format --check` unchanged (2 errors / 15 unformatted); `pyright` unchanged (34 errors, same file
+list); no migration.
 
 ### 4.6.15 — Remaining doc-drift batch (batched, run after 4.6.9)
 
