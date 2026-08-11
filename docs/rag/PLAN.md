@@ -2167,23 +2167,14 @@ zero functional/informational value — not worth the implementation cost for th
 `4.7.5`-backlog nice-to-have if ever prioritized).
 
 **Greeting** (shown once, above the thread): 14px, `line-height: 1.55`, `text-text`, `max-w-[95%]`,
-product name bold inline. **Copy decision needed, not resolved yet:** mockup text is `Hi {userName},
-how can I help you with **{productName}**? The more details you provide, the better.` —
-`{productName}` maps cleanly to "Omniboost", but `{userName}` has no real source: per PLAN 4.3/4.4,
-`principal` on `POST /chat` is just a caller-self-reported string for page-ACL, not an identity record
-with a display name — there is no real name to personalize with. Recommend dropping the personalized
-name (generic "Hi there, ...") rather than inventing an identity source; confirm before 4.7.2 ships
-the greeting.
+product name bold inline. **Resolved with the user (2026-08-11):** drop personalization — no
+fabricated identity. Final copy: **"Hi there, how can I help you with Omniboost? The more details you
+provide, the better."** — `{productName}` stays a literal "Omniboost" (matches every other reference
+in this app), no `{userName}` interpolation, no name prop.
 
-**Suggestion chip** (shown only pre-first-message): pill, `border border-[#8d8bfa]` (a violet-tinted
-border distinct from the neutral `border` token — this is intentional in the mockup, wherever the
-composer/chip wants to read as "interactive accent-adjacent" rather than a plain divider; either add
-this as `color.accentBorder` when 4.7.2 builds it, or reuse `accent` at reduced opacity — implementer's
-call, not worth a full token debate for one shade), `bg-surface-raised`, 13px, `px-4 py-2`, `rounded-
-full`, hover: `border-accent`, `-translate-y-px`, `shadow-sm`-ish glow. **Copy decision needed:**
-mockup's chip is "My verification status" (Stripe/payments-specific) — meaningless for a Confluence
-RAG bot. Needs a real product-relevant sample question, or drop the chip. Not resolved — ask before
-4.7.2 ships it, don't invent a fake sample question.
+**Suggestion chip — resolved with the user (2026-08-11): dropped entirely.** `message-list.tsx`'s
+empty state stays exactly as it is today (`hasNoMessages` → greeting only, no chip, no `onChip`
+handler, no chip styling to build). Skip this piece of the mockup in 4.7.2.
 
 **User message bubble**: right-aligned, `bg-surface-sunken` (the `#f0f1f5` token added in 4.7.1 —
 this is its first real consumer), `text-text`, 14px, `line-height: 1.5`, `px-[15px] py-[9px]`,
@@ -2264,8 +2255,8 @@ involved). Flagging for visibility, not blocking on it the way the greeting/chip
 
 | String | Mockup text | Status |
 |---|---|---|
-| Greeting personalization | `Hi {userName}, ...` | **Needs a decision** — no real user-name source exists; recommend dropping personalization |
-| Suggestion chip | "My verification status" | **Needs a decision** — Stripe-specific, meaningless here; needs a real sample question or drop the chip |
+| Greeting personalization | `Hi {userName}, ...` | **Resolved (2026-08-11)** — drop personalization: "Hi there, how can I help you with Omniboost? ..." |
+| Suggestion chip | "My verification status" | **Resolved (2026-08-11)** — dropped entirely, no replacement |
 | Teaser popup | "Hey, I'm Obi. Need help with onboarding or support?" | Low-stakes, reuse verbatim unless told otherwise |
 | Footer disclaimer | "AI may make mistakes. Verify important information." | Resolved — reuse verbatim |
 | Composer placeholder | (mockup's Stripe placeholders) | Resolved — keep this repo's existing "Ask about your Confluence workspace…" |
