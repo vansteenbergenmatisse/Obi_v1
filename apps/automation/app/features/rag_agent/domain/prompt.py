@@ -1,7 +1,7 @@
 """Prompt assembly for the answer workflow (pure).
 
-Three plain string templates — no LLM call, no DB, no clock — so they are trivially testable and
-the same rendering drives both the real runtime and its tests:
+Plain string templates — no LLM call, no DB, no clock — so they are trivially testable and the
+same rendering drives both the real runtime and its tests:
 
 * ``build_rewrite_prompt`` — multi-turn history -> a request for one standalone question.
 * ``build_evidence_block`` — numbered, cited evidence from the *parent* text of each retrieved hit
@@ -9,6 +9,8 @@ the same rendering drives both the real runtime and its tests:
   position, matching the marker ``enforce_citations`` (domain/citations.py) later validates against.
 * ``build_answer_prompt`` — the question + evidence block, with the citation instruction repeated
   inline (belt-and-suspenders alongside ``ANSWER_SYSTEM_PROMPT``).
+* ``SMALL_TALK_SYSTEM_PROMPT`` — the ungrounded-reply path's system prompt (``domain/small_talk.py``
+  decides *when* this path runs; there is no evidence block here by construction).
 """
 
 from __future__ import annotations
@@ -23,6 +25,14 @@ ANSWER_SYSTEM_PROMPT = (
     "Cite every factual claim with its matching numbered marker, e.g. [1], [2] — an uncited claim "
     "is discarded before the user sees it, and a marker not present in the evidence is invalid. "
     "If the evidence does not answer the question, say so plainly instead of guessing."
+)
+
+SMALL_TALK_SYSTEM_PROMPT = (
+    "You are Obi, a friendly documentation assistant. The user's message is a greeting, farewell, "
+    "or a question about what you can do — not a specific documentation question, so no evidence "
+    "was retrieved for it. Reply warmly in one or two short sentences and invite them to ask a "
+    "real question you can look up in the documentation. Never use numbered citation markers like "
+    "[1] here — there is no retrieved evidence to cite, and never claim a specific documented fact."
 )
 
 

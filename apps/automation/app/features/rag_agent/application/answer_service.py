@@ -1,5 +1,5 @@
-"""Fixed answer workflow (PLAN 4.2): rewrite -> retrieve/rerank -> CRAG retry -> refusal ->
-parent-context expansion -> grounded generation -> citation enforcement.
+"""Fixed answer workflow (PLAN 4.2): small-talk short-circuit -> rewrite -> retrieve/rerank ->
+CRAG retry -> refusal -> parent-context expansion -> grounded generation -> citation enforcement.
 
 A plain function pipeline, not an agent loop (ADR-0005 §5): every stage is deterministic given its
 inputs, so latency is bounded and each stage is unit-testable with a fake collaborator. The one
@@ -7,6 +7,14 @@ non-obvious ordering choice: CRAG's corrective retry runs BETWEEN retrieval and 
 a weak result gets one retry before refusal is decided — even though DESIGN.md's stage table lists
 refusal (5) before CRAG (6). That table enumerates concerns, not call order; refusing before ever
 retrying would defeat the point of a corrective retry.
+
+Small-talk short-circuit (added after 4.6): a greeting or meta question ("hi", "what can you do")
+is not a retrieval failure — it was never going to match a document — so refusing it as if the
+corpus lacked an answer is the wrong behavior, not a safe default. `domain/small_talk.is_small_talk`
+is a narrow, closed exact-match classifier (never fuzzy/substring/LLM-based) so a real content
+question is never misrouted here; anything that doesn't match runs the full grounded pipeline below,
+refusal included. This path skips rewrite, retrieval, CRAG, refusal, and citation enforcement
+entirely, and writes no `query_trace` row — it isn't a retrieval event.
 """
 
 from __future__ import annotations
@@ -19,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.features.rag_agent.domain.citations import enforce_citations
 from app.features.rag_agent.domain.prompt import build_evidence_block
 from app.features.rag_agent.domain.refusal import decide_refusal
+from app.features.rag_agent.domain.small_talk import is_small_talk
 from app.features.rag_agent.infrastructure.llm_client import AnswerGenerator, QueryRewriter
 from app.features.rag_agent.schemas import Answer, ChatMessage, Citation
 from app.features.retrieval import HybridRetriever, RetrievalResult, update_query_trace_answer
@@ -61,6 +70,11 @@ class AnswerService:
         if not history or history[-1].role != "user":
             raise ValueError("history must be non-empty and end with a user turn")
         original_query = history[-1].content
+
+        if is_small_talk(original_query):
+            text = self._generator.generate_small_talk(original_query)
+            return Answer(text=text, citations=[], refused=False, trace_id=None)
+
         rewritten = self._rewriter.rewrite(history) if self._rewrite_enabled else original_query
 
         result = self._retriever.retrieve_with_context(rewritten, scope, k=self._retrieve_k)

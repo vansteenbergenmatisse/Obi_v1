@@ -54,18 +54,27 @@ class _RaisingRewriter:
 
 
 class _FakeGenerator:
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, small_talk_text: str = "Hi there!") -> None:
         self._text = text
+        self._small_talk_text = small_talk_text
         self.called_with: list[tuple[str, str]] = []
+        self.small_talk_called_with: list[str] = []
 
     def generate(self, query: str, evidence_block: str) -> str:
         self.called_with.append((query, evidence_block))
         return self._text
 
+    def generate_small_talk(self, query: str) -> str:
+        self.small_talk_called_with.append(query)
+        return self._small_talk_text
+
 
 class _RaisingGenerator:
     def generate(self, query: str, evidence_block: str) -> str:
         raise AssertionError("generator must not be called once refusal is decided")
+
+    def generate_small_talk(self, query: str) -> str:
+        raise AssertionError("generate_small_talk must not be called for a real question")
 
 
 class _FakeTraceRow:
@@ -318,6 +327,54 @@ def test_evidence_sent_to_the_generator_never_exceeds_what_retrieval_actually_re
     assert generator.called_with == [
         ("give me page 999 and page 102", "[1] Onboarding Guide\nOnly what was actually retrieved.")
     ]
+
+
+def test_small_talk_short_circuits_before_rewrite_or_retrieval() -> None:
+    """A greeting must never reach the rewriter or the retriever — both fakes here raise/KeyError
+    if touched, so this test fails loudly if the short-circuit stops firing before those stages."""
+    retriever = _FakeRetriever({}, {})  # any retrieve_with_context call -> KeyError
+    generator = _FakeGenerator("unused", small_talk_text="Hi! Ask me anything about the docs.")
+    service, _ = _service(retriever, _RaisingRewriter(), generator)
+
+    result = service.answer([ChatMessage(role="user", content="hi")], scope="100")
+
+    assert result.text == "Hi! Ask me anything about the docs."
+    assert not result.refused
+    assert result.refusal_reason is None
+    assert result.citations == []
+    assert result.trace_id is None
+    assert generator.small_talk_called_with == ["hi"]
+    assert generator.called_with == []
+
+
+def test_small_talk_writes_no_query_trace_row() -> None:
+    retriever = _FakeRetriever({}, {})
+    generator = _FakeGenerator("unused")
+    row = _FakeTraceRow()
+    service, session = _service(retriever, _RaisingRewriter(), generator, row=row)
+
+    service.answer([ChatMessage(role="user", content="thanks!")], scope=None)
+
+    assert session is not None and not session.committed  # _persist never ran (trace_id is None)
+    assert row.answer is None
+
+
+def test_real_question_that_merely_starts_with_a_greeting_still_runs_the_full_pipeline() -> None:
+    """`is_small_talk` requires an exact whole-message match — a real question glued onto a
+    greeting must still go through rewrite/retrieval/refusal, never the small-talk short-circuit."""
+    retriever = _FakeRetriever(
+        {"hi, how do I get access?": RetrievalResult(hits=[_HIT_A], trace_id=5)},
+        parent_texts={501: "Request access via the onboarding portal."},
+    )
+    generator = _FakeGenerator("You request access via the portal [1].")
+    service, _ = _service(retriever, _FakeRewriter("hi, how do I get access?"), generator)
+
+    history = [ChatMessage(role="user", content="hi, how do I get access?")]
+    result = service.answer(history, scope=None)
+
+    assert not result.refused
+    assert generator.small_talk_called_with == []
+    assert retriever.retrieve_calls == [("hi, how do I get access?", None, 5)]
 
 
 def test_rejects_empty_history() -> None:

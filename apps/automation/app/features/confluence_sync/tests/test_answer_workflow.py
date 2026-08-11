@@ -36,12 +36,29 @@ class _CitingGenerator:
             return "No grounded evidence was provided."
         return " ".join(f"See source [{m}] for the answer to: {query}." for m in markers)
 
+    def generate_small_talk(self, query: str) -> str:
+        return "Hi! Ask me anything about the documentation."
+
 
 class _SilentGenerator:
     """Deterministic stand-in that cites nothing — exercises the no-grounded-claim refusal path."""
 
     def generate(self, query: str, evidence_block: str) -> str:
         return "This answer cites nothing."
+
+    def generate_small_talk(self, query: str) -> str:
+        raise AssertionError("generate_small_talk must not be called for a real question")
+
+
+class _SmallTalkOnlyGenerator:
+    """Raises if the grounded path is ever reached — proves the small-talk short-circuit skips
+    retrieval/rewrite/refusal entirely, even against a real indexed corpus."""
+
+    def generate(self, query: str, evidence_block: str) -> str:
+        raise AssertionError("generate must not be called for small talk")
+
+    def generate_small_talk(self, query: str) -> str:
+        return "Hi! Ask me anything about the documentation."
 
 
 def _build_retriever(
@@ -125,3 +142,22 @@ def test_answer_service_refuses_when_generator_cites_nothing(gateway, settings: 
             text("SELECT answer FROM query_trace WHERE id = :id"), {"id": int(answer.trace_id)}
         ).one()
     assert row.answer != "This answer cites nothing."  # the raw ungrounded text is never persisted
+
+
+def test_answer_service_small_talk_skips_retrieval_even_with_a_real_indexed_corpus(
+    gateway, settings: Settings
+) -> None:
+    _index_corpus(gateway, settings)  # real content exists — proves this is a genuine bypass
+    service = AnswerService(
+        _build_retriever(gateway, settings),
+        _EchoRewriter(),
+        _SmallTalkOnlyGenerator(),
+        get_sessionmaker(),
+    )
+
+    answer = service.answer([ChatMessage(role="user", content="hi")], scope="100")
+
+    assert answer.text == "Hi! Ask me anything about the documentation."
+    assert not answer.refused
+    assert answer.citations == []
+    assert answer.trace_id is None  # not a retrieval event — no query_trace row written

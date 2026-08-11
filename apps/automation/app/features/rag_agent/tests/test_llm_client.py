@@ -74,3 +74,29 @@ def test_generate_redacts_pii_and_sends_cached_system_block() -> None:
     assert "[REDACTED_PHONE]" in sent_text
     assert body["model"] == "answer-model"
     assert body["system"][0]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_generate_small_talk_sends_the_small_talk_system_prompt_and_redacts_pii() -> None:
+    seen: list[dict] = []
+    generator = AnthropicAnswerGenerator(_client_capturing(seen), "answer-model")
+    out = generator.generate_small_talk("hi, I'm alice@example.com")
+
+    body = seen[0]
+    sent_text = body["messages"][0]["content"][0]["text"]
+    assert "alice@example.com" not in sent_text
+    assert "[REDACTED_EMAIL]" in sent_text
+    assert "no evidence was retrieved" in body["system"][0]["text"]
+    assert out == "ok"  # the mocked transport's canned reply
+
+
+def test_generate_small_talk_fails_open_to_a_static_greeting_on_error() -> None:
+    client = AnthropicMessagesClient(
+        api_key="k",
+        client=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(500, json={}))),
+        max_retries=1,
+    )
+    generator = AnthropicAnswerGenerator(client, "answer-model")
+
+    out = generator.generate_small_talk("hi")
+
+    assert "Obi" in out  # the static fallback, not a raised AnthropicError
