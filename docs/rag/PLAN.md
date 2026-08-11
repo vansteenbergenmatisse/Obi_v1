@@ -157,16 +157,22 @@ baseline** (after fixing 7 real new pyright errors and reverting 13 files an ove
 format` accidentally reformatted — both caught before this count, not after).
 
 **Same session, continued: user gave explicit go-ahead to continue the plan — 7.5 built.** Per the
-7.1→7.7 roadmap, next was **7.5 (Obi widget send + render path)**, now done (2026-08-12),
-uncommitted — see Phase 7's own 7.5 entry for the full narrative: `composer.tsx` now actually sends
-staged attachments (base64, newest turn only) instead of dropping them; `chat-session-provider.tsx`
-wires them into the request and reads `imageAnalysis` back off `done`; `message-bubble.tsx` renders
-the sent image (click-to-zoom) and a labeled vision-analysis block. 6 new tests → **121 web tests
-passed** (was 115); backend untouched, **327 backend tests** unchanged, boundaries clean, ruff/
-pyright unchanged at 2/15/34. Live-verified end to end with a real Anthropic vision call through
-the actual browser widget (see 7.5's own section for the one unrelated stale-`uvicorn` bug found and
-fixed along the way). Next up: **7.6 (security review — the live-model adversarial pass for
-image-borne injection)**, still not started, needs its own explicit go-ahead.
+7.1→7.7 roadmap, next was **7.5 (Obi widget send + render path)**, done (2026-08-12) — see Phase 7's
+own 7.5 entry for the full narrative: `composer.tsx` now actually sends staged attachments (base64,
+newest turn only) instead of dropping them; `chat-session-provider.tsx` wires them into the request
+and reads `imageAnalysis` back off `done`; `message-bubble.tsx` renders the sent image (click-to-zoom)
+and a labeled vision-analysis block. 6 new tests → **121 web tests passed** (was 115); backend
+untouched, **327 backend tests** unchanged, boundaries clean, ruff/pyright unchanged at 2/15/34.
+Live-verified end to end with a real Anthropic vision call through the actual browser widget (see
+7.5's own section for the one unrelated stale-`uvicorn` bug found and fixed along the way).
+
+**New session (2026-08-12): 7.5 re-verified and committed.** 7.5 had been sitting uncommitted since
+the prior session. Per `CLAUDE.local.md` §2, re-verified live before trusting the ledger's
+self-report: `pnpm --filter web test` → **121/121 passed**, `pnpm --filter web exec tsc --noEmit`
+clean, `make boundaries` clean — matched the ledger exactly, no drift. **Committed `1398e64`**
+(the 12 files from 7.5's diff, matching the file list this session's `git status` showed at start).
+User's explicit go-ahead given to commit 7.5 and then start 7.6 next — **7.6 (security review — the
+live-model adversarial pass for image-borne injection)** starts now.
 
 **Same session, unplanned fix: `next build` corrupted the live `next dev` server.** Immediately
 after 7.5's verification, the user hit a real runtime error in the browser: `Cannot find module
@@ -1046,7 +1052,7 @@ OCR/image reading untouched.
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
 | **4.7** — Obi widget: chat UI rebuild, brand tokens, screenshot capture, real i18n, `/chat` route removed, image lightbox (4.7.8) | ✅ done, **committed** | `206baab` (first sub-step), `aae90e5` (4.7.2-4.7.6), `bf99635` (rest, incl. 4.7.8 + the test-gap closure) | frontend-only, `apps/web`; does not gate Phase 5; source of truth `docs/rag/reference/obi-mockup/` + `docs/rag/OBI-WIDGET-DESIGN.md` |
 | **4.8** — Frontend/backend repository separation (4.8.1 → 4.8.7) | ⬜ todo (blocked on registry/repo-name/monorepo-fate decisions) | — | supersedes ADR-0006's deferral; see `docs/adr/0007-Frontend-Backend-Repository-Separation.md`; do after Phase 7 |
-| **7** — Vision-grounded image analysis (attachments + screenshot capture) | 7.1 ✅ done, 2026-08-11 (uncommitted); 7.2-7.7 ⬜ todo | — | supersedes `docs/future-ideas/IDEAS.md` #3; ADR-0009 + DESIGN.md §12 lock the contract shape (`ChatTurn.images`, `Answer.imageAnalysis`, no new SSE event), the `has_image` refusal gate, and the independent (never citation-enforced) vision call; touches contracts + `apps/automation` + a required security review — not frontend-only, see Phase 7's own section |
+| **7** — Vision-grounded image analysis (attachments + screenshot capture) | 7.1-7.5 ✅ done; 7.6-7.7 ⬜ todo | `eb30837` (7.1), `7ffd916` (7.2), `12db45a` (7.3+7.4), `1398e64` (7.5) | supersedes `docs/future-ideas/IDEAS.md` #3; ADR-0009 + DESIGN.md §12 lock the contract shape (`ChatTurn.images`, `Answer.imageAnalysis`, no new SSE event), the `has_image` refusal gate, and the independent (never citation-enforced) vision call; touches contracts + `apps/automation` + a required security review — not frontend-only, see Phase 7's own section |
 | **9** — Unanswerable/vague-query fallback (9.1 → 9.9) | 9.1 ✅ done, 2026-08-11 (committed `771cfce`); 9.2-9.9 ⬜ todo — **wait for Phase 7 + Phase 4.8, then dead last, no phase follows** | — | supersedes `docs/future-ideas/IDEAS.md` #1; ADR-0008 + DESIGN.md §11 lock the contract shape (extend `Answer`, no new SSE event), the 3-value refusal-reason taxonomy, and eval-kind reuse; ambiguity/vagueness classifier + clarification response, differentiated refusal reasons, human-hand-off stub (Salesforce noted as eventual target), fallback-quality eval metrics; MMR/diversity filtering and any new vector store explicitly out of scope |
 
 Gate at each ✅: `make check` green (**219 backend tests** as of 5.3 — 4.5 touched no backend code;
@@ -2657,7 +2663,7 @@ becomes its own ADR-gated phase** (mirroring how Supabase got Phase 6), not some
 
 ---
 
-## Phase 7 — Vision-grounded image analysis (attachments + screenshot capture) ⬜ todo *(7.1-7.4 done, 2026-08-11/12)*
+## Phase 7 — Vision-grounded image analysis (attachments + screenshot capture) ⬜ todo *(7.1-7.5 done, 2026-08-11/12)*
 
 **Scoped 2026-08-11; 7.1 (design doc + ADR-0009) done the same day — nothing else started.**
 Raised by the user after observing (elsewhere, not in this repo) that an attached or screenshotted
@@ -2796,7 +2802,7 @@ that design into code, not started:
    attachments before `onSend` and never reads `imageAnalysis` (PLAN 7.5, not started). No live-
    model adversarial pass for image-borne injection (PLAN 7.6, not started) — `IMAGE_ANALYSIS_
    SYSTEM_PROMPT`'s anti-injection line is a mitigation, not a substitute for that required step.
-4. **7.5 — Obi widget send + render path ✅ done (2026-08-12), uncommitted.**
+4. **7.5 — Obi widget send + render path ✅ done (2026-08-12), committed `1398e64`.**
    `composer.tsx`'s `send()` no longer drops staged attachments — it base64-encodes each one
    (`FileReader.readAsDataURL`, stripped of the data-URI prefix, per the wire's `ImageAttachment`
    shape) and hands `(text, SentImage[])` to `onSend`; `ChatSessionProvider.sendMessage` attaches
