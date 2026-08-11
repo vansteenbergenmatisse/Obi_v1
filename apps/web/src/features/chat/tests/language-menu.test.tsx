@@ -7,18 +7,19 @@ afterEach(() => cleanup());
 
 describe("LanguageMenu", () => {
   it("renders all six locales with English checked", () => {
-    render(<LanguageMenu open onClose={vi.fn()} />);
+    render(<LanguageMenu open onClose={vi.fn()} activeLocale="en" onSelect={vi.fn()} />);
     expect(screen.getByRole("menuitem", { name: "English" })).toHaveClass("font-semibold");
     for (const label of ["Nederlands", "Deutsch", "Français", "Español", "Italiano"]) {
       expect(screen.getByRole("menuitem", { name: label })).toHaveClass("font-normal");
     }
   });
 
-  it("closes without changing the selection when a non-active locale is picked", async () => {
+  it("calls onSelect with the picked locale and closes, without touching the active one", async () => {
     const onClose = vi.fn();
-    render(<LanguageMenu open onClose={onClose} />);
+    const onSelect = vi.fn();
+    render(<LanguageMenu open onClose={onClose} activeLocale="en" onSelect={onSelect} />);
     await userEvent.click(screen.getByRole("menuitem", { name: "Nederlands" }));
+    expect(onSelect).toHaveBeenCalledWith("nl");
     expect(onClose).toHaveBeenCalledOnce();
-    // No re-render assertion needed beyond onClose — there is no locale state to change.
   });
 });

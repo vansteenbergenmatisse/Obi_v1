@@ -9,14 +9,23 @@
  */
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
 import type { ChangeEvent, ClipboardEvent, KeyboardEvent } from "react";
 import { IconButton } from "./icon-button";
 import { AttachmentStrip, type ComposerAttachment } from "./attachment-strip";
+import { useChatSession } from "./chat-session-provider";
+import { getCopy } from "../model/i18n";
 
 export interface ComposerProps {
   onSend: (message: string) => void;
   disabled?: boolean;
+}
+
+/** Imperative escape hatch for `panel-header.tsx`'s screenshot button (PLAN 4.7.7) — the
+ * captured image needs to land in this same attachment strip, but attachments are local state
+ * here, not lifted, so the header reaches in through a ref instead of a prop round-trip. */
+export interface ComposerHandle {
+  addAttachmentFile: (file: File) => void;
 }
 
 const ATTACH_ICON_PATH =
@@ -26,7 +35,12 @@ const SEND_ICON_PATH = "M12 19V5M6 11l6-6 6 6";
 const MAX_ATTACHMENTS = 4;
 const ATTACHMENT_NOTICE_MS = 4000;
 
-export function Composer({ onSend, disabled = false }: ComposerProps) {
+export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
+  { onSend, disabled = false },
+  ref,
+) {
+  const { locale } = useChatSession();
+  const copy = getCopy(locale);
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [showAttachmentNotice, setShowAttachmentNotice] = useState(false);
@@ -51,6 +65,10 @@ export function Composer({ onSend, disabled = false }: ComposerProps) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount-only cleanup
   }, []);
+
+  useImperativeHandle(ref, () => ({
+    addAttachmentFile: (file: File) => addAttachments([file]),
+  }));
 
   function addAttachments(files: File[]) {
     const images = files.filter((file) => file.type.startsWith("image/"));
@@ -145,7 +163,7 @@ export function Composer({ onSend, disabled = false }: ComposerProps) {
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           disabled={disabled}
-          placeholder="Ask about your Confluence workspace…"
+          placeholder={copy.placeholder}
           className="min-h-[42px] resize-none border-none bg-transparent text-sm leading-[1.5] text-text placeholder:text-text-muted focus-visible:outline-none disabled:opacity-50"
         />
         <div className="flex items-center justify-end gap-[10px]">
@@ -192,12 +210,12 @@ export function Composer({ onSend, disabled = false }: ComposerProps) {
       </div>
       {showAttachmentNotice && (
         <p role="status" className="text-center text-xs text-text-muted">
-          Image attachments aren’t answered yet — sent as text only.
+          {copy.attachmentNotice}
         </p>
       )}
       <p className="text-center text-xs text-text-muted">
-        AI may make mistakes. Verify important information.
+        {copy.footer}
       </p>
     </div>
   );
-}
+});

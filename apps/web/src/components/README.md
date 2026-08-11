@@ -20,17 +20,17 @@ than one route or feature**. The placement rule (from the standard):
 ```
 components/
   ui/        Primitives: button, input, badge, … (button.tsx today)
-  layout/    Page-level structure: page-shell.tsx today
 ```
 
-Add `forms/`, `templates/`, or other subfolders only when a real group of
-reusable structures justifies them — not preemptively.
+Add `layout/`, `forms/`, `templates/`, or other subfolders only when a real
+group of reusable structures justifies them — not preemptively. `layout/` was
+removed (2026-08-11, PLAN 4.7.7) when its only member, `PageShell`, lost its
+last consumer (the `/chat` route was deleted — see `features/chat/FEATURES.md`).
 
 ## Current members
 
 | Component | Consumed by | Role |
 |---|---|---|
-| `ui/Button` | home route, `features/chat` composer | Token-styled button primitive |
-| `layout/PageShell` | home route, chat route | Centered max-width page column |
+| `ui/Button` | none currently — kept as a generic primitive, cheap to keep, likely needed again | Token-styled button primitive |
 
 Import via the `@/` alias, e.g. `import { Button } from "@/components/ui/button"`.

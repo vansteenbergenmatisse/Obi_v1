@@ -2,13 +2,13 @@
  * Landing route — a thin, static page.
  *
  * It owns no behavior, so per the architecture standard it stays in `app/` and
- * is NOT a feature. It composes the reusable `PageShell`... normally — for now it's wrapped in
- * `DevPreviewBackdrop`, a dev-only decorative backdrop so the globally-mounted chat widget
- * previews against realistic page content instead of a blank page (see
- * `docs/rag/OBI-WIDGET-DESIGN.md` §7). Safe to delete; not part of the product.
+ * is NOT a feature. Wrapped in `DevPreviewBackdrop`, a dev-only decorative backdrop so the
+ * globally-mounted chat widget previews against realistic page content instead of a blank page
+ * (see `docs/rag/OBI-WIDGET-DESIGN.md` §7). Safe to delete; not part of the product.
+ *
+ * The old standalone `/chat` full-page route was removed (PLAN 4.7.7) — the floating widget,
+ * mounted globally in `app/layout.tsx`, is now the only chat surface.
  */
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
 import { DevPreviewBackdrop } from "./dev-preview-backdrop";
 
 export default function HomePage() {
@@ -23,11 +23,8 @@ export default function HomePage() {
           `message-bubble.tsx`'s `max-w-[82%]`. */}
       <p className="max-w-[28rem] text-text-muted">
         Accuracy-first, Confluence-native RAG chatbot. Try the assistant in
-        the bottom-right corner, or open the full chat view.
+        the bottom-right corner.
       </p>
-      <Link href="/chat">
-        <Button>Open chat</Button>
-      </Link>
     </DevPreviewBackdrop>
   );
 }

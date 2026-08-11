@@ -73,6 +73,20 @@
    *distinct* compound box-shadow states (a base elevation plus an expanding accent ring) that
    don't reduce to a single reusable `shadow.*`/`color.*` tier — it's a one-off decorative pulse
    tied to this keyframe alone. */
+/* Screenshot-capture flash (PLAN 4.7.7) — mirrors the mockup's `obi-flash`: a brief white
+   overlay over the panel while the page-behind-the-widget capture happens. */
+@keyframes screenshot-flash {
+  0% {
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.85;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 @keyframes launcher-pulse {
   0% {
     box-shadow: 0 6px 20px rgba(35, 38, 59, 0.16), 0 0 0 0 rgba(99, 91, 255, 0.35);

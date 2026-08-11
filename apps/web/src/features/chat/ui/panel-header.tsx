@@ -18,17 +18,31 @@ import { IconButton } from "./icon-button";
 import { LanguageMenu } from "./language-menu";
 import { Menu } from "./menu";
 import { MenuItem } from "./menu-item";
+import { useChatSession } from "./chat-session-provider";
+import { getCopy } from "../model/i18n";
 
 export interface PanelHeaderProps {
   /** "Obi" is the mockup's placeholder name, not a confirmed product decision. */
   assistantName?: string;
   onRestart: () => void;
   onClose?: () => void;
+  /** Captures the page behind the widget and drops it into the composer as an attachment
+   * (PLAN 4.7.7). Real capture, but — same as any other image attachment — nothing analyzes it
+   * yet; see the composer's send-time notice. Optional only so header tests that don't care about
+   * screenshots stay simple; the real widget always passes it. */
+  onScreenshot?: () => void;
 }
 
-export function PanelHeader({ assistantName = "Obi", onRestart, onClose }: PanelHeaderProps) {
+export function PanelHeader({
+  assistantName = "Obi",
+  onRestart,
+  onClose,
+  onScreenshot,
+}: PanelHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
+  const { locale, setLocale } = useChatSession();
+  const copy = getCopy(locale);
 
   function toggleMenu() {
     setLangOpen(false);
@@ -52,8 +66,8 @@ export function PanelHeader({ assistantName = "Obi", onRestart, onClose }: Panel
         <span className="text-[15px] font-semibold text-text">{assistantName}</span>
         <div className="ml-auto flex items-center gap-[2px]">
           <IconButton
-            aria-label="More"
-            title="More"
+            aria-label={copy.more}
+            title={copy.more}
             aria-haspopup="menu"
             aria-expanded={menuOpen}
             active={menuOpen}
@@ -66,9 +80,30 @@ export function PanelHeader({ assistantName = "Obi", onRestart, onClose }: Panel
               <circle cx="19" cy="12" r="1.7" />
             </svg>
           </IconButton>
+          {onScreenshot ? (
+            <IconButton
+              aria-label={copy.screenshot}
+              title={copy.screenshot}
+              onClick={onScreenshot}
+              className="h-[30px] w-[30px]"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                aria-hidden="true"
+              >
+                <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" />
+                <circle cx="12" cy="12" r="3.2" />
+              </svg>
+            </IconButton>
+          ) : null}
           <IconButton
-            aria-label="Language"
-            title="Language"
+            aria-label={copy.language}
+            title={copy.language}
             aria-haspopup="menu"
             aria-expanded={langOpen}
             active={langOpen}
@@ -90,8 +125,8 @@ export function PanelHeader({ assistantName = "Obi", onRestart, onClose }: Panel
           </IconButton>
           {onClose ? (
             <IconButton
-              aria-label="Close"
-              title="Close"
+              aria-label={copy.close}
+              title={copy.close}
               onClick={onClose}
               className="h-[30px] w-[30px]"
             >
@@ -112,8 +147,8 @@ export function PanelHeader({ assistantName = "Obi", onRestart, onClose }: Panel
       </header>
 
       <Menu open={menuOpen} onClose={closeMenus} aria-label="More options">
-        <MenuItem disabled>Developer docs</MenuItem>
-        <MenuItem disabled>Support articles</MenuItem>
+        <MenuItem disabled>{copy.docs}</MenuItem>
+        <MenuItem disabled>{copy.support}</MenuItem>
         <MenuItem
           danger
           onSelect={() => {
@@ -121,11 +156,16 @@ export function PanelHeader({ assistantName = "Obi", onRestart, onClose }: Panel
             closeMenus();
           }}
         >
-          Restart conversation
+          {copy.restart}
         </MenuItem>
       </Menu>
 
-      <LanguageMenu open={langOpen} onClose={closeMenus} />
+      <LanguageMenu
+        open={langOpen}
+        onClose={closeMenus}
+        activeLocale={locale}
+        onSelect={setLocale}
+      />
     </>
   );
 }

@@ -10,6 +10,8 @@
 "use client";
 
 import { AssistantMark } from "./assistant-mark";
+import { useChatSession } from "./chat-session-provider";
+import { getCopy } from "../model/i18n";
 
 export interface TeaserPopupProps {
   onOpen: () => void;
@@ -17,6 +19,8 @@ export interface TeaserPopupProps {
 }
 
 export function TeaserPopup({ onOpen, onDismiss }: TeaserPopupProps) {
+  const { locale } = useChatSession();
+  const copy = getCopy(locale);
   return (
     <div
       role="button"
@@ -36,9 +40,7 @@ export function TeaserPopup({ onOpen, onDismiss }: TeaserPopupProps) {
     >
       <div className="flex items-start gap-[10px]">
         <AssistantMark size={20} className="mt-[1px] flex-none" />
-        <p className="text-[13px] leading-[1.5] text-text">
-          Hey, I&apos;m Obi. Need help with onboarding or support?
-        </p>
+        <p className="text-[13px] leading-[1.5] text-text">{copy.teaser}</p>
         <button
           type="button"
           title="Dismiss"

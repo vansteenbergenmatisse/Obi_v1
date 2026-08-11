@@ -8,6 +8,8 @@
 "use client";
 
 import { AssistantMark } from "./assistant-mark";
+import { useChatSession } from "./chat-session-provider";
+import { getCopy } from "../model/i18n";
 
 export interface ChatLauncherProps {
   onOpen: () => void;
@@ -16,11 +18,13 @@ export interface ChatLauncherProps {
 }
 
 export function ChatLauncher({ onOpen, pulsing }: ChatLauncherProps) {
+  const { locale } = useChatSession();
+  const copy = getCopy(locale);
   return (
     <button
       type="button"
-      title="Open assistant"
-      aria-label="Open assistant"
+      title={copy.openAssistant}
+      aria-label={copy.openAssistant}
       onClick={onOpen}
       className={[
         "fixed bottom-lg right-lg z-widget flex h-[52px] w-[52px] items-center justify-center rounded-full",

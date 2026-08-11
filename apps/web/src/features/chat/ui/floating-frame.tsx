@@ -14,7 +14,13 @@ import type { ReactNode } from "react";
 
 export function FloatingFrame({ children }: { children: ReactNode }) {
   return (
-    <div className="fixed inset-y-0 right-0 z-widget flex w-[clamp(360px,29%,440px)] flex-col border-l border-border bg-surface-raised shadow-[-4px_0_16px_rgba(35,38,59,0.04)]">
+    <div
+      // Marks the widget's own root so `panel-body.tsx`'s screenshot capture (PLAN 4.7.7) can
+      // hide it for one frame — otherwise "screenshot the page behind the widget" would capture
+      // the widget itself.
+      data-obi-widget-root=""
+      className="fixed inset-y-0 right-0 z-widget flex w-[clamp(360px,29%,440px)] flex-col border-l border-border bg-surface-raised shadow-[-4px_0_16px_rgba(35,38,59,0.04)]"
+    >
       {children}
     </div>
   );

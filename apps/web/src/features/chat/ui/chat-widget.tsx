@@ -25,7 +25,7 @@ export function ChatWidget({ assistantName }: ChatWidgetProps) {
   if (open) {
     return (
       <FloatingFrame>
-        <PanelBody variant="widget" assistantName={assistantName} onClose={closeWidget} />
+        <PanelBody assistantName={assistantName} onClose={closeWidget} />
       </FloatingFrame>
     );
   }

@@ -1,29 +1,25 @@
 /**
- * ChatPanel — characterization test.
+ * PanelBody — characterization test.
  *
- * Written before the Phase 4.7.2 `ChatSessionProvider` extraction (PLAN 4.7.2) to lock in
- * ChatPanel's existing conversation behavior — streaming, citations, refusal, error, feedback,
- * and abort-on-unmount — so the refactor into a context provider (and the later visual rebuild
- * of the message/composer markup) can't silently change what the feature *does*. Deliberately
- * does not assert on the empty-state copy or on bubble/feedback-control markup — those are
- * expected to change within this same sub-step (resolved greeting copy, icon-only feedback
- * buttons) and are covered by their own component tests instead.
- *
- * PLAN 4.7.4 (D0) lifted `ChatSessionProvider`'s mount out of `ChatPanel` and into
- * `app/layout.tsx`, so this test now provides it explicitly via `renderPanel` below — matching
- * how the real app renders `ChatPanel` inside the ambient provider today.
+ * Replaces the coverage `chat-panel.test.tsx` carried before `ChatPanel` was removed in favor of
+ * the widget-only `PanelBody` composition (PLAN 4.7's "Known gaps / debt": that deletion left
+ * streaming, citations, refusal, error, feedback, restart, and abort-on-unmount without a
+ * replacement). Same scenarios, same assertions, adapted to `PanelBody`'s real rendered structure
+ * (composer send button, message bubbles, panel-header's "More" menu) rather than `ChatPanel`'s.
+ * Deliberately does not assert on empty-state copy or bubble/feedback-control markup beyond what
+ * each scenario needs — those are covered by `message-list.test.tsx`/`message-bubble.test.tsx`.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ChatStreamEvent } from "@omniboost/contracts";
 import { ChatSessionProvider } from "../ui/chat-session-provider";
-import { ChatPanel } from "../ui/chat-panel";
+import { PanelBody } from "../ui/panel-body";
 
 function renderPanel() {
   return render(
     <ChatSessionProvider>
-      <ChatPanel />
+      <PanelBody onClose={vi.fn()} />
     </ChatSessionProvider>,
   );
 }
@@ -57,10 +53,10 @@ function okStreamResponse(chunks: string[]): Response {
 async function sendMessage(text: string) {
   const box = screen.getByRole("textbox", { name: /message/i });
   await userEvent.type(box, text);
-  await userEvent.click(screen.getByRole("button", { name: /send/i }));
+  await userEvent.click(screen.getByRole("button", { name: "Send" }));
 }
 
-describe("ChatPanel", () => {
+describe("PanelBody", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {

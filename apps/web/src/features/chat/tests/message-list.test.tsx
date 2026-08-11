@@ -1,14 +1,23 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MessageList } from "../ui/message-list";
+import { MessageList, type MessageListProps } from "../ui/message-list";
+import { ChatSessionProvider } from "../ui/chat-session-provider";
 import type { ChatMessage } from "../model/messages";
 
 afterEach(() => cleanup());
 
+function renderList(props: MessageListProps) {
+  return render(
+    <ChatSessionProvider>
+      <MessageList {...props} />
+    </ChatSessionProvider>,
+  );
+}
+
 describe("MessageList", () => {
   it("shows the resolved greeting with the product name bold, and no suggestion chip", () => {
-    render(<MessageList messages={[]} />);
+    renderList({ messages: [] });
 
     expect(
       screen.getByText(

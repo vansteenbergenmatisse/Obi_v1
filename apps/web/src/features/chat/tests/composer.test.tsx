@@ -1,14 +1,23 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Composer } from "../ui/composer";
+import { Composer, type ComposerProps } from "../ui/composer";
+import { ChatSessionProvider } from "../ui/chat-session-provider";
 
 afterEach(() => cleanup());
+
+function renderComposer(props: ComposerProps) {
+  return render(
+    <ChatSessionProvider>
+      <Composer {...props} />
+    </ChatSessionProvider>,
+  );
+}
 
 describe("Composer", () => {
   it("sends the trimmed message and clears the box on Enter", async () => {
     const onSend = vi.fn();
-    render(<Composer onSend={onSend} />);
+    renderComposer({ onSend });
     const box = screen.getByRole("textbox", { name: /message/i });
 
     await userEvent.type(box, "  hello  {Enter}");
@@ -19,7 +28,7 @@ describe("Composer", () => {
 
   it("inserts a newline on Shift+Enter instead of sending", async () => {
     const onSend = vi.fn();
-    render(<Composer onSend={onSend} />);
+    renderComposer({ onSend });
     const box = screen.getByRole("textbox", { name: /message/i });
 
     await userEvent.type(box, "line one");
@@ -32,7 +41,7 @@ describe("Composer", () => {
 
   it("does not send whitespace-only input", async () => {
     const onSend = vi.fn();
-    render(<Composer onSend={onSend} />);
+    renderComposer({ onSend });
     const box = screen.getByRole("textbox", { name: /message/i });
 
     await userEvent.type(box, "   {Enter}");
@@ -42,7 +51,7 @@ describe("Composer", () => {
 
   it("sends via the Send button and disables it while empty", async () => {
     const onSend = vi.fn();
-    render(<Composer onSend={onSend} />);
+    renderComposer({ onSend });
     const box = screen.getByRole("textbox", { name: /message/i });
     const sendButton = screen.getByRole("button", { name: "Send" });
 
@@ -56,14 +65,14 @@ describe("Composer", () => {
   });
 
   it("renders the footer disclaimer", () => {
-    render(<Composer onSend={vi.fn()} />);
+    renderComposer({ onSend: vi.fn() });
     expect(
       screen.getByText("AI may make mistakes. Verify important information."),
     ).toBeInTheDocument();
   });
 
   it("disables the box, Send, and Attach buttons while a request is pending", () => {
-    render(<Composer onSend={vi.fn()} disabled />);
+    renderComposer({ onSend: vi.fn(), disabled: true });
     expect(screen.getByRole("textbox", { name: /message/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Send" })).toBeDisabled();
     expect(screen.getByRole("button", { name: /attach/i })).toBeDisabled();
@@ -76,7 +85,7 @@ describe("Composer", () => {
 
     it("previews an image selected via the file picker and enables Send with no text", async () => {
       const onSend = vi.fn();
-      render(<Composer onSend={onSend} />);
+      renderComposer({ onSend });
       const sendButton = screen.getByRole("button", { name: "Send" });
       expect(sendButton).toBeDisabled();
 
@@ -88,7 +97,7 @@ describe("Composer", () => {
     });
 
     it("previews a pasted image", async () => {
-      render(<Composer onSend={vi.fn()} />);
+      renderComposer({ onSend: vi.fn() });
       const box = screen.getByRole("textbox", { name: /message/i });
       const file = pngFile("pasted.png");
 
@@ -102,7 +111,7 @@ describe("Composer", () => {
     });
 
     it("removes an attachment via its remove button", async () => {
-      render(<Composer onSend={vi.fn()} />);
+      renderComposer({ onSend: vi.fn() });
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
       await userEvent.upload(fileInput, pngFile());
       expect(screen.getByAltText("screenshot.png")).toBeInTheDocument();
@@ -113,7 +122,7 @@ describe("Composer", () => {
     });
 
     it("caps attachments at 4 and ignores extras", async () => {
-      render(<Composer onSend={vi.fn()} />);
+      renderComposer({ onSend: vi.fn() });
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
       const files = ["a.png", "b.png", "c.png", "d.png", "e.png"].map((name) => pngFile(name));
 
@@ -126,7 +135,7 @@ describe("Composer", () => {
 
     it("drops attachments with an inline notice on send when there is no text", async () => {
       const onSend = vi.fn();
-      render(<Composer onSend={onSend} />);
+      renderComposer({ onSend });
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
       await userEvent.upload(fileInput, pngFile());
 
@@ -141,7 +150,7 @@ describe("Composer", () => {
 
     it("sends the text and drops attachments with a notice when both are present", async () => {
       const onSend = vi.fn();
-      render(<Composer onSend={onSend} />);
+      renderComposer({ onSend });
       const box = screen.getByRole("textbox", { name: /message/i });
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
       await userEvent.upload(fileInput, pngFile());

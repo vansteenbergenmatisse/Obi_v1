@@ -1,9 +1,10 @@
 /**
  * Button — reusable UI primitive.
  *
- * Lives in `components/` because it is consumed across more than one place
- * (the home route and the chat feature's composer). It owns no business rules:
- * it maps a `variant` to semantic Tailwind utilities sourced from
+ * Kept in `components/` as a generic, reusable primitive even though it has no current consumer
+ * (the home route's "Open chat" button and the composer's send control, its two former
+ * consumers, were removed/replaced — see `features/chat/FEATURES.md` and PLAN 4.7.7). It owns no
+ * business rules: it maps a `variant` to semantic Tailwind utilities sourced from
  * `@omniboost/design-tokens`, and forwards every native button prop.
  */
 import { forwardRef } from "react";

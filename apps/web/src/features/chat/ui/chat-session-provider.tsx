@@ -15,6 +15,7 @@ import type { ReactNode } from "react";
 import type { ChatTurn } from "@omniboost/contracts";
 import { ChatRequestError, sendFeedback, streamChat } from "../api/chat-client";
 import type { ChatMessage } from "../model/messages";
+import type { Locale } from "../model/i18n";
 
 /** Only complete/refused turns (plus every user turn) become resendable history — a
  * streaming placeholder has no final text yet, and an error turn is our own proxy's
@@ -32,6 +33,13 @@ export interface ChatSession {
   handleFeedback: (messageId: string, traceId: string, value: 1 | -1) => Promise<void>;
   /** Clears the thread and starts a new conversation, aborting any in-flight stream first. */
   restart: () => void;
+  /** The widget's own UI-copy locale (PLAN 4.7.7) — greeting, chip, placeholder, footer, teaser,
+   * menu labels. Does not affect the language the RAG agent answers in; that is unscoped backend
+   * work (see `docs/rag/OBI-WIDGET-DESIGN.md` §5). Lives here, not in a component, because both
+   * `PanelHeader` (which changes it) and `ChatWidget`'s `TeaserPopup` (which reads it, outside
+   * `PanelBody`'s subtree) need the same value. */
+  locale: Locale;
+  setLocale: (locale: Locale) => void;
 }
 
 const ChatSessionContext = createContext<ChatSession | null>(null);
@@ -39,6 +47,7 @@ const ChatSessionContext = createContext<ChatSession | null>(null);
 export function ChatSessionProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState(false);
+  const [locale, setLocale] = useState<Locale>("en");
   const conversationId = useRef<string | undefined>(undefined);
   const nextId = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -125,7 +134,9 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <ChatSessionContext.Provider value={{ messages, pending, sendMessage, handleFeedback, restart }}>
+    <ChatSessionContext.Provider
+      value={{ messages, pending, sendMessage, handleFeedback, restart, locale, setLocale }}
+    >
       {children}
     </ChatSessionContext.Provider>
   );
