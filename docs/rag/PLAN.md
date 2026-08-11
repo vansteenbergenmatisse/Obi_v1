@@ -32,9 +32,11 @@ tests (was 219), boundaries clean, no ruff/pyright regression.** 4.6.2 was imple
 fixture gateway per the user's explicit "implement now, verify later" choice — **live Confluence
 verification of the group-membership endpoint is still outstanding** (token still dead, blocker
 #3) and must happen before trusting 4.6.2's live behavior. 4.6.5 has a "needs your input" item
-flagged for confirmation (not blocking) — see its section below. **4.6.6, 4.6.7, and 4.6.8 done
-(2026-08-11) → 261 tests (was 251); new migration `0006_dedupe_source_type_check` applied to the
-dev DB. 4.6.9 (pyright baseline reconciliation, needs your input) is next.**
+flagged for confirmation (not blocking) — see its section below. **4.6.6, 4.6.7, 4.6.8, and 4.6.9
+done (2026-08-11) → 261 tests (was 251, 4.6.9 was doc/ADR-only); new migration
+`0006_dedupe_source_type_check` applied to the dev DB; pyright baseline formally moved 31→34
+(ADR-0003 D1 amendment). 4.6.9 has a "needs your input" flag (not blocking, took the plan's own
+default) — see its section below. 4.6.10 (RLS reader-role no-op, needs your input) is next.**
 
 **Commit gap closed — 2026-08-10 (new session).** 4.6.1 (Confluence group-restriction fail-closed
 fix), plus ADR-0006/ADR-0007 and the six-agent `docs/rag/fixes/` audit itself, were all sitting
@@ -1686,16 +1688,42 @@ unchanged (34 errors, identical file list — the new test file needed one `str(
 satisfy `Constraint.name`'s `_ConstraintNameArgument` type, added before this count, not counted as
 a regression); `alembic current` → `0006_dedupe_source_type_check (head)`.
 
-### 4.6.9 — Pyright baseline reconciliation (MEDIUM, governance)
+### 4.6.9 — Pyright baseline reconciliation (MEDIUM, governance) ✅ done (2026-08-11)
 
-The pyright baseline crept 31→34 errors across Phase 4, reported "unchanged" session-over-session
-but never reconciled against ADR-0003's actual recorded baseline. **Needs your input:** identify the
-3 regressed errors (git-bisect the relevant commits) and either (a) fix them and restore the true
-baseline of 31, or (b) formally amend ADR-0003's D1 baseline to 34 with a recorded justification in
-this ledger's "Deviations already taken" section — default to (a) unless investigation shows they're
-low-value/hard-to-fix, in which case propose (b) explicitly. Also fix root `CLAUDE.md`'s stale
-baseline numbers once reconciled (run this **before** 4.6.15, so 4.6.15's doc pass writes the final
-numbers, not another stale snapshot).
+**Status: reconciled, no code changes, no test count change (261, unchanged from 4.6.8).**
+
+**Investigation.** Built a disposable git worktree at `e4490aa` (Phase 4.1, the last commit
+confirmed at the true 31-error baseline by this ledger's own "Independent re-verification —
+2026-08-10" entry), ran `pyright` there, and diffed its 31 errors against head's 34 by
+file+rule+message (not line number, which drifts with every inserted line). Every one of the 31
+baseline errors is still present (same file, same rule, same message) — nothing was silently
+fixed and re-broken. The 3 new errors are **not a new error type**: they're a 4th occurrence of a
+pattern already present 3 times in `test_worker_sync.py` before Phase 4.3 —
+`reportOptionalMemberAccess`/`reportAttributeAccessIssue` on `worker.RunResult.outcome: object |
+None`, which is deliberately typed `object` because `RunResult` is shared across three handlers
+(`_handle_sync_page`/`_handle_delete_page`/`_handle_reconcile_space`) with different return
+shapes. PLAN 4.3's own ledger section already disclosed this at the time: "my new test in that
+file added one more occurrence of the latter by following the file's own existing idiom" — a
+self-documented repeat, not a silent regression that slipped through "unchanged" reporting.
+
+**Decision: (b), not (a).** A real fix (a proper `Union`/generic on `RunResult.outcome` so each
+handler's test can narrow without Pyright complaining) is a legitimate typing improvement, but it
+touches the shared dataclass and all three handler call sites for a purely cosmetic gain — nothing
+here is a functional bug, the tests already pass and already exercise real behavior correctly.
+Judged not proportional to a governance/baseline-bookkeeping item, per the plan's own "propose (b)
+explicitly" escape hatch for low-value fixes. **Flagging for your explicit confirmation — not
+blocking, since it only formalizes what "unchanged (34 errors)" already meant in every 4.6.x
+verification note above.**
+
+**Shipped:** `docs/adr/0003-Feature-Boundary-Enforcement.md`'s D1 deviation amended in place with
+the full bisect finding and rationale — the baseline is now formally 34/1, not silently drifted.
+Root `CLAUDE.md`'s stale numbers are deliberately left for 4.6.15 (its own batch already lists that
+edit; doing it here would just be overwritten by that pass) — this sub-step's job was settling
+*what* the number is, not writing it into every doc that mentions it.
+
+**Verification:** no code touched, so `make check`/boundaries/ruff/pyright are all identical to
+4.6.8's readout (261 passed, 2 ruff-check / 16 unformatted, 34 pyright errors — now the *documented*
+baseline, not just an observed count); no migration.
 
 ### 4.6.10 — RLS reader-role no-op outside offline envs (LOW)
 

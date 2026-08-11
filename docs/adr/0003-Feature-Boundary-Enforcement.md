@@ -62,6 +62,23 @@ re-exports give each feature a single, greppable public surface without a runtim
   Reformatting 25 unrelated files would bury the behavior-unchanged import diff, so the
   gate holds whole-repo counts flat and only makes *touched* files cleaner. Pre-existing
   dirt is out of scope for this refactor.
+  **Amended 2026-08-11 (PLAN 4.6.9): Pyright baseline moved 31 → 34.** Git-bisected the
+  creep (comparing `e4490aa`, the last commit at the true 31-error baseline, against
+  head): all 3 new errors are the exact same pre-existing `reportOptionalMemberAccess`/
+  `reportAttributeAccessIssue` pattern on `worker.RunResult.outcome: object | None`
+  already occurring 3 times in `test_worker_sync.py` before Phase 4.3 — `outcome` is
+  deliberately typed `object` because `RunResult` is shared across three handlers
+  (`_handle_sync_page`/`_handle_delete_page`/`_handle_reconcile_space`) with different
+  return shapes, so any test reading a field off it needs a narrowing cast Pyright can't
+  infer for free. PLAN 4.3 added a 4th occurrence of this same idiom in a new test
+  function and said so explicitly at the time ("my new test in that file added one more
+  occurrence of the latter by following the file's own existing idiom" — see PLAN.md's
+  4.3 section) — not a silently-introduced regression, a self-documented repeat of an
+  already-accepted pattern. A real fix (a proper `Union`/generic on `RunResult.outcome`)
+  is a legitimate improvement but touches the dataclass and all three handler call sites
+  for a purely cosmetic typing gain (the tests already pass; nothing here is a functional
+  bug) — judged not proportional to a governance/baseline-bookkeeping item. Per option (b)
+  in PLAN 4.6.9's own text, the baseline is formally moved to 34, not silently drifted.
 - **[D2] Committed on `main`, red state first.** The repo had zero commits; `main` is the
   natural home for its initial history, and the tag/bisect/rollback design needs linear
   history. The red baseline (`e10ee9d`, tag `pre-refactor-baseline`) is an intentional
