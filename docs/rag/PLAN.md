@@ -32,7 +32,7 @@ Confluence token (still dead, blocker #3), so they're not startable yet regardle
 
 **Phase 4.7 (Obi widget) status, summarized here — full as-built detail in its own section below.**
 Built across several sessions (2026-08-10/11), independent of Phase 4.6/5, never blocking either.
-**Done in code, its test gap closed 2026-08-11 (same session), still uncommitted.** The gap was a
+**Done in code, its test gap closed 2026-08-11 (same session), committed `bf99635`.** The gap was a
 deleted test file's coverage not replaced plus several test files failing to compile against
 `ChatSessionProvider` (`pnpm --filter web test` read **25 failed / 83 passed** as of the 4.6.16
 exit-gate run below) — see Phase 4.7's own "Known gaps / debt" for the fix; `pnpm --filter web
@@ -83,7 +83,7 @@ pyright unchanged at the 2/15/34 baseline (one self-introduced `E501` caught and
 count); live-verified against the real running backend (`curl` + real Anthropic call: "test" → a
 real warm reply, `refused: false`, `citations: []`; "How do I request access..." → still correctly
 refuses against the empty corpus, `refused: true`) and in the actual browser widget (screenshot
-confirms no red refusal badge for "test"). **Uncommitted** — ask before committing.
+confirms no red refusal badge for "test"). **Committed** `90e96b1`.
 
 **New this session (2026-08-11): Phase 9 scoped — deliberately the plan's last phase.** User
 supplied an external best-practices brief on unanswerable/vague-query fallback (clarification,
@@ -109,6 +109,32 @@ contract shape (no new SSE event), the 3-value refusal-reason taxonomy (`no_cand
 execute after Phase 7 — order is Phase 7 → Phase 4.8 → Phase 9.** This is a deliberate sequencing
 choice, not a technical dependency (recorded in both Phase 4.8's and Phase 9's own sections). No code
 under Phase 9 or 4.8 starts until Phase 7 is done. Nothing committed yet.
+
+**Commit gap closed — 2026-08-11 (new session).** Everything the paragraphs above marked
+"uncommitted" — the small-talk fix, Phase 4.7's completion (incl. 4.7.8, its test-gap closure, and
+the removed `/chat` route), and this session's docs (PLAN.md, DESIGN.md §11/§12,
+OBI-WIDGET-DESIGN.md, IDEAS.md, ADR-0008) — was sitting uncommitted at this session's start.
+Per `CLAUDE.local.md` §2, re-verified live before committing, not after: `make check` (repo root)
+→ **312 passed**, `make boundaries` clean, ruff-check/format and pyright unchanged at the 2/15/34
+baseline; `pnpm --filter web test` → **115/115 passed**; `tsc --noEmit` and `pnpm --filter web
+build` both clean. **No gaps found.** Split into three independently-verified commits per the
+user's own review of the bundling: `90e96b1` (backend — the small-talk short-circuit feature),
+`bf99635` (web — Phase 4.7 in full, incl. 4.7.8), `771cfce` (docs — this ledger + DESIGN.md +
+OBI-WIDGET-DESIGN.md + IDEAS.md + ADR-0008).
+
+**New this session (2026-08-11), same session: Phase 7.1 — design doc + ADR-0009 done.** Per this
+repo's own rule that Phase 7 needed a real design pass (and an ADR, since it extends
+ADR-0005-governed refusal logic) before any code — the same gate Phase 9.1 used —
+`docs/adr/0009-Vision-Grounded-Image-Analysis.md` + `docs/rag/DESIGN.md` §12 are done, locking:
+inline base64 on the newest `ChatTurn` only (no upload endpoint, no per-turn resend of prior
+images); retrieval still runs, only `decide_refusal` gains a `has_image` gate; a second,
+independent `generate_image_analysis` call that never enters `enforce_citations`, so the grounded,
+citation-enforced call stays untouched; an additive `Answer.imageAnalysis` field, no new SSE event;
+C6 PII redaction explicitly does not extend to image bytes (documented, disclosed gap); new C3/C10
+image-count/byte-size caps required but their values deliberately left undecided (no invented
+cost/scaling number); image-borne prompt injection flagged as a new threat class needing a required
+live-model adversarial pass before shipping. Full sub-step roadmap (7.2–7.7) recorded in Phase 7's
+own section. Documentation only, no code — **uncommitted**, ask before committing.
 
 #### 4.6 progress snapshot — ✅ all 16 of 16 sub-steps done, exit gate green (2026-08-11)
 
@@ -168,7 +194,7 @@ request, checked and started the full local stack:
   is defined; `/docs` is the real liveness check).
 - Web (`pnpm --filter web dev`, :3000) — was already running from an earlier session. `/chat` → 200.
 
-**Unplanned fix, uncommitted — `apps/web/src/app/layout.tsx`.** User reported a React hydration
+**Unplanned fix — `apps/web/src/app/layout.tsx`.** User reported a React hydration
 error in the browser: the server-rendered `<html>` didn't match the client tree, diffing in a
 `data-scribe-recorder-ready="true"` attribute. That attribute does not exist anywhere in this
 codebase — it's a browser extension (a screen-recording/dictation tool, "Scribe") injecting an
@@ -177,9 +203,9 @@ before React loaded" case the Next.js hydration-mismatch docs call out by name. 
 standard, documented workaround: added `suppressHydrationWarning` to the `<html>` tag in
 `RootLayout`. Verified live, in the user's actual Chrome (real extensions active, not a clean
 headless profile): reloaded `/chat` via `claude-in-chrome`, read the console with
-`onlyErrors: true` and a broad pattern — no hydration warning, no errors. **Still not committed** —
-one-line, outside any phase's scope, sitting alongside Phase 4.7's other uncommitted work; ask
-before committing which of the uncommitted `apps/web` changes you want bundled together.
+`onlyErrors: true` and a broad pattern — no hydration warning, no errors. **Committed** —
+landed inside `aae90e5` alongside the rest of that session's Obi widget rebuild commit (confirmed
+via `git show aae90e5 -- apps/web/src/app/layout.tsx`), not as its own separate commit.
 
 **Phase 4.6 is fully closed — nothing left in this backlog.** All 16 sub-steps done; the exit gate
 (4.6.16) re-ran the full repo-wide gate and found zero regressions. Phase 5.4 / the embedder
@@ -214,7 +240,7 @@ pure resolver. **No gaps found.** Split into two commits: `ede2ae2` (docs — AD
 fixes-backlog audit + the IDEAS.md #4 correction ADR-0006 required) and `4d0ba70` (the 4.6.1 code fix
 + this ledger's own 4.6 section). 4.6.2 remains blocked on your input below — not started.
 
-**Phase 4.7 is done in code, its test gap closed (2026-08-11), still uncommitted** — see its own
+**Phase 4.7 is done in code, its test gap closed (2026-08-11), committed `bf99635`** — see its own
 section for the full narrative and the "Known gaps / debt" list. What's
 left, independent of Phase 5: **Phase 4.8** (frontend/backend repository separation — split `apps/web` and
 `apps/automation` into independent repos, `packages/contracts`/`design-tokens` become published
@@ -232,13 +258,15 @@ backend Phase 5; it's frontend/repo-topology work, disjoint from Phase 4.6's bac
 **No phase auto-starts.** Per the project's standing local working rule, a fresh session must stop
 and get an explicit go-ahead from the user before starting *any* phase/sub-step. On resume: read
 this ledger, state what's ready — **Phase 4.6 is fully closed (all 16 sub-steps + exit gate);
-Phase 4.7 is done and its test gap is closed, still uncommitted**; the next options are committing
-the uncommitted work, Phase 7 (per the sequencing below), or Phase 5.4/the embedder bake-off once
-real API spend and a live Confluence token are available — and ask which to start rather than
-beginning any automatically. **Explicit user-set order for the rest: Phase 7 → Phase 4.8 → Phase 9** (Phase 4.8
-also still has three unanswered "needs your input" decisions — registry choice, new repo names,
-origin-monorepo fate — that block it regardless of ordering; Phase 9's 9.1 design doc is already
-done, but its code, 9.2 onward, waits for Phase 7 and 4.8 same as the rest of this ordering).
+Phase 4.7 is done, its test gap is closed, and the small-talk fix, Phase 4.7, and this session's
+docs are all committed (`90e96b1`/`bf99635`/`771cfce`); Phase 7.1 (design doc + ADR-0009) is also
+done, still uncommitted**; the next options are committing 7.1, Phase 7.2 onward (per the
+sequencing below), or Phase 5.4/the embedder bake-off once real API spend and a live Confluence
+token are available — and ask which to start rather than beginning any automatically. **Explicit
+user-set order for the rest: Phase 7 → Phase 4.8 → Phase 9** (Phase 4.8 also still has three
+unanswered "needs your input" decisions — registry choice, new repo names, origin-monorepo fate —
+that block it regardless of ordering; Phase 9's 9.1 design doc is already done and committed, but
+its code, 9.2 onward, waits for Phase 7 and 4.8 same as the rest of this ordering).
 
 Fresh context: read this ledger + `docs/rag/DESIGN.md` (§2 target pipeline, §5 accuracy stack) +
 `docs/adr/0005*` + `docs/adr/0007*`, then ask which of the above to start. The chat
@@ -968,10 +996,10 @@ OCR/image reading untouched.
 | **4.6** — fixes-backlog remediation (16 sub-steps + exit gate) | ✅ done | see "4.6 progress snapshot" (§0) for all 16 commit refs | independent same-day audit (`docs/rag/fixes/`) found a CRITICAL ACL bypass + a HIGH cross-principal leak + 12 more findings in already-"done" phases 0-4; all fixed, exit gate 4.6.16 green, 274 tests, no ruff/pyright regression; 4.6.2 live-verification still outstanding (Confluence token dead), does not gate anything |
 | **5** (remaining) — 5.4 live-LLM red-team + latency/cost proof, embedder bake-off, adaptive routing | ⬜ todo (unblocked by 4.6; blocked on API spend + token) | — | 5.4 needs real API calls/spend; bake-off blocked on Confluence token + `VOYAGE_API_KEY` |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
-| **4.7** — Obi widget: chat UI rebuild, brand tokens, screenshot capture, real i18n, `/chat` route removed, image lightbox (4.7.8) | ✅ done, **uncommitted** | `206baab` (first sub-step only); everything since, including the `/chat` removal, the layout bug fix, and 4.7.8, is uncommitted | frontend-only, `apps/web`; does not gate Phase 5; source of truth `docs/rag/reference/obi-mockup/` + `docs/rag/OBI-WIDGET-DESIGN.md`; test suite not re-run since the last two rounds of changes — see Phase 4.7's own "Known gaps / debt" |
-| **4.8** — Frontend/backend repository separation (4.8.1 → 4.8.7) | ⬜ todo (blocked on registry/repo-name/monorepo-fate decisions) | — | supersedes ADR-0006's deferral; see `docs/adr/0007-Frontend-Backend-Repository-Separation.md`; do after 4.7 |
-| **7** — Vision-grounded image analysis (attachments + screenshot capture) | ⬜ todo (just scoped, 2026-08-11) | — | supersedes `docs/future-ideas/IDEAS.md` #3; every image added via attachment or the screenshot button gets analyzed by a vision-capable model call, folded into the answer; touches contracts + `apps/automation` + security review — not frontend-only, see Phase 7's own section |
-| **9** — Unanswerable/vague-query fallback (9.1 → 9.9) | 9.1 ✅ done, 2026-08-11 (uncommitted); 9.2-9.9 ⬜ todo — **wait for Phase 7 + Phase 4.8, then dead last, no phase follows** | — | supersedes `docs/future-ideas/IDEAS.md` #1; ADR-0008 + DESIGN.md §11 lock the contract shape (extend `Answer`, no new SSE event), the 3-value refusal-reason taxonomy, and eval-kind reuse; ambiguity/vagueness classifier + clarification response, differentiated refusal reasons, human-hand-off stub (Salesforce noted as eventual target), fallback-quality eval metrics; MMR/diversity filtering and any new vector store explicitly out of scope |
+| **4.7** — Obi widget: chat UI rebuild, brand tokens, screenshot capture, real i18n, `/chat` route removed, image lightbox (4.7.8) | ✅ done, **committed** | `206baab` (first sub-step), `aae90e5` (4.7.2-4.7.6), `bf99635` (rest, incl. 4.7.8 + the test-gap closure) | frontend-only, `apps/web`; does not gate Phase 5; source of truth `docs/rag/reference/obi-mockup/` + `docs/rag/OBI-WIDGET-DESIGN.md` |
+| **4.8** — Frontend/backend repository separation (4.8.1 → 4.8.7) | ⬜ todo (blocked on registry/repo-name/monorepo-fate decisions) | — | supersedes ADR-0006's deferral; see `docs/adr/0007-Frontend-Backend-Repository-Separation.md`; do after Phase 7 |
+| **7** — Vision-grounded image analysis (attachments + screenshot capture) | 7.1 ✅ done, 2026-08-11 (uncommitted); 7.2-7.7 ⬜ todo | — | supersedes `docs/future-ideas/IDEAS.md` #3; ADR-0009 + DESIGN.md §12 lock the contract shape (`ChatTurn.images`, `Answer.imageAnalysis`, no new SSE event), the `has_image` refusal gate, and the independent (never citation-enforced) vision call; touches contracts + `apps/automation` + a required security review — not frontend-only, see Phase 7's own section |
+| **9** — Unanswerable/vague-query fallback (9.1 → 9.9) | 9.1 ✅ done, 2026-08-11 (committed `771cfce`); 9.2-9.9 ⬜ todo — **wait for Phase 7 + Phase 4.8, then dead last, no phase follows** | — | supersedes `docs/future-ideas/IDEAS.md` #1; ADR-0008 + DESIGN.md §11 lock the contract shape (extend `Answer`, no new SSE event), the 3-value refusal-reason taxonomy, and eval-kind reuse; ambiguity/vagueness classifier + clarification response, differentiated refusal reasons, human-hand-off stub (Salesforce noted as eventual target), fallback-quality eval metrics; MMR/diversity filtering and any new vector store explicitly out of scope |
 
 Gate at each ✅: `make check` green (**219 backend tests** as of 5.3 — 4.5 touched no backend code;
 was 213 at 5.1/5.2, 197 at 5.1, 194 at 4.4, 167 at 4.3, 164 at 4.2, 144 at 3.5.6, 130 at 4.1, 120 at
@@ -2234,7 +2262,7 @@ gate** — they remain separately blocked on real API spend and a live Confluenc
 
 ---
 
-## Phase 4.7 — Obi widget (chat UI) ✅ done, test gap closed, uncommitted *(independent; does not gate Phase 5)*
+## Phase 4.7 — Obi widget (chat UI) ✅ done, test gap closed, committed *(independent; does not gate Phase 5)*
 
 **What this phase built:** replaced `apps/web`'s chat UI with a pixel-accurate rebuild of the
 user-supplied Obi mockup (`docs/rag/reference/obi-mockup/Obi Assistant.dc.html`, a proprietary
@@ -2581,16 +2609,17 @@ becomes its own ADR-gated phase** (mirroring how Supabase got Phase 6), not some
 
 ---
 
-## Phase 7 — Vision-grounded image analysis (attachments + screenshot capture) ⬜ todo
+## Phase 7 — Vision-grounded image analysis (attachments + screenshot capture) ⬜ todo *(7.1 done, 2026-08-11)*
 
-**Scoped, not started, 2026-08-11.** Raised by the user after observing (elsewhere, not in this
-repo) that an attached or screenshotted image can be clicked for a full-size preview *and* gets
-analyzed for context by the assistant. On inspection neither piece existed here — see Phase 4.7.8
-above for the click-to-zoom half, which **is** frontend-only and was built immediately per the
-user's own scoping rule. This phase is everything left: the half that touches the backend,
-contracts, and the security control set, so it doesn't get built ad hoc inside a frontend sub-step.
-**Supersedes `docs/future-ideas/IDEAS.md` #3** ("Screenshot-grounded guidance"), which raised the
-same gap in the abstract with no design; that entry now points here.
+**Scoped 2026-08-11; 7.1 (design doc + ADR-0009) done the same day — nothing else started.**
+Raised by the user after observing (elsewhere, not in this repo) that an attached or screenshotted
+image can be clicked for a full-size preview *and* gets analyzed for context by the assistant. On
+inspection neither piece existed here — see Phase 4.7.8 above for the click-to-zoom half, which
+**is** frontend-only and was built immediately per the user's own scoping rule. This phase is
+everything left: the half that touches the backend, contracts, and the security control set, so it
+doesn't get built ad hoc inside a frontend sub-step. **Supersedes `docs/future-ideas/IDEAS.md` #3**
+("Screenshot-grounded guidance"), which raised the same gap in the abstract with no design; that
+entry now points here.
 
 **Goal.** Every image added to the widget — a file-picker/clipboard-paste attachment *or* the
 header's "screenshot this page" capture (`html-to-image`, PLAN 4.7.7, real capture already) — is
@@ -2604,37 +2633,54 @@ RAG-over-Confluence pipeline and this new image modality. Note this is orthogona
 questions about the real Confluence workspace don't yet return useful answers — that's the
 already-tracked Confluence-token/no-real-corpus blocker (§0), not something this phase fixes.
 
-**Not scoped or designed yet — this section records the requirement and the known seams, not a
-plan.** Per this repo's own process (`docs/future-ideas/IDEAS.md`'s header), a real design pass
-(and an ADR if it changes a durable architecture decision) must happen before implementation,
-same as any other phase. Known seams from inspecting the current code:
+**Designed at 7.1 (see below); no code yet.** Per this repo's own process
+(`docs/future-ideas/IDEAS.md`'s header), a real design pass and an ADR were required before any
+code, since this touches contracts, the answer pipeline's refusal logic, and a new security
+control set — same gate Phase 9's 9.1 used. The remaining sub-steps are the roadmap for turning
+that design into code, not started:
 
-1. **Contract gap.** `ChatRequestBody`/`chat.yaml` (`packages/contracts`) is text-only — no field
-   carries image data. Needs a shape decision (inline base64 on the existing `POST /chat` history
-   turns, vs. a separate upload endpoint returning a reference the chat call points at) before any
-   code changes.
-2. **Backend gap.** `AnswerService`/`llm_client.py` (`apps/automation`) is text-in/text-out.
-   Anthropic's multimodal message format (image content blocks) is a real, supported capability of
-   the same `AnthropicMessagesClient` already in use — see the `claude-api` skill/reference before
-   wiring it — but nothing in this pipeline calls it today.
-3. **Security review required before shipping, per `securing-http-and-llm-endpoints`** — this is a
-   new, genuinely sensitive input class the existing control set was never designed for:
-   image-borne prompt injection (text rendered *inside* an image, or a UI screenshot crafted to
-   look like a system message), a real image-size/vision-token cost cap (no number exists yet —
-   don't invent one, measure against real usage once this is scoped), and PII exposure — the
-   current `redact_pii` (`rag_agent/domain/pii.py`) is a text regex pass over the prompt string; it
-   does not and cannot inspect image bytes, so a screenshot containing visible PII (an email in a
-   support ticket, a customer name in a dashboard) reaches the model unredacted unless a new control
-   is added. Idea #3's own note ("privacy/consent implications — this is genuinely sensitive
-   input") still applies in full.
-4. **Frontend follow-on.** Once the backend accepts and returns something for an image turn,
-   `message-list.tsx` needs to actually render the sent image (it doesn't today — attachments are
-   dropped before `onSend`, per Phase 4.7's stub) with the same `image-lightbox.tsx` click-to-zoom
-   4.7.8 already built for the composer, plus whatever UI communicates "Obi looked at your image."
+1. **7.1 — Design doc + ADR-0009 ✅ done (2026-08-11, uncommitted; no code, per the gate).**
+   `docs/adr/0009-Vision-Grounded-Image-Analysis.md` + `docs/rag/DESIGN.md` §12 lock: **inline
+   base64 on the newest `ChatTurn` only**, not a separate upload endpoint and not replayed on every
+   history resend (no new persistent storage, bounds resend cost); **retrieval still runs — only
+   `decide_refusal` changes** (gains a `has_image: bool` input so an image-answerable turn with weak
+   text retrieval doesn't incorrectly refuse); **a second, independent
+   `generate_image_analysis` call**, structurally parallel to `generate_small_talk`, never passed
+   through `enforce_citations` — the grounded, citation-enforced call and every other
+   ADR-0005-governed stage stay untouched; **`Answer`/`ChatDoneEvent` gain `imageAnalysis: string |
+   null`**, no new SSE event (same additive shape ADR-0008 used); **C6 does not extend to image
+   bytes** — a documented, disclosed gap, not a silent one; **new C3/C10 image-count/byte-size caps
+   are required but their concrete values are explicitly not decided by this ADR** (no invented
+   cost/scaling number); **image-borne prompt injection is a new threat class flagged for a
+   required live-model adversarial pass** before shipping, not solved by the design.
+2. **7.2 — Contract change.** `packages/contracts`: `ChatTurn.images`, `ChatDoneEvent.imageAnalysis`
+   (`chat.yaml` + `src/index.ts`), per ADR-0009 decisions 1/2/5.
+3. **7.3 — Backend multimodal wiring.** `AnthropicMessagesClient.create_message` accepts image
+   content blocks; `AnswerGenerator.generate_image_analysis` (new); `decide_refusal`'s `has_image`
+   gate; `AnswerService.answer` composes the grounded + image-analysis text. Per ADR-0009 decisions
+   3/4.
+4. **7.4 — Image input controls (C3/C10) + `redact_pii` docstring addendum.** New
+   `chat_max_images_per_turn`/`chat_max_image_bytes` settings (values decided here against whatever
+   real constraint is available at implementation time — see ADR-0009 decision 7), enforced in
+   `server/router.py` alongside the existing history/message-length checks.
+5. **7.5 — Obi widget send + render path.** `composer.tsx` stops dropping attachments before
+   `onSend`; sends `images` on the newest turn only; `message-list.tsx` renders the sent image
+   (reusing `image-lightbox.tsx`'s 4.7.8 click-to-zoom) plus a labeled "Obi looked at your image"
+   section for `imageAnalysis`. Composer copy discloses the C6 gap (images are not scanned for PII)
+   — through `copywriting-rules`/`anti-ai-writing`.
+6. **7.6 — Security review**, per `securing-http-and-llm-endpoints`: the live-model adversarial
+   pass for image-borne prompt injection flagged at 7.1, plus confirming the new caps and the
+   `has_image` refusal gate behave as designed under adversarial input.
+7. **7.7 — Exit gate.** Full regression (`make check`, `pnpm --filter web test`), zero regressions
+   vs. the Phase 4.6/4.7 baseline, ledger + `FEATURES.md` updated, ADR-0009 closed.
 
-**Sequencing.** Independent of Phase 5/6 — no shared files, no shared risk. Should be planned as
-its own phase (design → ADR-if-needed → tasks → acceptance) once picked up, not folded into 4.7 or
-5 ad hoc, matching how Supabase got its own Phase 6 rather than being folded into 4.2.
+**Non-goals, explicitly (ADR-0009).** No real image PII redaction (CV/NER) — a documented gap, not
+built this phase. No merging image content into the same citation-scored generation call — citation
+enforcement's "every claim traces to a retrieved page" guarantee stays exclusively about Confluence
+evidence, never about image content.
+
+**Sequencing.** First in the explicit user-set order **Phase 7 → Phase 4.8 → Phase 9** (see §0).
+Independent of Phase 5/6 — no shared files, no shared risk with either.
 
 ---
 
@@ -2693,7 +2739,7 @@ ADR were required before any code, since this extends ADR-0005's fixed pipeline 
 pre-retrieval branch — that's exactly what 9.1 produced. The remaining sub-steps are the roadmap for
 turning that design into code, not started:
 
-1. **9.1 — Design doc + ADR-0008 ✅ done (2026-08-11, uncommitted; no code, per the gate).**
+1. **9.1 — Design doc + ADR-0008 ✅ done (2026-08-11, committed `771cfce`; no code, per the gate).**
    `docs/adr/0008-Ambiguity-Clarification-Fallback.md` + `docs/rag/DESIGN.md` §11 lock: the domain
    decision shape (`decide_clarification`/`ClarificationDecision`, analogous to `decide_refusal`);
    the `/chat` contract change (**decided: extend `Answer` with `needs_clarification` /

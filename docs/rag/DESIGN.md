@@ -63,6 +63,9 @@
 7. [Config & flags](#7-config--flags)
 8. [Research-layer decision table](#8-research-layer-decision-table)
 9. [Phasing & gates](#9-phasing--gates)
+10. [Confluence source scoping — implemented](#10-confluence-source-scoping--implemented-plan-356)
+11. [Ambiguity clarification and fallback — designed, not started](#11-ambiguity-clarification-and-fallback--designed-not-started-plan-phase-9)
+12. [Vision-grounded image analysis — designed, not started](#12-vision-grounded-image-analysis--designed-not-started-plan-phase-7)
 
 ---
 
@@ -500,3 +503,55 @@ what's the approval process?" — needs an explicit tie-break at implementation 
 
 Sub-step roadmap (9.1 design doc/ADR — this section — through 9.9 exit gate) is in `docs/rag/
 PLAN.md`'s own Phase 9 section, not duplicated here.
+
+## 12. Vision-grounded image analysis — designed, not started (PLAN Phase 7)
+
+Scoped 2026-08-11 from `docs/future-ideas/IDEAS.md` #3 ("screenshot-grounded guidance") and Phase
+4.7.8's click-to-zoom preview, which exposed that the analysis half was never built. Full decision
+record is `docs/adr/0009-Vision-Grounded-Image-Analysis.md`; this section is the design summary.
+Sequenced first in the explicit user-set order **Phase 7 → Phase 4.8 → Phase 9** — this section and
+ADR-0009 are documentation only; no code lands under them until picked up as its own phase.
+
+**Problem.** Phase 4.7 added image attachments and real screenshot capture, but both are dropped
+before `onSend` with a "not analyzed yet" notice — no image ever reaches `apps/automation`. A
+question like "what's on this screenshot?" or "what should I click next here?" cannot be answered.
+
+**Design.**
+
+- **Inline base64 on the newest `ChatTurn` only**, not a separate upload endpoint and not
+  replayed on every history resend — matches the existing stateless, whole-history-resent request
+  shape (PLAN 4.4 decision 2) with zero new persistent storage, and avoids multiplying image-token
+  cost by conversation length.
+- **Retrieval still runs; only `decide_refusal` changes.** Unlike small-talk/clarification (which
+  skip retrieval), an image-bearing turn still attempts the full rewrite → retrieve → rerank → CRAG
+  path, since a query can need both Confluence evidence and image content at once.
+  `decide_refusal` gains a `has_image: bool` input so a turn whose text retrieval found nothing
+  doesn't incorrectly refuse when the image alone can answer it.
+- **A second, independent generation call — not merged into the citation-enforced grounded
+  call.** A new `AnswerGenerator.generate_image_analysis`, structurally parallel to
+  `generate_small_talk` (same fail-open shape on `AnthropicError`), carries the image content
+  blocks and the question, produces no citation markers, and is never passed through
+  `enforce_citations`. Its text is appended to the grounded answer as a clearly labeled section.
+  This keeps every ADR-0005-governed citation/refusal guarantee for the *grounded* portion of the
+  answer completely unchanged — an image can never forge a fake Confluence citation.
+- **Contract change is additive.** `ChatTurn` gains optional `images: ImageAttachment[]`; `Answer`/
+  `ChatDoneEvent` gain optional `imageAnalysis: string | null`. No new SSE event — the analysis text
+  streams over the existing `token` events, same shape ADR-0008 used for clarification.
+- **C6 PII redaction does not extend to image bytes.** `redact_pii` stays text-only; this is a
+  documented, accepted gap this phase, disclosed to the user via composer copy, not a silently
+  ignored one.
+- **New C3/C10 controls, values not yet decided.** A per-turn image-count cap and a per-image
+  byte-size cap are required before shipping, enforced at the same validation point as
+  `chat_max_history_turns`/`chat_max_message_chars` — but per the Architecture Standard's rule
+  against inventing cost/scaling numbers, the concrete values need either a real vision-token cost
+  measurement or an explicit product ceiling, neither of which exists yet.
+- **Image-borne prompt injection is a new threat class**, flagged for a required live-model
+  adversarial pass (`securing-http-and-llm-endpoints`) before shipping — not solved by the design
+  alone, since a screenshot could contain text crafted to look like a system instruction.
+
+**Explicit non-goals for this ADR:** does not build real image PII redaction (CV/NER) — flagged as
+a future-phase gap. Does not merge image content into the same call citation enforcement scores —
+rejected, see ADR-0009's alternatives.
+
+Sub-step roadmap (7.1 design doc/ADR — this section — onward) is in `docs/rag/PLAN.md`'s own Phase
+7 section, not duplicated here.
