@@ -25,12 +25,29 @@
 > **and Phase 5.3**, a deterministic prompt-injection + permission/isolation red-team pass that
 > found and fixed a real bypass (an unvalidated `principal` could claim numeric space-level trust
 > and skip page-level restrictions; closed with a `ChatRequestBody` validator) —
-> **219 backend tests green** (plus 39 `apps/web` vitest tests, its first test runner, added at
-> 4.5). `PLANNED` = specified here, gated on the phase named (Phase 5's remaining scope —
-> a live-LLM adversarial pass + latency/cost proof (5.4), embedder bake-off, semantic caching
-> (deliberately deferred, see `answer_cache.py`), adaptive router — is not built yet). Every code
-> claim is anchored `file:line` so it can
-> be checked against the tree.
+> **and Phase 4.6.1 through 4.6.11** (fixes-backlog remediation, gating Phase 5.4 — see
+> `PLAN.md`'s "4.6 progress snapshot" for the full table): a CRITICAL Confluence
+> group-restriction bypass closed fail-closed then resolved via real group-membership expansion; a
+> HIGH cross-principal idempotency-cache leak closed; the rate limiter/idempotency cache hardened
+> (IP-only keying, bounded memory); `rollback_to` now restores `PageSource`'s cached hashes so a
+> post-rollback resync can't be silently masked as "no change"; the domain-layer `scope` string can
+> no longer be reinterpreted as space-vs-principal trust by shape alone
+> (`permission.classify_scope`); the Confluence REST client gained a circuit breaker, real 5xx
+> retry, and audit logging; a duplicate `source_type`/`root_type` CHECK constraint (live on the dev
+> DB's `chunk`/`page_source` tables since the Phase-1 baseline) was found and removed (migration
+> `0006_dedupe_source_type_check`); the pyright baseline was formally reconciled 31→34
+> (ADR-0003 D1); the RLS reader role now fails closed instead of silently running as the
+> RLS-bypassing writer outside local/test/dev/ci; and a same-`delivery_id`/different-hash webhook
+> redelivery now dedupes gracefully instead of a 500 —
+> **272 backend tests green** (plus 39 `apps/web` vitest tests, its first test runner, added at
+> 4.5). `PLANNED` = specified here, gated on the phase named: **4.6.12 through 4.6.16** (the
+> fixes-backlog exit gate) are still open — see `PLAN.md` for exact remaining scope — and Phase 5's
+> remaining scope (a live-LLM adversarial pass + latency/cost proof (5.4), embedder bake-off,
+> semantic caching (deliberately deferred, see `answer_cache.py`), adaptive router) is not built yet
+> and is blocked on 4.6.16 going green. Every code claim is anchored `file:line` so it can be
+> checked against the tree, though the file:line anchors below predate the 4.6.x fixes and have not
+> all been re-verified against the current line numbers (content is still accurate; do not trust
+> exact line numbers without a `grep` first).
 
 ---
 
@@ -51,7 +68,8 @@
 ## 1. Current pipeline (as-built)
 
 Two flows share one Postgres + pgvector corpus: a **write path** (ingestion, fully built and verified)
-and a **read path** (retrieval, built as a library, not yet wired to HTTP).
+and a **read path** (retrieval, wired to a live, secured `POST /chat` SSE endpoint since Phase 4.4 —
+see §2 for the full answer-workflow pipeline built on top of it).
 
 **Write path** — `app/features/confluence_sync` → `app/features/ingestion`. A Confluence webhook
 (`confluence_sync/server/webhook.py`) validates (rate limit, body cap, HMAC, fail-closed on an unset
@@ -88,11 +106,19 @@ RRF fusion, `halfvec@3072` HNSW, immutable versioning + atomic activation + roll
 re-embed reuse gate (`ingestion/domain/chunk_diff.py`), deterministic SQL filtering (no LLM filters),
 and the custom eval harness with its injectable `RankFn` seam (`features/evaluation`).
 
-**Confirmed gaps** (each maps to a phase): no source/tenant column (only `space_id`); **no reranker**
-(the `reranker_*` settings at `settings.py:62-65` are dead — no client exists); pgvector image is the
-rolling `pg16` tag; no request tracing; no query rewrite / answer generation / citations / refusal /
-CRAG; `POST /chat` absent (the web route is a 501 stub); no caching; gold set is 12 synthetic cases.
-(Principal ACL was fixture-only through 4.2 — closed in Phase 4.3, see above.)
+**Historical gaps, now closed (kept here so the "as-built" story reads start to finish, not because
+they're still open — see the banner above and `PLAN.md` for exact current status):** the
+source/tenant column, reranker, request tracing, query rewrite/answer generation/citations/
+refusal/CRAG, `POST /chat`, and caching were all absent when this section was first written; every
+one of them shipped between Phase 3.5.2 and Phase 5.2 and is described in full in §2 and §5 below.
+Principal ACL was fixture-only through 4.2 — closed in Phase 4.3 (real `page_restriction` storage),
+then hardened twice more in the Phase 4.6 fixes-backlog: 4.6.1/4.6.2 closed a group-restriction
+bypass, 4.6.6 removed the domain layer's ability to reinterpret a numeric principal as space-level
+trust. **Gaps still genuinely open today:** the pgvector image is still the rolling `pg16` tag (no
+pinned version); the gold set is still the 12-case synthetic fixture corpus (no real gold set — see
+blocker #3, Confluence token still dead); Phase 5.4 (live-LLM adversarial red-team + real
+latency/cost measurement), the embedder bake-off, semantic caching, and adaptive routing are all
+still unbuilt and blocked on the Phase 4.6 exit gate (4.6.16) going green.
 
 ---
 

@@ -27,18 +27,91 @@ one HIGH cross-principal cache leak, plus 12 more MEDIUM/LOW findings. **Phase 4
 remediation, see its own section below Phase 4) must fully complete — exit gate 4.6.16 green — before
 5.4 / the embedder bake-off / adaptive routing may resume.** Do Phase 4.6 next, in the order given.
 
-**4.6.1, 4.6.2, 4.6.3, 4.6.4, and 4.6.5 done (2026-08-10, see their own sections for detail) → 251
-tests (was 219), boundaries clean, no ruff/pyright regression.** 4.6.2 was implemented against the
-fixture gateway per the user's explicit "implement now, verify later" choice — **live Confluence
-verification of the group-membership endpoint is still outstanding** (token still dead, blocker
-#3) and must happen before trusting 4.6.2's live behavior. 4.6.5 has a "needs your input" item
-flagged for confirmation (not blocking) — see its section below. **4.6.6, 4.6.7, 4.6.8, and 4.6.9
-done (2026-08-11) → 261 tests (was 251, 4.6.9 was doc/ADR-only); new migration
-`0006_dedupe_source_type_check` applied to the dev DB; pyright baseline formally moved 31→34
-(ADR-0003 D1 amendment). 4.6.9 has a "needs your input" flag (not blocking, took the plan's own
-default) — see its section below. **4.6.10 done (2026-08-11) → 271 tests (was 261)**; it also has a
-"needs your input" flag (chose fail-closed, see its section). **4.6.11 done (2026-08-11) → 272
-tests (was 271).** 4.6.12 (`Answer.refusal_reason` observability, LOW, needs your input) is next.
+#### 4.6 progress snapshot (2026-08-11 session) — read this before doing anything else
+
+**Done, verified, committed — 4.6.1 through 4.6.11 (11 of 16 sub-steps).** Test count climbed
+219 → 272 across these, boundaries clean throughout, ruff/pyright never regressed (pyright's true
+baseline was reconciled 31→34 at 4.6.9, see ADR-0003 D1). Commit refs, one per sub-step:
+
+| Sub-step | What | Commit |
+|---|---|---|
+| 4.6.1 | Confluence group-restriction fail-closed (CRITICAL) | `4d0ba70` |
+| 4.6.2 | Confluence group-membership expansion (CRITICAL) | `21dffd5` |
+| 4.6.3 | Idempotency cache cross-principal leak (HIGH) | `7e841bf` |
+| 4.6.4 | Rate-limiter/idempotency hardening batch | `ee9f817` |
+| 4.6.5 | `rollback_to` restores `PageSource` cached hashes | `144cd79` |
+| 4.6.6 | `permission.py` overloaded `scope` string removed | `309f4e8` |
+| 4.6.7 | Confluence client breaker + 5xx retry + audit logs | `93cad11` |
+| 4.6.8 | Dedupe `source_type`/`root_type` CHECK constraints (+ migration `0006`) | `be4c8f8` |
+| 4.6.9 | Pyright baseline reconciled 31→34 (ADR-0003 D1 amendment, doc-only) | `b6974ef` |
+| 4.6.10 | RLS reader-role fails closed outside offline envs | `d897a40` |
+| 4.6.11 | Event dedup: `delivery_id` collision no longer a 500 | `0a61fb4` |
+
+Full narrative for each — root cause, design decisions, exact diff, verification commands and
+output — is in that sub-step's own `### 4.6.x` section further down this file. Read those, not
+just this table, before touching any of that code again.
+
+**In progress, UNCOMMITTED, UNVERIFIED — 4.6.12 (`Answer.refusal_reason` observability, LOW).**
+Code is written but the local Postgres (`infra/foundation/docker-compose.yml`, Docker Desktop) went
+down mid-session and would not come back up after a restart attempt; the two new tests for this
+sub-step have never actually been run. **Do not trust this as done.** Working tree right now has
+three uncommitted files:
+- `apps/automation/app/features/rag_agent/server/router.py` — the `chat_request` structured log
+  line (`_stream_answer`, inside the non-cached branch) gained a `refusal_reason=answer.refusal_reason`
+  field; the `C9_audit` line in the `security_baseline` docstring above it was updated to mention
+  `refusal_reason` and note it's a static templated string (never user query/retrieved content).
+- `apps/automation/app/features/FEATURES.md` — mirrored the same `C9_audit` mechanism string
+  (the line documenting `rag_agent`'s chat endpoint) to also say "refusal reason".
+- `apps/automation/app/features/confluence_sync/tests/test_chat_endpoint.py` — added a
+  `_LogRecorder` test helper (wraps the real `chat_router.log` bound logger and records every call
+  while still forwarding to it — needed because `structlog.testing.capture_logs()` is unreliable
+  here: `configure_logging`'s `cache_logger_on_first_use=True` means router.py's module-level `log`
+  proxy resolves its processor chain on its first-ever call in the whole test run, and by the time
+  a new test's `capture_logs()` context runs, dozens of earlier chat tests have already warmed it
+  against the real renderer, so the later context swap has no effect — confirmed by hitting this
+  exact failure mode while writing the test) plus two new tests:
+  `test_chat_request_log_includes_refusal_reason_when_refused` and
+  `test_chat_request_log_has_no_refusal_reason_when_not_refused`. Also added the import
+  `from app.features.rag_agent import router as chat_router` (imported at the feature's public
+  root, per the boundary rule — `router` is already re-exported from `rag_agent/__init__.py`).
+
+**Exact next steps once Postgres is back up (`docker compose -f infra/foundation/docker-compose.yml
+ps` shows `omniboost_rag_pg` healthy):**
+1. `cd apps/automation && uv run pytest app/features/confluence_sync/tests/test_chat_endpoint.py -q -k refusal_reason` — confirm both new tests pass.
+2. Run the full gate from repo root: `make check` (expect 274 passed — 272 + 2 new), then from
+   `apps/automation`: `uv run python tools/check_feature_boundaries.py`, `uv run ruff check .`,
+   `uv run ruff format --check .`, `uv run pyright` — confirm no regression vs. 4.6.11's readout
+   (2 ruff-check errors / 15 unformatted / 34 pyright errors, all pre-existing baseline).
+3. If green: write the `### 4.6.12` section body (status/fix/shipped/verification, matching the
+   style of every other `✅ done` sub-step below), update this snapshot's table, `git add` the three
+   files above, commit (`fix(rag): surface refusal_reason on the chat_request log line (PLAN
+   4.6.12)`).
+4. If a test fails: fix it first — do not commit broken tests, do not mark 4.6.12 done.
+5. Continue to 4.6.13 (dead-code disposition batch — no code risk, mostly a documentation
+   decision, does not need the DB), 4.6.14 (`how_this_works.md` rewrite — doc-only, does not need
+   the DB), 4.6.15 (remaining doc-drift batch — doc-only, run *after* 4.6.9, which is already
+   done), then 4.6.16 (the exit gate — needs the DB for the final full-suite re-run). **4.6.13 and
+   4.6.14 can be done right now, without Postgres, while waiting for Docker** — see their sections
+   below for full scope; nothing about them is blocked.
+
+**What's left after 4.6.12: 4.6.13, 4.6.14, 4.6.15, 4.6.16 (the exit gate) — all still ⬜ todo,
+full scope already specified in their own sections below, unchanged from the original plan text.**
+Only once 4.6.16 is green does Phase 5.4 / the embedder bake-off / adaptive routing resume.
+
+**4.6.2 caveat, still open:** implemented against the fixture gateway per the user's explicit
+"implement now, verify later" choice — **live Confluence verification of the group-membership
+endpoint is still outstanding** (Confluence token still dead, blocker #3) and must happen before
+trusting 4.6.2's live behavior. Not gating 4.6.13+.
+
+**Two "needs your input" flags raised so far, not blocking (defaults were taken, see each
+section for the reasoning), open for your override at any time:**
+- 4.6.5: `PageSource` fields with no `DocumentVersion` counterpart are left at their pre-rollback
+  values on `rollback_to` (self-heal on next reconciliation sweep) rather than forced to re-fetch.
+- 4.6.9: pyright baseline formally amended to 34 (not fixed back to 31) — the 3 "new" errors are a
+  4th occurrence of an already-accepted `RunResult.outcome: object | None` typing pattern, not a
+  new bug class.
+- 4.6.10: `get_reader_engine()` fails closed (raises `ReaderRoleMisconfiguredError`), not warn-only,
+  outside an offline env when `DATABASE_READER_URL` is unset.
 
 **Commit gap closed — 2026-08-10 (new session).** 4.6.1 (Confluence group-restriction fail-closed
 fix), plus ADR-0006/ADR-0007 and the six-agent `docs/rag/fixes/` audit itself, were all sitting
@@ -861,6 +934,14 @@ re-tune in Phase 5. **→ Phase 3.5 closed; Phase 4.1 shipped (`e4490aa`); next 
      account also writes back to Confluence.
 4. **Phase 5 infra (later)** — Redis for caching only if the proportionality gate is met; Langfuse
    optional. Will re-ask when Phase 5 starts.
+5. **Docker Desktop down (2026-08-11 session, ACTIVE).** Mid-4.6.12, the local Docker daemon
+   stopped responding (`docker info` timed out; `docker compose ps` couldn't reach the socket).
+   `open -a Docker` was tried and the Docker Desktop process tree did relaunch (confirmed via `ps
+   aux`), but the daemon still wasn't answering `docker info` after ~7 minutes of waiting — looked
+   stuck mid-startup, not just slow. **User will restart Docker manually.** Once
+   `docker compose -f infra/foundation/docker-compose.yml ps` shows `omniboost_rag_pg` as
+   `healthy` again, 4.6.12's two new tests can run and everything from 4.6.12 onward can resume —
+   see the "4.6 progress snapshot" section above for the exact next steps.
 
 ---
 
