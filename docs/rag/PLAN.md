@@ -1974,15 +1974,46 @@ errors — was transiently 36 with the bug above, confirmed back to baseline by 
 pre-fix/post-fix error-file lists, not just the count). `alembic current` →
 `0006_dedupe_source_type_check (head)`, no migration (pure code + log field, no schema change).
 
-### 4.6.13 — Dead-code disposition batch (no code risk)
+### 4.6.13 — Dead-code disposition batch (no code risk) ✅ done (2026-08-11)
 
-Record decisions, mostly "no action": `JobStatus.leased`/`.cancelled` (unused, backs a native PG
-enum — recreating the type for near-zero benefit isn't worth it, document as accepted no-op);
-`@runtime_checkable` protocols with zero `isinstance` call sites (harmless, document intent, no
-action); `evaluation/metrics/latency_metrics.py` (unwired — its wiring belongs to Phase 5.4 itself,
-not this backlog, no action here); `attachment_extraction.py` (fully built, zero call sites,
-attachment content not currently searchable — don't delete working code on spec; add a "PARKED" note
-wherever ingestion capabilities are described, folded into 4.6.15).
+**Status: decisions recorded, one code comment added (2 lines, `enums.py`), no logic change, no
+migration. 274 tests unchanged (pure-doc/comment sub-step, nothing to re-run beyond the gate).**
+
+Re-verified every claim against the running code before recording a decision — one of the four
+turned out to be stated too broadly and is corrected below.
+
+- **`JobStatus.leased`/`.cancelled` — confirmed unused, accepted no-op.** `claim_job`
+  (`platform/jobs/queue.py`) transitions a claimed job straight `pending → running`; `leased` is
+  never assigned to any job, only read defensively inside `reap_expired`'s recoverable-states
+  filter (`Job.status.in_([JobStatus.leased, JobStatus.running])`) in case a future code path ever
+  sets it. `cancelled` has zero producers and zero consumers anywhere. Recreating the type to drop
+  two members buys nothing — it's a native Postgres ENUM (migration 0001), not a plain CHECK, so
+  removal needs its own migration for zero behavior change. **Decision: keep, no action beyond a
+  2-line explanatory comment** (added directly above the two members in `enums.py`) so a future
+  reader doesn't spend time re-deriving this.
+- **`@runtime_checkable` protocols — claim corrected, not all five are truly zero-`isinstance`.**
+  Grepped every `isinstance(..., <Protocol>)` call site repo-wide against all six
+  `@runtime_checkable` protocols (`ConfluenceGateway`, `EmbeddingProvider`, `Reranker`,
+  `AnswerProvider`, `QueryRewriter`, `AnswerGenerator`). Five have zero call sites and stay exactly
+  as the original finding described (harmless — `@runtime_checkable` costs nothing and the
+  substitutability it documents is real even without a runtime check — no action). **`Reranker` is
+  the sixth and is actually exercised**: `test_reranker_client.py:39` asserts
+  `isinstance(FakeReranker(), Reranker)` to prove the fake satisfies the protocol structurally. Not
+  dead code — no action needed there either, but the batch's "zero isinstance call sites" framing
+  was inaccurate for this one member and is corrected here rather than silently carried forward.
+- **`evaluation/metrics/latency_metrics.py` — confirmed unwired, no action.** Only import site is
+  its own test (`test_latency_metrics.py`); not re-exported from `app.features.evaluation`'s public
+  root. Wiring it into the runner is Phase 5.4's job, not this backlog's — leaving as-is.
+- **`attachment_extraction.py` — confirmed zero call sites, PARKED note deferred to 4.6.15 as
+  planned.** Only import site is its own test; not re-exported from `app.features.ingestion`'s
+  public root. Fully built and passing its own tests, just not wired into the ingestion pipeline
+  (attachment content isn't searchable yet) — not deleting working code on spec. The "PARKED" note
+  itself is written in 4.6.15 (batched with the rest of that sub-step's doc-drift fixes), per the
+  original plan text; nothing to do here beyond recording that disposition.
+
+**Verification:** `make check` (from repo root) → **274 passed** (unchanged — no test-relevant code
+changed), boundaries clean; `ruff check`/`ruff format --check` unchanged (2 errors / 15 unformatted,
+same baseline as 4.6.12); `pyright` unchanged (34 errors, same file list); no migration.
 
 ### 4.6.14 — `how_this_works.md` staleness rewrite (doc drift, isolated)
 

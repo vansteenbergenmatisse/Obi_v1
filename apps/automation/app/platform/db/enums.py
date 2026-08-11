@@ -31,6 +31,10 @@ class EventProcStatus(StrEnum):
 
 class JobStatus(StrEnum):
     pending = "pending"
+    # `claim_job` transitions straight to `running`; `leased` is never assigned, only read
+    # defensively in `reap_expired`'s recoverable-states filter. `cancelled` has no producer or
+    # consumer at all. Both are accepted no-ops (PLAN 4.6.13) — dropping them buys nothing since
+    # this is a native Postgres ENUM type, not a plain column check.
     leased = "leased"
     running = "running"
     succeeded = "succeeded"
