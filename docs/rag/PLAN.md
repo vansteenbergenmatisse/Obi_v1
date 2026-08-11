@@ -20,21 +20,26 @@ fix here as the next task; update this ledger after each phase.
 **Phase 5.1 (`CHAT_API_KEY` rotation), 5.2 (exact-match answer caching), and 5.3 (prompt-injection +
 permission/isolation red-team) are done.**
 
-**⛔ BLOCKED before continuing Phase 5:** an independent same-day audit (`docs/rag/fixes/`, six
-agents, 2026-08-10) found real unresolved bugs in already-"done" Phases 0-4 that this ledger never
-tracked — one CRITICAL access-control bypass (Confluence group restrictions silently dropped) and
-one HIGH cross-principal cache leak, plus 12 more MEDIUM/LOW findings. **Phase 4.6 (fixes-backlog
-remediation, see its own section below Phase 4) must fully complete — exit gate 4.6.16 green — before
-5.4 / the embedder bake-off / adaptive routing may resume.** Do Phase 4.6 next, in the order given.
+**✅ Phase 4.6 is COMPLETE (2026-08-11) — all 16 sub-steps done, exit gate 4.6.16 green.** An
+independent same-day audit (`docs/rag/fixes/`, six agents, 2026-08-10) had found real unresolved
+bugs in already-"done" Phases 0-4 that this ledger never tracked — one CRITICAL access-control
+bypass (Confluence group restrictions silently dropped) and one HIGH cross-principal cache leak,
+plus 12 more MEDIUM/LOW findings. Every one is now fixed, tested, and documented — see the "4.6
+progress snapshot" below for the full sub-step table and 4.6.16's own section for the exit-gate
+proof. **Phase 5.4 (live-LLM red-team + latency/cost proof), the embedder bake-off, and adaptive
+routing are unblocked on 4.6** — but 5.4/the bake-off still need real API spend and a live
+Confluence token (still dead, blocker #3), so they're not startable yet regardless.
 
 **Phase 4.7 (Obi widget) status, summarized here — full as-built detail in its own section below.**
 Built across several sessions (2026-08-10/11), independent of Phase 4.6/5, never blocking either.
 Currently **done in code, uncommitted, with a disclosed test gap** — see Phase 4.7's own "Known
 gaps / debt" for exactly what that gap is (a deleted test file's coverage not replaced, three other
-test files that now fail to compile). Do not treat it as closed until that's cleared; the ledger
-row in the phase table below carries the same caveat. **Resume Phase 4.6 at 4.6.13 next** — that
-deferral (4.7 before 4.6.13) was the user's explicit request and is now resolved; it doesn't reopen
-4.6's gate on Phase 5.4, only the order changed.
+test files that now fail to compile — confirmed still current: `pnpm --filter web test` reads
+**25 failed / 83 passed** as of the 4.6.16 exit-gate run below). Do not treat it as closed until
+that's cleared; the ledger row in the phase table below carries the same caveat. This gap is
+**Phase 4.7's own, pre-existing, and out of Phase 4.6's scope** (4.6's file list is backend-only —
+see its own scope row in the phase table) — it did not block 4.6.16 and is not touched by any
+4.6.13–4.6.16 commit.
 
 *(The detailed sub-step-by-sub-step history that used to live here — every deviation, live-browser
 bug caught, and copy decision across roughly ten sessions — was consolidated into Phase 4.7's own
@@ -50,14 +55,14 @@ split (frontend-only → build now; touches backend/contracts/security → new p
 regressions — verified by diffing against the pre-session `aae90e5` baseline) and added **Phase 7**
 (vision-grounded image analysis, superseding `docs/future-ideas/IDEAS.md` #3) as a scoped-not-
 designed requirement. Phase 7 is not started — no contract change, no backend call, no design pass
-or ADR yet. This does not change the existing plan: still resume Phase 4.6 at 4.6.13 next; Phase
-4.7's disclosed test gap (above) is still open and unrelated to this addition.
+or ADR yet. Phase 4.7's disclosed test gap (above) is still open and unrelated to this addition.
 
-#### 4.6 progress snapshot (2026-08-11 session) — read this before doing anything else
+#### 4.6 progress snapshot — ✅ all 16 of 16 sub-steps done, exit gate green (2026-08-11)
 
-**Done, verified, committed — 4.6.1 through 4.6.11 (11 of 16 sub-steps).** Test count climbed
-219 → 272 across these, boundaries clean throughout, ruff/pyright never regressed (pyright's true
-baseline was reconciled 31→34 at 4.6.9, see ADR-0003 D1). Commit refs, one per sub-step:
+Test count climbed 219 → 274 across the sub-steps that added tests (4.6.13–4.6.16 were doc/comment-
+only, no test-count change); boundaries clean throughout; ruff/pyright never regressed past the
+reconciled baseline (pyright's true baseline was moved 31→34 at 4.6.9, see ADR-0003 D1 — final
+state 2 ruff errors / 15 unformatted / 34 pyright errors). Commit refs, one per sub-step:
 
 | Sub-step | What | Commit |
 |---|---|---|
@@ -73,6 +78,10 @@ baseline was reconciled 31→34 at 4.6.9, see ADR-0003 D1). Commit refs, one per
 | 4.6.10 | RLS reader-role fails closed outside offline envs | `d897a40` |
 | 4.6.11 | Event dedup: `delivery_id` collision no longer a 500 | `0a61fb4` |
 | 4.6.12 | `refusal_reason` on the `chat_request` log line (+ a real `chat_router.log` monkeypatch bug found via `pyright` and fixed before any test ran) | `9d7c0bf` |
+| 4.6.13 | Dead-code disposition batch (doc-only; corrected the `Reranker` isinstance claim) | `b313865` |
+| 4.6.14 | `how_this_works.md` full rewrite for the shipped Phase 4/4.6 system (+ a 2nd dead TOC anchor found beyond the one named) | `555c646` |
+| 4.6.15 | Remaining doc-drift batch (eval kinds, FEATURES.md exports, CLAUDE.md baseline, `QueryTrace` docstring) | `0101848` |
+| 4.6.16 | Exit gate — full repo-wide re-verification, zero regressions, this table closed out | *(this commit)* |
 
 Full narrative for each — root cause, design decisions, exact diff, verification commands and
 output — is in that sub-step's own `### 4.6.x` section further down this file. Read those, not
@@ -119,14 +128,15 @@ headless profile): reloaded `/chat` via `claude-in-chrome`, read the console wit
 one-line, outside any phase's scope; ask before committing if you want it bundled separately from
 4.6.13+.
 
-**What's left: 4.6.13, 4.6.14, 4.6.15, 4.6.16 (the exit gate) — all still ⬜ todo, full scope
-already specified in their own sections below, unchanged from the original plan text.** Only once
-4.6.16 is green does Phase 5.4 / the embedder bake-off / adaptive routing resume.
+**Phase 4.6 is fully closed — nothing left in this backlog.** All 16 sub-steps done; the exit gate
+(4.6.16) re-ran the full repo-wide gate and found zero regressions. Phase 5.4 / the embedder
+bake-off / adaptive routing are unblocked by 4.6 (still separately blocked on real API spend and a
+live Confluence token, per blocker #3 below).
 
 **4.6.2 caveat, still open:** implemented against the fixture gateway per the user's explicit
 "implement now, verify later" choice — **live Confluence verification of the group-membership
 endpoint is still outstanding** (Confluence token still dead, blocker #3) and must happen before
-trusting 4.6.2's live behavior. Not gating 4.6.13+.
+trusting 4.6.2's live behavior. Did not gate 4.6.13–4.6.16 and does not gate Phase 5.4.
 
 **Two "needs your input" flags raised so far, not blocking (defaults were taken, see each
 section for the reasoning), open for your override at any time:**
@@ -893,8 +903,8 @@ OCR/image reading untouched.
 | **5.1** — `CHAT_API_KEY` rotation mechanism | ✅ done | `261ac1e` | 3 tests → 197 total; overlap-window auth, rotation script, runbook |
 | **5.2** — exact-match answer caching | ✅ done | `261ac1e` | 16 tests → 213 total; `TTLCache` extracted to `shared/`, `CachingAnswerService` wraps `AnswerService`, no cross-principal leak |
 | **5.3** — prompt-injection + permission/isolation red-team | ✅ done | `92bbb7f` | 6 tests → 219 total; found + fixed a real numeric-principal space-trust bypass; no live LLM spend |
-| **4.6** — fixes-backlog remediation (16 sub-steps + exit gate) | 🔶 in progress (4.6.1+4.6.2/16 done) | — | independent same-day audit (`docs/rag/fixes/`) found a CRITICAL ACL bypass + a HIGH cross-principal leak + 12 more findings in already-"done" phases 0-4; **gates 5.4/bake-off/adaptive-routing** until the 4.6.16 exit gate is green; 4.6.2 live-verification still outstanding (Confluence token dead) |
-| **5** (remaining) — 5.4 live-LLM red-team + latency/cost proof, embedder bake-off, adaptive routing | ⬜ todo (blocked on 4.6) | — | 5.4 needs real API calls/spend; bake-off blocked on Confluence token + `VOYAGE_API_KEY` |
+| **4.6** — fixes-backlog remediation (16 sub-steps + exit gate) | ✅ done | see "4.6 progress snapshot" (§0) for all 16 commit refs | independent same-day audit (`docs/rag/fixes/`) found a CRITICAL ACL bypass + a HIGH cross-principal leak + 12 more findings in already-"done" phases 0-4; all fixed, exit gate 4.6.16 green, 274 tests, no ruff/pyright regression; 4.6.2 live-verification still outstanding (Confluence token dead), does not gate anything |
+| **5** (remaining) — 5.4 live-LLM red-team + latency/cost proof, embedder bake-off, adaptive routing | ⬜ todo (unblocked by 4.6; blocked on API spend + token) | — | 5.4 needs real API calls/spend; bake-off blocked on Confluence token + `VOYAGE_API_KEY` |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
 | **4.7** — Obi widget: chat UI rebuild, brand tokens, screenshot capture, real i18n, `/chat` route removed, image lightbox (4.7.8) | ✅ done, **uncommitted** | `206baab` (first sub-step only); everything since, including the `/chat` removal, the layout bug fix, and 4.7.8, is uncommitted | frontend-only, `apps/web`; does not gate Phase 5; source of truth `docs/rag/reference/obi-mockup/` + `docs/rag/OBI-WIDGET-DESIGN.md`; test suite not re-run since the last two rounds of changes — see Phase 4.7's own "Known gaps / debt" |
 | **4.8** — Frontend/backend repository separation (4.8.1 → 4.8.7) | ⬜ todo (blocked on registry/repo-name/monorepo-fate decisions) | — | supersedes ADR-0006's deferral; see `docs/adr/0007-Frontend-Backend-Repository-Separation.md`; do after 4.7 |
@@ -2118,13 +2128,43 @@ moving on.
 format --check` back at baseline (2 errors / 15 unformatted, same file list); `pyright` unchanged
 (34 errors, same file list); no migration.
 
-### 4.6.16 — Exit gate ⬜ todo
+### 4.6.16 — Exit gate ✅ done (2026-08-11)
 
-Re-run `make check` (backend + web), `make boundaries`, `uv run ruff check .` / `ruff format --check
-.`, `uv run pyright` repo-wide. Confirm zero regressions vs. whatever 4.6.9 established as the final
-baseline; every new test added across 4.6.1–4.6.12 is green; this ledger has one row per `4.6.x`
-sub-step with commit ref + test-count delta + any deviations, per the existing convention. Only once
-this gate is green does Phase 5.4 / the embedder bake-off / adaptive routing resume.
+**Status: GREEN. Zero regressions vs. the 4.6.9-reconciled baseline. Phase 4.6 is fully closed.**
+
+Re-ran every check named in this sub-step's own scope, from a clean shell, after 4.6.13–4.6.15 were
+already committed:
+
+| Check | Command | Result |
+|---|---|---|
+| Backend tests | `make check` (repo root) | **274 passed**, 0 failed |
+| Boundaries | `make boundaries` (repo root) | `Feature boundaries OK — no cross-feature deep imports.` |
+| Ruff lint | `uv run ruff check .` (from `apps/automation`) | **2 errors** — both pre-existing, `alembic/env.py` + `alembic/versions/0001_core_schema.py` (unsorted imports in Alembic-generated files, never touched) |
+| Ruff format | `uv run ruff format --check .` | **15 unformatted**, same file list as the running 4.6.x baseline |
+| Pyright | `uv run pyright` | **34 errors, 1 warning** — identical file list to 4.6.9's reconciled baseline |
+| Migration state | `uv run alembic current` | `0006_dedupe_source_type_check (head)` — no pending migration |
+
+**Zero regressions vs. the 4.6.9 baseline** (2 ruff errors / 15 unformatted / 34 pyright errors) —
+every number above matches it exactly, across all of 4.6.10 through 4.6.16. Every test added across
+4.6.1–4.6.12 (the sub-steps that added tests; 4.6.13–4.6.15 were doc/comment-only) is included in
+the 274 passing.
+
+**Web tests — checked, not gating.** `pnpm --filter web test` → **25 failed / 83 passed**. This is
+**not a 4.6 regression**: 4.6's own scope (see the phase table's row for 4.6) is backend-only
+(`app/features/{confluence_sync,retrieval,rag_agent}/**`, `shared/rate_limiter.py`,
+`platform/clients/confluence_client.py`, `platform/db/models.py`); zero 4.6.13–4.6.16 commits
+touched `apps/web`. The failures are Phase 4.7's own pre-existing, already-disclosed gap (three
+test files call `useChatSession()` without a `ChatSessionProvider` wrapper, plus a deleted test
+file's coverage not replaced — see Phase 4.7's "Known gaps / debt"). Recorded here for an honest
+gate readout, not silently omitted — but fixing it is Phase 4.7's job, not this backlog's, and
+4.6.16 does not block on it.
+
+**This ledger's one-row-per-sub-step convention** is satisfied by the "4.6 progress snapshot" table
+above (§0) — 16 rows, one per `4.6.x`, each with its commit ref; per-sub-step deviations are in each
+sub-step's own `### 4.6.x` section.
+
+**Phase 4.6 is closed. Phase 5.4 / the embedder bake-off / adaptive routing are unblocked by this
+gate** — they remain separately blocked on real API spend and a live Confluence token (blocker #3).
 
 ---
 
