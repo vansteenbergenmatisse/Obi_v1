@@ -124,9 +124,9 @@ before React loaded" case the Next.js hydration-mismatch docs call out by name. 
 standard, documented workaround: added `suppressHydrationWarning` to the `<html>` tag in
 `RootLayout`. Verified live, in the user's actual Chrome (real extensions active, not a clean
 headless profile): reloaded `/chat` via `claude-in-chrome`, read the console with
-`onlyErrors: true` and a broad pattern — no hydration warning, no errors. **Not committed** —
-one-line, outside any phase's scope; ask before committing if you want it bundled separately from
-4.6.13+.
+`onlyErrors: true` and a broad pattern — no hydration warning, no errors. **Still not committed** —
+one-line, outside any phase's scope, sitting alongside Phase 4.7's other uncommitted work; ask
+before committing which of the uncommitted `apps/web` changes you want bundled together.
 
 **Phase 4.6 is fully closed — nothing left in this backlog.** All 16 sub-steps done; the exit gate
 (4.6.16) re-ran the full repo-wide gate and found zero regressions. Phase 5.4 / the embedder
@@ -161,8 +161,9 @@ pure resolver. **No gaps found.** Split into two commits: `ede2ae2` (docs — AD
 fixes-backlog audit + the IDEAS.md #4 correction ADR-0006 required) and `4d0ba70` (the 4.6.1 code fix
 + this ledger's own 4.6 section). 4.6.2 remains blocked on your input below — not started.
 
-**Phase 4.7 is now ✅ done (2026-08-11)** — see its own section for the full narrative. What's left,
-independent of Phase 5: **Phase 4.8** (frontend/backend repository separation — split `apps/web` and
+**Phase 4.7 is done in code (2026-08-11), uncommitted, with a disclosed test gap** — see its own
+section for the full narrative and the "Known gaps / debt" list before treating it as closed. What's
+left, independent of Phase 5: **Phase 4.8** (frontend/backend repository separation — split `apps/web` and
 `apps/automation` into independent repos, `packages/contracts`/`design-tokens` become published
 versioned packages). **4.8 supersedes ADR-0006's deferral** — see
 `docs/adr/0007-Frontend-Backend-Repository-Separation.md` for the actual decision and why ADR-0006 no
@@ -173,13 +174,15 @@ from Phase 4.6's backend files.
 
 **No phase auto-starts.** Per the project's standing local working rule, a fresh session must stop
 and get an explicit go-ahead from the user before starting *any* phase/sub-step. On resume: read
-this ledger, state what's ready (4.6.13 next, per the deferral note above; 4.8 also available but
-blocked on its own "needs your input" decisions below), and ask which to start rather than beginning
-any automatically. Phase 4.8 has three unanswered "needs your input" decisions (registry choice, new
-repo names, origin-monorepo fate) that block it regardless of ordering.
+this ledger, state what's ready — **Phase 4.6 is fully closed (all 16 sub-steps + exit gate)**;
+options are closing Phase 4.7's disclosed test gap, Phase 4.8 (blocked on its own "needs your
+input" decisions below), or Phase 5.4/the embedder bake-off once real API spend and a live
+Confluence token are available — and ask which to start rather than beginning any automatically.
+Phase 4.8 has three unanswered "needs your input" decisions (registry choice, new repo names,
+origin-monorepo fate) that block it regardless of ordering.
 
 Fresh context: read this ledger + `docs/rag/DESIGN.md` (§2 target pipeline, §5 accuracy stack) +
-`docs/adr/0005*` + `docs/adr/0007*`, then ask before starting Phase 4.6.13 or Phase 4.8. The chat
+`docs/adr/0005*` + `docs/adr/0007*`, then ask which of the above to start. The chat
 feature (backend + web UI) is functionally done; the floating widget is now the **only** chat
 surface (the old `/chat` route was removed — see Phase 4.7's own section) — both dev servers run
 together (`uvicorn app.main:app` on :8000, `pnpm --filter web dev` on :3000, widget on every page).
