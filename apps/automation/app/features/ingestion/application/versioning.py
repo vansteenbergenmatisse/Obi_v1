@@ -441,6 +441,20 @@ def rollback_to(session: Session, *, page_id: int, target_version_id: int) -> bo
     )
     ps.active_doc_version_id = target_version_id
     ps.current_cf_version = target.cf_version
+    # restore the change-detection hashes and pipeline stamps the target version actually carries —
+    # otherwise the next sync's freshly computed values wrongly agree with the stale (pre-rollback)
+    # cached ones and classify() reports no_change, silently pinning the corpus to a stale version.
+    # Fields with no DocumentVersion counterpart (title, labels_hash, access_scope_hash,
+    # attachment_manifest_hash, etc.) are left as-is — they self-heal on the next reconciliation
+    # sweep, which re-fetches metadata regardless of this rollback.
+    ps.content_hash = target.content_hash
+    ps.structure_hash = target.structure_hash
+    ps.parser_version = target.parser_version
+    ps.chunker_version = target.chunker_version
+    ps.contextualization_version = target.contextualization_version
+    ps.embedding_model = target.embedding_model
+    ps.embedding_dim = target.embedding_dim
+    ps.retrieval_schema_version = target.retrieval_schema_version
     ps.updated_at = now
     session.flush()
     return True

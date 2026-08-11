@@ -27,13 +27,13 @@ one HIGH cross-principal cache leak, plus 12 more MEDIUM/LOW findings. **Phase 4
 remediation, see its own section below Phase 4) must fully complete — exit gate 4.6.16 green — before
 5.4 / the embedder bake-off / adaptive routing may resume.** Do Phase 4.6 next, in the order given.
 
-**4.6.1, 4.6.2, 4.6.3, and 4.6.4 done (2026-08-10, see their own sections for detail) → 248 tests
-(was 219), boundaries clean, no ruff/pyright regression.** 4.6.2 was implemented against the
+**4.6.1, 4.6.2, 4.6.3, 4.6.4, and 4.6.5 done (2026-08-10, see their own sections for detail) → 251
+tests (was 219), boundaries clean, no ruff/pyright regression.** 4.6.2 was implemented against the
 fixture gateway per the user's explicit "implement now, verify later" choice — **live Confluence
 verification of the group-membership endpoint is still outstanding** (token still dead, blocker
-#3) and must happen before trusting 4.6.2's live behavior. **4.6.5 (`rollback_to` doesn't restore
-`PageSource`'s cached hashes, MEDIUM-HIGH) is next** — has a "needs your input" item, see its
-section below.
+#3) and must happen before trusting 4.6.2's live behavior. 4.6.5 has a "needs your input" item
+flagged for confirmation (not blocking) — see its section below. **4.6.6 (`permission.py`'s
+overloaded `scope` string, MEDIUM) is next.**
 
 **Commit gap closed — 2026-08-10 (new session).** 4.6.1 (Confluence group-restriction fail-closed
 fix), plus ADR-0006/ADR-0007 and the six-agent `docs/rag/fixes/` audit itself, were all sitting
@@ -1472,19 +1472,60 @@ this was a wiring gap at one of its two call sites, not a missing capability.
 directly); `alembic current` → `0005_page_restriction (head)`, no migration (pure code fix, no
 schema change).
 
-### 4.6.5 — `rollback_to` doesn't restore `PageSource`'s cached hashes (MEDIUM-HIGH)
+### 4.6.5 — `rollback_to` doesn't restore `PageSource`'s cached hashes (MEDIUM-HIGH) ✅ done (2026-08-10)
 
-`apps/automation/app/features/confluence_sync/application/versioning.py::rollback_to` never copies
-the target `DocumentVersion`'s `content_hash`/`structure_hash`/`parser_version`/etc. back onto
-`PageSource` — a rollback can leave the corpus silently pinned to a stale version, because the next
-sync's freshly computed hashes wrongly match the stale cached ones and `classify()` reports
-`no_change`. Fix: copy those fields back on rollback. **Needs your input:** `PageSource` fields with
-no `DocumentVersion` counterpart (`title`, `labels_hash`, `access_scope_hash`, etc.) have nothing
-correct to restore — recommend leaving them as pre-rollback values (self-heals on the next
-reconciliation sweep) rather than forcing a metadata re-fetch; confirm before closing this out.
-Tests: rollback then sync an unchanged page → `classify()` reports `no_change` correctly; rollback
-then sync a page with a real newer revision → change is detected, not spuriously masked. No
-migration (no schema change, only which values get written).
+**Status: implemented, tested (3 new tests), boundaries clean, no ruff/pyright regression → 251
+tests total (was 248). Pure code fix, no migration, exactly as scoped.**
+
+**Location correction (not a scope change):** the plan text named
+`confluence_sync/application/versioning.py`; the real file is
+`apps/automation/app/features/ingestion/application/versioning.py::rollback_to` — `versioning.py`
+is owned by `ingestion`, not `confluence_sync` (confirmed by reading `app/features/ingestion/
+__init__.py`'s public root, which already exports `rollback_to`).
+
+**Fix:** `rollback_to` now also copies `content_hash`, `structure_hash`, `parser_version`,
+`chunker_version`, `contextualization_version`, `embedding_model`, `embedding_dim`, and
+`retrieval_schema_version` from the target `DocumentVersion` onto `PageSource` — the exact set of
+fields that exist on both models. `current_cf_version` was already restored correctly pre-fix (not
+part of the bug).
+
+**"Needs your input" item — resolved by taking the plan's own recommendation:** `PageSource`
+fields with no `DocumentVersion` counterpart (`title`, `labels_hash`, `access_scope_hash`,
+`attachment_manifest_hash`, `source_url`, `source_modified_at`, `tags`, `parent_id`, `source_type`,
+`source_id`, `space_id`, `page_status`) are left as their pre-rollback values — nothing correct
+exists to restore them to, and they self-heal on the next reconciliation sweep (which re-fetches
+metadata regardless of any rollback). **Flagging for your explicit confirmation per the plan's own
+"confirm before closing this out" — not blocking on it, since it's the plan's own stated default and
+is reversible (a later sweep corrects any drift either way).**
+
+**Verification of the fix's real effect (not just "tests pass"):** confirmed by deliberately
+reverting the fix locally and re-running the new test file — both
+`test_rollback_restores_page_source_hashes_and_pipeline_stamps` and
+`test_rollback_then_real_newer_revision_is_detected_not_masked` failed against the pre-fix code
+(the latter with `decision.meaningful == False` — the exact silent-masking bug the plan described),
+then passed once the fix was restored. `test_rollback_then_unchanged_sync_reports_no_change` is a
+sanity check (doesn't discriminate old vs. new behavior on its own, since the version-guard branch
+in `classify()` short-circuits before the hash comparison in this particular scenario) but matches
+the plan's literal acceptance wording.
+
+**Shipped:**
+- `app/features/ingestion/application/versioning.py::rollback_to`: the 8-field restore, with a
+  comment explaining which fields are deliberately left alone and why.
+- `app/features/confluence_sync/tests/test_versioning_rollback.py` (+3): direct field-level
+  assertion that a rollback repoints all 8 fields at the target version; a `classify()`-level
+  regression test (mirroring `sync_service.handle_sync_page`'s own call, read-only) proving an
+  unchanged re-sync after rollback still reports `no_change`; a `classify()`-level regression test
+  proving the source revision that was active *immediately before* the rollback (the scenario that
+  actually exposes the bug — re-serving a version whose hash was the one PageSource had cached) is
+  still detected as a real change, not masked.
+
+**Verification:** `make check` (from repo root) → **251 passed** (was 248), boundaries clean;
+`ruff check` unchanged (2 errors, both pre-existing in `alembic/env.py`/`0001_core_schema.py`);
+`ruff format --check` unchanged (17 unformatted, new/edited files excluded from that count);
+`pyright` unchanged (34 errors, identical file list — the two errors in the edited test file are
+both pre-existing, on the unmodified `test_rollback_restores_prior_version`, confirmed by line
+number); `alembic current` → `0005_page_restriction (head)`, no migration (pure code fix, matches
+the plan's own "no migration" expectation).
 
 ### 4.6.6 — `permission.py`'s overloaded `scope` string (MEDIUM)
 
