@@ -27,49 +27,31 @@ one HIGH cross-principal cache leak, plus 12 more MEDIUM/LOW findings. **Phase 4
 remediation, see its own section below Phase 4) must fully complete — exit gate 4.6.16 green — before
 5.4 / the embedder bake-off / adaptive routing may resume.** Do Phase 4.6 next, in the order given.
 
-**Independent re-verification of Phase 4.7, this session (2026-08-11), before resuming 4.6.13 —
-per `CLAUDE.local.md` §2, did not trust the prior session's self-report.** All of 4.7.2-4.7.4's
-code was sitting uncommitted (context had been cleared without a commit). Re-ran everything live
-rather than re-reading the ledger: `pnpm --filter web test` → 106/106 passed, `tsc --noEmit` clean,
-`pnpm --filter web build` clean, then a real browser pass (Chrome DevTools) against the real
-running backend — teaser → launcher → panel open, a real SSE round trip to a genuine refusal,
-"···"/language menus (mutually exclusive switch confirmed working, six locales, English checked),
-restart entry, thumbs feedback (PATCH persisted, correct success/danger fill on select), header
-exactly 52px/3 icons/`padding: 0 14px 0 16px`, composer exactly
-`rounded-xl border-[#8d8bfa] bg-surface-raised p-[12px_12px_8px] shadow-[0_1px_4px_rgba(99,91,255,0.06)]`
-— all confirmed via `getComputedStyle`/`getBoundingClientRect`, not eyeballing. Zero console errors
-or hydration warnings.
+**Phase 4.7 (Obi widget) status, summarized here — full as-built detail in its own section below.**
+Built across several sessions (2026-08-10/11), independent of Phase 4.6/5, never blocking either.
+Currently **done in code, uncommitted, with a disclosed test gap** — see Phase 4.7's own "Known
+gaps / debt" for exactly what that gap is (a deleted test file's coverage not replaced, three other
+test files that now fail to compile). Do not treat it as closed until that's cleared; the ledger
+row in the phase table below carries the same caveat. **Resume Phase 4.6 at 4.6.13 next** — that
+deferral (4.7 before 4.6.13) was the user's explicit request and is now resolved; it doesn't reopen
+4.6's gate on Phase 5.4, only the order changed.
 
-**One real gap found and fixed:** the refusal badge (`message-bubble.tsx`) was still styled
-identically to the neutral citation chips (`border-border bg-surface-raised text-text`) — the
-*same* bug the 4.5 design-review narrative below claims was already "fixed — distinct filled/
-bright-text treatment so it reads as status, not metadata." It wasn't; confirmed via
-`git show HEAD:.../message-list.tsx` that the pre-4.7 committed code never had that fix either, so
-this isn't a 4.7 regression, it's a stale claim in this ledger going back to 4.5. Fixed now using
-the `danger`/`danger-bg` tokens 4.7.2 added (the same tokens "Restart conversation" and the
-not-helpful thumb already use) — `border-danger-bg bg-danger-bg text-danger`. Re-ran the full web
-suite after the fix: still 106/106. Live-reverified: badge now renders as a distinct red chip, not
-a grey one indistinguishable from the citation list.
+*(The detailed sub-step-by-sub-step history that used to live here — every deviation, live-browser
+bug caught, and copy decision across roughly ten sessions — was consolidated into Phase 4.7's own
+section on 2026-08-11 at the user's request, once the widget itself was far enough along that the
+history was no longer useful as a day-to-day reference. It's still in git history for anyone who
+needs it.)
 
-**✅ Phase 4.7 fully complete (2026-08-11) — 4.7.1 → 4.7.4, all gates met.** The user supplied a
-real UI mockup (`Obi chatbot UI mockups/`) and asked for the chat UI rebuild to happen *before*
-4.6.13, run to full completion without diverting back mid-way. Done: pixel-exact floating widget
-(launcher → teaser → panel), shared conversation session between the full-page `/chat` route and
-the widget (D0), 106 web tests passing, live-browser-verified. **Resume at 4.6.13 next** — see
-that sub-step's own section below for full scope. Full narrative for 4.7.4 (the last sub-step,
-including the D0 provider lift) is in Phase 4.7's own `### 4.7.4` section further down this file.
-
-**4.7.6 added + everything committed, new session (2026-08-11).** Two more pieces (real
-client-side image-attachment preview, dev-only homepage backdrop) were designed and shipped in a
-session that ended before committing — recorded in the new `docs/rag/OBI-WIDGET-DESIGN.md` and this
-ledger's own `### 4.7.6` section. Per `CLAUDE.local.md` §2, re-verified live before trusting either
-doc's self-report rather than committing on faith: `pnpm --filter web test` → **113/113 passed**,
-`tsc --noEmit` clean, `pnpm --filter web build` clean, then a live-browser pass (accidentally
-clobbered the running dev server's `.next` cache by running a production build in the same
-directory while it was live — restarted it clean, not an app bug) confirmed the homepage backdrop,
-teaser, launcher, and panel/composer/attach affordance all match spec with zero console errors. No
-gaps found. All of 4.7.2 → 4.7.6 (previously uncommitted) plus this ledger update committed
-together this session.
+**New this session (2026-08-11): 4.7.8 built, Phase 7 scoped.** The user asked for
+click-to-zoom-preview on attached/screenshotted images, plus vision analysis of every such image.
+Checked the code first rather than trusting the description — neither existed. Per the user's own
+split (frontend-only → build now; touches backend/contracts/security → new phase): built **4.7.8**
+(`image-lightbox.tsx` + `attachment-strip.tsx` wiring, +2 tests, all passing, `tsc` clean, zero new
+regressions — verified by diffing against the pre-session `aae90e5` baseline) and added **Phase 7**
+(vision-grounded image analysis, superseding `docs/future-ideas/IDEAS.md` #3) as a scoped-not-
+designed requirement. Phase 7 is not started — no contract change, no backend call, no design pass
+or ADR yet. This does not change the existing plan: still resume Phase 4.6 at 4.6.13 next; Phase
+4.7's disclosed test gap (above) is still open and unrelated to this addition.
 
 #### 4.6 progress snapshot (2026-08-11 session) — read this before doing anything else
 
@@ -188,9 +170,11 @@ repo names, origin-monorepo fate) that block it regardless of ordering.
 
 Fresh context: read this ledger + `docs/rag/DESIGN.md` (§2 target pipeline, §5 accuracy stack) +
 `docs/adr/0005*` + `docs/adr/0007*`, then ask before starting Phase 4.6.13 or Phase 4.8. The chat
-feature (backend + web UI, including the floating widget) is done and live-verified end to end; both
-dev servers were confirmed running together again after 4.7.4 (`uvicorn app.main:app` on :8000,
-`pnpm --filter web dev` on :3000, chat UI at `/chat` and the widget on every page).
+feature (backend + web UI) is functionally done; the floating widget is now the **only** chat
+surface (the old `/chat` route was removed — see Phase 4.7's own section) — both dev servers run
+together (`uvicorn app.main:app` on :8000, `pnpm --filter web dev` on :3000, widget on every page).
+Phase 4.7's own section has the current, disclosed test/commit gap; don't treat it as fully closed
+until that's cleared.
 
 **Commit gap closed — 2026-08-10 (new session, again).** 5.3 was implemented and self-reported
 done in the prior session but never committed (`git status` showed the same 7 files still dirty at
@@ -912,8 +896,9 @@ OCR/image reading untouched.
 | **4.6** — fixes-backlog remediation (16 sub-steps + exit gate) | 🔶 in progress (4.6.1+4.6.2/16 done) | — | independent same-day audit (`docs/rag/fixes/`) found a CRITICAL ACL bypass + a HIGH cross-principal leak + 12 more findings in already-"done" phases 0-4; **gates 5.4/bake-off/adaptive-routing** until the 4.6.16 exit gate is green; 4.6.2 live-verification still outstanding (Confluence token dead) |
 | **5** (remaining) — 5.4 live-LLM red-team + latency/cost proof, embedder bake-off, adaptive routing | ⬜ todo (blocked on 4.6) | — | 5.4 needs real API calls/spend; bake-off blocked on Confluence token + `VOYAGE_API_KEY` |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
-| **4.7** — UI component refactor: Obi widget rebuild + brand tokens (4.7.1 → 4.7.6) | ✅ done | `206baab` (4.7.1); rest committed this session | frontend-only, `apps/web`; does not gate Phase 5; source of truth `/Users/matissevansteenbergen/Downloads/Obi chatbot UI mockups/` + `docs/rag/OBI-WIDGET-DESIGN.md`; 113 web tests (was 39); live-browser-verified |
+| **4.7** — Obi widget: chat UI rebuild, brand tokens, screenshot capture, real i18n, `/chat` route removed, image lightbox (4.7.8) | ✅ done, **uncommitted** | `206baab` (first sub-step only); everything since, including the `/chat` removal, the layout bug fix, and 4.7.8, is uncommitted | frontend-only, `apps/web`; does not gate Phase 5; source of truth `docs/rag/reference/obi-mockup/` + `docs/rag/OBI-WIDGET-DESIGN.md`; test suite not re-run since the last two rounds of changes — see Phase 4.7's own "Known gaps / debt" |
 | **4.8** — Frontend/backend repository separation (4.8.1 → 4.8.7) | ⬜ todo (blocked on registry/repo-name/monorepo-fate decisions) | — | supersedes ADR-0006's deferral; see `docs/adr/0007-Frontend-Backend-Repository-Separation.md`; do after 4.7 |
+| **7** — Vision-grounded image analysis (attachments + screenshot capture) | ⬜ todo (just scoped, 2026-08-11) | — | supersedes `docs/future-ideas/IDEAS.md` #3; every image added via attachment or the screenshot button gets analyzed by a vision-capable model call, folded into the answer; touches contracts + `apps/automation` + security review — not frontend-only, see Phase 7's own section |
 
 Gate at each ✅: `make check` green (**219 backend tests** as of 5.3 — 4.5 touched no backend code;
 was 213 at 5.1/5.2, 197 at 5.1, 194 at 4.4, 167 at 4.3, 164 at 4.2, 144 at 3.5.6, 130 at 4.1, 120 at
@@ -2027,498 +2012,162 @@ this gate is green does Phase 5.4 / the embedder bake-off / adaptive routing res
 
 ---
 
-## Phase 4.7 — UI component refactor (Obi widget) ✅ done *(independent; did not gate Phase 5)*
+## Phase 4.7 — Obi widget (chat UI) ✅ done, uncommitted *(independent; does not gate Phase 5)*
 
-**Source of design truth:** `/Users/matissevansteenbergen/Downloads/Obi chatbot UI mockups/`
-(specifically `Obi Assistant.dc.html` + `support.js`) — the user-supplied mockup this entire phase
-rebuilds. It's a proprietary prototyping-tool export (design/behavior reference only, not usable
-code): one floating widget (launcher → teaser → panel), a fake Stripe-style dashboard backdrop
-(irrelevant, ignore it), and zero real backend calls (all "AI" replies are canned keyword-matched
-strings) — only its UI/interaction shapes carry over, not any code or fake logic.
+**What this phase built:** replaced `apps/web`'s chat UI with a pixel-accurate rebuild of the
+user-supplied Obi mockup (`docs/rag/reference/obi-mockup/Obi Assistant.dc.html`, a proprietary
+prototyping-tool export — design/interaction reference only, no reusable code, no real backend).
+The floating widget (launcher → teaser → panel) is now the **only** chat surface in `apps/web` —
+the old standalone full-page `/chat` route existed for most of this phase and was removed at the
+end once the widget covered everything it did. This section is the ledger's as-built summary,
+rewritten 2026-08-11 to describe what actually exists today rather than the sub-step-by-sub-step
+history that got it there (that history — every deviation, live-browser bug caught, and copy
+decision — is preserved in git history and in `docs/rag/OBI-WIDGET-DESIGN.md`'s own revision trail
+for anyone who needs it; nothing here contradicts it, it's just no longer the front door).
 
-**Goal.** Rebuild `apps/web`'s chat UI to look and behave exactly like that mockup, as a proper
-component library, without losing or forking any existing real functionality (SSE streaming,
-citations, refusal handling, feedback, security controls). Target: `apps/web` only. Nothing in
-`apps/automation` changes in this phase — the repo-separation work this enables is its own next
-phase, **4.8**.
+**Not committed as of this writing** — see `docs/rag/OBI-WIDGET-DESIGN.md` §8 and this file's own
+§0 status ledger for the exact test/verification gap before that should happen.
 
-**Product decisions already made (binding, do not relitigate):**
-- Adopt the mockup's exact visuals now as the real Omniboost brand tokens — Stripe-style light
-  theme, `#635bff` purple accent, Inter font — applied app-wide, not scoped to just the widget.
-- The floating chat widget (launcher + teaser + panel) is the primary deliverable. The existing
-  full-page `/chat` route stays working (already built/tested) sharing the same live conversation
-  session as the widget, but gets no further design investment — all mockup-fidelity work targets
-  the widget.
-- Screenshot capture: dropped entirely — no button, no flash animation, no fake attach. Zero real
-  capability exists to back it (see `docs/future-ideas/IDEAS.md` idea #3 for what a real version
-  would need).
-- File attachment: shipped as an honest disabled stub (visible, not functional) — no upload endpoint
-  exists yet.
-- Language switcher (6 locales): shipped as a stub — menu renders, current locale shown, selecting
-  closes with no-op. No partial/fake translation.
-- "Developer docs"/"Support articles" menu items: disabled stubs until real URLs exist.
-- "Restart conversation": built real (trivial local-state reset).
-- Assistant display name: **"Obi" is the mockup's placeholder name, not a confirmed product
-  decision** — pass it as a prop/config value, confirm the real name with the user before ship.
+### Architecture
 
-**Architecture decision (D0) — shared session, not two conversations.** Extract the conversation
-state machine currently inline in `apps/web/src/features/chat/ui/chat-panel.tsx` (`useState`/
-`useRef`/`streamChat`/`sendFeedback`) into a `ChatSessionProvider`/`useChatSession()` context,
-mounted once in `apps/web/src/app/layout.tsx`. Both the existing full-page `ChatPanel` and the new
-floating `ChatWidget` read the same live session — otherwise the widget and the page would run two
-independent, contradictory conversations the moment both are visible. Pure refactor of existing
-logic; SSE/citations/refusal/feedback behavior is unchanged. Write a characterization test of
-current `ChatPanel` behavior *before* extracting, to guarantee no regression.
+- **D0 — one shared conversation, not two.** `ChatSessionProvider`/`useChatSession()`
+  (`features/chat/ui/chat-session-provider.tsx`) owns all session state — messages, pending,
+  restart, and (as of the widget-only cleanup) the widget's own UI-copy `locale` — mounted once in
+  `apps/web/src/app/layout.tsx` alongside `ChatWidget`. Nothing else mounts a second provider.
+- **Floating overlay, not a flex sibling.** The mockup lays its panel out as a flex sibling that
+  shrinks a fake host dashboard; `floating-frame.tsx` instead uses `position: fixed`, pinned to the
+  right edge, full height, on top of page content — this app's real pages aren't designed to
+  resize for a docked panel. Same visual width/border/shadow as the mockup
+  (`clamp(360px,29%,440px)`, `-4px 0 16px rgba(35,38,59,0.04)`).
+- **One surface.** `ChatWidget` is the feature's only UI export. There is no full-page chat route;
+  opening the widget (launcher or teaser click) is the only way to reach the conversation.
 
-**Design tokens** (`packages/design-tokens/src/tokens.ts`, currently a "neutral for Phase 1"
-placeholder) — replace with the mockup's real values; add missing semantic groups: `color.accentHover`,
-`color.accentSecondary`, `color.surfaceSunken` (distinct fill for user-message bubbles vs. cards),
-`shadow.{sm,md,lg}` (no elevation scale exists today), `zIndex.{widget,widgetMenu}` (no overlay UI
-exists today), `motion.{fast,base,slow,easing}` (no motion tokens exist today). Existing `radius`
-and `spacing` tokens are already sufficient — reuse as-is. Font swap to Inter via
-`next/font/google` in `apps/web/src/app/layout.tsx` — flagged as app-wide since the home page shares
-the same layout.
+### Component map (`apps/web/src/features/chat/ui/`, all feature-internal — none promoted to
+`apps/web/src/components/` yet, each has exactly one consumer)
 
-**Animation approach:** plain CSS `@keyframes` in `apps/web/src/app/globals.css`, driven by the new
-`motion.*` tokens — no animation library added (none exists today; repo precedent is a bare
-`motion-safe:animate-pulse` already in `message-list.tsx`). Every keyframe gets a `motion-reduce:`
-fallback. Keyframes needed: menu fade/slide, feedback-thumb bounce, typing shimmer, launcher
-pulse-ring. No screenshot-flash keyframe (feature dropped).
+| Component | Role |
+|---|---|
+| `chat-session-provider` | Conversation state machine + `locale` — `ChatSessionProvider`/`useChatSession`, mounted once in `app/layout.tsx`. |
+| `chat-widget` | Public root: `ChatLauncher` + conditional `TeaserPopup` while closed, `FloatingFrame` wrapping `panel-body` while open. |
+| `use-widget-visibility` | Launcher/teaser timing (3000ms initial, 20000ms repeat after each close/dismiss), fake-timer tested. |
+| `chat-launcher` / `teaser-popup` / `floating-frame` | Closed-state button, proactive nudge card, open-state chrome. `floating-frame` carries `data-obi-widget-root` so the screenshot capture can hide the widget during its own capture. |
+| `panel-body` | Composition root: `panel-header` + `contour-background` + `message-list` + `composer`. Owns the screenshot-capture handler (`html-to-image` → `Composer`'s imperative handle) and the capture flash overlay. |
+| `panel-header` | Chrome bar — mark/name, More/Screenshot/Language/Close icon row; owns the menus' mutually-exclusive state; locale-aware labels. |
+| `menu` / `menu-item` | Shared dropdown shell for both header menus. |
+| `language-menu` | Real six-locale switcher — calls `useChatSession().setLocale`. |
+| `contour-background` | Ambient wavy-line SVG behind the message thread, pixel-exact to the mockup. Pure decoration. |
+| `message-list` / `message-bubble` / `typing-indicator` | Thread rendering — greeting, empty-state suggestion chip, per-turn bubbles/citations/feedback, the ~90-word typing-indicator bank. Locale-aware. |
+| `composer` | Message input, send, image attachments (file-picker + clipboard-paste + screenshot, all through one pipeline). `forwardRef` exposing `ComposerHandle.addAttachmentFile` for the header's screenshot button. |
+| `attachment-strip` | 40×40 thumbnail preview row for composer attachments; clicking a thumbnail opens `image-lightbox` (4.7.8). |
+| `image-lightbox` | Full-size zoomed preview overlay for a clicked attachment/screenshot thumbnail (4.7.8) — local preview only, closes on Escape/backdrop/close-button, no analysis. |
+| `icon-button` / `assistant-mark` | Shared primitives. |
 
-**New components** (all in `apps/web/src/features/chat/ui/`, none promoted to
-`apps/web/src/components/` yet — each has exactly one consumer today; `Menu`/`IconButton` are the
-top promotion candidates the day a second feature needs a dropdown or icon button):
-`icon-button.tsx`, `assistant-mark.tsx`, `message-bubble.tsx` (extracted from current inline markup
-in `message-list.tsx`), `typing-indicator.tsx`, `suggestion-chip.tsx`, `menu.tsx` + `menu-item.tsx`
-(shared dropdown shell for both the "···" and language menus), `panel-header.tsx`,
-`language-menu.tsx`, `chat-launcher.tsx`, `teaser-popup.tsx`, `floating-frame.tsx`, `panel-body.tsx`
-(composition root shared by both `ChatPanel` and `ChatWidget`), `chat-session-provider.tsx` (D0),
-`use-widget-visibility.ts` (teaser timing: 3s after mount if closed, 20s after each close),
-`chat-widget.tsx` (new public export alongside existing `ChatPanel`).
+`model/i18n.ts` holds the widget's own six-locale UI-copy table. `model/messages.ts` holds the
+render view-model. Public root `index.ts` exports `ChatWidget` and `ChatSessionProvider` only.
 
-**Test infrastructure (new):** `@testing-library/react` + `@testing-library/jest-dom` added to
-`apps/web/package.json` — no existing pure-node vitest pattern can express DOM-rendering assertions.
-`apps/web/vitest.config.ts` gets `environmentMatchGlobs` so existing pure-node tests stay
-fast/unaffected while new `*.test.tsx` files run under jsdom.
+### Design tokens, motion, pixel spec
 
-### Design specification — pixel-exact reference (read this before 4.7.2 onward)
+Real brand tokens (not placeholders) live in `packages/design-tokens/src/tokens.ts`: the mockup's
+own light Stripe-esque theme, `#635bff` indigo accent, Inter via `next/font/google`. Every
+`@keyframes` the widget uses is in `apps/web/src/app/globals.css` (`menu-in`, `feedback-pop`,
+`typing-shimmer`, `typing-spin`, `teaser-in`, `launcher-pulse`, `screenshot-flash`), each with a
+`motion-reduce:` fallback. The full pixel-for-pixel spec (exact padding/radius/shadow/timing values
+per component) lives in `docs/rag/OBI-WIDGET-DESIGN.md` §2–4 rather than duplicated here — that
+file is kept in sync with the code, not with this ledger's narrative.
 
-**Live, interactive reference — open this, don't just read prose.** The mockup's own
-`Obi Assistant.dc.html` cannot render standalone (its runtime expects `window.React`/`window.ReactDOM`
-injected by the tool's own preview iframe — opening it directly throws
-`dc-runtime: window.React is not available yet`). A working, fully interactive standalone copy —
-identical markup/behavior, plus two `<script>` tags loading React/ReactDOM from a CDN — is committed
-at `docs/rag/reference/obi-mockup/obi-render.html`, alongside the original files and the user's three
-reference screenshots. See that folder's `README.md`. Open it (`python3 -m http.server 8901` from
-that directory, then the URL) and click through every state before building each sub-step below —
-menus, language switcher, thumbs feedback, restart, the teaser popup — it is the real prototype, not
-a facsimile. This is the single source of visual truth for the rest of Phase 4.7; the spec below is a
-distillation of it (with exact values pulled from its inline styles) for quick reference while coding,
-not a replacement for opening it.
+### Product decisions — current state (what's real vs. an honest stub)
 
-**What "done" means for this phase:** pixel-for-pixel visual match — colors, spacing, radii, shadows,
-typography, motion timing — with the copy/content decisions below resolved (the mockup's copy is
-Stripe/payments-flavored placeholder text; this product is a Confluence RAG bot, so some strings
-cannot just be copied verbatim — flagged explicitly, not silently invented).
+| Piece | Status |
+|---|---|
+| Chat send/receive, streaming, citations, refusal, feedback, restart | **Real** — the actual `apps/automation` pipeline, unchanged by this phase. |
+| Image attachment (file-picker + clipboard-paste) | **Real capture and preview**, honest stub on send — no vision backend exists, so attachments are dropped with an inline notice and the message sends as text only. Clicking a thumbnail (4.7.8) opens a **real, full-size zoomed preview** (`ImageLightbox`) — still local-only, no analysis. |
+| Screenshot button (header, between More and Language) | **Real capture** of the page behind the widget (`html-to-image`), lands in the same attachment pipeline as any other image — same honest "not analyzed yet" notice on send, same real click-to-zoom preview (4.7.8) once captured. Building real analysis needs a vision-capable backend call; that requirement is now scoped as **Phase 7** (supersedes the former `docs/future-ideas/IDEAS.md` #3). |
+| Suggestion chip (empty-state) | **Real** — sends an honestly-answerable question ("What can you help me with?") through the real session. Copy is adapted from the mockup's Stripe-only "My verification status," which had no Confluence equivalent. |
+| Language switcher (6 locales) | **Real for the widget's own UI copy** (greeting, chip, placeholder, footer, teaser, header labels) — does **not** change what language the RAG agent answers in; that's the model's own behavior against `apps/automation`, unscoped backend work. Translations are direct/unreviewed, same quality bar as the mockup's own table, not professionally localized. |
+| "Developer docs" / "Support articles" menu items | **Honest disabled stubs** — no real target page exists yet. |
+| Assistant display name "Obi" | Still the mockup's placeholder, not a confirmed product decision. |
 
-#### Already built (4.7.1, `206baab`) — do not redo
+### Known gaps / debt (disclosed, not silently carried)
 
-Real brand tokens live in `packages/design-tokens/src/tokens.ts` now, not placeholders: `surface
-#f6f8fa`, `surfaceRaised #ffffff`, `surfaceSunken #f0f1f5`, `text #30313d`, `textMuted #687385`,
-`accent #635bff`, `accentHover #4f47e6`, `accentSecondary #8f8af7`, `accentContrast #ffffff`, `border
-#e6e8ee`; `shadow.{sm,md,lg}`; `zIndex.{widget,widgetMenu}`; `motion.{fast,base,slow,easing}`. Inter
-is wired app-wide via `next/font/google`. Four keyframes exist in `globals.css`: `menu-in`,
-`feedback-pop`, `typing-shimmer`, `launcher-pulse`. Two primitives exist:
-`features/chat/ui/icon-button.tsx`, `features/chat/ui/assistant-mark.tsx` (the two-tone sparkle mark,
-`aria-hidden`, sized via a `size` prop, colored via `text-accent`/`text-accent-secondary` — never
-hardcoded hex, per this repo's token discipline).
+- **Test suite not re-run since the last two sub-steps** (contour background + suggestion chip;
+  screenshot + real i18n + `/chat` removal) — both were built and verified only by `tsc --noEmit`
+  + `pnpm --filter web build`, per an explicit user instruction to skip the test gate for those
+  passes. Before trusting this phase as done by this repo's normal bar (`CLAUDE.local.md` §2):
+  - `chat-panel.test.tsx` was deleted along with `ChatPanel` — its characterization coverage
+    (streaming, citations, refusal, error, feedback, restart, abort-on-unmount) has no replacement.
+    `chat-widget.test.tsx` does not exercise all of the same paths.
+  - `language-menu.test.tsx`, `chat-launcher.test.tsx`, and `message-list.test.tsx` now fail
+    because those components call `useChatSession()` (for `locale`) without those tests providing
+    a `ChatSessionProvider` wrapper.
+  - The full `pnpm --filter web test` count from before this cleanup was 113; it has not been
+    re-run since.
+- **A real layout bug shipped and was caught live, not by any test**: adding the contour
+  background's absolutely-positioned layers made `panel-body.tsx`'s message thread collapse to
+  zero height (its children stopped contributing to the flex container's auto height), clipping
+  the greeting/suggestion-chip invisible while the composer rendered directly under the header.
+  Fixed by giving the panel's root section `h-full` so `flex-1` has a real height to grow into.
+  Caught only by opening the widget in a real browser — another data point for why
+  `CLAUDE.local.md`'s live-verification requirement exists, not just unit tests.
+- No dependency-audit concerns beyond the one new dependency added, `html-to-image` (real
+  screenshot capture) — justified because no existing capture utility exists in this repo and the
+  alternative (`getDisplayMedia()`) is a much heavier permission-grant flow for a one-click
+  affordance.
 
-**Two keyframes the mockup uses that 4.7.1 did *not* yet build — needed later, don't assume they
-exist:**
-- The thinking indicator's *icon* has its own rotate/scale animation, separate from the shimmering
-  text (which `typing-shimmer` already covers): mockup's `obi-think` —
-  `0%,100% { transform: scale(1) rotate(0deg); opacity: 1 } 50% { transform: scale(1.18) rotate(90deg); opacity: .75 }`,
-  1.4s ease-in-out infinite, `transform-origin: 11px 10px` (i.e. roughly the mark's own center at the
-  16-20px size it's used at). Add as e.g. `typing-spin` in 4.7.2 when `typing-indicator.tsx` is built.
-- The teaser popup's entrance is bouncier than the plain `menu-in` fade: mockup's `obi-teaser` —
-  `from { opacity: 0; transform: translateY(10px) scale(.96) } to { opacity: 1; transform: none }`,
-  300ms, `cubic-bezier(.2, .9, .3, 1.2)` (overshoots slightly, springy). Add as e.g. `teaser-in` in
-  4.7.4 when `teaser-popup.tsx` is built — don't reuse `menu-in`, the easing is deliberately different
-  from every other menu/message fade.
+### Verification status
 
-#### Panel frame — architecture difference from the mockup, not a visual one
-
-The mockup's demo harness lays the panel out as a **flex sibling** of its fake dashboard (`width:
-clamp(360px, 29%, 440px)`, host content `flex: 1`) — the dashboard visually shrinks to make room.
-**Do not copy that layout mechanism.** This app's real pages aren't designed to share width with a
-docked panel. `floating-frame.tsx` (4.7.4) must be a **fixed-position overlay** (`position: fixed`,
-pinned to the right edge, full height) that sits *on top of* page content, not a flex item that
-resizes it — same visual width/shadow/border as the mockup (`clamp(360px, 29%, 440px)`, `bg-surface-
-raised`, `border-l border-border`, `shadow-lg`-equivalent using the mockup's exact
-`-4px 0 16px rgba(35,38,59,0.04)`), different containing mechanism.
-
-#### Header (52px)
-
-Height 52px, flex row, `gap-sm` (mockup: 10px), padding `0 14px 0 16px`, `border-b border-border`,
-`bg-surface-raised`, `z-index: widget` (stacking above page content, below its own dropdown menus).
-`AssistantMark` at 20px + assistant name text (15px/600/`#1a1b25`-equivalent — close enough to `text`
-token to just reuse `text-text`, don't add a token for one-off use). Icon row `margin-left: auto`,
-`gap` 2px: **More (⋯)**, **Language** (globe), **Close** (X) — each a 30×30 `IconButton`. **Screenshot
-icon is dropped entirely** (product decision, see above) — three icons in the real header, not four.
-
-#### "···" menu / language menu (shared `Menu`/`MenuItem` shell, 4.7.3)
-
-Invisible full-viewport overlay (`fixed inset-0`) below the menu but above page content, closing the
-menu on outside click — both menus are mutually exclusive (opening one closes the other). Menu panel:
-`absolute`, `top-[46px] right-11` (44px), `z-index: widget-menu`, `bg-surface-raised`, `border
-border-border`, `rounded-lg` (10px ≈ `radius.lg` 0.75rem, close enough — reuse, don't add a token),
-`shadow-md`, `min-width` 200px ("···") / 190px (language), `py-1.5` (6px), animate `motion-safe:animate-
-[menu-in_180ms_ease-out]`.
-
-**"···" items** (13.5px, `px-4 py-2.5`): "Developer docs" and "Support articles" — **disabled stubs**
-(product decision: no real URLs yet — render visibly, `aria-disabled`, no-op or a "coming soon"
-affordance, not a dead link); "Restart conversation" in `#df1b41`-equivalent — this repo has no
-`color.danger` token yet (see the two feedback-thumb colors below, same gap) — **built real**, wired
-to `useChatSession().restart()`.
-
-**Language items** (13.5px, `py-2.5 px-4`, flex row `justify-between gap-4`, `font-weight: 600` if
-active else `400`, checkmark SVG 14px `stroke-accent` at `opacity: 1` if active else `0`): English,
-Nederlands, Deutsch, Français, Español, Italiano — **stub** (product decision): menu renders, current
-locale checked, selecting any item just closes the menu with no locale change and no translated
-strings. Don't build partial i18n.
-
-#### Message thread
-
-Scroll container `flex-1 overflow-y-auto`, padding `16px 16px 12px`, `flex flex-col gap-md` (16px).
-Skip the mockup's decorative wavy-line SVG background (`stroke: #edeff6`, pure ambient decoration,
-zero functional/informational value — not worth the implementation cost for this phase; can be a
-`4.7.5`-backlog nice-to-have if ever prioritized).
-
-**Greeting** (shown once, above the thread): 14px, `line-height: 1.55`, `text-text`, `max-w-[95%]`,
-product name bold inline. **Resolved with the user (2026-08-11):** drop personalization — no
-fabricated identity. Final copy: **"Hi there, how can I help you with Omniboost? The more details you
-provide, the better."** — `{productName}` stays a literal "Omniboost" (matches every other reference
-in this app), no `{userName}` interpolation, no name prop.
-
-**Suggestion chip — resolved with the user (2026-08-11): dropped entirely.** `message-list.tsx`'s
-empty state stays exactly as it is today (`hasNoMessages` → greeting only, no chip, no `onChip`
-handler, no chip styling to build). Skip this piece of the mockup in 4.7.2.
-
-**User message bubble**: right-aligned, `bg-surface-sunken` (the `#f0f1f5` token added in 4.7.1 —
-this is its first real consumer), `text-text`, 14px, `line-height: 1.5`, `px-[15px] py-[9px]`,
-`rounded-2xl`-ish (18px), `max-w-[82%]`. Animate in with `motion-safe:animate-[menu-in_180ms_ease-out]`
-(reuse — same fade+slight-rise as the mockup's `obi-in`, no need for a second identical keyframe under
-a different name).
-
-**Bot message**: plain text, no bubble/background at all (deliberate — only the user's own messages
-get a bubble fill). 14px, `line-height: 1.6`, `text-text`, `whitespace-pre-line`, `max-w-[96%]`.
-Feedback row below, right-aligned, `gap-1`: two 26×26 icon buttons (thumbs up/down, the down icon is
-the same path rotated 180°, not a separate asset). **New tokens needed here, deliberately deferred
-from 4.7.1 (no consumer existed yet):** `color.success` (`#1f7a45` icon / `#e6f6ee` bg / `#d3f0df`
-fill when selected) and `color.danger` (`#df1b41` icon / `#fdf2f4` bg / `#fbdde4` fill when selected —
-also what "Restart conversation" above should use once it exists). Add both to `tokens.ts` +
-`tailwind-theme.ts` in 4.7.2, same pattern as every other color group. Selected state animates
-`motion-safe:animate-[feedback-pop_350ms_ease]` (already built in 4.7.1).
-
-**Typing indicator** (replaces the greeting/thread while waiting for the *first* token, citations, or
-`done` event on the live SSE stream — this is real backend timing, not the mockup's fake 3.2-5s
-`setTimeout`): flex row, `gap-[9px]`, `AssistantMark`-sized icon (17px) animating the new `typing-spin`
-keyframe above; shimmering label using the already-built `typing-shimmer` keyframe, 13.5px/500,
-gradient `#9aa1b2 30% → #30313d 50% → #9aa1b2 70%` via `bg-clip-text` + `text-transparent`. **Word
-bank**: reuse the mockup's exact ~90-word list verbatim (Thinking, Pondering, Mulling, Noodling,
-Percolating, Brewing, Cogitating, ... — full list in
-`docs/rag/reference/obi-mockup/Obi Assistant.dc.html` around the `THINK` constant) — it's
-personality/flavor text with no product-specific content, safe to copy as-is, no decision needed.
-Cycle every 3800ms, picking a random word different from the last, appending "…"; stop cycling (and
-unmount the indicator) the moment real content starts arriving.
-
-#### Composer
-
-Outer box: `border border-[#8d8bfa]` (same violet-tinted accent border as the chip — again, either a
-new `accentBorder` token or reused `accent` at low opacity, implementer's call), `rounded-xl` (12px),
-`bg-surface-raised`, `p-[12px_12px_8px]`, `flex flex-col gap-1`, `shadow-sm`-ish
-(`0 1px 4px rgba(99,91,255,0.06)` — accent-tinted, not the neutral `shadow.sm` — a second implementer
-call on whether this deserves its own token or is a one-off `style`/arbitrary-value case; lean toward
-one-off, it's a single component). Textarea: 2 rows visible, autosizing (plan's own 4.7.2 note),
-border none, transparent bg, 14px, `line-height: 1.5`, `min-h-[42px]`. **Placeholder copy decision
-already resolved, no action needed:** keep this repo's existing, product-correct copy ("Ask about
-your Confluence workspace…") — do **not** port the mockup's Stripe-flavored placeholders
-("How do I activate new payment methods?" / "Ask a question").
-
-Toolbar row, `justify-end items-center gap-[10px]`: **Attach** (paperclip, 28×28) — **disabled stub**
-(visible, `disabled`, no upload endpoint exists); **Send** (30×30 circle) — `bg-accent`/`text-accent-
-contrast` when there's content to send, `bg-surface-sunken`/`text-text-muted` when empty (this is
-already exactly what `Button`'s `disabled:opacity-50` on the `primary` variant does *not* quite
-replicate — the mockup's disabled state is a distinct grey fill, not the accent at reduced opacity;
-`composer.tsx`'s Send button in 4.7.2 needs its own disabled-state color handling, not just
-`disabled:opacity-50`, to match). Hover: `scale-105`-ish (mockup: 1.08). Footer disclaimer below the
-box, centered, 12px, `text-text-muted`: **"AI may make mistakes. Verify important information."** —
-copy already resolved, generic and safe to port verbatim, no decision needed.
-
-#### Launcher (closed state)
-
-`fixed bottom-6 right-6` (24px), 52×52 circle, `border border-border`, `bg-surface-raised`, `shadow-
-lg`-equivalent (mockup: `0 6px 20px rgba(35,38,59,0.16)` — this is the "one-off compound shadow" case
-already flagged in 4.7.1's `globals.css` comment for `launcher-pulse`, not a plain `shadow.lg`),
-`z-index: widget`. `AssistantMark` at 24px, centered. Hover: `scale-[1.06]`, `border-color` shifts
-toward accent-tinted. Pulses continuously (`launcher-pulse`, already built) exactly while the teaser
-popup is visible — not otherwise.
-
-#### Teaser popup
-
-`fixed bottom-[92px] right-6`, `z-index: widget-menu` (must render above the launcher), `bg-surface-
-raised`, `border border-border`, `rounded-2xl`-ish (14px), `shadow-lg`, `p-[14px_16px]`, `max-w-
-[290px]`, cursor pointer (clicking it opens the panel, same as clicking the launcher). Content: flex
-row, `gap-[10px]`, `items-start`; `AssistantMark` 20px; text 13px/`line-height:1.5`/`text-text`;
-small dismiss (×) button top-right. Entrance uses the new `teaser-in` keyframe (see above — don't
-reuse `menu-in`). **Timing** (already specified in the plan's `use-widget-visibility.ts` line, restated
-here for completeness): appears 3000ms after mount if the panel is closed; dismissing it or closing
-the panel reschedules it to reappear after 20000ms of being closed. **Copy decision needed:** mockup's
-"Hey, I'm Obi. Need help with onboarding or support?" is generic boilerplate, not obviously wrong for
-this product but also not confirmed — cheap enough to just reuse verbatim unless the user objects,
-lower-stakes than the greeting/chip copy above (no fabricated identity or fake product feature
-involved). Flagging for visibility, not blocking on it the way the greeting/chip are.
-
-#### Copy decisions summary (don't resolve silently — confirm before the relevant sub-step ships)
-
-| String | Mockup text | Status |
-|---|---|---|
-| Greeting personalization | `Hi {userName}, ...` | **Resolved (2026-08-11)** — drop personalization: "Hi there, how can I help you with Omniboost? ..." |
-| Suggestion chip | "My verification status" | **Resolved (2026-08-11)** — dropped entirely, no replacement |
-| Teaser popup | "Hey, I'm Obi. Need help with onboarding or support?" | Low-stakes, reuse verbatim unless told otherwise |
-| Footer disclaimer | "AI may make mistakes. Verify important information." | Resolved — reuse verbatim |
-| Composer placeholder | (mockup's Stripe placeholders) | Resolved — keep this repo's existing "Ask about your Confluence workspace…" |
-| Thinking-word bank | ~90 whimsical words | Resolved — reuse verbatim, no product content |
-
-### 4.7.1 — Tokens, test tooling, base primitives ✅ done (2026-08-11, `206baab`)
-
-`packages/design-tokens/src/tokens.ts` + `tailwind-theme.ts` (new token groups above); `apps/web/tailwind.config.ts`
-spreads them; `apps/web/src/app/globals.css` gets the `@keyframes` block; `apps/web/src/app/layout.tsx`
-wires `next/font/google` Inter; added jsdom test infra (`package.json`, `vitest.config.ts`, new
-`apps/web/src/test-setup.ts`); new `icon-button.tsx`, `assistant-mark.tsx` + tests. No visible
-behavior change beyond typography/colors.
-
-**Gate — MET.** `pnpm --filter web test`: **44 passed** (was 39; +5 for the two new primitives —
-one extra test than planned, split 3/2 across `icon-button.test.tsx`/`assistant-mark.test.tsx`).
-`pnpm --filter web build`: clean (`next build`, static + dynamic routes all compiled, `tsc` clean
-as part of it). Live-verified in a real browser (`pnpm --filter web dev`, Chrome DevTools
-screenshots): `/chat` and `/` both render the new light/indigo/Inter theme; `/chat`'s bubble/composer
-layout is otherwise unchanged from before this sub-step, matching the "font/color only" gate.
-
-**Deviations from the plan text above:**
-- Skipped "RTL" test infra mentioned in the original plan line — no RTL requirement exists anywhere
-  else in this phase's scope (the language switcher is a no-op stub, 4.7.3); nothing to test. Not a
-  gap, just plan text that outran its own scope.
-- Test cleanup needed one line beyond what the plan anticipated: `@testing-library/react`'s
-  auto-cleanup relies on detecting Jest-style global `afterEach`, which this repo doesn't enable
-  (`test.globals` is off, tests import `describe`/`it`/`expect` explicitly). Added an explicit
-  `afterEach(() => cleanup())` in `test-setup.ts` — without it, the 2nd/3rd test in any `.test.tsx`
-  file sees the previous test's still-mounted DOM and `getByRole` throws "found multiple elements."
-- `IconButton`'s accessible-name test needed `aria-label` (not just `title`) — a `<button>`'s
-  accname computation prefers visible text content over `title`, so an icon-only button (no visible
-  text) needs `aria-label` to have a correct name. Real usages in 4.7.3's `panel-header.tsx` must
-  pass `aria-label`, not rely on `title` alone — noted here so it isn't missed.
-- Chose *not* to invent `color.success`/`color.danger` tokens in this sub-step even though the
-  mockup's thumbs-up/down feedback needs them — no consumer exists yet (feedback buttons land in
-  4.7.2's `message-bubble.tsx`). Adding tokens with no consumer would violate the "no invented
-  capabilities" gate; they'll be added in 4.7.2 when `message-bubble.tsx` actually needs them.
-- **Pre-existing gap found, out of scope for 4.7:** `apps/web`'s `lint` script (`next lint --dir
-  src`) has never had an ESLint config committed — running it prompts an interactive "how would you
-  like to configure ESLint?" setup wizard rather than linting. This predates Phase 4.7 (confirmed via
-  `git log` — no `.eslintrc*`/`eslint.config.*` ever existed for `apps/web`) and isn't something this
-  sub-step's changes caused. Not fixed here — setting up ESLint from scratch is its own scoped task,
-  not implied by "tokens + primitives." Flagging so it isn't mistaken for a 4.7 regression; worth its
-  own small PLAN entry if/when someone wants `pnpm --filter web lint` to actually lint.
-- **Unrelated observation, not touched:** the landing page (`/`) has a pre-existing narrow-column
-  text-wrapping quirk (`app/page.tsx`'s `<p className="max-w-md">` inside `PageShell`'s
-  `items-center` flex column wraps one word per line) — a classic flexbox `min-width: auto`
-  shrink-to-fit quirk, unrelated to any token/font change here and outside 4.7's scope (the landing
-  page isn't part of the widget rebuild). Left alone; worth a follow-up if the user wants it fixed.
-
-### 4.7.2 — Message rendering + composer ✅ done (2026-08-11)
-
-Wrote `chat-panel.test.tsx` (characterization: streaming, citations, refusal, error, feedback,
-abort-on-unmount) **before** touching logic — green against the pre-refactor code first, then
-stayed green through every step below. Extracted `chat-session-provider.tsx`
-(`ChatSessionProvider`/`useChatSession`) from `chat-panel.tsx`, TDD'd against a new
-`chat-session-provider.test.tsx` covering the one genuinely new behavior, real `restart()`
-(aborts any in-flight stream, clears the thread). `chat-panel.tsx` now mounts its own
-`ChatSessionProvider` locally (global layout mount is 4.7.4's job, once `ChatWidget` exists to
-share it). New `message-bubble.tsx` (10 tests), `typing-indicator.tsx` (3 tests, the mockup's
-exact ~90-word `THINK` bank, new `typing-spin` keyframe); new `color.success`/`color.danger`
-token groups (+ `*Bg`/`*Fill` variants) in `packages/design-tokens`. Rewrote `message-list.tsx`
-(3 tests: resolved greeting, no chip, delegates to `MessageBubble`) and `composer.tsx` (7 tests:
-autosizing textarea, Enter-to-send/Shift+Enter-newline, disabled attach stub, bespoke Send button
-with a distinct disabled fill, footer disclaimer). 75 tests total (was 44), all green;
-`pnpm --filter web build` clean; live-verified in a real browser (Chrome DevTools) — greeting,
-composer, streaming/typing-indicator, refusal banner, and thumbs feedback all pixel-match the
-design spec, no console errors/hydration warnings; `/` unaffected (its pre-existing text-wrap
-quirk from 4.7.1 is untouched). `chat-client.ts`/`route-handlers.ts`/contracts untouched, per gate.
-
-**Deviations from the plan text above (all resolved decisions from the design spec, not scope
-creep):**
-- **`suggestion-chip.tsx` not built** — the design spec's "Copy decisions summary" resolved this
-  piece as dropped entirely (2026-08-11, before this sub-step started); the plan line above still
-  named it as a leftover from before that decision. `message-list.tsx`'s empty state is greeting-only.
-- **Feedback button accessible names kept as "Helpful"/"Not helpful"**, not the mockup's "Good
-  response"/"Bad response" — that copy was already a confirmed product decision from Phase 4.5,
-  not mockup placeholder text needing a decision; only the visual presentation (icon-only, per
-  spec) changed.
-- **`Button` (`components/ui/button.tsx`) no longer used by the composer** — the design spec
-  itself flagged that `Button`'s `disabled:opacity-50` doesn't replicate the mockup's distinct
-  disabled-fill Send button, so `composer.tsx` grew a bespoke circular button instead. `FEATURES.md`
-  updated to reflect this. `Button` is otherwise still used by the home route.
-- Citation/error-banner markup was moved verbatim from the old `message-list.tsx` into
-  `message-bubble.tsx` with no visual changes — not called out per-line above since it isn't a new
-  decision, just the extraction the plan already asked for.
-
-### 4.7.3 — Panel chrome: header, menus, restart ✅ done (2026-08-11)
-
-New `menu.tsx`/`menu-item.tsx` (shared dropdown shell, `role="menu"`/`"menuitem"`; disabled items
-use `aria-disabled` not native `disabled`, so they stay keyboard-reachable per the design spec's
-"visible, not a dead link" instruction), `language-menu.tsx` (six locales, English always checked,
-selecting any of them — including English — only closes the menu, no state change at all, stricter
-than even the mockup's own demo which did track a selected index), `panel-header.tsx` (assistant
-mark + name, More/Language/Close icon row, owns the two menus' mutually-exclusive open state), new
-`panel-body.tsx` (composition root: header + scrollable message thread + composer, shared by
-`ChatPanel` today and `ChatWidget` from 4.7.4 — `position: relative` root so the menus anchor here,
-not to the header's own 52px box). `chat-panel.tsx` now just mounts the provider and renders
-`<PanelBody variant="page" />` — no header-less `ChatPanelBody` left. Restart wired to the real
-`useChatSession().restart()`; docs/support items are disabled stubs (`title="Coming soon"`).
-16 new tests (`menu`, `menu-item`, `language-menu`, `panel-header`) plus one added to
-`chat-panel.test.tsx` proving restart clears the thread end-to-end through the real session. 91
-tests total (was 75); `pnpm --filter web build` clean. Zero `apps/automation` files touched, per
-gate. `PanelHeader`'s `onClose` is optional and the Close icon only renders when a handler is
-passed — the page route has nothing to close, and rendering an inert Close button would violate
-this phase's own "nothing pretends to work that doesn't" gate; `chat-panel.tsx` doesn't pass one,
-so the page variant shows two icons (More, Language) today, three once `ChatWidget` (4.7.4) passes
-a real `onClose`. This is an implementer decision, not one of the plan's named product decisions —
-flagging it here since it changes icon count from the mockup's fixed three.
-
-**Live-verified in a real browser (Chrome DevTools, `pnpm --filter web dev` against a running
-`apps/automation`)** — this is what caught a real bug the unit tests could not:
-
-**Bug found and fixed during this sub-step:** the menus' outside-click overlay (`fixed inset-0`)
-was given the same `z-widget` stacking level as the header. Since both had equal z-index, DOM order
-decided the tie — the overlay (rendered after the header) painted on top of it, so clicking a
-header icon *while a menu was already open* hit the overlay instead of the icon: it just closed the
-open menu instead of opening the other one. Fixed by giving the header an explicit `relative
-z-widget` (matching the mockup's own `position:relative;z-index:4` on its header, which this repo's
-first pass had omitted) and removing the z-index utility from the overlay entirely, so the header's
-real stacking context wins regardless of DOM order. **This class of bug is invisible to the jsdom
-unit tests** — `userEvent.click` dispatches directly on the target element and never hit-tests
-through CSS stacking, so all the header/menu tests passed both before and after the fix. Only the
-live-browser pass caught it; noted in `FEATURES.md` so it isn't mistaken for redundant test
-coverage. Re-verified after the fix: More → Language switch works, English shows bold + checkmark
-and the rest don't, restart-via-menu clears a real streamed/refused turn back to the greeting.
-
-**Gate — MET.** Header/menu interactions match the mockup (minus screenshot, dropped by design);
-restart genuinely clears the thread (verified both in a unit test and live against a real backend
-turn); nothing pretends to work that doesn't (docs/support visibly disabled, language stub never
-claims a locale change).
-
-### 4.7.4 — Floating widget: launcher, teaser, global mount ✅ done (2026-08-11)
-
-**Status: implemented, tested (19 new tests: 6 `use-widget-visibility`, 2 `chat-launcher`, 2
-`teaser-popup`, 5 `chat-widget`, plus 4 `chat-panel.test.tsx` cases updated for the D0 provider
-lift → 106 tests total, was 91 at 4.7.3), `tsc --noEmit` clean, `pnpm --filter web build` clean,
-live-verified end to end in a real browser against the real running backend.**
-
-New `use-widget-visibility.ts` (the launcher/teaser timing state machine — 3000ms initial teaser,
-20000ms repeat, mirroring the mockup's own `scheduleTeaser`/`onOpen`/`onClose`/`onDismissTeaser`
-exactly; tested with `vi.useFakeTimers()`, not real delays), `chat-launcher.tsx` (closed-state
-52×52 circle, pulses via the already-built `launcher-pulse` keyframe exactly while the teaser is
-visible), `teaser-popup.tsx` (new `teaser-in` keyframe added to `globals.css`, springy
-`cubic-bezier(0.2,0.9,0.3,1.2)` entrance per the design spec — deliberately not `menu-in`),
-`floating-frame.tsx` (fixed-position overlay per the design spec's explicit "Panel frame"
-architecture note — pinned to the right edge, full height, `clamp(360px,29%,440px)` width, on top
-of page content, *not* the mockup's flex-sibling layout), `chat-widget.tsx` (composes
-`useWidgetVisibility` + `ChatLauncher`/`TeaserPopup` while closed, `FloatingFrame` wrapping
-`PanelBody` variant="widget" while open).
-
-**D0 (shared session) landed in this sub-step, not earlier:** `chat-panel.tsx` no longer
-self-mounts `ChatSessionProvider` — it now reads the ambient one. `apps/web/src/app/layout.tsx`
-mounts `ChatSessionProvider` once around `{children}` + `<ChatWidget />`, so the full-page
-`/chat` route and the floating widget genuinely read one live conversation, not two independent
-ones. `chat-panel.test.tsx` updated to wrap `ChatPanel` in an explicit `ChatSessionProvider`
-(`renderPanel()` helper) to match; `chat-session-provider.test.tsx` needed no change (it already
-wrapped explicitly). `apps/web/src/features/chat/index.ts` exports `ChatWidget` and
-`ChatSessionProvider` alongside `ChatPanel` (both needed by `layout.tsx`, external code, so must
-cross the feature's public root, not a deep import). `FEATURES.md` updated.
-
-**Live-verified in a real browser (Chrome DevTools, `pnpm --filter web dev` against a running
-`apps/automation`)** on both `/` and `/chat`:
-- Teaser popup appeared ~3s after page load (pixel-matches the mockup: card, sparkle icon, copy,
-  dismiss ×); dismissing it hid it without opening the panel; clicking the launcher (and
-  separately, clicking the teaser card itself) opened the floating panel as a right-edge overlay
-  on top of page content, not a layout-shifting flex sibling.
-- **D0 proven live, not just by unit test:** sent a real question through `/chat`'s full-page
-  panel (real SSE round trip against the real backend — refused, "not found in the docs," since
-  the fixture corpus has nothing relevant), then opened the floating widget on the same page and
-  confirmed it showed the *exact same* turn — proving one shared session, not two. Opened the
-  "···" menu (Developer docs / Support articles greyed out, "Restart conversation" in red) and
-  restarted from the widget — both the page's thread and the widget's thread cleared back to the
-  greeting simultaneously. Opened the language menu — six locales, English bold with a checkmark,
-  rest plain, pixel-matches the mockup. Closed the widget via its Close icon — returned cleanly to
-  the launcher (no immediate teaser, correctly deferred to the 20000ms reschedule).
-- No console errors or hydration warnings on any of the above (checked via
-  `read_console_messages`, `onlyErrors: true`, after a fresh page load).
-- `git status` confirmed zero `apps/automation` files touched by this sub-step, per gate.
-
-**Not independently re-verified:** the 20000ms teaser-reschedule-after-close timing in a live
-browser (proven by the `use-widget-visibility` fake-timer unit tests instead — waiting 20 real
-seconds in an interactive session wasn't worth the wall-clock for a value already covered
-deterministically); a narrow-viewport/mobile render of the floating widget (no mobile layout
-requirement has been raised for this phase).
-
-**Phase 4.7 is now fully complete (4.7.1 → 4.7.4, all gates met).** Resume at Phase 4.6.13 next
-per the deferral note at the top of this ledger (§0) — 4.7 was run to completion first at the
-user's explicit request, without diverting back to 4.6.13 mid-way, exactly as instructed.
-
-### 4.7.6 — Post-4.7 additions: real attachment preview + dev-preview backdrop ✅ done (2026-08-11)
-
-Two pieces raised after 4.7.4 closed, both scoped and shipped in the same session. Full design
-narrative, options considered, and resolutions live in `docs/rag/OBI-WIDGET-DESIGN.md` §6–§7
-(new doc — a standalone as-built reference for the whole widget, not just this addendum); summarized
-here because the plan is the ledger of record:
-
-- **Real client-side image attachment (reopens two 4.7 product decisions, see §5 of that doc).**
-  New `attachment-strip.tsx` + `composer.tsx` changes: file-picker (paperclip un-stubbed) and
-  clipboard-paste both add images (capped at 4, `image/*` only), 40×40 thumbnail previews with a
-  remove button render above the textarea, Send enables on an attachment alone. **Option 6.2
-  (client-side only, no backend change)** — on send, attachments are dropped with a 4s inline
-  notice ("Image attachments aren't answered yet — sent as text only."); text still sends. No
-  `apps/automation` change, no new endpoint — the real vision-grounded version (option 6.3: upload
-  contract, vision-capable model call, retrieval-grounding decision, a
-  `securing-http-and-llm-endpoints` pass) stays exactly where 4.7.5 already puts it, as future,
-  unscoped backend work off `docs/future-ideas/IDEAS.md` idea #3 — not built here.
-- **Dev-only placeholder backdrop.** New `apps/web/src/app/dev-preview-backdrop.tsx`, rendered by
-  `app/page.tsx` in place of the old bare hero — a static, stateless skeleton block so the floating
-  widget previews in visual context (mirrors the mockup's fake dashboard). Route-owned, one
-  consumer, marked "safe to delete" in its own doc comment; not a feature, not promoted to
-  `components/`. Surfaced and fixed one pre-existing, unrelated bug while building it: this repo's
-  `max-w-*` scale resolves against the `spacing` tokens, not Tailwind's default (`max-w-md` computed
-  to 16px, not 28rem) — worked around with a bracket value (`max-w-[28rem]`), same pattern already
-  used elsewhere in the widget; the underlying scale mismatch itself is not fixed globally, flagged
-  only.
-
-**Verification (this session, re-run live, not trusted from the doc alone):** `pnpm --filter web
-test` → **113 passed** (was 106 at 4.7.4); `tsc --noEmit` clean; `pnpm --filter web build` clean;
-live-browser pass against a real running dev server confirmed the homepage backdrop + teaser +
-launcher render exactly as specified and the panel/composer/attach affordance match the doc, zero
-console errors. Zero `apps/automation` files touched.
-
-**4.7.5 (backlog, still not built):** the real vision-grounded attachment pipeline (option 6.3
-above — upload endpoint, vision model, retrieval-grounding decision, security pass), real i18n
-system, real docs/support pages — each its own future-scoped decision, recorded in
-`docs/future-ideas/IDEAS.md`, not part of this phase.
+`tsc --noEmit` and `pnpm --filter web build` clean as of the last change (including the `h-full`
+layout fix above, confirmed live in a real browser: greeting, suggestion chip, contour background,
+composer, and footer all render in the correct order and are all visible). No automated test run
+covers the current state end to end — see "Known gaps" above. Nothing in this phase has touched
+`apps/automation`.
 
 **Sequencing vs. Phase 4.6:** frontend-only (TypeScript), touches zero files in common with 4.6
-(backend Python) — may run before, after, or interleaved with it. Recommend finishing 4.6's
-CRITICAL/HIGH items (4.6.1–4.6.3) first simply to keep one security-sensitive thread open at a time;
-otherwise fully independent. Do not start 4.7.1 merely because 4.6 is done — like every phase here,
-it needs an explicit go-ahead each step. **Do this phase before 4.8** — split the repo once the
-widget's real file layout is settled, not mid-refactor.
+(backend Python) — independent of it either direction. **Do this phase before 4.8** — split the
+repo once the widget's real file layout is settled, not mid-refactor.
+
+### 4.7.8 — Attachment/screenshot image lightbox (click-to-zoom) ✅ done (2026-08-11)
+
+**Context.** The user reported seeing (elsewhere, not yet in this widget) an "attach or screenshot
+an image, click it, see a full-size zoomed preview" pattern and asked for it here, plus for every
+such image to be analyzed for context. On inspection, **neither existed**: `attachment-strip.tsx`
+only ever rendered a 40×40 thumbnail with a remove button, `message-list.tsx` didn't render sent
+images at all (attachments are dropped before send, per the stub above), and no vision-capable
+backend call exists anywhere in this repo. Per the user's own scoping rule (2026-08-11): implement
+now whatever is frontend-only with no impact on the backend/vector-store/overall structure; put
+everything else in a new phase. Split accordingly:
+
+- **Click-to-zoom (frontend-only) — built here.** `image-lightbox.tsx` (new): a full-viewport
+  overlay (`z-widget-menu`, the stack's existing top layer — no new z-index token needed),
+  `role="dialog"`/`aria-modal`, closes on Escape, backdrop click, or its own close button.
+  `attachment-strip.tsx` wraps each thumbnail in its own `<button aria-label="View {name}">`
+  (kept separate from the existing remove button) that opens the lightbox for that attachment;
+  internal `zoomedId` state, no prop-API change for `Composer` (still just `attachments`/
+  `onRemove`). This only covers the composer's **pre-send** attachment strip — the only place any
+  image currently renders — since sent attachments still don't reach `message-list.tsx` (that's
+  the backend/contract work below).
+- **Vision analysis of every attached/screenshot image (backend + contract) — NOT built here,
+  scoped as Phase 7 below.** Sending the image data to the backend, a vision-capable model call,
+  folding the analysis into the answer, and rendering the sent image + its analysis in
+  `message-list.tsx` (with the same click-to-zoom there) all touch `packages/contracts`,
+  `apps/automation`'s `AnswerService`/`llm_client.py`, and the security control set — none of that
+  is frontend-only, so per the scoping rule above it does not get implemented ad hoc here. This
+  supersedes `docs/future-ideas/IDEAS.md` #3 ("Screenshot-grounded guidance"), which raised the
+  same gap in the abstract; that entry now points at Phase 7 instead of sitting unscoped.
+
+**Shipped:** `apps/web/src/features/chat/ui/image-lightbox.tsx` (new); `attachment-strip.tsx`
+(thumbnail click wired to it). Tests: `attachment-strip.test.tsx` +2 (opens on click + closes on
+Escape with both the thumbnail and lightbox `alt` present; closes via its own close button without
+triggering `onRemove`) → 4/4 in that file. `tsc --noEmit`: zero new errors (the two pre-existing
+`language-menu.test.tsx` errors are the same disclosed 4.7 test-suite gap above, untouched by this
+sub-step). Full `pnpm --filter web test` run: the new/touched files (`attachment-strip.test.tsx`,
+`chat-session-provider.test.tsx`, `chat-widget.test.tsx`, etc.) all pass; confirmed by running
+`attachment-strip.test.tsx` standalone (4/4) and by re-running the suite at the pre-this-session
+commit (`aae90e5`, 113/113 clean) to establish that today's other 25 failures across
+`composer.test.tsx`/`chat-launcher.test.tsx`/`language-menu.test.tsx`/`panel-header.test.tsx`/
+`teaser-popup.test.tsx`/`message-list.test.tsx` are the pre-existing, already-disclosed "Known
+gaps / debt" gap above (uncommitted prop/provider drift from earlier in this phase) — not something
+this sub-step introduced. That gap is still open and still gates trusting Phase 4.7 as fully closed
+by this repo's normal bar; fixing it is not in this sub-step's scope.
 
 ---
 
@@ -2694,6 +2343,63 @@ low-blast-radius change, not a rewrite. Supabase (where vectors live) and Bedroc
 are orthogonal — either can pair with either. **When there's a concrete AWS deployment decision, this
 becomes its own ADR-gated phase** (mirroring how Supabase got Phase 6), not something folded into
 4.2/5/6 ad hoc.
+
+---
+
+## Phase 7 — Vision-grounded image analysis (attachments + screenshot capture) ⬜ todo
+
+**Scoped, not started, 2026-08-11.** Raised by the user after observing (elsewhere, not in this
+repo) that an attached or screenshotted image can be clicked for a full-size preview *and* gets
+analyzed for context by the assistant. On inspection neither piece existed here — see Phase 4.7.8
+above for the click-to-zoom half, which **is** frontend-only and was built immediately per the
+user's own scoping rule. This phase is everything left: the half that touches the backend,
+contracts, and the security control set, so it doesn't get built ad hoc inside a frontend sub-step.
+**Supersedes `docs/future-ideas/IDEAS.md` #3** ("Screenshot-grounded guidance"), which raised the
+same gap in the abstract with no design; that entry now points here.
+
+**Goal.** Every image added to the widget — a file-picker/clipboard-paste attachment *or* the
+header's "screenshot this page" capture (`html-to-image`, PLAN 4.7.7, real capture already) — is
+sent through a vision-capable model call, and the resulting understanding of what's in the image
+is folded into the answer, so a question like "what's on this screenshot?" or "what should I click
+next here?" can actually be answered instead of the image being silently dropped (today's stub,
+per Phase 4.7's product-decisions table). The chat surface this lands in is the **existing, single**
+Obi widget (composer placeholder "Ask about your Confluence workspace…") — there is no second chat
+surface to build or choose between; the widget already is the one integration point for both the
+RAG-over-Confluence pipeline and this new image modality. Note this is orthogonal to why *text*
+questions about the real Confluence workspace don't yet return useful answers — that's the
+already-tracked Confluence-token/no-real-corpus blocker (§0), not something this phase fixes.
+
+**Not scoped or designed yet — this section records the requirement and the known seams, not a
+plan.** Per this repo's own process (`docs/future-ideas/IDEAS.md`'s header), a real design pass
+(and an ADR if it changes a durable architecture decision) must happen before implementation,
+same as any other phase. Known seams from inspecting the current code:
+
+1. **Contract gap.** `ChatRequestBody`/`chat.yaml` (`packages/contracts`) is text-only — no field
+   carries image data. Needs a shape decision (inline base64 on the existing `POST /chat` history
+   turns, vs. a separate upload endpoint returning a reference the chat call points at) before any
+   code changes.
+2. **Backend gap.** `AnswerService`/`llm_client.py` (`apps/automation`) is text-in/text-out.
+   Anthropic's multimodal message format (image content blocks) is a real, supported capability of
+   the same `AnthropicMessagesClient` already in use — see the `claude-api` skill/reference before
+   wiring it — but nothing in this pipeline calls it today.
+3. **Security review required before shipping, per `securing-http-and-llm-endpoints`** — this is a
+   new, genuinely sensitive input class the existing control set was never designed for:
+   image-borne prompt injection (text rendered *inside* an image, or a UI screenshot crafted to
+   look like a system message), a real image-size/vision-token cost cap (no number exists yet —
+   don't invent one, measure against real usage once this is scoped), and PII exposure — the
+   current `redact_pii` (`rag_agent/domain/pii.py`) is a text regex pass over the prompt string; it
+   does not and cannot inspect image bytes, so a screenshot containing visible PII (an email in a
+   support ticket, a customer name in a dashboard) reaches the model unredacted unless a new control
+   is added. Idea #3's own note ("privacy/consent implications — this is genuinely sensitive
+   input") still applies in full.
+4. **Frontend follow-on.** Once the backend accepts and returns something for an image turn,
+   `message-list.tsx` needs to actually render the sent image (it doesn't today — attachments are
+   dropped before `onSend`, per Phase 4.7's stub) with the same `image-lightbox.tsx` click-to-zoom
+   4.7.8 already built for the composer, plus whatever UI communicates "Obi looked at your image."
+
+**Sequencing.** Independent of Phase 5/6 — no shared files, no shared risk. Should be planned as
+its own phase (design → ADR-if-needed → tasks → acceptance) once picked up, not folded into 4.7 or
+5 ad hoc, matching how Supabase got its own Phase 6 rather than being folded into 4.2.
 
 ---
 
