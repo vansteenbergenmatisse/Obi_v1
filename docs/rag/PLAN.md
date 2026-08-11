@@ -32,14 +32,14 @@ Confluence token (still dead, blocker #3), so they're not startable yet regardle
 
 **Phase 4.7 (Obi widget) status, summarized here — full as-built detail in its own section below.**
 Built across several sessions (2026-08-10/11), independent of Phase 4.6/5, never blocking either.
-Currently **done in code, uncommitted, with a disclosed test gap** — see Phase 4.7's own "Known
-gaps / debt" for exactly what that gap is (a deleted test file's coverage not replaced, three other
-test files that now fail to compile — confirmed still current: `pnpm --filter web test` reads
-**25 failed / 83 passed** as of the 4.6.16 exit-gate run below). Do not treat it as closed until
-that's cleared; the ledger row in the phase table below carries the same caveat. This gap is
-**Phase 4.7's own, pre-existing, and out of Phase 4.6's scope** (4.6's file list is backend-only —
-see its own scope row in the phase table) — it did not block 4.6.16 and is not touched by any
-4.6.13–4.6.16 commit.
+**Done in code, its test gap closed 2026-08-11 (same session), still uncommitted.** The gap was a
+deleted test file's coverage not replaced plus several test files failing to compile against
+`ChatSessionProvider` (`pnpm --filter web test` read **25 failed / 83 passed** as of the 4.6.16
+exit-gate run below) — see Phase 4.7's own "Known gaps / debt" for the fix; `pnpm --filter web
+test` is now **115/115 passed**, `tsc --noEmit` and `pnpm --filter web build` both clean, no
+production code changed. This gap was **Phase 4.7's own, pre-existing, and out of Phase 4.6's
+scope** (4.6's file list is backend-only — see its own scope row in the phase table) — it did not
+block 4.6.16 and was not touched by any 4.6.13–4.6.16 commit.
 
 *(The detailed sub-step-by-sub-step history that used to live here — every deviation, live-browser
 bug caught, and copy decision across roughly ten sessions — was consolidated into Phase 4.7's own
@@ -55,7 +55,60 @@ split (frontend-only → build now; touches backend/contracts/security → new p
 regressions — verified by diffing against the pre-session `aae90e5` baseline) and added **Phase 7**
 (vision-grounded image analysis, superseding `docs/future-ideas/IDEAS.md` #3) as a scoped-not-
 designed requirement. Phase 7 is not started — no contract change, no backend call, no design pass
-or ADR yet. Phase 4.7's disclosed test gap (above) is still open and unrelated to this addition.
+or ADR yet. Phase 4.7's disclosed test gap (above) was unrelated to this addition — closed
+separately later the same session, see above.
+
+**New, out-of-backlog fix (2026-08-11): small-talk short-circuit in `rag_agent`.** User reported
+sending "test" in the widget got "Not found in the docs — routed to a human." Checked the local dev
+DB first rather than assuming a bug: `page_source`/`chunk`/`document_version` were all **0 rows** —
+nothing has ever been ingested locally, so every query refuses regardless of relevance, exactly as
+the refusal-threshold design intends (ADR-0005 §7). Separately, the user raised a real product
+question: should a greeting/meta message really hard-refuse just because it was never going to
+match a document? Agreed a narrow fix — `rag_agent/domain/small_talk.py`'s closed, exact-match
+`is_small_talk()` (never fuzzy/substring/LLM-based, so a real question that merely starts with a
+greeting still runs the full grounded pipeline) short-circuits `AnswerService.answer()` straight to
+a new `AnthropicAnswerGenerator.generate_small_talk()` — an ungrounded, uncited reply, no
+`query_trace` row, fails open to a static greeting on an `AnthropicError` (unlike grounded
+`generate`, an ungrounded reply carries no accuracy risk). Ran `securing-http-and-llm-endpoints`
+first since this adds a new LLM-CALL code path inside `POST /chat`: every control (auth, rate limit,
+validation, timeout/retry/breaker, PII redaction, audit log, abuse caps) is inherited from the
+existing endpoint, and the classifier's narrowness bounds the bypass's own security surface — an
+attacker's payload won't exact-match the closed phrase set, so it can't reach the ungrounded path.
+**Shipped:** `domain/small_talk.py` (new), `domain/prompt.py` (`SMALL_TALK_SYSTEM_PROMPT`),
+`infrastructure/llm_client.py` (`AnswerGenerator.generate_small_talk`,
+`AnthropicAnswerGenerator.generate_small_talk`), `application/answer_service.py` (the short-circuit).
+**Verified:** `make check` → **312 passed** (was 274, +38 new: `test_small_talk.py`, new cases in
+`test_answer_service.py`/`test_llm_client.py`/`test_answer_workflow.py`), boundaries clean, ruff/
+pyright unchanged at the 2/15/34 baseline (one self-introduced `E501` caught and fixed before this
+count); live-verified against the real running backend (`curl` + real Anthropic call: "test" → a
+real warm reply, `refused: false`, `citations: []`; "How do I request access..." → still correctly
+refuses against the empty corpus, `refused: true`) and in the actual browser widget (screenshot
+confirms no red refusal badge for "test"). **Uncommitted** — ask before committing.
+
+**New this session (2026-08-11): Phase 9 scoped — deliberately the plan's last phase.** User
+supplied an external best-practices brief on unanswerable/vague-query fallback (clarification,
+confidence indicators, human hand-off, eval metrics) and asked for one final phase covering
+whatever's genuinely missing, without touching the shipped pipeline. Checked first, per this
+ledger's own habit: hybrid RRF retrieval, cross-encoder reranking, LLM query rewrite + CRAG retry,
+and confidence-threshold refusal (ADR-0005 §7) already cover most of the brief — only the
+clarification branch, differentiated refusal reasons, a real (if minimal) human hand-off, and
+fallback-quality eval metrics were actually missing. Added as **Phase 9** (see its own section,
+after Phase 7) — 9 sub-steps scoped, none started. **Two scope decisions confirmed with the user
+before writing this in:** MMR/diversity filtering left out (doesn't address unanswerable queries,
+would touch the shipped retrieval pipeline for no benefit here); human hand-off (9.6) is a logged-
+event + CTA-text stub only this phase, no real integration or credentials, with Salesforce noted as
+the eventual target once that's prioritized. Promotes `docs/future-ideas/IDEAS.md` #1, updated to
+point here.
+
+**Same session, follow-up: 9.1 done + explicit sequencing locked.** User confirmed 9.1 (design doc +
+ADR-0008) is documentation-only and can be written now without waiting: `docs/adr/0008-Ambiguity-
+Clarification-Fallback.md` + `docs/rag/DESIGN.md` §11 are done, locking the `Answer`-extension
+contract shape (no new SSE event), the 3-value refusal-reason taxonomy (`no_candidates | weak_score
+| no_citations`, "ambiguous" deliberately not a 4th value), and eval-kind reuse (`ambiguity`, no new
+`EvalKind` literal). **User also directed: Phase 4.8 and Phase 9's actual code (9.2 onward) both
+execute after Phase 7 — order is Phase 7 → Phase 4.8 → Phase 9.** This is a deliberate sequencing
+choice, not a technical dependency (recorded in both Phase 4.8's and Phase 9's own sections). No code
+under Phase 9 or 4.8 starts until Phase 7 is done. Nothing committed yet.
 
 #### 4.6 progress snapshot — ✅ all 16 of 16 sub-steps done, exit gate green (2026-08-11)
 
@@ -161,25 +214,31 @@ pure resolver. **No gaps found.** Split into two commits: `ede2ae2` (docs — AD
 fixes-backlog audit + the IDEAS.md #4 correction ADR-0006 required) and `4d0ba70` (the 4.6.1 code fix
 + this ledger's own 4.6 section). 4.6.2 remains blocked on your input below — not started.
 
-**Phase 4.7 is done in code (2026-08-11), uncommitted, with a disclosed test gap** — see its own
-section for the full narrative and the "Known gaps / debt" list before treating it as closed. What's
+**Phase 4.7 is done in code, its test gap closed (2026-08-11), still uncommitted** — see its own
+section for the full narrative and the "Known gaps / debt" list. What's
 left, independent of Phase 5: **Phase 4.8** (frontend/backend repository separation — split `apps/web` and
 `apps/automation` into independent repos, `packages/contracts`/`design-tokens` become published
 versioned packages). **4.8 supersedes ADR-0006's deferral** — see
 `docs/adr/0007-Frontend-Backend-Repository-Separation.md` for the actual decision and why ADR-0006 no
 longer holds for the repo-split question. 4.7 finishing first (settling the widget's file layout
-before moving it to a new repo) was the whole point of that ordering — 4.8 may now proceed whenever
-its own blockers clear. 4.8 doesn't gate backend Phase 5; it's frontend/repo-topology work, disjoint
-from Phase 4.6's backend files.
+before moving it to a new repo) was the whole point of that ordering. **Sequencing, updated
+2026-08-11 per explicit user direction: do 4.8 after Phase 7 (vision-grounded image analysis) is
+done, not just after 4.7** — not a technical dependency (4.8 is repo-topology work, disjoint from
+Phase 7's contract/backend changes), a deliberate choice to let the currently-scoped backend phase
+land in the monorepo before splitting it. Phase 9 (Unanswerable/vague-query fallback) is sequenced
+after both 4.8 and Phase 7, so the order is **Phase 7 → Phase 4.8 → Phase 9**. 4.8 doesn't gate
+backend Phase 5; it's frontend/repo-topology work, disjoint from Phase 4.6's backend files.
 
 **No phase auto-starts.** Per the project's standing local working rule, a fresh session must stop
 and get an explicit go-ahead from the user before starting *any* phase/sub-step. On resume: read
-this ledger, state what's ready — **Phase 4.6 is fully closed (all 16 sub-steps + exit gate)**;
-options are closing Phase 4.7's disclosed test gap, Phase 4.8 (blocked on its own "needs your
-input" decisions below), or Phase 5.4/the embedder bake-off once real API spend and a live
-Confluence token are available — and ask which to start rather than beginning any automatically.
-Phase 4.8 has three unanswered "needs your input" decisions (registry choice, new repo names,
-origin-monorepo fate) that block it regardless of ordering.
+this ledger, state what's ready — **Phase 4.6 is fully closed (all 16 sub-steps + exit gate);
+Phase 4.7 is done and its test gap is closed, still uncommitted**; the next options are committing
+the uncommitted work, Phase 7 (per the sequencing below), or Phase 5.4/the embedder bake-off once
+real API spend and a live Confluence token are available — and ask which to start rather than
+beginning any automatically. **Explicit user-set order for the rest: Phase 7 → Phase 4.8 → Phase 9** (Phase 4.8
+also still has three unanswered "needs your input" decisions — registry choice, new repo names,
+origin-monorepo fate — that block it regardless of ordering; Phase 9's 9.1 design doc is already
+done, but its code, 9.2 onward, waits for Phase 7 and 4.8 same as the rest of this ordering).
 
 Fresh context: read this ledger + `docs/rag/DESIGN.md` (§2 target pipeline, §5 accuracy stack) +
 `docs/adr/0005*` + `docs/adr/0007*`, then ask which of the above to start. The chat
@@ -912,6 +971,7 @@ OCR/image reading untouched.
 | **4.7** — Obi widget: chat UI rebuild, brand tokens, screenshot capture, real i18n, `/chat` route removed, image lightbox (4.7.8) | ✅ done, **uncommitted** | `206baab` (first sub-step only); everything since, including the `/chat` removal, the layout bug fix, and 4.7.8, is uncommitted | frontend-only, `apps/web`; does not gate Phase 5; source of truth `docs/rag/reference/obi-mockup/` + `docs/rag/OBI-WIDGET-DESIGN.md`; test suite not re-run since the last two rounds of changes — see Phase 4.7's own "Known gaps / debt" |
 | **4.8** — Frontend/backend repository separation (4.8.1 → 4.8.7) | ⬜ todo (blocked on registry/repo-name/monorepo-fate decisions) | — | supersedes ADR-0006's deferral; see `docs/adr/0007-Frontend-Backend-Repository-Separation.md`; do after 4.7 |
 | **7** — Vision-grounded image analysis (attachments + screenshot capture) | ⬜ todo (just scoped, 2026-08-11) | — | supersedes `docs/future-ideas/IDEAS.md` #3; every image added via attachment or the screenshot button gets analyzed by a vision-capable model call, folded into the answer; touches contracts + `apps/automation` + security review — not frontend-only, see Phase 7's own section |
+| **9** — Unanswerable/vague-query fallback (9.1 → 9.9) | 9.1 ✅ done, 2026-08-11 (uncommitted); 9.2-9.9 ⬜ todo — **wait for Phase 7 + Phase 4.8, then dead last, no phase follows** | — | supersedes `docs/future-ideas/IDEAS.md` #1; ADR-0008 + DESIGN.md §11 lock the contract shape (extend `Answer`, no new SSE event), the 3-value refusal-reason taxonomy, and eval-kind reuse; ambiguity/vagueness classifier + clarification response, differentiated refusal reasons, human-hand-off stub (Salesforce noted as eventual target), fallback-quality eval metrics; MMR/diversity filtering and any new vector store explicitly out of scope |
 
 Gate at each ✅: `make check` green (**219 backend tests** as of 5.3 — 4.5 touched no backend code;
 was 213 at 5.1/5.2, 197 at 5.1, 194 at 4.4, 167 at 4.3, 164 at 4.2, 144 at 3.5.6, 130 at 4.1, 120 at
@@ -2162,6 +2222,9 @@ file's coverage not replaced — see Phase 4.7's "Known gaps / debt"). Recorded 
 gate readout, not silently omitted — but fixing it is Phase 4.7's job, not this backlog's, and
 4.6.16 does not block on it.
 
+**Update (2026-08-11, same session): this gap is closed** — see Phase 4.7's own section below for
+the fix; `pnpm --filter web test` is back to 100% green (115/115, +7 net over the pre-gap 113).
+
 **This ledger's one-row-per-sub-step convention** is satisfied by the "4.6 progress snapshot" table
 above (§0) — 16 rows, one per `4.6.x`, each with its commit ref; per-sub-step deviations are in each
 sub-step's own `### 4.6.x` section.
@@ -2171,7 +2234,7 @@ gate** — they remain separately blocked on real API spend and a live Confluenc
 
 ---
 
-## Phase 4.7 — Obi widget (chat UI) ✅ done, uncommitted *(independent; does not gate Phase 5)*
+## Phase 4.7 — Obi widget (chat UI) ✅ done, test gap closed, uncommitted *(independent; does not gate Phase 5)*
 
 **What this phase built:** replaced `apps/web`'s chat UI with a pixel-accurate rebuild of the
 user-supplied Obi mockup (`docs/rag/reference/obi-mockup/Obi Assistant.dc.html`, a proprietary
@@ -2184,8 +2247,9 @@ history that got it there (that history — every deviation, live-browser bug ca
 decision — is preserved in git history and in `docs/rag/OBI-WIDGET-DESIGN.md`'s own revision trail
 for anyone who needs it; nothing here contradicts it, it's just no longer the front door).
 
-**Not committed as of this writing** — see `docs/rag/OBI-WIDGET-DESIGN.md` §8 and this file's own
-§0 status ledger for the exact test/verification gap before that should happen.
+**Not committed as of this writing.** The test gap that used to block trusting this phase as closed
+(see `docs/rag/OBI-WIDGET-DESIGN.md` §8) was closed 2026-08-11, same session — see "Known gaps /
+debt" below for what was fixed.
 
 ### Architecture
 
@@ -2248,18 +2312,30 @@ file is kept in sync with the code, not with this ledger's narrative.
 
 ### Known gaps / debt (disclosed, not silently carried)
 
-- **Test suite not re-run since the last two sub-steps** (contour background + suggestion chip;
-  screenshot + real i18n + `/chat` removal) — both were built and verified only by `tsc --noEmit`
-  + `pnpm --filter web build`, per an explicit user instruction to skip the test gate for those
-  passes. Before trusting this phase as done by this repo's normal bar (`CLAUDE.local.md` §2):
-  - `chat-panel.test.tsx` was deleted along with `ChatPanel` — its characterization coverage
-    (streaming, citations, refusal, error, feedback, restart, abort-on-unmount) has no replacement.
-    `chat-widget.test.tsx` does not exercise all of the same paths.
-  - `language-menu.test.tsx`, `chat-launcher.test.tsx`, and `message-list.test.tsx` now fail
-    because those components call `useChatSession()` (for `locale`) without those tests providing
-    a `ChatSessionProvider` wrapper.
-  - The full `pnpm --filter web test` count from before this cleanup was 113; it has not been
-    re-run since.
+- **Test gap — closed 2026-08-11 (same session).** The test suite had gone unrun since the last
+  two sub-steps (contour background + suggestion chip; screenshot + real i18n + `/chat` removal),
+  which were built and verified only by `tsc --noEmit` + `pnpm --filter web build`, per an explicit
+  user instruction to skip the test gate for those passes. `pnpm --filter web test` read **25
+  failed / 83 passed** as of the 4.6.16 exit-gate run. Root causes and fixes:
+  - `language-menu.test.tsx`, `chat-launcher.test.tsx`, `composer.test.tsx`, `message-list.test.tsx`
+    (1 of 3 cases), `panel-header.test.tsx`, and `teaser-popup.test.tsx` failed because those
+    components call `useChatSession()` (for `locale`) without those tests providing a
+    `ChatSessionProvider` wrapper — fixed by wrapping each `render()` call in the provider (a
+    `renderX` helper per file, matching the pattern `chat-widget.test.tsx` already used).
+  - `language-menu.test.tsx`'s own two failures were a second, unrelated bug: the test called
+    `render(<LanguageMenu open onClose={vi.fn()} />)` with no `activeLocale`/`onSelect` — stale
+    test drift from before `LanguageMenu` took those as required props (`panel-header.tsx` already
+    passed them correctly in the real app) — fixed by passing both.
+  - `chat-panel.test.tsx` was deleted along with `ChatPanel` and its characterization coverage
+    (streaming, citations, refusal, error, feedback, restart, abort-on-unmount) had no replacement
+    — `chat-widget.test.tsx` only covers open/close/teaser timing, not this matrix. Replaced with
+    `panel-body.test.tsx` (new, 7 tests) — the same scenarios and assertions, adapted to
+    `PanelBody`'s real rendered structure (the composer's "Send" button, `panel-header`'s "More"
+    menu) since `ChatPanel` no longer exists.
+  - Net result: `pnpm --filter web test` → **115/115 passed** (108 fixed + 7 new, up from the
+    pre-gap 113 — the 2 net new tests are `language-menu.test.tsx`'s prop-drift fix replacing one
+    assertion-only case with a real `onSelect`-value assertion). `tsc --noEmit` and
+    `pnpm --filter web build` both clean. No production code changed — every fix is test-file-only.
 - **A real layout bug shipped and was caught live, not by any test**: adding the contour
   background's absolutely-positioned layers made `panel-body.tsx`'s message thread collapse to
   zero height (its children stopped contributing to the flex container's auto height), clipping
@@ -2276,9 +2352,9 @@ file is kept in sync with the code, not with this ledger's narrative.
 
 `tsc --noEmit` and `pnpm --filter web build` clean as of the last change (including the `h-full`
 layout fix above, confirmed live in a real browser: greeting, suggestion chip, contour background,
-composer, and footer all render in the correct order and are all visible). No automated test run
-covers the current state end to end — see "Known gaps" above. Nothing in this phase has touched
-`apps/automation`.
+composer, and footer all render in the correct order and are all visible). `pnpm --filter web test`
+→ **115/115 passed** (test gap closed 2026-08-11 — see "Known gaps" above for the fix). Nothing in
+this phase has touched `apps/automation`.
 
 **Sequencing vs. Phase 4.6:** frontend-only (TypeScript), touches zero files in common with 4.6
 (backend Python) — independent of it either direction. **Do this phase before 4.8** — split the
@@ -2559,6 +2635,114 @@ same as any other phase. Known seams from inspecting the current code:
 **Sequencing.** Independent of Phase 5/6 — no shared files, no shared risk. Should be planned as
 its own phase (design → ADR-if-needed → tasks → acceptance) once picked up, not folded into 4.7 or
 5 ad hoc, matching how Supabase got its own Phase 6 rather than being folded into 4.2.
+
+---
+
+## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ⬜ todo *(9.1 done; 9.2-9.9 do not start before Phase 7 + Phase 4.8 are both done — see Sequencing)*
+
+**Scoped 2026-08-11; 9.1 (design doc + ADR-0008) done the same day — nothing else started.** User
+supplied an external best-practices brief on handling
+unanswerable/vague RAG queries (multi-stage retrieval, clarification, confidence indicators, human
+hand-off, eval metrics) and asked for a brand-new phase applying whatever's still missing from it,
+without disturbing the shipped pipeline — explicitly the **last** phase in this plan. **Promotes
+`docs/future-ideas/IDEAS.md` #1** ("Clarify before searching, on an underspecified question"), which
+raised the same gap in the abstract; that entry now points here.
+
+**Checked what already exists before scoping this, per this repo's own rule (§2 "current state" /
+Phase 7's own precedent) — do not rebuild:**
+- Hybrid retrieval (dense pgvector + keyword `tsvector`, RRF-fused) — `retrieval/application/
+  retriever.py`, `retrieval/domain/fusion.py`.
+- Cross-encoder reranking (Cohere v2), candidate_k=75 → RRF → rerank_depth=75 → top-5 —
+  `platform/clients/reranker_client.py`.
+- LLM query rewrite + one CRAG-style corrective retry on the original query —
+  `rag_agent/infrastructure/llm_client.py:AnthropicQueryRewriter`,
+  `rag_agent/application/answer_service.py:_apply_crag_retry`.
+- Confidence-threshold refusal (`refusal_min_rerank_score`, default `0.10`, ADR-0005 §7) —
+  `rag_agent/domain/refusal.py:decide_refusal`.
+- Citation enforcement that degrades to the same refusal if no claim survives —
+  `rag_agent/domain/citations.py:enforce_citations`.
+- A pre-pipeline short-circuit classifier precedent to copy the shape of: the small-talk fix above
+  (`rag_agent/domain/small_talk.py:is_small_talk`, wired into `AnswerService.answer` ahead of
+  rewrite/retrieval/refusal).
+- An `ambiguity` eval dataset already exists (`evaluation/datasets/ambiguity.json`, 3 cases)
+  expecting clarifying-question behavior — but nothing in the runtime produces that behavior yet, so
+  it can't meaningfully pass today.
+
+**Goal.** A genuinely vague or under-specified query gets a clarifying question with concrete
+options instead of silently running the full grounded pipeline and landing on the one generic
+refusal string; refusal reasons become distinguishable to the user; the human-hand-off "routing this
+to a human" copy becomes a real (if minimal) logged event instead of just text; and fallback quality
+becomes measurable (fallback rate, a faithfulness/hallucination signal) — all additive, behind a
+feature flag, with zero regression to the existing answer/refusal/citation path.
+
+**Confirmed scope decisions (asked, not assumed):**
+- **No MMR/diversity filtering.** The brief's Stage-3 diversity step improves result variety on
+  already-good retrieval; it doesn't address unanswerable/vague queries and would touch the
+  already-shipped, ADR-0005-governed retrieval pipeline for no benefit to this phase's goal. Left out.
+- **No new vector store or search engine.** Postgres+pgvector+Cohere stays the stack (ADR-0001/0002);
+  the brief's vendor comparison (Pinecone/Weaviate/Vespa/etc.) is reference material only.
+- **Human hand-off (9.6) is a stub only, this phase.** Logged event (query, refusal reason,
+  `trace_id`, timestamp) + a UI "connect me to a human" CTA that displays contact copy — **no real
+  integration, no credentials needed**. When built, add an entry to `docs/future-ideas/IDEAS.md`
+  documenting exactly what the stub does and flagging **Salesforce** as the intended eventual
+  hand-off target (needs a Salesforce API credential/case-creation endpoint + a decision on what
+  case data to populate — deferred until that integration is actually prioritized, not this phase).
+
+**Designed at 9.1 (see below); no code yet.** Per this repo's own process, a real design pass and an
+ADR were required before any code, since this extends ADR-0005's fixed pipeline with a new
+pre-retrieval branch — that's exactly what 9.1 produced. The remaining sub-steps are the roadmap for
+turning that design into code, not started:
+
+1. **9.1 — Design doc + ADR-0008 ✅ done (2026-08-11, uncommitted; no code, per the gate).**
+   `docs/adr/0008-Ambiguity-Clarification-Fallback.md` + `docs/rag/DESIGN.md` §11 lock: the domain
+   decision shape (`decide_clarification`/`ClarificationDecision`, analogous to `decide_refusal`);
+   the `/chat` contract change (**decided: extend `Answer` with `needs_clarification` /
+   `clarification_question` / `clarification_options` — no new SSE event**, the existing
+   `start`/`token`/`citations`/`done` lifecycle is unchanged); the refusal-reason taxonomy
+   (**decided: three values, `no_candidates | weak_score | no_citations` — "ambiguous" is
+   deliberately not a fourth refusal reason**, since `needs_clarification=True` is an open turn, not
+   a refusal); and eval-kind reuse (**decided: reuse the existing `ambiguity` `EvalKind`, no new
+   literal**). One open question flagged for 9.2/9.3, not yet decided: the tie-break when a query is
+   arguably both small-talk and ambiguous (e.g. "hi, what's the approval process?").
+2. **9.2 — Ambiguity/vagueness classifier.** New `rag_agent/domain/clarification.py`, structurally
+   parallel to `domain/small_talk.py`: heuristic first, LLM fallback for genuinely ambiguous cases,
+   wired into `AnswerService.answer` before rewrite/retrieval. Feature-flagged
+   (`enable_clarification_branch`, default off) so it ships dark. Tuned against
+   `evaluation/datasets/ambiguity.json` (expand its 3 cases).
+3. **9.3 — Clarification response generation + wiring.** On an ambiguous verdict, bypass rewrite/
+   retrieval/CRAG/refusal (same shape as small-talk) and generate a clarifying question + 2-4
+   concrete options via a new `CLARIFICATION_SYSTEM_PROMPT`. Fails open to the existing pipeline on
+   any LLM error, matching `generate_small_talk`'s fail-open behavior.
+4. **9.4 — Differentiated refusal messaging.** Distinct, honest copy per refusal reason from 9.1's
+   taxonomy (today all three render the identical `_REFUSAL_TEXT`). Copy routed through
+   `copywriting-rules`/`anti-ai-writing`, not hand-written inline.
+5. **9.5 — Obi widget fallback UX** (`apps/web/src/features/chat/`). Quick-reply chips for
+   clarification options, a distinct "need a bit more detail" state vs. today's refusal rendering,
+   an expanded empty-state example-query list. Through `fe:foundations-router` +
+   `fe:visual-verification` per this repo's UI convention.
+6. **9.6 — Human hand-off stub.** See "Confirmed scope decisions" above.
+7. **9.7 — Fallback-quality evaluation.** A `fallback_rate` metric and a lightweight faithfulness/
+   hallucination-rate signal in `evaluation/metrics/`; extend `ambiguity.json` to assert actual
+   clarification-triggering (not just `expected_answer` text); add a genuinely out-of-corpus dataset
+   as a `retrieval`/`answer`-kind case with an empty relevant-chunk set (9.1 decided this reuses the
+   existing `ambiguity` `EvalKind` for clarification cases — no new literal in the closed 5-way
+   `EvalKind` type).
+8. **9.8 — Security review**, per `securing-http-and-llm-endpoints`: prompt-injection risk on the
+   new classifier LLM call (user query flows into a classifier prompt), confirm the new response
+   field doesn't leak internal refusal-reason detail inappropriately.
+9. **9.9 — Exit gate.** Full regression (`make check`, `pnpm --filter web test`), zero regressions
+   vs. the Phase 4.6/4.7 baseline, ledger + `FEATURES.md` updated, ADR-0008 closed.
+
+**Non-goals, explicitly.** No MMR/diversity filtering (see above). No new vector store. No
+agent-loop rewrite of `AnswerService` — it stays "a plain function pipeline, not an agent loop" per
+its own docstring; this is one more pre-pipeline short-circuit, not a multi-turn planner.
+
+**Sequencing.** Dead last by explicit request — no phase in this plan follows Phase 9. **9.1 (this
+design doc + ADR-0008) is done — documentation only, no code, so it didn't need to wait.** Everything
+from **9.2 onward is explicitly sequenced after Phase 7 and Phase 4.8 are both done**, per the user's
+direct instruction — not because 9 has a technical dependency on either (no shared files, no shared
+risk with Phase 5/6/7/4.8). Do not start 9.2 without an explicit go-ahead, same as every other phase
+(§0 working rules), and confirm Phase 7 + 4.8 are both closed first.
 
 ---
 

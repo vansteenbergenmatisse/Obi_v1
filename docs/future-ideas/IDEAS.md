@@ -11,13 +11,21 @@ exists — not a spec.
 
 ---
 
-## 1. Clarify before searching, on an underspecified question
+## 1. Clarify before searching, on an underspecified question — **promoted to `docs/rag/PLAN.md` Phase 9 (2026-08-11)**
 
 If the incoming question is too vague or irrelevant to search well, ask the user a clarifying
 follow-up **before** running retrieval, instead of firing a low-quality query at the RAG database
 and either hallucinating or refusing.
 
-**Relation to current architecture.** Today, an underspecified query just falls through the
+**No longer just an idea — it has an owning PLAN.md phase now** (Phase 9, the plan's deliberately
+last phase, scoped not designed) that carries the concrete requirement: the ambiguity/vagueness
+classifier, the clarification-response mechanism, differentiated refusal reasons, the Obi widget
+fallback UX, a human-hand-off stub (logged event + CTA text only, no real integration this phase —
+Salesforce noted as the eventual target when that's prioritized), and fallback-quality evaluation.
+Read that section, not this one, for the current state — this entry is kept only as the original
+raised-in-conversation framing, per this file's own convention of not deleting history.
+
+**Relation to current architecture (as originally written).** Today, an underspecified query just falls through the
 existing pipeline (rewrite → retrieve → rerank → refuse if the top score is weak) and comes out
 the other end as a refusal ("not in the docs — routed to a human") — see `refusal_min_rerank_score`
 and `AnswerService` in PLAN Phase 4.2. This idea adds a stage *before* retrieval: a cheap
@@ -41,17 +49,25 @@ data. This would need a new data source (likely an existing internal system-of-r
 a new `platform/clients` integration) and a way to fold that context into retrieval scope
 (`source_id`/`tags` filtering, see idea 4) and/or into the generation prompt.
 
-## 3. Screenshot-grounded guidance
+## 3. Screenshot-grounded guidance — **promoted to `docs/rag/PLAN.md` Phase 7 (2026-08-11)**
 
 Take a screenshot of the user's current page/screen and tell them exactly what to do next based on
-what's actually visible there, instead of a generic text answer.
+what's actually visible there, instead of a generic text answer. Also covers the same gap for a
+regular file/clipboard image attachment, not just the screenshot button — both go through the same
+vision-analysis gap.
 
-**Relation to current architecture.** This is a new modality (vision input) the current pipeline
-doesn't have at all — `AnswerService` is text-in/text-out. Would need: a way for the client to
-capture and send a screenshot (privacy/consent implications — this is genuinely sensitive input,
-review under `securing-http-and-llm-endpoints` before building), a vision-capable model call, and
-probably a way to ground the screenshot against known UI states/docs rather than freeform
-description.
+**No longer just an idea — it has an owning PLAN.md phase now** (Phase 7, scoped not designed) that
+carries the concrete requirement, the known seams (contract gap, backend gap, the security review
+this needs per `securing-http-and-llm-endpoints`, and the frontend follow-on), and its sequencing.
+Read that section, not this one, for the current state — this entry is kept only as the original
+raised-in-conversation framing, per this file's own convention of not deleting history.
+
+**Relation to current architecture (as originally written).** This is a new modality (vision
+input) the current pipeline doesn't have at all — `AnswerService` is text-in/text-out. Would need:
+a way for the client to capture and send a screenshot (privacy/consent implications — this is
+genuinely sensitive input, review under `securing-http-and-llm-endpoints` before building), a
+vision-capable model call, and probably a way to ground the screenshot against known UI states/docs
+rather than freeform description.
 
 ## 4. Segment retrieval by connector instance within one deployment
 

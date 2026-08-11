@@ -446,3 +446,57 @@ Two things worth knowing that weren't obvious from the original design note:
 Full schema, resolver contract, reconciliation integration, and test plan are in
 `docs/superpowers/specs/2026-08-10-confluence-source-scoping-design.md`; status/decision history is
 in `docs/rag/PLAN.md` §0.
+
+## 11. Ambiguity clarification and fallback — designed, not started (PLAN Phase 9)
+
+Scoped 2026-08-11 from an external best-practices brief on unanswerable/vague-query fallback and
+`docs/future-ideas/IDEAS.md` #1. Full decision record is `docs/adr/0008-Ambiguity-Clarification-
+Fallback.md`; this section is the design summary. **Deliberately sequenced after Phase 7 and Phase
+4.8** (by explicit user direction, not a technical dependency — see PLAN.md §0) — this section and
+ADR-0008 are documentation only, written now; no code lands under them until both of those phases
+are done.
+
+**Problem.** The fixed pipeline from §5/ADR-0005 (rewrite → retrieve → rerank → refuse) has no
+concept of "this question is too vague to search well" — an under-specified query (e.g. "What are
+the limits?" against a corpus covering both expense limits and approval thresholds) runs the full
+grounded pipeline and lands on either a low-confidence guess or the same refusal string used for
+"not in the corpus at all." All three internal refusal causes (no candidates, weak rerank score, no
+citation survived enforcement) also render identical copy, so the user can't tell them apart.
+
+**Design.**
+
+- **A new pre-retrieval short-circuit**, `rag_agent/domain/clarification.py::decide_clarification`,
+  structurally identical to the existing small-talk fix (§ current pipeline, `is_small_talk`):
+  heuristic first, LLM fallback only when inconclusive, wired into `AnswerService.answer` ahead of
+  rewrite/retrieval/CRAG/refusal. Feature-flagged (`enable_clarification_branch`, default off).
+- **Contract change is additive, not a new SSE event.** `Answer` gains `needs_clarification: bool`,
+  `clarification_question: str | None`, `clarification_options: list[str] | None`. A clarification
+  reply streams over the existing `token` events (same as small-talk) with `citations: []`; the
+  `done` payload carries the new fields. The `start`/`token`/`citations`/`done` lifecycle (ADR-0005
+  §10) is unchanged.
+- **A three-value refusal-reason taxonomy** — `no_candidates | weak_score | no_citations` — surfaced
+  (not just logged) so distinct, honest copy can be shown per cause. Clarification is deliberately
+  outside this taxonomy: `needs_clarification=True` is an open conversation turn, not a refusal.
+- **Human hand-off stays a stub this phase**, by explicit user decision: a structured log record
+  (`trace_id`, `raw_query`, `refusal_reason`) on every `refused=True` answer, plus a static "connect
+  me to a human" CTA in the widget. No webhook/ticket/email integration. Salesforce is the noted
+  eventual target — see `docs/future-ideas/IDEAS.md` #1 — deferred until actually prioritized.
+- **Evaluation reuses the existing `ambiguity` `EvalKind`** (already in the closed 5-way Literal,
+  `evaluation/schemas.py`); its 3 existing cases (`evaluation/datasets/ambiguity.json`) are extended
+  to assert `needs_clarification=True`, not just `expected_answer` text. A genuinely out-of-corpus
+  case is a `retrieval`/`answer`-kind case with an empty relevant-chunk set — no new `EvalKind`.
+  A `fallback_rate` metric and a lightweight faithfulness/hallucination-rate signal are added to
+  `evaluation/metrics/`.
+
+**Explicit non-goals** (present in the source brief, rejected for this problem): MMR/diversity
+filtering (doesn't address unanswerable/vague queries; would touch the already-shipped ADR-0005
+retrieval pipeline for no benefit here); a new vector store or search engine (Postgres+pgvector+
+Cohere stays the stack, ADR-0001/0002); an agent-loop rewrite of `AnswerService` (stays a fixed
+pipeline per ADR-0005 decision 5 — this is one more short-circuit, not a planner).
+
+**Open implementation question flagged for 9.2/9.3, not yet decided:** the relative ordering of the
+two pre-pipeline branches (small-talk vs. clarification) when a query is arguably both, e.g. "hi,
+what's the approval process?" — needs an explicit tie-break at implementation time.
+
+Sub-step roadmap (9.1 design doc/ADR — this section — through 9.9 exit gate) is in `docs/rag/
+PLAN.md`'s own Phase 9 section, not duplicated here.
