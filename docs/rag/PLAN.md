@@ -143,7 +143,9 @@ gained `ImageAttachment`, `ChatTurn.images?`, `ChatDoneEvent.imageAnalysis?` (bo
 required-nullable — see Phase 7's own 7.2 entry for why that reading of the ADR is correct).
 Zero-touch outside `packages/contracts` confirmed, not assumed: backend `make check` → 312 passed
 unchanged, boundaries clean; web `tsc --noEmit` clean, `pnpm --filter web test` → 115/115 passed
-unchanged, `pnpm --filter web build` clean. **7.2 is uncommitted — ask before committing next.**
+unchanged, `pnpm --filter web build` clean. Asked before committing; user said yes — **7.2 committed
+`7ffd916`.** Next up in the 7.2→7.7 roadmap is **7.3 (backend multimodal wiring)** — not started,
+needs an explicit go-ahead per the standing "no phase auto-starts" rule.
 
 #### 4.6 progress snapshot — ✅ all 16 of 16 sub-steps done, exit gate green (2026-08-11)
 
@@ -2662,7 +2664,7 @@ that design into code, not started:
    are required but their concrete values are explicitly not decided by this ADR** (no invented
    cost/scaling number); **image-borne prompt injection is a new threat class flagged for a
    required live-model adversarial pass** before shipping, not solved by the design.
-2. **7.2 — Contract change ✅ done (2026-08-12), uncommitted.** `packages/contracts`: new
+2. **7.2 — Contract change ✅ done (2026-08-12), committed `7ffd916`.** `packages/contracts`: new
    `ImageAttachment { mediaType: string; data: string }` type; `ChatTurn` gains optional
    `images?: ImageAttachment[]`; `ChatDoneEvent` gains optional `imageAnalysis?: string | null` —
    both `src/index.ts` and `chat.yaml` (`ImageAttachment` schema + the two property additions), per
@@ -2679,7 +2681,7 @@ that design into code, not started:
    `pnpm --filter web build` clean (both API routes still compile as dynamic `ƒ`); backend
    `make check` (repo root) → **312 passed**, boundaries clean — confirming a contracts-only change
    really is zero-touch for `apps/automation`, not just assumed. No ruff/pyright change (no Python
-   file touched). Not yet committed — ask before committing, same as 7.1.
+   file touched). **Committed `7ffd916`**, per the user's explicit go-ahead this session.
 3. **7.3 — Backend multimodal wiring.** `AnthropicMessagesClient.create_message` accepts image
    content blocks; `AnswerGenerator.generate_image_analysis` (new); `decide_refusal`'s `has_image`
    gate; `AnswerService.answer` composes the grounded + image-analysis text. Per ADR-0009 decisions
