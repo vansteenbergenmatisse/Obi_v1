@@ -36,7 +36,9 @@ flagged for confirmation (not blocking) — see its section below. **4.6.6, 4.6.
 done (2026-08-11) → 261 tests (was 251, 4.6.9 was doc/ADR-only); new migration
 `0006_dedupe_source_type_check` applied to the dev DB; pyright baseline formally moved 31→34
 (ADR-0003 D1 amendment). 4.6.9 has a "needs your input" flag (not blocking, took the plan's own
-default) — see its section below. 4.6.10 (RLS reader-role no-op, needs your input) is next.**
+default) — see its section below. **4.6.10 done (2026-08-11) → 271 tests (was 261)**; it also has a
+"needs your input" flag (chose fail-closed, see its section). 4.6.11 (event dedup delivery_id
+collision, LOW) is next.
 
 **Commit gap closed — 2026-08-10 (new session).** 4.6.1 (Confluence group-restriction fail-closed
 fix), plus ADR-0006/ADR-0007 and the six-agent `docs/rag/fixes/` audit itself, were all sitting
@@ -1725,16 +1727,48 @@ edit; doing it here would just be overwritten by that pass) — this sub-step's 
 4.6.8's readout (261 passed, 2 ruff-check / 16 unformatted, 34 pyright errors — now the *documented*
 baseline, not just an observed count); no migration.
 
-### 4.6.10 — RLS reader-role no-op outside offline envs (LOW)
+### 4.6.10 — RLS reader-role no-op outside offline envs (LOW) ✅ done (2026-08-11)
 
-`get_reader_engine()` (`apps/automation/app/platform/db/engine.py`) silently falls back to the
-RLS-bypassing writer connection when `DATABASE_READER_URL` is unset — only proven correct inside the
-test harness, which does wire a real `rag_reader`. Fix: extract the existing `_OFFLINE_ENVS`
-convention (currently duplicated in `embeddings_client.py`/`reranker_client.py`) to a shared
-`Settings.is_offline_env()`, then warn or fail-closed when the reader URL is unset **outside** that
-offline set. **Needs your input:** warn-only or fail-closed for a real deployment — small, cheap
-question. Tests: parametrized over offline-env + unset (no warning) vs. non-offline-env + unset
-(warning/raise per chosen behavior) vs. reader URL set (never warns, any env).
+**Status: implemented, tested (10 new tests), boundaries clean, no ruff/pyright regression → 271
+tests total (was 261). Pure code fix, no migration, exactly as scoped.**
+
+**Decision — fail-closed, not warn-only.** The reader role's entire purpose is RLS enforcement
+(ADR-0004); silently falling back to the RLS-bypassing writer connection in a real deployment is a
+security regression, not a convenience — a warning buried in structured logs is easy to miss on a
+production boot, while a raised exception is a loud, immediate startup failure that can't ship
+unnoticed. Matches this codebase's existing posture everywhere else a security control's config is
+missing (fail-closed sentinels in 4.6.1/4.6.2, the numeric-principal HTTP validator in 5.3, every
+circuit breaker). **Flagging for your explicit confirmation — not blocking**, since the plan called
+this "a small, cheap question" either way could have answered.
+
+**Fix.** `Settings.is_offline_env()` (`platform/config/settings.py`) replaces the `_OFFLINE_ENVS`
+constant duplicated in `embeddings_client.py` and `reranker_client.py` (both now call the shared
+method instead). `get_reader_engine()` (`platform/db/engine.py`) now raises a new
+`ReaderRoleMisconfiguredError` when `database_reader_url` is unset outside an offline env; inside
+one, it falls back to `database_url` exactly as before, silently (no warning — the plan's own test
+matrix specified "offline-env + unset (no warning)").
+
+**Shipped:**
+- `app/platform/config/settings.py`: `_OFFLINE_ENVS` module constant + `Settings.is_offline_env()`.
+- `app/platform/clients/embeddings_client.py` / `reranker_client.py`: drop the duplicated
+  `_OFFLINE_ENVS`, call `settings.is_offline_env()`.
+- `app/platform/db/engine.py`: `ReaderRoleMisconfiguredError`; `get_reader_engine()` fails closed
+  outside an offline env when the reader URL is unset.
+- `app/platform/db/tests/test_engine_reader_role.py` (new, 10 tests, parametrized): 4 offline envs
+  (local/test/dev/ci) fall back silently; 3 non-offline envs (production/staging/prod) raise
+  `ReaderRoleMisconfiguredError`; 3 envs (including production) with the reader URL set never
+  raise. No live DB needed — `create_engine()` doesn't connect eagerly, so a syntactically-valid,
+  unreachable URL is enough; `get_settings()` monkeypatched per test (not the global `.env`-backed
+  cache) to avoid polluting other tests' settings.
+
+**Verification:** `make check` (from repo root) → **271 passed** (was 261), boundaries clean;
+`ruff check` unchanged (2 errors, both pre-existing in `alembic/env.py`/`0001_core_schema.py`);
+`ruff format` improved (15 unformatted, was 16 — `embeddings_client.py` brought clean since this
+sub-step touched it, per the project standard's "files you edit are brought clean"; its untouched
+test file's pre-existing dirt was left alone); `pyright` unchanged (34 errors, identical file
+list); no migration (pure code + settings addition, no schema change); the existing DB test harness
+(`confluence_sync/tests/conftest.py`) already sets `DATABASE_READER_URL` explicitly for every test
+run, so the new fail-closed path is never hit by the rest of the suite.
 
 ### 4.6.11 — Event dedup ignores `delivery_id` collisions (LOW)
 

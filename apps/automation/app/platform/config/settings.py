@@ -10,6 +10,11 @@ from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Envs where a missing hosted-provider key or DB role falls back to a safe offline default
+# instead of failing (PLAN 4.6.10) — was duplicated as a local constant in
+# embeddings_client.py/reranker_client.py; both now call Settings.is_offline_env() instead.
+_OFFLINE_ENVS = {"local", "test", "dev", "ci"}
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -148,6 +153,11 @@ class Settings(BaseSettings):
     chunker_version: int = 1
     contextualization_version: int = 1
     retrieval_schema_version: int = 1
+
+    def is_offline_env(self) -> bool:
+        """True in local/test/dev/ci — envs where a missing hosted key or DB role is a safe
+        default-to-fake / default-to-writer fallback rather than a real deployment gap."""
+        return self.env.lower() in _OFFLINE_ENVS
 
 
 @lru_cache

@@ -30,7 +30,6 @@ from app.platform.logging import get_logger
 
 log = get_logger("reranker_client")
 
-_OFFLINE_ENVS = {"local", "test", "dev", "ci"}
 _RETRYABLE_STATUS = {408, 409, 429}
 
 
@@ -192,7 +191,7 @@ def build_reranker(settings: Settings, client: httpx.Client | None = None) -> Re
         return LocalReranker(settings)
     if provider == "cohere":
         if not settings.reranker_api_key:
-            if settings.env.lower() in _OFFLINE_ENVS:
+            if settings.is_offline_env():
                 log.warning("reranker_key_missing_using_fake", provider=provider, env=settings.env)
                 return FakeReranker()
             raise RerankError(f"cohere reranker requires an API key in env={settings.env}")

@@ -32,7 +32,6 @@ from app.shared.hashing import sha256_text
 
 log = get_logger("embeddings_client")
 
-_OFFLINE_ENVS = {"local", "test", "dev", "ci"}
 _RETRYABLE_STATUS = {408, 409, 429}
 
 
@@ -96,9 +95,7 @@ class _HttpEmbeddingProvider:
         if not texts:
             return []
         if len(texts) > self._max_texts:  # C10 abuse cap
-            raise EmbeddingError(
-                f"embed() called with {len(texts)} texts > cap {self._max_texts}"
-            )
+            raise EmbeddingError(f"embed() called with {len(texts)} texts > cap {self._max_texts}")
         out: list[list[float]] = []
         consecutive_failures = 0
         for batch in _chunks(texts, self._max_batch):
@@ -220,7 +217,7 @@ def build_embedding_provider(
     if provider in ("openai", "voyage"):
         key = settings.openai_api_key if provider == "openai" else settings.voyage_api_key
         if not key:
-            if settings.env.lower() in _OFFLINE_ENVS:
+            if settings.is_offline_env():
                 log.warning(
                     "embedding_key_missing_using_fake",
                     provider=provider,
