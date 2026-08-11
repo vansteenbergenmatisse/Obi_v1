@@ -2064,14 +2064,59 @@ Rewrote every stale section identified, verifying each replacement against the r
 format --check` unchanged (2 errors / 15 unformatted); `pyright` unchanged (34 errors, same file
 list); no migration.
 
-### 4.6.15 — Remaining doc-drift batch (batched, run after 4.6.9)
+### 4.6.15 — Remaining doc-drift batch (batched, run after 4.6.9) ✅ done (2026-08-11)
 
-`docs/rag/DESIGN.md` §1's self-contradicting "Confirmed gaps" paragraph (claims reranker/tracing/
-chat/citations/refusal/CRAG are absent; all shipped since 3.5.2–5.2); `evaluation/README.md`'s
-nonexistent `"security"` eval kind; `FEATURES.md`'s missing 3.5.5 rerank-lift exports; root
-`CLAUDE.md`'s stale ruff/pyright baseline (write the numbers 4.6.9 settled on, not another
-snapshot); `QueryTrace.rerank_scores`' stale "reserved for Phase 4" docstring (populated since 4.2);
-the `attachment_extraction.py` PARKED note carried over from 4.6.13.
+**Status: doc/comment-only batch, one 1-line-over ruff regression introduced and caught by the
+same-pass gate re-run (fixed before commit). 274 tests unchanged; boundaries clean; ruff/pyright
+back at the 2/15/34 baseline.**
+
+Checked each of the six named items against the running code/docs before touching anything — one
+turned out to already be fixed by an earlier session and is recorded as such rather than re-done;
+one extra piece of drift was found in the same file while verifying it and fixed alongside.
+
+- **`DESIGN.md` §1 "Confirmed gaps" paragraph — already fixed, not touched.** Read it expecting the
+  self-contradiction the finding described (claiming reranker/tracing/chat/citations/refusal/CRAG
+  are absent); found instead that `0740a6a` ("consolidate 4.6.1-4.6.11 progress...") had already
+  rewritten it into a correct historical-gaps framing ("kept here so the as-built story reads start
+  to finish, not because they're still open"). No action — recording this so the sub-step doesn't
+  silently look skipped. **Found and fixed instead, same section**: its "Storage — 7 tables" line
+  was still undercounting (real count is 10; `page_restriction`, `source_scope`, `query_trace` were
+  missing from the enumeration) — corrected.
+- **`evaluation/README.md`'s nonexistent `"security"` eval kind — confirmed and fixed.**
+  `EvalKind` (`schemas.py`) is a closed `Literal["retrieval", "answer", "ambiguity", "permission",
+  "latency"]` — no `"security"` value exists anywhere in code or the `datasets/` directory, and the
+  README's own claim that `ambiguity` is merely a "sub-kind" contradicted `EvalKind` treating it as
+  a first-class member. Rewrote the "five eval kinds" list to match the actual `Literal` exactly.
+- **`FEATURES.md`'s missing 3.5.5 rerank-lift exports — confirmed and fixed.** `evaluation`'s
+  `__init__.py.__all__` includes `evaluate_rerank_lift`, `write_rerank_lift_reports`, and
+  `RerankLiftReport`; none were listed in `FEATURES.md`'s public-surface bullet. Added, plus a
+  "what it does" mention and the missing `test_rerank_lift.py` test-file reference (found while
+  fixing the bullet next to it).
+- **Root `CLAUDE.md`'s stale ruff/pyright baseline — confirmed and fixed.** Read `2 errors / 25
+  unformatted, Pyright 31/1`; live gate reads `2 errors / 15 unformatted, Pyright 34/1` (the 34
+  matches 4.6.9's ADR-0003 D1 amendment; the unformatted count dropped over the 4.6.x run as touched
+  files were brought clean per the project's own convention). Also fixed the same file's `uv run
+  pytest -q # 99 passing` comment to `# 274 passing`.
+- **`QueryTrace.rerank_scores`'s stale "reserved for Phase 4" docstring — confirmed and fixed.**
+  `retriever.py`'s shared `_trace()` helper populates `rerank_scores`/`retrieved_chunk_ids` on
+  **every** call to either `retrieve()` or `retrieve_with_context()` — not reserved, not answer-
+  runtime-only. Rewrote the class docstring and split the inline column comment so the
+  retrieval-populated pair (`retrieved_chunk_ids`, `rerank_scores`) reads separately from the
+  answer-runtime-populated group (`rewritten_query`/`answer`/`citations`/`feedback`) instead of
+  being lumped under one inaccurate "populated in Phase 4" comment.
+- **`attachment_extraction.py` PARKED note — added, as deferred from 4.6.13.** New bullet in
+  `FEATURES.md`'s `ingestion` section: fully built and tested, zero production call sites, not
+  re-exported from the feature's public root, kept intentionally per 4.6.13's dead-code-disposition
+  decision rather than deleted.
+
+**One self-caught regression:** the first version of the `QueryTrace` comment edit pushed one line
+to 101 chars, tripping `E501` (ruff went 2→3 errors) — caught by re-running the gate before
+committing, not assumed clean; shortened the comment and reverted to the 2/15/34 baseline before
+moving on.
+
+**Verification:** `make check` → **274 passed** (unchanged), boundaries clean; `ruff check`/`ruff
+format --check` back at baseline (2 errors / 15 unformatted, same file list); `pyright` unchanged
+(34 errors, same file list); no migration.
 
 ### 4.6.16 — Exit gate ⬜ todo
 

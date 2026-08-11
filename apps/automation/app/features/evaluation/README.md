@@ -8,24 +8,22 @@ Phase 3-5 plug real retrieval and answer functions into.
 
 ## The five eval kinds
 
-Each `EvalCase.kind` names the dimension it exercises:
+`EvalKind` (`schemas.py`) is a closed `Literal` of exactly five values — `EvalCase.kind` names the
+dimension it exercises:
 
 - **retrieval** — did the right chunks/pages come back in the top k? Scored by
   the metrics below (recall, precision, mrr, ndcg, hit rate).
 - **answer** — is the generated answer faithful to the retrieved context and to
   `expected_answer`? (Answer grading plugs in at Phase 5; the schema already
   carries `expected_answer`.)
-- **security** — does the pipeline refuse to leak restricted or out-of-scope
-  content? Exercised via the fixtures' `restrictions/` set and archived/trashed
-  pages that must never surface.
+- **ambiguity** — is the question under-specified enough that the system should
+  ask to clarify rather than guess? Driven by the `ambiguity.json` dataset.
 - **latency** — do TTFT, retrieval, and end-to-end times meet the targets in
   `metrics/latency_metrics.py`? Checked by `check_targets`.
 - **permission** — given a caller's scope, are only pages they may read
   returned? Driven by the `permission.json` dataset and the fixture
-  `access_scope` restrictions.
-
-(`ambiguity` is a sub-kind of answer/retrieval: the question is under-specified
-and the system should ask to clarify rather than guess.)
+  `access_scope` restrictions. This is also where cross-scope leak / restricted-
+  content checks live — there is no separate `security` kind.
 
 ## Layout
 

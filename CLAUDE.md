@@ -60,14 +60,15 @@ Run from `apps/automation` (everything via `uv run`); `make check` bundles the e
 ```
 make boundaries   # architecture gate — must exit 0
 make check        # boundaries + tests (the enforced gate)
-uv run pytest -q  # 99 passing
+uv run pytest -q  # 274 passing
 uv run ruff check .        uv run ruff format --check .        uv run pyright
 ```
 
 Ruff and Pyright are tracked at **no-regression**, not zero: a known baseline of dirt
-predates this standard (Ruff 2 errors / 25 unformatted, Pyright 31/1). Do not reformat
-files you did not otherwise touch, and do not let the whole-repo counts rise. Files you
-edit are brought clean. See ADR-0003 D1.
+predates this standard (Ruff 2 errors / 15 unformatted, Pyright 34/1 — reconciled from the
+original 31/1 at PLAN 4.6.9, see ADR-0003 D1 amendment). Do not reformat files you did not
+otherwise touch, and do not let the whole-repo counts rise. Files you edit are brought
+clean.
 
 ## Run
 

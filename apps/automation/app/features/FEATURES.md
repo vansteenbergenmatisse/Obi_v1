@@ -28,6 +28,7 @@ This file documents every feature in apps/automation/app/features. Each block be
 - **Untrusted input validation:** None at this layer — inputs arrive already validated at the `confluence_sync` boundary; attachment bytes are parsed defensively (never raise).
 - **Shared components used:** None.
 - **Tests / risky paths:** `app/features/ingestion/tests/` — token-window invariants, parent/child sizing + stable-key stability, 3-pass diff reuse/re-embed/delete sets, embedding-reuse counts (spy embedder), contextualizer fallback vs LLM path, attachment extraction + OCR gating. DB-level embedding/tsv population, atomic version swap, and the re-embed release gate are covered by `confluence_sync/tests/test_ingestion_pipeline.py`.
+- **PARKED (PLAN 4.6.13/4.6.15):** `domain/attachment_extraction.py` (`extract_attachment`) is fully built and tested — native-first text extraction (txt/markdown/csv/html + optional pypdf/python-docx/openpyxl) with `needs_ocr` gating — but has **zero production call sites**: it isn't invoked anywhere in `sync_service.py`'s ingestion flow and isn't re-exported from this feature's public root. Attachment content is fetched (`get_page_attachments`) but not currently chunked/embedded/searchable. Kept rather than deleted — the fixes-backlog audit's dead-code disposition (4.6.13) explicitly chose not to delete working, tested code on spec. Wiring it into the pipeline is unscoped future work, not a committed phase.
 - **Run / test:** `pytest app/features/ingestion/tests` (plus the confluence_sync suite, which drives this feature end-to-end).
 
 ### security_baseline (ingestion LLM-CALL surfaces)
@@ -77,17 +78,17 @@ security_baseline:
 
 ## evaluation
 
-- **What it does:** DB-free RAG evaluation harness — retrieval/latency metrics, a fixture-backed dataset, a runner, and a baseline report generator.
+- **What it does:** DB-free RAG evaluation harness — retrieval/latency metrics, a fixture-backed dataset, a runner, a baseline report generator, and (PLAN 3.5.5) rerank-lift reporting: before/after Precision@5 and NDCG@10 comparing a plain-fused ranking against the same ranking with reranking applied, so the reranker's actual contribution is measured, not assumed.
 - **Path / owner:** apps/automation/app/features/evaluation — owned by the `automation` application.
 - **Language / framework / runtime:** Python 3.12; pure Python (no DB, no network); runs inside the automation service or standalone.
 - **Deployment unit:** ships in `apps/automation` (dev/CI utility; not on the request path).
-- **Public surface (`__init__.py`, enforced):** `evaluate`, `load_dataset`, `load_corpus_loader`, `datasets_dir`, `confluence_fixtures_dir`, `RankFn`, and the `EvalCase` / `EvalDataset` / `EvalResult` / `EvalReport` types. `run_baseline` remains a runnable module (`python -m app.features.evaluation.run_baseline`). Consumers import via `app.features.evaluation`.
+- **Public surface (`__init__.py`, enforced):** `evaluate`, `evaluate_rerank_lift`, `load_dataset`, `write_rerank_lift_reports`, `load_corpus_loader`, `datasets_dir`, `confluence_fixtures_dir`, `RankFn`, and the `EvalCase` / `EvalDataset` / `EvalResult` / `EvalReport` / `RerankLiftReport` types. `run_baseline` remains a runnable module (`python -m app.features.evaluation.run_baseline`). Consumers import via `app.features.evaluation`.
 - **Allowed importers:** standalone tooling; no runtime feature depends on it.
 - **Contracts / external systems:** None; reads the Confluence fixture corpus under `tests/fixtures/confluence`.
 - **Database tables owned:** None.
 - **Untrusted input validation:** None (operates on trusted fixtures).
 - **Shared components used:** None.
-- **Tests / risky paths:** `app/features/evaluation/tests/` — metrics correctness, fixture loader, baseline runner.
+- **Tests / risky paths:** `app/features/evaluation/tests/` — metrics correctness, fixture loader, baseline runner, and (PLAN 3.5.5) `test_rerank_lift.py` — before/after lift reporting.
 - **Run / test:** `make eval` or `python -m app.features.evaluation.run_baseline`; `pytest app/features/evaluation/tests`.
 
 ## rag_agent

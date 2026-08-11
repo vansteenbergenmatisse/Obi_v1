@@ -96,11 +96,13 @@ principal list per page (written by `confluence_sync`'s `handle_sync_page`), que
 by `search_repo.fetch_page_scopes` and fed into a request-scoped `PrincipalPermissionPolicy` — never
 the whole corpus, never the fixture data the constructor-injected policy used to carry.
 
-**Storage** — 7 tables in `app/platform/db/models.py`: `page_source` (`:85`, one per Confluence page),
-`document`, `document_version` (immutable snapshot, ≤1 active per document), `chunk` (`:206`, parents +
-children; hot-path columns `is_active`/`space_id`/`page_status` denormalized so search never joins),
-`event_ledger`, `job`, `reconciliation_run`. Two **partial** indexes on `chunk` cover only active child
-rows: HNSW over `embedding` and GIN over `tsv`.
+**Storage** — 10 tables in `app/platform/db/models.py`: `page_source` (`:85`, one per Confluence page),
+`page_restriction` (Phase 4.3, persisted per-page principal ACL), `document`, `document_version`
+(immutable snapshot, ≤1 active per document), `chunk` (`:206`, parents + children; hot-path columns
+`is_active`/`space_id`/`page_status` denormalized so search never joins), `event_ledger`, `job`,
+`reconciliation_run`, `source_scope` (PLAN 3.5.6), `query_trace` (PLAN 3.5.4, extended in Phase 4
+with the answer/citation/feedback columns). Two **partial** indexes on `chunk` cover only active
+child rows: HNSW over `embedding` and GIN over `tsv`.
 
 **What is already modern — keep as-is** (do not rebuild): parent/child chunking, contextual retrieval,
 RRF fusion, `halfvec@3072` HNSW, immutable versioning + atomic activation + rollback + GC, the 3-pass

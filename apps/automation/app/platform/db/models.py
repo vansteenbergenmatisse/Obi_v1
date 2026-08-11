@@ -504,8 +504,10 @@ class QueryTrace(Base):
     """One row per retrieval request: the tracing scoreboard (PLAN 3.5.4).
 
     Written via the WRITER engine so RLS never blocks the insert. Retrieval fills the retrieval
-    columns now; the Phase-4 answer runtime UPDATEs the same row with rewritten_query / answer /
-    citations / feedback (all nullable here). rerank_scores is reserved for Phase 4 as well.
+    columns at insert time, including retrieved_chunk_ids and rerank_scores (populated since
+    Phase 4.2, once reranking runs inside the retrieval pipeline). The Phase-4 answer runtime
+    UPDATEs the same row afterward with rewritten_query / answer / citations / feedback (all
+    nullable here, since the original 3.5.4 migration predates all of Phase 4).
     """
 
     __tablename__ = "query_trace"
@@ -518,9 +520,11 @@ class QueryTrace(Base):
     reranker_model: Mapped[str] = mapped_column(String(128), nullable=False)
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    # populated in Phase 4 (answer runtime + feedback); nullable so 3.5.4 writes a partial row
+    # populated at insert time by both retrieve() and retrieve_with_context() (retriever.py's
+    # shared _trace helper); nullable only because the 3.5.4 migration predates reranking
     retrieved_chunk_ids: Mapped[list[int] | None] = mapped_column(ARRAY(BigInteger), nullable=True)
     rerank_scores: Mapped[list[float] | None] = mapped_column(ARRAY(Float), nullable=True)
+    # populated by the Phase-4 answer runtime's later UPDATE (answer_service.py + feedback PATCH)
     rewritten_query: Mapped[str | None] = mapped_column(Text, nullable=True)
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     citations: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
