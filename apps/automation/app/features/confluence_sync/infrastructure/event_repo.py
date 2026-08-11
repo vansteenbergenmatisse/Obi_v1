@@ -25,7 +25,15 @@ def _status_enum(status: str | None) -> PageStatus | None:
 def record_event(
     session: Session, envelope: EventEnvelope, *, origin: int, self_generated: bool
 ) -> int | None:
-    """Insert an event idempotently. Returns the new id, or None if a duplicate."""
+    """Insert an event idempotently. Returns the new id, or None if a duplicate.
+
+    Two independent unique constraints can both mean "duplicate": `uq_event_ledger_payload_hash`
+    (same canonical content) and `ux_event_ledger_delivery_id` (same delivery, even if a field
+    Confluence resends non-deterministically makes the hash differ). A target-less
+    `ON CONFLICT DO NOTHING` — no `index_elements` — absorbs a violation on *either* constraint in
+    one round trip, instead of only the one named; a redelivery with the same `delivery_id` but a
+    different `payload_hash` no longer raises an uncaught `IntegrityError` (PLAN 4.6.11).
+    """
     payload_hash = hash_json(envelope.canonical_dedup_payload())
     stmt = (
         pg_insert(EventLedger)
@@ -43,7 +51,7 @@ def record_event(
             proc_status=EventProcStatus.received,
             payload=envelope.raw or envelope.canonical_dedup_payload(),
         )
-        .on_conflict_do_nothing(index_elements=["payload_hash"])
+        .on_conflict_do_nothing()
         .returning(EventLedger.id)
     )
     return session.execute(stmt).scalar_one_or_none()

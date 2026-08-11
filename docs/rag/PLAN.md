@@ -37,8 +37,8 @@ done (2026-08-11) → 261 tests (was 251, 4.6.9 was doc/ADR-only); new migration
 `0006_dedupe_source_type_check` applied to the dev DB; pyright baseline formally moved 31→34
 (ADR-0003 D1 amendment). 4.6.9 has a "needs your input" flag (not blocking, took the plan's own
 default) — see its section below. **4.6.10 done (2026-08-11) → 271 tests (was 261)**; it also has a
-"needs your input" flag (chose fail-closed, see its section). 4.6.11 (event dedup delivery_id
-collision, LOW) is next.
+"needs your input" flag (chose fail-closed, see its section). **4.6.11 done (2026-08-11) → 272
+tests (was 271).** 4.6.12 (`Answer.refusal_reason` observability, LOW, needs your input) is next.
 
 **Commit gap closed — 2026-08-10 (new session).** 4.6.1 (Confluence group-restriction fail-closed
 fix), plus ADR-0006/ADR-0007 and the six-agent `docs/rag/fixes/` audit itself, were all sitting
@@ -1770,15 +1770,38 @@ list); no migration (pure code + settings addition, no schema change); the exist
 (`confluence_sync/tests/conftest.py`) already sets `DATABASE_READER_URL` explicitly for every test
 run, so the new fail-closed path is never hit by the rest of the suite.
 
-### 4.6.11 — Event dedup ignores `delivery_id` collisions (LOW)
+### 4.6.11 — Event dedup ignores `delivery_id` collisions (LOW) ✅ done (2026-08-11)
 
-`apps/automation/app/features/confluence_sync/infrastructure/event_repo.py::record_event` only
-guards the `payload_hash` unique constraint via `on_conflict_do_nothing`, not the separate
-`delivery_id` partial-unique index — a same-`delivery_id`/different-hash redelivery raises an
-uncaught `IntegrityError` (500) instead of deduping gracefully. Fix: catch that specific violation
-(or pre-check `delivery_id`) and return the same graceful `duplicate=True` outcome. Test: two
-envelopes, same `delivery_id`, different `payload_hash` → second delivery dedupes gracefully, not a
-500.
+**Status: implemented, tested (1 new test), boundaries clean, no ruff/pyright regression → 272
+tests total (was 271). Pure code fix, no migration, exactly as scoped.**
+
+**Fix.** `record_event`'s `pg_insert(...).on_conflict_do_nothing(index_elements=["payload_hash"])`
+only suppressed a conflict on that one named constraint — a same-`delivery_id`/different-hash
+redelivery still violated the separate `ux_event_ledger_delivery_id` partial-unique index,
+uncaught. Dropped `index_elements` entirely: a target-less `ON CONFLICT DO NOTHING` absorbs a
+violation on *either* unique constraint in one round trip (Postgres semantics — no target means
+any unique/exclusion violation on the table), simpler than catching a specific `IntegrityError` or
+adding a pre-check `SELECT`, and `ingest_event`'s existing `event_id is None ->
+duplicate=True` handling already does the graceful part for free.
+
+**Verified the fix's real effect:** reverted `event_repo.py` locally and re-ran the new test —
+failed with the exact uncaught `IntegrityError` on `ux_event_ledger_delivery_id` the finding
+described, then passed once the fix was restored.
+
+**Shipped:**
+- `app/features/confluence_sync/infrastructure/event_repo.py::record_event`: target-less
+  `on_conflict_do_nothing()`.
+- `app/features/confluence_sync/tests/test_event_dedup.py` (+1):
+  `test_same_delivery_id_different_payload_dedupes_gracefully_not_500` — same `delivery_id`, a
+  bumped `cf_version` (changes `payload_hash`) → second ingest dedupes (`duplicate=True`, no
+  second job), not a 500.
+
+**Verification:** `make check` (from repo root) → **272 passed** (was 271), boundaries clean;
+`ruff check` unchanged (2 errors, both pre-existing); `ruff format` unchanged (15 unformatted, none
+of the touched files among them); `pyright` unchanged (34 errors — a transient 35th from
+`first_envelope.cf_version + 1` on an `int | None` field was fixed before this count, by hardcoding
+the second envelope's `cf_version` instead of arithmetic on an optional); no migration (pure code
+fix, no schema change).
 
 ### 4.6.12 — `Answer.refusal_reason` never reaches an observable surface (LOW)
 
