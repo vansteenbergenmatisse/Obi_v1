@@ -4,3 +4,56 @@
    tailwind.config.ts (sourced from @omniboost/design-tokens) is available as
    utilities. */
 @config "../../tailwind.config.ts";
+
+/* Widget keyframes (Phase 4.7). Durations below match `motion` in
+   packages/design-tokens/src/tokens.ts — keep them in sync.
+   Apply with the `motion-safe:` variant at the point of use (see the existing
+   precedent in features/chat/ui/message-list.tsx) so reduced-motion users get
+   no animation instead of a fallback transition. */
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes feedback-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.35);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes typing-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* The two rgba literals below are intentional, not a token miss: this animates between two
+   *distinct* compound box-shadow states (a base elevation plus an expanding accent ring) that
+   don't reduce to a single reusable `shadow.*`/`color.*` tier — it's a one-off decorative pulse
+   tied to this keyframe alone. */
+@keyframes launcher-pulse {
+  0% {
+    box-shadow: 0 6px 20px rgba(35, 38, 59, 0.16), 0 0 0 0 rgba(99, 91, 255, 0.35);
+  }
+  70% {
+    box-shadow: 0 6px 20px rgba(35, 38, 59, 0.16), 0 0 0 12px rgba(99, 91, 255, 0);
+  }
+  100% {
+    box-shadow: 0 6px 20px rgba(35, 38, 59, 0.16), 0 0 0 0 rgba(99, 91, 255, 0);
+  }
+}

@@ -1,7 +1,9 @@
 import path from "node:path";
+import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  plugins: [react()],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
@@ -9,7 +11,11 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    // Pure-logic tests (*.test.ts) stay on the fast node environment; component tests
+    // (*.test.tsx) need a DOM, so they alone pay the jsdom cost.
+    environmentMatchGlobs: [["src/**/*.test.tsx", "jsdom"]],
+    setupFiles: ["./src/test-setup.ts"],
+    include: ["src/**/*.test.{ts,tsx}"],
     server: {
       deps: {
         // @omniboost/contracts ships raw TS source (see its package.json `main`); force it

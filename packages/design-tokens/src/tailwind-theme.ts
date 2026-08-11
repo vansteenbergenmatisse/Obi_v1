@@ -6,15 +6,18 @@
  * rounded-md, p-md, ...) resolve to the token values in `tokens.ts`.
  */
 
-import { color, spacing, radius, font } from "./tokens";
+import { color, spacing, radius, font, shadow, zIndex, motion } from "./tokens";
 
 export const tailwindTheme = {
   colors: {
     surface: color.surface,
     "surface-raised": color.surfaceRaised,
+    "surface-sunken": color.surfaceSunken,
     text: color.text,
     "text-muted": color.textMuted,
     accent: color.accent,
+    "accent-hover": color.accentHover,
+    "accent-secondary": color.accentSecondary,
     "accent-contrast": color.accentContrast,
     border: color.border,
   },
@@ -37,6 +40,23 @@ export const tailwindTheme = {
   fontFamily: {
     sans: font.sans,
     mono: font.mono,
+  },
+  boxShadow: {
+    sm: shadow.sm,
+    md: shadow.md,
+    lg: shadow.lg,
+  },
+  zIndex: {
+    widget: zIndex.widget,
+    "widget-menu": zIndex.widgetMenu,
+  },
+  transitionDuration: {
+    fast: motion.fast,
+    base: motion.base,
+    slow: motion.slow,
+  },
+  transitionTimingFunction: {
+    widget: motion.easing,
   },
 } as const;
 
