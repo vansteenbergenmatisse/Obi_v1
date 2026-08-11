@@ -28,7 +28,11 @@ export interface WidgetCopy {
   suggestion: string;
   placeholder: string;
   footer: string;
-  attachmentNotice: string;
+  /** Persistent composer disclosure shown while an image is staged to send — discloses the C6
+   * gap (image bytes are not PII-redacted, unlike message text) rather than hiding it. */
+  imageDisclosure: string;
+  /** Label introducing an assistant turn's vision-analysis block (ADR-0009 decision 5). */
+  imageAnalysisLabel: string;
   teaser: string;
   docs: string;
   support: string;
@@ -47,7 +51,8 @@ const COPY: Record<Locale, WidgetCopy> = {
     suggestion: "What can you help me with?",
     placeholder: "Ask about your Confluence workspace…",
     footer: "AI may make mistakes. Verify important information.",
-    attachmentNotice: "Image attachments aren’t answered yet — sent as text only.",
+    imageDisclosure: "We don't check images for personal info. Skip sensitive screenshots.",
+    imageAnalysisLabel: "Obi looked at your image",
     teaser: "Hey, I'm Obi. Need help with onboarding or support?",
     docs: "Developer docs",
     support: "Support articles",
@@ -64,7 +69,8 @@ const COPY: Record<Locale, WidgetCopy> = {
     suggestion: "Waarmee kun je me helpen?",
     placeholder: "Stel een vraag over je Confluence-werkruimte…",
     footer: "AI kan fouten maken. Controleer belangrijke informatie.",
-    attachmentNotice: "Afbeeldingen worden nog niet geanalyseerd — alleen als tekst verzonden.",
+    imageDisclosure: "We checken afbeeldingen niet op persoonlijke info. Vermijd gevoelige screenshots.",
+    imageAnalysisLabel: "Obi bekeek je afbeelding",
     teaser: "Hé, ik ben Obi. Hulp nodig bij onboarding of support?",
     docs: "Developer docs",
     support: "Supportartikelen",
@@ -81,7 +87,8 @@ const COPY: Record<Locale, WidgetCopy> = {
     suggestion: "Wobei kannst du mir helfen?",
     placeholder: "Stelle eine Frage zu deinem Confluence-Arbeitsbereich…",
     footer: "KI kann Fehler machen. Überprüfe wichtige Informationen.",
-    attachmentNotice: "Bilder werden noch nicht analysiert — nur als Text gesendet.",
+    imageDisclosure: "Wir prüfen Bilder nicht auf persönliche Daten. Vermeide sensible Screenshots.",
+    imageAnalysisLabel: "Obi hat sich dein Bild angesehen",
     teaser: "Hey, ich bin Obi. Hilfe bei Onboarding oder Support?",
     docs: "Entwickler-Docs",
     support: "Support-Artikel",
@@ -98,7 +105,8 @@ const COPY: Record<Locale, WidgetCopy> = {
     suggestion: "En quoi puis-je vous aider ?",
     placeholder: "Posez une question sur votre espace Confluence…",
     footer: "L’IA peut faire des erreurs. Vérifiez les informations importantes.",
-    attachmentNotice: "Les images ne sont pas encore analysées — envoyées comme texte uniquement.",
+    imageDisclosure: "Nous ne vérifions pas les infos personnelles dans les images. Évitez les captures sensibles.",
+    imageAnalysisLabel: "Obi a regardé votre image",
     teaser: "Bonjour, je suis Obi. Besoin d’aide pour l’onboarding ou le support ?",
     docs: "Docs développeur",
     support: "Articles d’aide",
@@ -115,7 +123,8 @@ const COPY: Record<Locale, WidgetCopy> = {
     suggestion: "¿En qué puedes ayudarme?",
     placeholder: "Haz una pregunta sobre tu espacio de Confluence…",
     footer: "La IA puede cometer errores. Verifica la información importante.",
-    attachmentNotice: "Las imágenes aún no se analizan — se envían solo como texto.",
+    imageDisclosure: "No revisamos las imágenes en busca de información personal. Evita capturas sensibles.",
+    imageAnalysisLabel: "Obi miró tu imagen",
     teaser: "Hola, soy Obi. ¿Ayuda con onboarding o soporte?",
     docs: "Docs para desarrolladores",
     support: "Artículos de soporte",
@@ -132,7 +141,8 @@ const COPY: Record<Locale, WidgetCopy> = {
     suggestion: "Con cosa puoi aiutarmi?",
     placeholder: "Fai una domanda sul tuo spazio Confluence…",
     footer: "L’IA può commettere errori. Verifica le informazioni importanti.",
-    attachmentNotice: "Le immagini non vengono ancora analizzate — inviate solo come testo.",
+    imageDisclosure: "Non controlliamo le immagini per dati personali. Evita screenshot sensibili.",
+    imageAnalysisLabel: "Obi ha guardato la tua immagine",
     teaser: "Ciao, sono Obi. Serve aiuto con onboarding o supporto?",
     docs: "Docs per sviluppatori",
     support: "Articoli di supporto",

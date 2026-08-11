@@ -1,10 +1,11 @@
 /**
- * ImageLightbox — full-size preview overlay for a clicked attachment thumbnail (PLAN 4.7.8).
- * Frontend-only: it previews whatever image is already in the browser (an attachment or a
- * captured screenshot) and carries no analysis of its content — that's backend/vision work,
- * tracked separately in PLAN.md Phase 7.
+ * ImageLightbox — full-size preview overlay for a clicked image thumbnail (PLAN 4.7.8).
+ * Frontend-only: it previews whatever image is already in the browser (a staged attachment, a
+ * captured screenshot, or — as of PLAN 7.5 — an already-sent image in the thread) and carries no
+ * analysis of its content itself; that text comes back separately as `message.imageAnalysis`
+ * and renders in its own labeled block (`message-bubble.tsx`'s `ImageAnalysisSection`).
  *
- * Feature-internal; only `AttachmentStrip` renders it.
+ * Feature-internal; rendered by both `AttachmentStrip` (pre-send) and `MessageBubble` (post-send).
  */
 "use client";
 

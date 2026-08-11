@@ -1,11 +1,13 @@
 /**
  * Composer — chat message input (PLAN 4.7.2, pixel-exact reference in `docs/rag/PLAN.md`
- * Phase 4.7's design spec; image attachment added per `docs/rag/OBI-WIDGET-DESIGN.md` §6).
+ * Phase 4.7's design spec; image attachment added per `docs/rag/OBI-WIDGET-DESIGN.md` §6, sent for
+ * real vision analysis as of PLAN 7.5).
  *
  * Feature-internal (used once, only by ChatPanel).
  *
- * Image attachments are client-side preview only (§6.2, Option A) — no upload endpoint exists,
- * so on send they're dropped with an inline notice rather than silently sent as text.
+ * Attachments are base64-encoded here on send (ADR-0009 decision 2: inline on the newest turn
+ * only, no upload endpoint) and handed to `onSend` alongside their still-live preview URL, so the
+ * caller can both build the wire request and keep rendering the sent image in the thread.
  */
 "use client";
 
@@ -15,9 +17,10 @@ import { IconButton } from "./icon-button";
 import { AttachmentStrip, type ComposerAttachment } from "./attachment-strip";
 import { useChatSession } from "./chat-session-provider";
 import { getCopy } from "../model/i18n";
+import type { SentImage } from "../model/messages";
 
 export interface ComposerProps {
-  onSend: (message: string) => void;
+  onSend: (message: string, images: SentImage[]) => void;
   disabled?: boolean;
 }
 
@@ -33,7 +36,26 @@ const ATTACH_ICON_PATH =
 const SEND_ICON_PATH = "M12 19V5M6 11l6-6 6 6";
 
 const MAX_ATTACHMENTS = 4;
-const ATTACHMENT_NOTICE_MS = 4000;
+
+/** Reads a `File` as base64 (no data-URI prefix, per `ImageAttachment`'s wire shape) without
+ * releasing its still-live `previewUrl` — that URL keeps backing the message-list render. */
+function toSentImage(attachment: ComposerAttachment): Promise<SentImage> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      const commaIndex = result.indexOf(",");
+      resolve({
+        mediaType: attachment.file.type,
+        data: commaIndex === -1 ? result : result.slice(commaIndex + 1),
+        previewUrl: attachment.previewUrl,
+        alt: attachment.file.name || "Attached image",
+      });
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("failed to read attachment"));
+    reader.readAsDataURL(attachment.file);
+  });
+}
 
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Composer(
   { onSend, disabled = false },
@@ -43,10 +65,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const copy = getCopy(locale);
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
-  const [showAttachmentNotice, setShowAttachmentNotice] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const noticeTimeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const nextAttachmentId = useRef(0);
   const canSend = (value.trim().length > 0 || attachments.length > 0) && !disabled;
 
@@ -57,11 +77,12 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     textarea.style.height = `${textarea.scrollHeight}px`;
   }, [value]);
 
-  // Revoke every outstanding preview URL on unmount — nothing else releases them.
+  // Revoke every outstanding preview URL on unmount — nothing else releases them. A sent
+  // attachment is removed from this state at send time (ownership moves to the sent message,
+  // see `send()`), so this never revokes a URL a message bubble is still rendering.
   useEffect(() => {
     return () => {
       attachments.forEach((attachment) => URL.revokeObjectURL(attachment.previewUrl));
-      if (noticeTimeoutRef.current) clearTimeout(noticeTimeoutRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount-only cleanup
   }, []);
@@ -120,25 +141,25 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     event.target.value = "";
   }
 
-  function send() {
+  async function send() {
     if (disabled) return;
     const trimmed = value.trim();
     if (!trimmed && attachments.length === 0) return;
 
-    if (attachments.length > 0) {
-      clearAttachments();
-      setShowAttachmentNotice(true);
-      if (noticeTimeoutRef.current) clearTimeout(noticeTimeoutRef.current);
-      noticeTimeoutRef.current = setTimeout(
-        () => setShowAttachmentNotice(false),
-        ATTACHMENT_NOTICE_MS,
-      );
-    }
+    // Hand off ownership of the staged attachments' preview URLs to the sent message now —
+    // `clearAttachments` is not called here, since that would revoke URLs the thread still needs.
+    const pendingAttachments = attachments;
+    setAttachments([]);
+    setValue("");
 
-    if (trimmed) {
-      onSend(trimmed);
-      setValue("");
+    let images: SentImage[] = [];
+    try {
+      images = await Promise.all(pendingAttachments.map(toSentImage));
+    } catch {
+      // Fail open: an unreadable attachment never blocks sending the rest of the turn.
     }
+    if (!trimmed && images.length === 0) return;
+    onSend(trimmed, images);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
@@ -208,10 +229,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           </button>
         </div>
       </div>
-      {showAttachmentNotice && (
-        <p role="status" className="text-center text-xs text-text-muted">
-          {copy.attachmentNotice}
-        </p>
+      {attachments.length > 0 && (
+        <p className="text-center text-xs text-text-muted">{copy.imageDisclosure}</p>
       )}
       <p className="text-center text-xs text-text-muted">
         {copy.footer}

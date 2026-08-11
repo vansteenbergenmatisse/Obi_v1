@@ -5,8 +5,12 @@
  * Only the user's own messages get a filled bubble (`bg-surface-sunken`) — bot turns render as
  * plain text, matching the mockup exactly (`docs/rag/PLAN.md` Phase 4.7's design spec).
  */
+import { useState } from "react";
 import { TypingIndicator } from "./typing-indicator";
-import type { ChatMessage } from "../model/messages";
+import { ImageLightbox } from "./image-lightbox";
+import { useChatSession } from "./chat-session-provider";
+import { getCopy } from "../model/i18n";
+import type { ChatMessage, MessageImage } from "../model/messages";
 
 export interface MessageBubbleProps {
   message: ChatMessage;
@@ -17,6 +21,52 @@ const FOCUS_RING = "focus-visible:outline-none focus-visible:ring-2 focus-visibl
 
 const THUMB_UP_PATH =
   "M7 10v11H4a1 1 0 0 1-1-1v-9a1 1 0 0 1 1-1h3zm0 0l4-7a2.4 2.4 0 0 1 2.4 2.4V9h5.2a2 2 0 0 1 2 2.4l-1.2 7A2 2 0 0 1 17.4 20H7";
+
+/** The user turn's attached images (PLAN 7.5) — thumbnails above the bubble, each reusing the
+ * 4.7.8 lightbox for a click-to-zoom preview. No copy here, so no `useChatSession` dependency. */
+function UserImages({ images }: { images: MessageImage[] }) {
+  const [zoomedId, setZoomedId] = useState<string | null>(null);
+  const zoomed = images.find((image) => image.id === zoomedId) ?? null;
+
+  return (
+    <div className="mb-xs flex justify-end gap-1.5">
+      {images.map((image) => (
+        <button
+          key={image.id}
+          type="button"
+          aria-label={`View ${image.alt}`}
+          onClick={() => setZoomedId(image.id)}
+          className={`block h-10 w-10 rounded-md ${FOCUS_RING}`}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- local blob preview, not a static asset */}
+          <img
+            src={image.previewUrl}
+            alt={image.alt}
+            className="h-10 w-10 rounded-md border border-border object-cover"
+          />
+        </button>
+      ))}
+      {zoomed && (
+        <ImageLightbox src={zoomed.previewUrl} alt={zoomed.alt} onClose={() => setZoomedId(null)} />
+      )}
+    </div>
+  );
+}
+
+/** The assistant turn's vision-analysis block (ADR-0009 decision 5) — a separate, labeled
+ * section, never merged into `message.text` since it never passes through citation enforcement.
+ * Isolated in its own component (same pattern as `Greeting`/`SuggestionChip` in
+ * `message-list.tsx`) so `useChatSession` is only required when a turn actually has one. */
+function ImageAnalysisSection({ text }: { text: string }) {
+  const { locale } = useChatSession();
+  const copy = getCopy(locale);
+  return (
+    <div className="mt-xs max-w-[96%] rounded-lg border border-border bg-surface-raised px-md py-sm">
+      <p className="text-xs font-medium text-text-muted">{copy.imageAnalysisLabel}</p>
+      <p className="mt-1 whitespace-pre-line text-sm leading-[1.6] text-text">{text}</p>
+    </div>
+  );
+}
 
 export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   const isUser = message.role === "user";
@@ -32,15 +82,21 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
         </p>
       )}
 
+      {isUser && message.images && message.images.length > 0 && (
+        <UserImages images={message.images} />
+      )}
+
       {isUser ? (
-        <div
-          className={[
-            "inline-block max-w-[82%] rounded-2xl bg-surface-sunken px-[15px] py-[9px] text-sm text-text",
-            "motion-safe:animate-[menu-in_180ms_ease-out]",
-          ].join(" ")}
-        >
-          {message.text}
-        </div>
+        message.text ? (
+          <div
+            className={[
+              "inline-block max-w-[82%] rounded-2xl bg-surface-sunken px-[15px] py-[9px] text-sm text-text",
+              "motion-safe:animate-[menu-in_180ms_ease-out]",
+            ].join(" ")}
+          >
+            {message.text}
+          </div>
+        ) : null
       ) : isPlaceholder ? (
         <TypingIndicator />
       ) : (
@@ -55,6 +111,8 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
           {message.text}
         </div>
       )}
+
+      {!isUser && message.imageAnalysis && <ImageAnalysisSection text={message.imageAnalysis} />}
 
       {message.citations && message.citations.length > 0 && (
         <ul className="mt-xs flex flex-wrap gap-xs">

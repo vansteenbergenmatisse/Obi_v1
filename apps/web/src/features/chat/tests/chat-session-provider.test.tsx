@@ -10,6 +10,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ChatStreamEvent } from "@omniboost/contracts";
 import { ChatSessionProvider, useChatSession } from "../ui/chat-session-provider";
+import type { SentImage } from "../model/messages";
 
 function sse(event: ChatStreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
@@ -107,5 +108,63 @@ describe("ChatSessionProvider", () => {
 
     expect(capturedSignal?.aborted).toBe(true);
     expect(screen.getByTestId("count").textContent).toBe("0");
+  });
+
+  it("attaches images to the newest history turn only, and reads imageAnalysis back off done", async () => {
+    const image: SentImage = {
+      mediaType: "image/png",
+      data: "ZmFrZS1ieXRlcw==",
+      previewUrl: "blob:mock-url",
+      alt: "screenshot.png",
+    };
+    let requestBody: unknown;
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+      requestBody = init?.body ? JSON.parse(init.body as string) : undefined;
+      return Promise.resolve(
+        okStreamResponse([
+          sse({ type: "start", conversationId: "conv-1" }),
+          sse({
+            type: "done",
+            answer: "there's a dashboard",
+            citations: [],
+            traceId: "trace-1",
+            refused: false,
+            imageAnalysis: "The screenshot shows a dashboard with three charts.",
+          }),
+        ]),
+      );
+    });
+
+    function ImageHarness() {
+      const { messages, sendMessage } = useChatSession();
+      const assistant = messages.find((m) => m.role === "assistant");
+      return (
+        <div>
+          <button onClick={() => sendMessage("what is this?", [image])}>send</button>
+          <div data-testid="image-analysis">{assistant?.imageAnalysis ?? ""}</div>
+        </div>
+      );
+    }
+
+    render(
+      <ChatSessionProvider>
+        <ImageHarness />
+      </ChatSessionProvider>,
+    );
+
+    await userEvent.click(screen.getByText("send"));
+    await waitFor(() =>
+      expect(screen.getByTestId("image-analysis").textContent).toBe(
+        "The screenshot shows a dashboard with three charts.",
+      ),
+    );
+
+    const history = (requestBody as { history: Array<Record<string, unknown>> }).history;
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({
+      role: "user",
+      content: "what is this?",
+      images: [{ mediaType: "image/png", data: "ZmFrZS1ieXRlcw==" }],
+    });
   });
 });

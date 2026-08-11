@@ -12,9 +12,9 @@
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { ChatTurn } from "@omniboost/contracts";
+import type { ChatTurn, ImageAttachment } from "@omniboost/contracts";
 import { ChatRequestError, sendFeedback, streamChat } from "../api/chat-client";
-import type { ChatMessage } from "../model/messages";
+import type { ChatMessage, SentImage } from "../model/messages";
 import type { Locale } from "../model/i18n";
 
 /** Only complete/refused turns (plus every user turn) become resendable history — a
@@ -29,7 +29,8 @@ function toHistory(messages: ChatMessage[]): ChatTurn[] {
 export interface ChatSession {
   messages: ChatMessage[];
   pending: boolean;
-  sendMessage: (text: string) => Promise<void>;
+  /** `images` (PLAN 7.5) rides on this turn only — ADR-0009 decision 2, no history resend. */
+  sendMessage: (text: string, images?: SentImage[]) => Promise<void>;
   handleFeedback: (messageId: string, traceId: string, value: 1 | -1) => Promise<void>;
   /** Clears the thread and starts a new conversation, aborting any in-flight stream first. */
   restart: () => void;
@@ -61,14 +62,32 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
     return `${prefix}-${nextId.current}`;
   }
 
-  async function sendMessage(text: string) {
+  async function sendMessage(text: string, images: SentImage[] = []) {
+    const userId = makeId("user");
     const userMessage: ChatMessage = {
-      id: makeId("user"),
+      id: userId,
       role: "user",
       text,
       status: "complete",
+      images:
+        images.length > 0
+          ? images.map((image, index) => ({
+              id: `${userId}-image-${index}`,
+              previewUrl: image.previewUrl,
+              alt: image.alt,
+            }))
+          : undefined,
     };
     const history = toHistory([...messages, userMessage]);
+    // The newest turn only (ADR-0009 decision 2) — `toHistory` never carries images itself, so
+    // the wire payload is attached here, after history is built, not baked into the mapper.
+    if (images.length > 0) {
+      const wireImages: ImageAttachment[] = images.map(({ mediaType, data }) => ({
+        mediaType,
+        data,
+      }));
+      history[history.length - 1] = { ...history[history.length - 1], images: wireImages };
+    }
     setMessages((prev) => [...prev, userMessage]);
     setPending(true);
 
@@ -101,6 +120,7 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
               citations: event.citations,
               status: event.refused ? "refused" : "complete",
               traceId: event.traceId ?? undefined,
+              imageAnalysis: event.imageAnalysis ?? undefined,
             });
           },
           onError: (message) => updateAssistant({ text: message, status: "error" }),

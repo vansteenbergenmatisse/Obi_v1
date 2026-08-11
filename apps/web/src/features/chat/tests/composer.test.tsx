@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Composer, type ComposerProps } from "../ui/composer";
 import { ChatSessionProvider } from "../ui/chat-session-provider";
@@ -22,7 +22,7 @@ describe("Composer", () => {
 
     await userEvent.type(box, "  hello  {Enter}");
 
-    expect(onSend).toHaveBeenCalledWith("hello");
+    expect(onSend).toHaveBeenCalledWith("hello", []);
     expect(box).toHaveValue("");
   });
 
@@ -61,7 +61,7 @@ describe("Composer", () => {
     expect(sendButton).not.toBeDisabled();
 
     await userEvent.click(sendButton);
-    expect(onSend).toHaveBeenCalledWith("hi");
+    expect(onSend).toHaveBeenCalledWith("hi", []);
   });
 
   it("renders the footer disclaimer", () => {
@@ -133,7 +133,20 @@ describe("Composer", () => {
       expect(screen.queryByAltText("e.png")).not.toBeInTheDocument();
     });
 
-    it("drops attachments with an inline notice on send when there is no text", async () => {
+    it("shows the PII disclosure while an image is staged, and clears it once removed", async () => {
+      renderComposer({ onSend: vi.fn() });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+      expect(screen.queryByText(/don.t check images for personal info/i)).not.toBeInTheDocument();
+
+      await userEvent.upload(fileInput, pngFile());
+      expect(screen.getByText(/don.t check images for personal info/i)).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: /remove screenshot\.png/i }));
+      expect(screen.queryByText(/don.t check images for personal info/i)).not.toBeInTheDocument();
+    });
+
+    it("sends a base64-encoded image attachment with empty text when there is no text", async () => {
       const onSend = vi.fn();
       renderComposer({ onSend });
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
@@ -141,14 +154,26 @@ describe("Composer", () => {
 
       await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
-      expect(onSend).not.toHaveBeenCalled();
+      await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+      expect(onSend).toHaveBeenCalledWith(
+        "",
+        [
+          expect.objectContaining({
+            mediaType: "image/png",
+            alt: "screenshot.png",
+            data: expect.any(String),
+          }),
+        ],
+      );
+      const [, images] = onSend.mock.calls[0];
+      expect(images[0].data.length).toBeGreaterThan(0);
+      expect(images[0].data).not.toMatch(/^data:/);
+      // Clearing the composer's own staging state must not revoke the URL handed off to the
+      // sent message — the thread still needs it to render the thumbnail.
       expect(screen.queryByAltText("screenshot.png")).not.toBeInTheDocument();
-      expect(
-        screen.getByText(/image attachments aren.t answered yet/i),
-      ).toBeInTheDocument();
     });
 
-    it("sends the text and drops attachments with a notice when both are present", async () => {
+    it("sends both the text and the image attachment when both are present", async () => {
       const onSend = vi.fn();
       renderComposer({ onSend });
       const box = screen.getByRole("textbox", { name: /message/i });
@@ -158,11 +183,11 @@ describe("Composer", () => {
 
       await userEvent.click(screen.getByRole("button", { name: "Send" }));
 
-      expect(onSend).toHaveBeenCalledWith("what is in this image?");
-      expect(screen.queryByAltText("screenshot.png")).not.toBeInTheDocument();
-      expect(
-        screen.getByText(/image attachments aren.t answered yet/i),
-      ).toBeInTheDocument();
+      await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+      const [text, images] = onSend.mock.calls[0];
+      expect(text).toBe("what is in this image?");
+      expect(images).toHaveLength(1);
+      expect(images[0]).toMatchObject({ mediaType: "image/png", alt: "screenshot.png" });
     });
   });
 });

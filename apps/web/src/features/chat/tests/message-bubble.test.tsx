@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MessageBubble } from "../ui/message-bubble";
+import { ChatSessionProvider } from "../ui/chat-session-provider";
 import type { ChatMessage } from "../model/messages";
 
 afterEach(() => cleanup());
@@ -85,5 +86,60 @@ describe("MessageBubble", () => {
   it("never shows feedback controls for the user's own messages", () => {
     render(<MessageBubble message={userMessage()} />);
     expect(screen.queryByRole("button", { name: "Helpful" })).not.toBeInTheDocument();
+  });
+
+  describe("image attachments (PLAN 7.5)", () => {
+    it("renders a user turn's attached images and opens a lightbox on click", async () => {
+      render(
+        <MessageBubble
+          message={userMessage({
+            text: "what is this?",
+            images: [{ id: "u1-image-0", previewUrl: "blob:mock-url", alt: "screenshot.png" }],
+          })}
+        />,
+      );
+
+      const thumbnail = screen.getByAltText("screenshot.png");
+      expect(thumbnail).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "View screenshot.png" }));
+      expect(screen.getByRole("dialog", { name: "screenshot.png" })).toBeInTheDocument();
+    });
+
+    it("does not render an empty bubble for an image-only turn with no text", () => {
+      render(
+        <MessageBubble
+          message={userMessage({
+            text: "",
+            images: [{ id: "u1-image-0", previewUrl: "blob:mock-url", alt: "screenshot.png" }],
+          })}
+        />,
+      );
+
+      expect(screen.getByAltText("screenshot.png")).toBeInTheDocument();
+      expect(document.querySelector(".bg-surface-sunken")).not.toBeInTheDocument();
+    });
+
+    it("renders a labeled vision-analysis block for an assistant turn that has one", () => {
+      render(
+        <ChatSessionProvider>
+          <MessageBubble
+            message={assistantMessage({
+              imageAnalysis: "The screenshot shows a dashboard with three charts.",
+            })}
+          />
+        </ChatSessionProvider>,
+      );
+
+      expect(screen.getByText("Obi looked at your image")).toBeInTheDocument();
+      expect(
+        screen.getByText("The screenshot shows a dashboard with three charts."),
+      ).toBeInTheDocument();
+    });
+
+    it("renders no vision-analysis block when the turn has none", () => {
+      render(<MessageBubble message={assistantMessage()} />);
+      expect(screen.queryByText("Obi looked at your image")).not.toBeInTheDocument();
+    });
   });
 });

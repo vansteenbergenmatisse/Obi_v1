@@ -1,12 +1,12 @@
 /**
- * AttachmentStrip — thumbnail preview row for images attached to the composer, rendered above
- * the textarea so it sits at the bottom of the panel with the input (see
+ * AttachmentStrip — thumbnail preview row for images staged in the composer, rendered above the
+ * textarea so it sits at the bottom of the panel with the input (see
  * `docs/rag/OBI-WIDGET-DESIGN.md` §6). Feature-internal — only `Composer` renders it.
  *
- * Client-side preview only: no upload endpoint exists yet, so these previews never leave the
- * browser (see the Composer's send-time notice). Clicking a thumbnail opens a full-size
- * `ImageLightbox` (PLAN 4.7.8) — that's local preview only, not analysis; sending the image to a
- * vision-capable backend call is separate, tracked as PLAN.md Phase 7.
+ * Pre-send staging only: these previews live in the composer's local state until `send()`
+ * base64-encodes them and hands them to `onSend` (PLAN 7.5) — this component itself never talks
+ * to the network. Clicking a thumbnail opens a full-size `ImageLightbox` (PLAN 4.7.8); the same
+ * lightbox re-renders a sent image from `message-bubble.tsx` once it's in the thread.
  */
 "use client";
 

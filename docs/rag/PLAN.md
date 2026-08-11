@@ -154,9 +154,35 @@ moment 7.3 alone shipped — so 7.4's caps were folded in immediately rather tha
 see Phase 7's own 7.3+7.4 entry for the full narrative. **Both done (2026-08-12), committed
 `12db45a` — 327 tests passed (was 312), boundaries clean, ruff/pyright unchanged at the 2/15/34
 baseline** (after fixing 7 real new pyright errors and reverting 13 files an over-broad `ruff
-format` accidentally reformatted — both caught before this count, not after). Next up in the
-7.1→7.7 roadmap is **7.5 (Obi widget send + render path)** — not started, needs an explicit
-go-ahead per the standing "no phase auto-starts" rule.
+format` accidentally reformatted — both caught before this count, not after).
+
+**Same session, continued: user gave explicit go-ahead to continue the plan — 7.5 built.** Per the
+7.1→7.7 roadmap, next was **7.5 (Obi widget send + render path)**, now done (2026-08-12),
+uncommitted — see Phase 7's own 7.5 entry for the full narrative: `composer.tsx` now actually sends
+staged attachments (base64, newest turn only) instead of dropping them; `chat-session-provider.tsx`
+wires them into the request and reads `imageAnalysis` back off `done`; `message-bubble.tsx` renders
+the sent image (click-to-zoom) and a labeled vision-analysis block. 6 new tests → **121 web tests
+passed** (was 115); backend untouched, **327 backend tests** unchanged, boundaries clean, ruff/
+pyright unchanged at 2/15/34. Live-verified end to end with a real Anthropic vision call through
+the actual browser widget (see 7.5's own section for the one unrelated stale-`uvicorn` bug found and
+fixed along the way). Next up: **7.6 (security review — the live-model adversarial pass for
+image-borne injection)**, still not started, needs its own explicit go-ahead.
+
+**Same session, unplanned fix: `next build` corrupted the live `next dev` server.** Immediately
+after 7.5's verification, the user hit a real runtime error in the browser: `Cannot find module
+'./799.js'` out of `.next/server/webpack-runtime.js`/`_document.js`. Root cause — not a code
+defect in 7.5's own diff — was verification order: 7.5's own gate had run `pnpm --filter web
+build` (a production build) while an earlier session's `pnpm --filter web dev` was still live on
+port 3000, and both share `apps/web/.next`. The production build overwrote the dev server's
+runtime chunk layout in place (`.next` showed a mix of dev-cache files and fresh
+`BUILD_ID`/`app-build-manifest.json`), so the running dev server's module map no longer matched
+what was on disk. Fixed by killing the stale dev-server processes, `rm -rf apps/web/.next`, and
+restarting `pnpm --filter web dev` clean — confirmed via a real browser reload (200, no console
+errors, teaser/widget render normally) and `read_console_messages` with `onlyErrors: true`. Saved
+as a standing rule (`~/.claude/…/memory/feedback_nextjs_build_vs_dev.md`): never run `next build`
+as a phase-gate check while `next dev` is live on the same app — stop dev first, or skip the build
+check and rely on `tsc --noEmit` + tests instead. No PLAN-tracked code changed by this fix; only
+process-hygiene.
 
 #### 4.6 progress snapshot — ✅ all 16 of 16 sub-steps done, exit gate green (2026-08-11)
 
@@ -2770,11 +2796,59 @@ that design into code, not started:
    attachments before `onSend` and never reads `imageAnalysis` (PLAN 7.5, not started). No live-
    model adversarial pass for image-borne injection (PLAN 7.6, not started) — `IMAGE_ANALYSIS_
    SYSTEM_PROMPT`'s anti-injection line is a mitigation, not a substitute for that required step.
-4. **7.5 — Obi widget send + render path.** `composer.tsx` stops dropping attachments before
-   `onSend`; sends `images` on the newest turn only; `message-list.tsx` renders the sent image
-   (reusing `image-lightbox.tsx`'s 4.7.8 click-to-zoom) plus a labeled "Obi looked at your image"
-   section for `imageAnalysis`. Composer copy discloses the C6 gap (images are not scanned for PII)
-   — through `copywriting-rules`/`anti-ai-writing`.
+4. **7.5 — Obi widget send + render path ✅ done (2026-08-12), uncommitted.**
+   `composer.tsx`'s `send()` no longer drops staged attachments — it base64-encodes each one
+   (`FileReader.readAsDataURL`, stripped of the data-URI prefix, per the wire's `ImageAttachment`
+   shape) and hands `(text, SentImage[])` to `onSend`; `ChatSessionProvider.sendMessage` attaches
+   the wire `images` to the **newest** history turn only (ADR-0009 decision 2 — `toHistory` itself
+   stays image-agnostic; the payload is spliced onto the last entry after the mapper runs), stores
+   render-only preview images on the user `ChatMessage`, and reads `imageAnalysis` back off the
+   `done` event onto the assistant `ChatMessage`. `message-bubble.tsx` (not `message-list.tsx` —
+   the per-turn renderer is the right place, matching how citations/feedback already render there)
+   shows the user turn's images as thumbnails reusing `image-lightbox.tsx`'s 4.7.8 click-to-zoom,
+   and a separate labeled `ImageAnalysisSection` ("Obi looked at your image") for `imageAnalysis` on
+   the assistant side — isolated in its own subcomponent that calls `useChatSession()` only when a
+   turn actually has one, the same pattern `message-list.tsx`'s `Greeting`/`SuggestionChip` already
+   used, so it never breaks the existing tests that render `MessageBubble`/`MessageList` without a
+   `ChatSessionProvider`. A persistent composer disclosure (`copy.imageDisclosure`) replaces the old
+   post-send "not answered yet" notice — it shows while an image is staged (before send), not after,
+   since images are now actually sent; wrote it with `ux-writing`/`anti-ai-writing`, all 6 locales,
+   at ~70 chars: "We don't check images for personal info. Skip sensitive screenshots." An
+   image-only turn (no text) sends `content: ""` — the backend already accepts this (no
+   `min_length` on `ChatMessage.content`, only on the `history` list) and 7.3's `has_image` refusal
+   gate already covers it; `message-bubble.tsx` skips rendering an empty text bubble in that case.
+   Ownership of a sent attachment's blob-preview URL moves from the composer's local state to the
+   sent message on send (`setAttachments([])` without revoking) so the thread can keep rendering it;
+   the composer's pre-existing unmount-cleanup effect (a stale-closure no-op on `deps: []`, disclosed
+   here rather than fixed — out of this sub-step's scope) never revoked anything for the same reason
+   before this change, so nothing regressed.
+
+   **Verified:** 6 new tests (2 `composer.test.tsx` — base64 payload + text/no-text; 1
+   `chat-session-provider.test.tsx` — newest-turn-only wiring + `imageAnalysis` round-trip; 4
+   `message-bubble.test.tsx` — thumbnails, lightbox, no-empty-bubble, the labeled block present/
+   absent) → **121 passed** (was 115); `tsc --noEmit` clean; `pnpm --filter web build` clean.
+   Backend untouched — `make check` **327 passed** unchanged, `make boundaries` clean, ruff/pyright
+   unchanged at the 2/15/34 baseline (no Python file touched). **Live-verified end to end** against
+   the real running backend and a real Anthropic vision call (not mocked): uploaded a real 200×200
+   PNG via the widget's file input, sent "What color is this image?" with no other text — the
+   thumbnail rendered above the user's bubble, the assistant turn showed the pipeline's own
+   `no_citations` refusal (expected — still no real Confluence corpus, per the standing blocker)
+   *and*, separately, a real "Obi looked at your image" block with an accurate color description,
+   confirming decision 3's "`imageAnalysis` rides on every `Answer` branch, including refusal" holds
+   live, not just in the deterministic tests. Clicking the sent thumbnail opened the lightbox on the
+   real image. One real bug found and fixed before this: the already-running `uvicorn` process
+   (started in an earlier session, no `--reload`) was serving pre-7.3 code and 422'd on the new
+   `images` field — restarted it, unrelated to this sub-step's own code. One test-fixture-only issue
+   also found and ruled out: an initial synthetic 1×1-derived PNG made Anthropic return `400
+   invalid_request_error: "Could not process image"` — confirmed via a direct API call that a real
+   PNG works fine, so this was a bad fixture, not a code defect; `generate_image_analysis`'s
+   fail-open path (7.3) degraded exactly as designed on the bad fixture ("I couldn't look at that
+   image right now — feel free to try again") before the fixture was fixed.
+
+   **Not done, explicit scope decision:** the composer's unmount-cleanup effect's pre-existing
+   stale-closure bug (noted above) — disclosed, not fixed, since it predates this sub-step and fixing
+   it is unrelated to send/render wiring. No live-model adversarial pass for image-borne prompt
+   injection (still PLAN 7.6, not started).
 5. **7.6 — Security review**, per `securing-http-and-llm-endpoints`: the live-model adversarial
    pass for image-borne prompt injection flagged at 7.1, plus confirming the new caps and the
    `has_image` refusal gate behave as designed under adversarial input.
