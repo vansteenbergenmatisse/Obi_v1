@@ -151,12 +151,12 @@ together.** Invoked `securing-http-and-llm-endpoints` before writing any of 7.3,
 new LLM call reachable through the already-live `POST /chat`; the skill's LLM-CALL tier has no
 "add the abuse cap later" opt-out, and an uncapped `ChatMessage.images` would be exactly that the
 moment 7.3 alone shipped — so 7.4's caps were folded in immediately rather than sequenced after,
-see Phase 7's own 7.3+7.4 entry for the full narrative. **Both done (2026-08-12), uncommitted —
-327 tests passed (was 312), boundaries clean, ruff/pyright unchanged at the 2/15/34 baseline**
-(after fixing 7 real new pyright errors and reverting 13 files an over-broad `ruff format`
-accidentally reformatted — both caught before this count, not after). Next up in the 7.1→7.7
-roadmap is **7.5 (Obi widget send + render path)** — not started, needs an explicit go-ahead per
-the standing "no phase auto-starts" rule, and ask before committing 7.3+7.4.
+see Phase 7's own 7.3+7.4 entry for the full narrative. **Both done (2026-08-12), committed
+`12db45a` — 327 tests passed (was 312), boundaries clean, ruff/pyright unchanged at the 2/15/34
+baseline** (after fixing 7 real new pyright errors and reverting 13 files an over-broad `ruff
+format` accidentally reformatted — both caught before this count, not after). Next up in the
+7.1→7.7 roadmap is **7.5 (Obi widget send + render path)** — not started, needs an explicit
+go-ahead per the standing "no phase auto-starts" rule.
 
 #### 4.6 progress snapshot — ✅ all 16 of 16 sub-steps done, exit gate green (2026-08-11)
 
@@ -2693,7 +2693,8 @@ that design into code, not started:
    `make check` (repo root) → **312 passed**, boundaries clean — confirming a contracts-only change
    really is zero-touch for `apps/automation`, not just assumed. No ruff/pyright change (no Python
    file touched). **Committed `7ffd916`**, per the user's explicit go-ahead this session.
-3. **7.3+7.4 — Backend multimodal wiring + image input controls ✅ done (2026-08-12), uncommitted.**
+3. **7.3+7.4 — Backend multimodal wiring + image input controls ✅ done (2026-08-12), committed
+   `12db45a`.**
    Built together, not sequentially, once implementing 7.3 surfaced a real C10 gap: the moment
    `ChatMessage.images` exists and `AnswerService.answer` calls a real vision API unconditionally
    whenever a turn has images, `POST /chat` (already live with a real `CHAT_API_KEY` per this
