@@ -32,9 +32,9 @@ tests (was 219), boundaries clean, no ruff/pyright regression.** 4.6.2 was imple
 fixture gateway per the user's explicit "implement now, verify later" choice — **live Confluence
 verification of the group-membership endpoint is still outstanding** (token still dead, blocker
 #3) and must happen before trusting 4.6.2's live behavior. 4.6.5 has a "needs your input" item
-flagged for confirmation (not blocking) — see its section below. **4.6.6 and 4.6.7 done
-(2026-08-11) → 258 tests (was 251). 4.6.8 (duplicate CHECK constraint, MEDIUM, needs a migration)
-is next.**
+flagged for confirmation (not blocking) — see its section below. **4.6.6, 4.6.7, and 4.6.8 done
+(2026-08-11) → 261 tests (was 251); new migration `0006_dedupe_source_type_check` applied to the
+dev DB. 4.6.9 (pyright baseline reconciliation, needs your input) is next.**
 
 **Commit gap closed — 2026-08-10 (new session).** 4.6.1 (Confluence group-restriction fail-closed
 fix), plus ADR-0006/ADR-0007 and the six-agent `docs/rag/fixes/` audit itself, were all sitting
@@ -1628,17 +1628,63 @@ identical file list — the one pre-existing `confluence_client.py` error shifte
 184→227 from inserted code above it, confirmed by reading it directly, not a new error); no
 migration (pure code + settings addition, no schema change).
 
-### 4.6.8 — Duplicate CHECK constraint from a naming-convention bug (MEDIUM)
+### 4.6.8 — Duplicate CHECK constraint from a naming-convention bug (MEDIUM) ✅ done (2026-08-11)
 
-Migration-built vs. `create_all`-built schemas silently diverge: explicit `name="ck_chunk_source_type"`
-in `apps/automation/app/platform/db/models.py` collides with the naming-convention-generated name,
-producing a duplicate constraint (`ck_chunk_ck_chunk_source_type`) — harmless today (same predicate),
-risky if `source_type`'s allowed values are ever extended. Fix: wrap explicit constraint names in
-`sqlalchemy.schema.conv(...)` (or drop `name=` and let the convention generate it once); add a new
-Alembic migration dropping the erroneous duplicate on already-migrated DBs, with a tested, reversible
-`downgrade()`. Isolated — needs a migration, must be tested against a scratch DB, not the shared dev
-DB. Tests: `Base.metadata` produces exactly one CHECK constraint per table with the canonical name;
-migration up/down round-trip confirmed.
+**Status: implemented, tested (3 new pure metadata tests), migration applied to the real dev DB
+and round-trip verified on both a scratch DB and the dev DB, boundaries clean, no ruff/pyright
+regression → 261 tests total (was 258).**
+
+**Confirmed live, not just theoretical — worse than the plan text described.** Directly querying
+both databases before touching anything: the `omniboost_rag_test` DB (built via
+`schema.create_all()`, never through Alembic) had all **four** explicit `CheckConstraint` names
+double-prefixed (`ck_chunk_ck_chunk_source_type`, `ck_page_source_ck_page_source_source_type`,
+`ck_source_scope_ck_source_scope_root_type`, `ck_source_scope_ck_source_scope_source_type`) — the
+plan only named `ck_chunk_source_type` as an example, but the same bug affects every explicit
+`CheckConstraint(name=...)` in `models.py`. Worse: the real **dev** DB (`omniboost_rag`, migrated
+through the actual 0001→0005 chain) had a genuine **duplicate** on `chunk` and `page_source` (both
+the buggy and the canonical name present simultaneously) — not a divergence risk, an
+already-existing defect. Root cause: migration `0001_core_schema.py`'s baseline calls
+`schema.create_all()` against the (buggy) ORM metadata, producing the double-prefixed name; then
+`0002_provider_tags_and_rls.py` runs `DROP CONSTRAINT IF EXISTS ck_{tbl}_source_type` (the
+canonical name) before re-adding it — which matched nothing on a 0001-built DB, so it *added* a
+second, correctly-named constraint instead of replacing the first. `source_scope` was unaffected
+on the real dev DB only because migration `0004_source_scope.py` created it via raw DDL directly,
+never through `create_all()`.
+
+**Fix.** All four `CheckConstraint(..., name="...")` calls in `models.py` now wrap the name in
+`sqlalchemy.schema.conv(...)`, which marks it pre-resolved so the naming convention
+(`ck_%(table_name)s_%(constraint_name)s`) no longer re-interpolates it. Confirmed directly: a fresh
+`schema.create_all()` run now produces the canonical name on every table, matching the hand-written
+migration DDL exactly (verified by building the fixed schema against the test DB and reading `\d`
+output before reverting).
+
+**Migration `0006_dedupe_source_type_check`:** drops each table's buggy double-prefixed constraint
+via `DROP CONSTRAINT IF EXISTS` (idempotent — a no-op on `source_scope`, which never had the real
+duplicate, and on any DB built fresh from the now-fixed `models.py`); `downgrade()` re-adds the
+exact buggy name alongside the untouched canonical one, restoring the pre-migration shape exactly.
+**Round-trip tested twice, per the plan's "scratch DB, not the shared dev DB" instruction:** first
+against a disposable `omniboost_rag_scratch_4_6_8` database seeded with the exact real-world
+pre-migration constraint shape (upgrade → exactly one canonical constraint per table survives;
+downgrade → the buggy duplicate reappears, canonical untouched), then applied for real to the dev
+DB (`alembic upgrade head` → duplicate gone; `alembic downgrade -1` → duplicate back, confirmed via
+`\d`; `alembic upgrade head` → clean again, dev DB left at head).
+
+**Shipped:**
+- `app/platform/db/models.py`: `conv(...)` around all four explicit `CheckConstraint` names;
+  `from sqlalchemy.schema import conv`.
+- `alembic/versions/0006_dedupe_source_type_check.py` (new): the cleanup migration.
+- `app/platform/db/tests/test_models_constraints.py` (new, 3 tests): pure `Base.metadata`
+  inspection (no DB) proving each table has exactly one canonically-named CHECK constraint —
+  confirmed to fail against the pre-fix code (reverted `models.py` locally, all 3 failed with the
+  double-prefixed names, then passed once the fix was restored), per this project's "verify the
+  fix's real effect" convention.
+
+**Verification:** `make check` (from repo root) → **261 passed** (was 258), boundaries clean;
+`ruff check` unchanged (2 errors, both pre-existing in `alembic/env.py`/`0001_core_schema.py`);
+`ruff format` unchanged (16 unformatted, none of the touched/new files among them); `pyright`
+unchanged (34 errors, identical file list — the new test file needed one `str(c.name)` cast to
+satisfy `Constraint.name`'s `_ConstraintNameArgument` type, added before this count, not counted as
+a regression); `alembic current` → `0006_dedupe_source_type_check (head)`.
 
 ### 4.6.9 — Pyright baseline reconciliation (MEDIUM, governance)
 

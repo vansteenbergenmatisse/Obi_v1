@@ -31,6 +31,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.schema import conv
 
 from app.platform.config import get_settings
 from app.platform.db.base import Base
@@ -148,7 +149,7 @@ class PageSource(Base):
 
     __table_args__ = (
         UniqueConstraint("active_doc_version_id", name="uq_page_source_active_doc_version_id"),
-        CheckConstraint(_SOURCE_TYPE_CHECK, name="ck_page_source_source_type"),
+        CheckConstraint(_SOURCE_TYPE_CHECK, name=conv("ck_page_source_source_type")),
         Index("ix_page_source_space_id", "space_id"),
         Index("ix_page_source_parent_id", "parent_id"),
         Index("ix_page_source_source_id", "source_id"),
@@ -330,7 +331,7 @@ class Chunk(Base):
             "source_id",
             postgresql_where=text("is_active"),
         ),
-        CheckConstraint(_SOURCE_TYPE_CHECK, name="ck_chunk_source_type"),
+        CheckConstraint(_SOURCE_TYPE_CHECK, name=conv("ck_chunk_source_type")),
     )
 
 
@@ -493,8 +494,8 @@ class SourceScope(Base):
 
     __table_args__ = (
         UniqueConstraint("root_type", "root_id", name="uq_source_scope_root"),
-        CheckConstraint(_ROOT_TYPE_CHECK, name="ck_source_scope_root_type"),
-        CheckConstraint(_SOURCE_TYPE_CHECK, name="ck_source_scope_source_type"),
+        CheckConstraint(_ROOT_TYPE_CHECK, name=conv("ck_source_scope_root_type")),
+        CheckConstraint(_SOURCE_TYPE_CHECK, name=conv("ck_source_scope_source_type")),
         Index("ix_source_scope_active", "is_active", postgresql_where=text("is_active")),
     )
 
