@@ -32,8 +32,9 @@ tests (was 219), boundaries clean, no ruff/pyright regression.** 4.6.2 was imple
 fixture gateway per the user's explicit "implement now, verify later" choice — **live Confluence
 verification of the group-membership endpoint is still outstanding** (token still dead, blocker
 #3) and must happen before trusting 4.6.2's live behavior. 4.6.5 has a "needs your input" item
-flagged for confirmation (not blocking) — see its section below. **4.6.6 done (2026-08-11) → 253
-tests (was 251). 4.6.7 (Confluence client hardening batch, MEDIUM+INFO) is next.**
+flagged for confirmation (not blocking) — see its section below. **4.6.6 and 4.6.7 done
+(2026-08-11) → 258 tests (was 251). 4.6.8 (duplicate CHECK constraint, MEDIUM, needs a migration)
+is next.**
 
 **Commit gap closed — 2026-08-10 (new session).** 4.6.1 (Confluence group-restriction fail-closed
 fix), plus ADR-0006/ADR-0007 and the six-agent `docs/rag/fixes/` audit itself, were all sitting
@@ -1575,15 +1576,57 @@ improvement); `pyright` unchanged (34 errors, identical file list — none touch
 `retriever.py`, `__init__.py`, or either touched test file); `alembic current` →
 `0005_page_restriction (head)`, no migration (pure code fix, no schema change).
 
-### 4.6.7 — Confluence client hardening batch (MEDIUM + INFO, batched)
+### 4.6.7 — Confluence client hardening batch (MEDIUM + INFO, batched) ✅ done (2026-08-11)
 
-`apps/automation/app/platform/clients/confluence_client.py`, one review pass: add a
-consecutive-failure circuit breaker (mirroring `embeddings_client.py`'s pattern); fix the retry
-predicate to retry on 5xx (it currently excludes `httpx.HTTPStatusError` entirely, contradicting
-`how_this_works.md`'s documented "retry on 5xx" claim); the assigned-but-never-called `log` gets
-actual audit log lines (on retry, on 4xx/5xx). New dedicated test file (none exists today — every
-confluence_sync test runs against the fixture gateway only): 5xx is retried; breaker trips after N
-consecutive failures; 4xx is still not retried; a log line is emitted on retry/4xx/5xx.
+**Status: implemented, tested (5 new tests), boundaries clean, no ruff/pyright regression → 258
+tests total (was 253). Pure code fix, no migration, exactly as scoped.**
+
+**Location correction (not a scope change):** the plan text says "New dedicated test file (none
+exists today)" — that was true when the finding was written, but 4.6.1/4.6.2 already created
+`app/platform/clients/tests/test_confluence_client.py` in the interim. New tests were added to
+that existing file instead of creating a duplicate.
+
+**Fix 1 — consecutive-failure circuit breaker,** mirroring `anthropic_client.py`'s persistent
+instance-state pattern (chosen over `embeddings_client.py`'s per-call-only counter, since this
+client is documented "instantiate once and reuse" across a whole sync run — the same reasoning
+that already justified 4.6.2's `_group_members_cache`): `_get` now checks
+`self._consecutive_failures >= self._breaker_threshold` before every request, raising the new
+`ConfluenceCircuitBreakerOpenError` without attempting the network call; a successful `_get`
+resets the counter to 0. New `confluence_breaker_threshold` setting (default 5, matching every
+other breaker's default in this codebase).
+
+**Fix 2 — retry predicate now retries 5xx.** `_get` split into an outer `_get` (breaker) and an
+inner `_get_with_retry` (the tenacity-decorated method, unchanged retry/backoff shape); `_RETRYABLE`
+gained `httpx.HTTPStatusError`. Safe to add unconditionally: inside `_get_with_retry`,
+`raise_for_status()` is only ever called for a `>=500` response — a 4xx is returned as a normal
+`Response`, never raised — so this closes exactly the "retry on 5xx" gap `how_this_works.md`
+already (wrongly) documented as real, without touching 4xx behavior at all.
+
+**Fix 3 — audit log lines.** `_get_with_retry` now logs `confluence_client_5xx`/`confluence_client_4xx`
+(url + status) before returning/raising, and a new `_log_before_retry` tenacity `before_sleep` hook
+logs `confluence_client_retry` (attempt number + error) between attempts.
+
+**Shipped:**
+- `app/platform/clients/confluence_client.py`: `ConfluenceCircuitBreakerOpenError`, `_get`/
+  `_get_with_retry` split, `_log_before_retry`, `_RETRYABLE` gains `httpx.HTTPStatusError`.
+- `app/platform/config/settings.py` + `.env.example`: `confluence_breaker_threshold` (5).
+- `app/platform/clients/tests/test_confluence_client.py` (+5):
+  `test_http_client_retries_on_5xx_then_succeeds`, `test_http_client_4xx_is_not_retried`,
+  `test_http_client_breaker_trips_after_consecutive_failures`,
+  `test_http_client_success_resets_the_breaker` (proves a success clears the counter rather than
+  failures accumulating across it), `test_http_client_logs_retry_and_status_lines` (via
+  `structlog.testing.capture_logs()` — no prior precedent in this repo for asserting structured-log
+  output; used here since asserting only side effects would miss whether the log lines actually
+  fire).
+
+**Verification:** `make check` (from repo root) → **258 passed** (was 253), boundaries clean;
+`ruff check` unchanged (2 errors, both pre-existing in `alembic/env.py`/`0001_core_schema.py` — two
+transient new errors in the test file, both fixed before this check: a >100-char line and a
+nested-`with` that ruff's `SIM117` flagged, merged into one `with ... , ...:`); `ruff format` count
+unchanged (16 unformatted, none of the touched files among them); `pyright` unchanged (34 errors,
+identical file list — the one pre-existing `confluence_client.py` error shifted line number
+184→227 from inserted code above it, confirmed by reading it directly, not a new error); no
+migration (pure code + settings addition, no schema change).
 
 ### 4.6.8 — Duplicate CHECK constraint from a naming-convention bug (MEDIUM)
 

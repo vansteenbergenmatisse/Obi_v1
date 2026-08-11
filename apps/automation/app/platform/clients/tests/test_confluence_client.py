@@ -12,9 +12,12 @@ exercised here against the exact restriction-record shape each speaks.
 from __future__ import annotations
 
 import httpx
+import pytest
+import structlog.testing
 
 from app.platform.clients.confluence_client import (
     GROUP_RESTRICTED_SENTINEL,
+    ConfluenceCircuitBreakerOpenError,
     HttpConfluenceClient,
     _resolve_read_restriction,
 )
@@ -22,11 +25,12 @@ from app.platform.clients.fixture_confluence_client import FixtureConfluenceGate
 from app.platform.config import Settings
 
 
-def _settings() -> Settings:
+def _settings(*, breaker_threshold: int = 5) -> Settings:
     return Settings(
         confluence_base_url="https://example.atlassian.net/wiki",
         confluence_email="svc@example.com",
         confluence_api_token="tok",
+        confluence_breaker_threshold=breaker_threshold,
     )
 
 
@@ -198,6 +202,97 @@ def test_http_client_group_member_lookup_failure_stays_fail_closed() -> None:
     )
     # the member lookup failed (403, no scope) — must not collapse to open access.
     assert client.get_restrictions(9001) == [GROUP_RESTRICTED_SENTINEL]
+
+
+# -- HttpConfluenceClient retry/breaker/logging (PLAN 4.6.7) -----------------------------
+
+
+def test_http_client_retries_on_5xx_then_succeeds() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] < 2:
+            return httpx.Response(503)
+        return httpx.Response(200, json={"results": []})
+
+    client = HttpConfluenceClient(
+        _settings(), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    assert client.get_restrictions(9001) == []
+    assert calls["n"] == 2  # first 503 was retried, not surfaced as a failure
+
+
+def test_http_client_4xx_is_not_retried() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(404)
+
+    client = HttpConfluenceClient(
+        _settings(), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    assert client.get_page_meta(9001) is None
+    assert calls["n"] == 1  # a 404 is a normal response, never retried
+
+
+def test_http_client_breaker_trips_after_consecutive_failures() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(503)
+
+    client = HttpConfluenceClient(
+        _settings(breaker_threshold=2), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        client.get_labels(9001)  # 1st whole-request failure (after 3 internal retry attempts)
+    with pytest.raises(httpx.HTTPStatusError):
+        client.get_labels(9001)  # 2nd whole-request failure -> trips the breaker
+    calls_before_open = calls["n"]
+    with pytest.raises(ConfluenceCircuitBreakerOpenError):
+        client.get_labels(9001)  # breaker open -> rejected before any HTTP call
+    assert calls["n"] == calls_before_open  # no new request was attempted
+
+
+def test_http_client_success_resets_the_breaker() -> None:
+    # fail (3 raw attempts), succeed, fail again (3 raw attempts), succeed again. With
+    # breaker_threshold=2, the second failure must NOT trip the breaker -- proving a success
+    # resets the consecutive-failure counter rather than the two failures accumulating across it.
+    statuses = iter([503, 503, 503, 200, 503, 503, 503, 200])
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        status = next(statuses)
+        return httpx.Response(status, json={"results": []} if status == 200 else None)
+
+    client = HttpConfluenceClient(
+        _settings(breaker_threshold=2),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    with pytest.raises(httpx.HTTPStatusError):
+        client.get_labels(9001)  # 1st consecutive failure
+    assert client.get_labels(9002) == []  # succeeds -> resets the counter to 0
+    with pytest.raises(httpx.HTTPStatusError):
+        client.get_labels(9003)  # a fresh single failure, not the 2nd of an accumulated streak
+    assert client.get_labels(9004) == []  # breaker is not open -> a real request still goes out
+
+
+def test_http_client_logs_retry_and_status_lines() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503)
+
+    client = HttpConfluenceClient(
+        _settings(breaker_threshold=100),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+    with structlog.testing.capture_logs() as logs, pytest.raises(httpx.HTTPStatusError):
+        client.get_labels(9001)
+
+    events = [entry["event"] for entry in logs]
+    assert "confluence_client_5xx" in events
+    assert "confluence_client_retry" in events
 
 
 # -- FixtureConfluenceGateway (offline/test double shape) --------------------------------

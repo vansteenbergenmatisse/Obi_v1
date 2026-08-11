@@ -35,6 +35,7 @@ class Settings(BaseSettings):
     confluence_api_token: str = ""
     confluence_webhook_secret: str = ""
     confluence_service_account_id: str = ""
+    confluence_breaker_threshold: int = 5  # consecutive failed calls -> open the fuse (PLAN 4.6.7)
 
     # models
     anthropic_api_key: str = ""

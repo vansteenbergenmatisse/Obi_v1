@@ -1,8 +1,12 @@
 """Confluence Cloud REST API v2 client.
 
 Read-only gateway used by synchronization and reconciliation. Uses cursor-based pagination,
-strict per-request timeouts, and bounded retry/backoff on transient failures. A ``Protocol`` is
-defined so tests (and offline runs) can substitute a fixture-backed gateway with identical shape.
+strict per-request timeouts, and bounded retry/backoff on transient failures, plus a
+consecutive-failure circuit breaker (PLAN 4.6.7) mirroring ``embeddings_client.py``'s /
+``anthropic_client.py``'s pattern: persistent instance state (this client is documented
+"instantiate once and reuse" across a sync run), tripped by consecutive whole-request failures
+(after internal retries are exhausted), not individual HTTP attempts. A ``Protocol`` is defined so
+tests (and offline runs) can substitute a fixture-backed gateway with identical shape.
 """
 
 from __future__ import annotations
@@ -25,7 +29,24 @@ from app.platform.logging import get_logger
 
 log = get_logger("confluence_client")
 
-_RETRYABLE = (httpx.TransportError, httpx.TimeoutException)
+# httpx.HTTPStatusError is only ever raised inside `_get_with_retry` for a >=500 response (a 4xx
+# is returned as a normal Response, never raised, there) — so including it here retries 5xx and
+# never a 4xx, closing the gap where `how_this_works.md` already documented "retry on 5xx" as
+# real behavior it wasn't (PLAN 4.6.7).
+_RETRYABLE = (httpx.TransportError, httpx.TimeoutException, httpx.HTTPStatusError)
+
+
+class ConfluenceCircuitBreakerOpenError(RuntimeError):
+    """Raised when the client's consecutive-failure circuit breaker is open (PLAN 4.6.7)."""
+
+
+def _log_before_retry(retry_state) -> None:
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
+    log.warning(
+        "confluence_client_retry",
+        attempt=retry_state.attempt_number,
+        error=str(exc) if exc else None,
+    )
 
 
 class ConfluencePageMeta(BaseModel):
@@ -120,20 +141,42 @@ class HttpConfluenceClient:
         # a sync run reuses one client instance across every page, so a group shared by many
         # pages (e.g. a whole space's HR docs) is fetched once, not once per page.
         self._group_members_cache: dict[str, list[str]] = {}
+        # C4 circuit breaker (PLAN 4.6.7): persists for this client's lifetime, tripped by
+        # consecutive whole-request failures (each already internally retried up to 3 times).
+        self._breaker_threshold = settings.confluence_breaker_threshold
+        self._consecutive_failures = 0
 
     def close(self) -> None:
         self._client.close()
+
+    def _get(self, url: str, params: dict | None = None) -> httpx.Response:
+        if self._consecutive_failures >= self._breaker_threshold:
+            raise ConfluenceCircuitBreakerOpenError(
+                "confluence circuit breaker open after "
+                f"{self._consecutive_failures} consecutive request failures"
+            )
+        try:
+            resp = self._get_with_retry(url, params)
+        except Exception:
+            self._consecutive_failures += 1
+            raise
+        self._consecutive_failures = 0
+        return resp
 
     @retry(
         retry=retry_if_exception_type(_RETRYABLE),
         stop=stop_after_attempt(3),
         wait=wait_exponential(multiplier=0.3, max=4),
+        before_sleep=_log_before_retry,
         reraise=True,
     )
-    def _get(self, url: str, params: dict | None = None) -> httpx.Response:
+    def _get_with_retry(self, url: str, params: dict | None = None) -> httpx.Response:
         resp = self._client.get(url, params=params)
         if resp.status_code >= 500:
+            log.warning("confluence_client_5xx", url=url, status=resp.status_code)
             resp.raise_for_status()
+        elif resp.status_code >= 400:
+            log.warning("confluence_client_4xx", url=url, status=resp.status_code)
         return resp
 
     def _meta_from_json(self, data: dict) -> ConfluencePageMeta:
