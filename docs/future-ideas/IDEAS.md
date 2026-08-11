@@ -87,3 +87,10 @@ markdown file here or in `docs/rag/DESIGN.md`) showing how clarification, accoun
 screenshots, and corpus segmentation compose with the existing
 `rewrite → retrieve → rerank → ground → refuse → CRAG` pipeline. Not needed until one of these
 ideas is actually being designed.
+
+---
+
+**Already scheduled, not a backlog idea:** "separate the frontend, backend, knowledge base, etc.
+into different repos" — this was raised in conversation and immediately turned into a real, scoped
+phase rather than sitting here unscheduled. See `docs/rag/PLAN.md` **Phase 4.8 — Frontend/backend
+repository separation** and `docs/adr/0007-Frontend-Backend-Repository-Separation.md`.

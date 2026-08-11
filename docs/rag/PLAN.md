@@ -27,6 +27,15 @@ one HIGH cross-principal cache leak, plus 12 more MEDIUM/LOW findings. **Phase 4
 remediation, see its own section below Phase 4) must fully complete — exit gate 4.6.16 green — before
 5.4 / the embedder bake-off / adaptive routing may resume.** Do Phase 4.6 next, in the order given.
 
+**⏸ 4.6.13 explicitly deferred, at the user's direct request (2026-08-11 session) — Phase 4.7
+runs first.** The user supplied a real UI mockup (`Obi chatbot UI mockups/`) and asked for the chat
+UI rebuild to happen *before* 4.6.13, run to full completion (all of 4.7.1 → 4.7.4), stopping after
+each sub-step per the standing compact-ultra rule but never diverting back to 4.6.13 mid-way. This
+doesn't relitigate 4.6's gate on Phase 5 — 4.7 was already scoped as independent of 4.6/5 (see its
+own section, and the sequencing note at its end); only the *order relative to 4.6.13-16* changed, by
+explicit instruction. **4.7.1 done (`206baab`); resume at 4.7.2 next.** Do not resume 4.6.13 until
+all of 4.7 (4.7.1-4.7.4, exit-verified per 4.7.4's gate) is done and marked here.
+
 #### 4.6 progress snapshot (2026-08-11 session) — read this before doing anything else
 
 **Done, verified, committed — 4.6.1 through 4.6.11 (11 of 16 sub-steps).** Test count climbed
@@ -46,13 +55,13 @@ baseline was reconciled 31→34 at 4.6.9, see ADR-0003 D1). Commit refs, one per
 | 4.6.9 | Pyright baseline reconciled 31→34 (ADR-0003 D1 amendment, doc-only) | `b6974ef` |
 | 4.6.10 | RLS reader-role fails closed outside offline envs | `d897a40` |
 | 4.6.11 | Event dedup: `delivery_id` collision no longer a 500 | `0a61fb4` |
-| 4.6.12 | `refusal_reason` on the `chat_request` log line (+ a real `chat_router.log` monkeypatch bug found via `pyright` and fixed before any test ran) | *(this session, pending commit)* |
+| 4.6.12 | `refusal_reason` on the `chat_request` log line (+ a real `chat_router.log` monkeypatch bug found via `pyright` and fixed before any test ran) | `9d7c0bf` |
 
 Full narrative for each — root cause, design decisions, exact diff, verification commands and
 output — is in that sub-step's own `### 4.6.x` section further down this file. Read those, not
 just this table, before touching any of that code again.
 
-**4.6.12 — done and verified this session (2026-08-11), commit pending.** Docker Desktop's backend
+**4.6.12 — done, verified, and committed this session (2026-08-11, `9d7c0bf`).** Docker Desktop's backend
 was genuinely hung (not just the container: a socket ping to `~/.docker/run/docker.sock` timed out
 rather than erroring) — fixed by force-killing the stuck `com.docker.backend`/`docker-agent`
 processes and relaunching clean; `omniboost_rag_pg` came up healthy on :5434 afterward, `alembic
@@ -70,6 +79,28 @@ tests at it. Confirmed via `pyright` (back to 34) and an empirical `python -c` c
 came back, then confirmed for real once it did: both new tests pass, `make check` → **274 passed**
 (was 272), boundaries clean, ruff/pyright unchanged at the 2/15/34 baseline. Full narrative in
 `### 4.6.12` below.
+
+**Local dev environment brought up + one unplanned web fix — 2026-08-11, after 4.6.12.** Not part
+of the numbered plan; recorded here because it changed running state and one file. At the user's
+request, checked and started the full local stack:
+- `omniboost_rag_pg` (Postgres, :5434) — already healthy from the 4.6.12 verification above.
+- Backend (`uv run uvicorn app.main:app --port 8000`, from `apps/automation`) — was **not**
+  running (no listener on :8000); started it. `/docs` → 200. `/` → 404 is expected (no root route
+  is defined; `/docs` is the real liveness check).
+- Web (`pnpm --filter web dev`, :3000) — was already running from an earlier session. `/chat` → 200.
+
+**Unplanned fix, uncommitted — `apps/web/src/app/layout.tsx`.** User reported a React hydration
+error in the browser: the server-rendered `<html>` didn't match the client tree, diffing in a
+`data-scribe-recorder-ready="true"` attribute. That attribute does not exist anywhere in this
+codebase — it's a browser extension (a screen-recording/dictation tool, "Scribe") injecting an
+attribute onto `<html>` before React hydrates, exactly the "browser extension messes with the HTML
+before React loaded" case the Next.js hydration-mismatch docs call out by name. Fixed with the
+standard, documented workaround: added `suppressHydrationWarning` to the `<html>` tag in
+`RootLayout`. Verified live, in the user's actual Chrome (real extensions active, not a clean
+headless profile): reloaded `/chat` via `claude-in-chrome`, read the console with
+`onlyErrors: true` and a broad pattern — no hydration warning, no errors. **Not committed** —
+one-line, outside any phase's scope; ask before committing if you want it bundled separately from
+4.6.13+.
 
 **What's left: 4.6.13, 4.6.14, 4.6.15, 4.6.16 (the exit gate) — all still ⬜ todo, full scope
 already specified in their own sections below, unchanged from the original plan text.** Only once
@@ -845,7 +876,7 @@ OCR/image reading untouched.
 | **4.6** — fixes-backlog remediation (16 sub-steps + exit gate) | 🔶 in progress (4.6.1+4.6.2/16 done) | — | independent same-day audit (`docs/rag/fixes/`) found a CRITICAL ACL bypass + a HIGH cross-principal leak + 12 more findings in already-"done" phases 0-4; **gates 5.4/bake-off/adaptive-routing** until the 4.6.16 exit gate is green; 4.6.2 live-verification still outstanding (Confluence token dead) |
 | **5** (remaining) — 5.4 live-LLM red-team + latency/cost proof, embedder bake-off, adaptive routing | ⬜ todo (blocked on 4.6) | — | 5.4 needs real API calls/spend; bake-off blocked on Confluence token + `VOYAGE_API_KEY` |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
-| **4.7** — UI component refactor: Obi widget rebuild + brand tokens (4.7.1 → 4.7.4) | ⬜ todo | — | frontend-only, `apps/web`; does not gate Phase 5; source of truth `/Users/matissevansteenbergen/Downloads/Obi chatbot UI mockups/` |
+| **4.7** — UI component refactor: Obi widget rebuild + brand tokens (4.7.1 → 4.7.4) | 🔶 in progress (4.7.1/4 done) | `206baab` | frontend-only, `apps/web`; does not gate Phase 5; source of truth `/Users/matissevansteenbergen/Downloads/Obi chatbot UI mockups/`; 44 web tests (was 39) |
 | **4.8** — Frontend/backend repository separation (4.8.1 → 4.8.7) | ⬜ todo (blocked on registry/repo-name/monorepo-fate decisions) | — | supersedes ADR-0006's deferral; see `docs/adr/0007-Frontend-Backend-Repository-Separation.md`; do after 4.7 |
 
 Gate at each ✅: `make check` green (**219 backend tests** as of 5.3 — 4.5 touched no backend code;
@@ -2034,14 +2065,50 @@ in `message-list.tsx`), `typing-indicator.tsx`, `suggestion-chip.tsx`, `menu.tsx
 `apps/web/vitest.config.ts` gets `environmentMatchGlobs` so existing pure-node tests stay
 fast/unaffected while new `*.test.tsx` files run under jsdom.
 
-### 4.7.1 — Tokens, test tooling, base primitives ⬜ todo
+### 4.7.1 — Tokens, test tooling, base primitives ✅ done (2026-08-11, `206baab`)
 
 `packages/design-tokens/src/tokens.ts` + `tailwind-theme.ts` (new token groups above); `apps/web/tailwind.config.ts`
 spreads them; `apps/web/src/app/globals.css` gets the `@keyframes` block; `apps/web/src/app/layout.tsx`
-wires `next/font/google` Inter; add RTL + jsdom test infra (`package.json`, `vitest.config.ts`, new
+wires `next/font/google` Inter; added jsdom test infra (`package.json`, `vitest.config.ts`, new
 `apps/web/src/test-setup.ts`); new `icon-button.tsx`, `assistant-mark.tsx` + tests. No visible
-behavior change beyond typography/colors. **Gate:** tokens compile, Tailwind/Next build clean,
-existing 39 tests + new primitive tests green, no visual regression on `/chat` besides font/color.
+behavior change beyond typography/colors.
+
+**Gate — MET.** `pnpm --filter web test`: **44 passed** (was 39; +5 for the two new primitives —
+one extra test than planned, split 3/2 across `icon-button.test.tsx`/`assistant-mark.test.tsx`).
+`pnpm --filter web build`: clean (`next build`, static + dynamic routes all compiled, `tsc` clean
+as part of it). Live-verified in a real browser (`pnpm --filter web dev`, Chrome DevTools
+screenshots): `/chat` and `/` both render the new light/indigo/Inter theme; `/chat`'s bubble/composer
+layout is otherwise unchanged from before this sub-step, matching the "font/color only" gate.
+
+**Deviations from the plan text above:**
+- Skipped "RTL" test infra mentioned in the original plan line — no RTL requirement exists anywhere
+  else in this phase's scope (the language switcher is a no-op stub, 4.7.3); nothing to test. Not a
+  gap, just plan text that outran its own scope.
+- Test cleanup needed one line beyond what the plan anticipated: `@testing-library/react`'s
+  auto-cleanup relies on detecting Jest-style global `afterEach`, which this repo doesn't enable
+  (`test.globals` is off, tests import `describe`/`it`/`expect` explicitly). Added an explicit
+  `afterEach(() => cleanup())` in `test-setup.ts` — without it, the 2nd/3rd test in any `.test.tsx`
+  file sees the previous test's still-mounted DOM and `getByRole` throws "found multiple elements."
+- `IconButton`'s accessible-name test needed `aria-label` (not just `title`) — a `<button>`'s
+  accname computation prefers visible text content over `title`, so an icon-only button (no visible
+  text) needs `aria-label` to have a correct name. Real usages in 4.7.3's `panel-header.tsx` must
+  pass `aria-label`, not rely on `title` alone — noted here so it isn't missed.
+- Chose *not* to invent `color.success`/`color.danger` tokens in this sub-step even though the
+  mockup's thumbs-up/down feedback needs them — no consumer exists yet (feedback buttons land in
+  4.7.2's `message-bubble.tsx`). Adding tokens with no consumer would violate the "no invented
+  capabilities" gate; they'll be added in 4.7.2 when `message-bubble.tsx` actually needs them.
+- **Pre-existing gap found, out of scope for 4.7:** `apps/web`'s `lint` script (`next lint --dir
+  src`) has never had an ESLint config committed — running it prompts an interactive "how would you
+  like to configure ESLint?" setup wizard rather than linting. This predates Phase 4.7 (confirmed via
+  `git log` — no `.eslintrc*`/`eslint.config.*` ever existed for `apps/web`) and isn't something this
+  sub-step's changes caused. Not fixed here — setting up ESLint from scratch is its own scoped task,
+  not implied by "tokens + primitives." Flagging so it isn't mistaken for a 4.7 regression; worth its
+  own small PLAN entry if/when someone wants `pnpm --filter web lint` to actually lint.
+- **Unrelated observation, not touched:** the landing page (`/`) has a pre-existing narrow-column
+  text-wrapping quirk (`app/page.tsx`'s `<p className="max-w-md">` inside `PageShell`'s
+  `items-center` flex column wraps one word per line) — a classic flexbox `min-width: auto`
+  shrink-to-fit quirk, unrelated to any token/font change here and outside 4.7's scope (the landing
+  page isn't part of the widget rebuild). Left alone; worth a follow-up if the user wants it fixed.
 
 ### 4.7.2 — Message rendering + composer ⬜ todo
 
