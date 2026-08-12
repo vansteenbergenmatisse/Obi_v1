@@ -85,6 +85,34 @@ def test_create_message_with_images_puts_image_blocks_before_text() -> None:
     ]
 
 
+def test_create_message_with_images_and_empty_text_omits_the_text_block() -> None:
+    """PLAN 7.8: a genuinely text-empty, image-only turn must not send an empty text content
+    block — Anthropic's real Messages API rejects `{"type": "text", "text": ""}` outright (400),
+    confirmed live; an image-only content list (no text block at all) is accepted and works."""
+    seen: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={"content": [{"type": "text", "text": "hi"}]})
+
+    client = AnthropicMessagesClient(
+        api_key="k", client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    client.create_message(
+        model="m",
+        user_text="",
+        images=[ImageBlock(media_type="image/png", data="ZmFrZQ==")],
+    )
+
+    content = seen[0]["messages"][0]["content"]
+    assert content == [
+        {
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/png", "data": "ZmFrZQ=="},
+        },
+    ]
+
+
 def test_create_message_without_images_keeps_the_original_single_text_block_shape() -> None:
     """No behavior change for the existing text-only call sites — content stays a one-item list."""
     seen: list[dict] = []

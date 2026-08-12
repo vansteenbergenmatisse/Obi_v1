@@ -124,7 +124,11 @@ class AnthropicMessagesClient:
             }
             for img in (images or [])
         ]
-        content.append({"type": "text", "text": user_text})
+        # An empty text block (PLAN 7.8: a genuinely text-empty, image-only turn) is rejected
+        # outright by the real Anthropic API (400) — omit it rather than send an empty string;
+        # an image-only content list is accepted and lets the system prompt drive the reply.
+        if user_text:
+            content.append({"type": "text", "text": user_text})
         body: dict = {
             "model": model,
             "max_tokens": max_tokens,

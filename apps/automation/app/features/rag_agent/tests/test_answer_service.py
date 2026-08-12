@@ -453,6 +453,29 @@ def test_image_analysis_survives_a_citation_enforcement_refusal() -> None:
     assert result.image_analysis == "I see a cat."
 
 
+def test_image_only_turn_with_empty_content_skips_retrieval() -> None:
+    """PLAN 7.8: a genuinely text-empty, image-only turn (the widget's screenshot-capture button
+    sent with no typed text) must never reach the rewriter or retriever with an empty query string
+    — the real OpenAI embeddings provider rejects an empty string outright (400), which crashed
+    this exact path in production before this fix; both fakes here raise/KeyError if touched, so
+    this test fails loudly if that guard regresses. Falls through to the same degrade path a real
+    no-candidates-with-image turn already takes (see `test_image_analysis_survives_a_citation_
+    enforcement_refusal`): citation enforcement strips the empty-evidence generation into a
+    no_citations refusal, while `image_analysis` still rides along."""
+    retriever = _FakeRetriever({}, {})  # any retrieve_with_context call -> KeyError
+    generator = _FakeGenerator("This sentence cites nothing at all.")
+    service, _ = _service(retriever, _RaisingRewriter(), generator)
+
+    history = [ChatMessage(role="user", content="", images=[_IMAGE])]
+    result = service.answer(history, scope=None)
+
+    assert result.refused
+    assert result.refusal_reason == _NO_GROUNDED_CLAIM_REASON
+    assert result.text == _REFUSAL_TEXT
+    assert result.image_analysis == "I see a cat."
+    assert generator.image_analysis_called_with == [("", (_IMAGE,))]
+
+
 def test_image_analysis_is_never_passed_through_citation_enforcement() -> None:
     """The image-analysis text must never end up in `citations` or gain a marker — it is a
     separate, uncited field, per ADR-0009 decision 4."""

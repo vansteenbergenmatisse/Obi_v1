@@ -112,6 +112,34 @@ describe("handlePostChat", () => {
 
     expect(response.status).toBe(502);
   });
+
+  it("does not 413 a legitimate image-bearing turn within the backend's own image caps", async () => {
+    // 4 images (chat_max_images_per_turn) at ~5MB raw each (chat_max_image_bytes), base64-encoded —
+    // the real-world ceiling this proxy must admit so the backend's own caps stay authoritative.
+    const oneImageBase64 = "A".repeat(Math.ceil((5_000_000 * 4) / 3));
+    const images = Array.from({ length: 4 }, () => ({ mediaType: "image/png", data: oneImageBase64 }));
+    callAutomationApiMock.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    const response = await handlePostChat(
+      jsonRequest({ history: [{ role: "user", content: "what's in these?", images }] }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(callAutomationApiMock).toHaveBeenCalled();
+  });
+
+  it("still rejects a pathologically oversized body with 413 before calling the backend", async () => {
+    const hugeBase64 = "A".repeat(60_000_000);
+    const request = jsonRequest({
+      history: [{ role: "user", content: "hi", images: [{ mediaType: "image/png", data: hugeBase64 }] }],
+    });
+
+    const response = await handlePostChat(request);
+
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({ error: "request body too large" });
+    expect(callAutomationApiMock).not.toHaveBeenCalled();
+  });
 });
 
 describe("handlePatchFeedback", () => {

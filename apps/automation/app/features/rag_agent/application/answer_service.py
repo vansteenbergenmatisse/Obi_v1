@@ -87,10 +87,18 @@ class AnswerService:
             text = self._generator.generate_small_talk(original_query)
             return Answer(text=text, citations=[], refused=False, trace_id=None)
 
-        rewritten = self._rewriter.rewrite(history) if self._rewrite_enabled else original_query
-
-        result = self._retriever.retrieve_with_context(rewritten, scope, k=self._retrieve_k)
-        result = self._apply_crag_retry(result, original_query, rewritten, scope)
+        if original_query.strip():
+            rewritten = self._rewriter.rewrite(history) if self._rewrite_enabled else original_query
+            result = self._retriever.retrieve_with_context(rewritten, scope, k=self._retrieve_k)
+            result = self._apply_crag_retry(result, original_query, rewritten, scope)
+        else:
+            # A genuinely text-empty, image-only turn (PLAN 7.8) — there is no query to rewrite or
+            # embed; the embedding provider rejects an empty string outright (OpenAI: 400 "input
+            # cannot be an empty string"). Treat as no retrieved candidates instead of calling it —
+            # `has_image`'s decide_refusal gate below already means this does not force a refusal,
+            # so this takes the exact same degrade path a real no-candidates-with-image turn does.
+            rewritten = original_query
+            result = RetrievalResult()
 
         image_analysis = (
             self._generator.generate_image_analysis(original_query, images) if has_image else None

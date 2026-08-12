@@ -61,9 +61,37 @@ describe("parseChatRequestBody", () => {
     expect(result.ok).toBe(false);
   });
 
-  it("rejects a turn with empty content", () => {
+  it("accepts a turn with empty content and no images (the backend has no min_length either)", () => {
     const result = parseChatRequestBody({ history: [{ role: "user", content: "" }] });
-    expect(result.ok).toBe(false);
+    expect(result.ok).toBe(true);
+  });
+
+  it("accepts an image-only turn with empty content (ADR-0009 decision 4)", () => {
+    const result = parseChatRequestBody({
+      history: [
+        { role: "user", content: "", images: [{ mediaType: "image/png", data: "abc123" }] },
+      ],
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("accepts a resent history where an older, no-longer-newest image-only turn has aged out to empty content and no images (PLAN 7.8 bug E)", () => {
+    // ADR-0009 decision 2: images are only ever resent on the newest turn. An older turn that was
+    // originally image-only (content: "") therefore has neither content nor images once resent —
+    // this must still parse, or every conversation that ever sent one image-only turn would be
+    // permanently broken from that point on.
+    const result = parseChatRequestBody({
+      history: [
+        { role: "user", content: "" },
+        { role: "assistant", content: "I don't have that in the documentation." },
+        {
+          role: "user",
+          content: "What colors are in this image?",
+          images: [{ mediaType: "image/png", data: "abc123" }],
+        },
+      ],
+    });
+    expect(result.ok).toBe(true);
   });
 
   it("rejects history that does not end on a user turn", () => {

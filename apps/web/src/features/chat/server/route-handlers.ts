@@ -46,7 +46,14 @@ import {
 import { parseChatRequestBody, parseFeedbackBody } from "./validation";
 
 const IDEMPOTENCY_HEADER = "idempotency-key";
-const MAX_BODY_BYTES = 200_000; // resource-exhaustion ceiling, not a business-rule cap (see validation.ts)
+// Resource-exhaustion ceiling, not a business-rule cap (see validation.ts) — must stay above the
+// backend's own legitimate max so its real caps (chat_max_images_per_turn=4 x
+// chat_max_image_bytes=5_000_000) stay authoritative, not silently pre-empted here. Base64 inflates
+// raw bytes by ~4/3: 4 * 5_000_000 * 4/3 ~= 26.7MB for one turn's images alone. 30MB leaves headroom
+// for JSON/text overhead while still bounding a pathologically oversized body (PLAN 7.8 fix — the
+// pre-image 200_000 ceiling, set at Phase 4.5 for text-only history, was never raised when Phase 7
+// added image attachments, so it 413'd almost every real screenshot/photo before reaching the backend).
+const MAX_BODY_BYTES = 30_000_000;
 const FEEDBACK_TIMEOUT_MS = 15_000;
 
 function errorResponse(status: number, error: string): Response {

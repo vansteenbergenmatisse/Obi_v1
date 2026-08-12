@@ -16,10 +16,15 @@ const MAX_TURN_CHARS = 20_000;
 function isChatTurn(value: unknown): value is ChatTurn {
   if (typeof value !== "object" || value === null) return false;
   const turn = value as Record<string, unknown>;
+  // No minimum content length — the backend has none either (only a max, `_validate_history` in
+  // router.py). An image-only turn (ADR-0009 decision 4 / PLAN 7.5) sends content: "" while it's
+  // the newest turn; once it ages out of "newest" its image is dropped too (decision 2: images are
+  // only ever resent on the newest turn), leaving neither content nor images. Requiring non-empty
+  // content here (even conditionally on images) breaks every later turn in that same conversation
+  // (PLAN 7.8 bug E) — this is a structural shape check, not a business rule the proxy should own.
   return (
     (turn.role === "user" || turn.role === "assistant") &&
     typeof turn.content === "string" &&
-    turn.content.length > 0 &&
     turn.content.length <= MAX_TURN_CHARS
   );
 }
@@ -45,7 +50,7 @@ export function parseChatRequestBody(json: unknown): ParseResult<ChatRequest> {
   if (!body.history.every(isChatTurn)) {
     return {
       ok: false,
-      error: "history turns must have role user|assistant and non-empty content",
+      error: "history turns must have role user|assistant and content within the length limit",
     };
   }
   const history = body.history as ChatTurn[];
