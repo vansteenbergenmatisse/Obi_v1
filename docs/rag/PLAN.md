@@ -14,6 +14,149 @@
 security (HTTP/LLM controls), real tests, acceptance actually met — and if it falls short, add the
 fix here as the next task; update this ledger after each phase.
 
+**New session (2026-08-12): 7.7 (exit gate) done — Phase 7 is now fully closed.** Asked the user
+before starting, per this repo's own no-auto-start rule; got explicit go-ahead. Re-ran the full gate
+live: backend `make check` → **327 passed** (unchanged since 7.3+7.4), `make boundaries` clean,
+ruff/pyright unchanged at 2/15/34, `alembic current` → `0006_dedupe_source_type_check (head)`
+(no pending migration — Phase 7 has no schema change); web `pnpm --filter web test` →
+**121/121 passed** (unchanged since 7.5), `tsc --noEmit` clean. `pnpm --filter web build` was
+deliberately skipped — both dev servers were live (`:3000`/`:8000` confirmed via `lsof`) and this
+repo's own standing rule says a production build corrupts a live `next dev` server's `.next` in
+place; `tsc --noEmit` + vitest are the substitute. **Zero regressions.** Docs closed out: this
+ledger, the Phase 7 table row, Phase 7's own header/7.7 entry, and `apps/automation/app/features/
+FEATURES.md`'s `rag_agent` block (dropped a stale "web widget doesn't send/render yet" line and
+added the 7.6 red-team summary) — see Phase 7's own 7.7 entry below for the full detail. ADR-0009
+closed as-is (no amendment — every decision matches what shipped). One small **pre-existing, Phase-
+4.7-owned** doc-drift item found this pass in `apps/web/src/features/chat/FEATURES.md` — flagged
+below, then actually fixed at 7.8 once it turned out to be quick — see that entry for the correction
+(this entry originally mis-claimed the two test files no longer existed; they do, and pass — a `tail`-
+truncated command output misled the first check).
+**No code changed this pass — docs only, still uncommitted.** Per this session's standing pattern,
+asking before committing.
+
+**Same session, immediately after: 7.8 — proxy body-size ceiling fix (a real bug, user-reported).**
+The user asked to triple-check image/screenshot analysis; reported seeing "request body too large"
+when sending one. Root cause (`superpowers:systematic-debugging`, all four phases, reproduced live
+before fixing): `apps/web/src/features/chat/server/route-handlers.ts`'s `MAX_BODY_BYTES = 200_000` —
+a resource-exhaustion ceiling set at Phase 4.5, when the legitimate max body was text-only history
+(~80KB: `chat_max_history_turns=20` x `chat_max_message_chars=4000`) — was never raised when Phase 7
+added base64 image attachments. The backend's own real caps (`chat_max_images_per_turn=4` x
+`chat_max_image_bytes=5_000_000`) allow up to ~26.7MB of base64 image data on one turn, so this proxy-
+side ceiling was by far the smaller, silently-active limit: it 413'd almost any real screenshot or
+photo before the request ever reached the backend, which is exactly why 7.5/7.6's own live
+verification never caught it — both used small (<200KB) synthetic test images that happened to clear
+the ceiling by luck, not by design. **Reproduced directly against the live dev server before touching
+any code**: a 45KB body with a small image → 200, full pipeline runs, real vision call succeeds; the
+same request with a realistic 637KB screenshot (1280x800 PNG, base64) → 413 `"request body too
+large"`, matching the user's report exactly. **Fixed** by raising `MAX_BODY_BYTES` to `30_000_000`
+(30MB) — derived, not invented: `4 * 5_000_000 * 4/3 ≈ 26.7MB` (base64 inflation) is the backend's own
+legitimate single-turn maximum, and 30MB leaves headroom for JSON/text overhead while still bounding
+a pathologically oversized body (e.g. an attacker stuffing images onto every one of 20 history turns,
+since the backend checks the image caps on every turn, not just the newest, per PLAN 7.4). **TDD**:
+added a failing test first (`route-handlers.test.ts` — a legitimate 4-image, backend-cap-sized turn
+must not 413), confirmed it failed against the old ceiling, then fixed; added a second test proving a
+genuinely oversized body (60MB) still gets 413 before the backend is ever called, so the resource-
+exhaustion protection itself isn't lost. **Verified:** `pnpm --filter web test` → **123/123 passed**
+(was 121, +2 new). No backend file touched — Python side unaffected. Live-reran the original 637KB
+repro against the fixed proxy: **200**, full SSE stream, real vision analysis returned. **Also fixed
+this pass** (a real, confirmed doc-drift item, not the mis-claim above): `apps/web/src/features/chat/
+FEATURES.md`'s stale "PLAN 4.7.7 is UNTESTED" paragraph — `language-menu.test.tsx`/
+`chat-launcher.test.tsx`/`message-list.test.tsx` were already fixed during 4.7's own test-gap closure
+(committed `bf99635`, 2026-08-11); the note just never got removed. Updated to state the true,
+current status and point at this fix.
+
+**Same session, immediately after: three more real bugs found and fixed in the same
+"triple-check" pass — the body-size fix alone did not make the feature actually work end to end.**
+The user reported the in-widget screenshot-capture button gives `"history turns must have role
+user|assistant and non-empty content"`, and a desktop-screenshot file upload gives the fail-open
+`"I couldn't look at that image right now"` apology. Root-caused each with
+`superpowers:systematic-debugging` (reproduce live before fixing, in every case):
+- **Bug B — proxy rejects a genuine image-only turn.** `apps/web/.../server/validation.ts`'s
+  `isChatTurn` unconditionally required non-empty `content`, but PLAN 7.5 explicitly designed
+  image-only turns (attach an image, send with no typed text — exactly what clicking "capture
+  screenshot" then "send" produces) to send `content: ""`; the backend has no `min_length` on
+  `ChatMessage.content` for this reason. 7.5's own live verification always typed a question
+  alongside the image, so the truly-empty-text case was never actually exercised end to end.
+  **Fixed:** `isChatTurn` now accepts empty content when the turn carries at least one image.
+  TDD: added a failing test (empty content + image must parse ok) plus a control (empty content +
+  an empty images array must still be rejected), confirmed the first failed, then fixed.
+  **Superseded by Bug E below** — this conditional fix turned out to be itself incomplete.
+- **Bug C — fixing Bug B exposed a backend crash on an empty query.** With Bug B fixed, the same
+  empty-content, image-only turn now reached `AnswerService.answer`, which always ran the full
+  rewrite → retrieve pipeline regardless of `has_image` — retrieval calls the real embedding
+  provider, and OpenAI's embeddings API rejects an empty string outright (confirmed live: `400
+  "Invalid 'input[0]': input cannot be an empty string."`). This propagated as an uncaught
+  `EmbeddingError` through `AnswerService.answer`, which `router.py`'s generic `except Exception`
+  turned into a bare `{"type": "error", "error": "answer generation failed"}` SSE event — the
+  underlying cause was never even logged with enough detail to see this from the server log alone.
+  **Fixed:** `answer_service.py`'s `answer()` now skips rewrite/retrieve entirely when
+  `original_query` is blank, using an empty `RetrievalResult()` (no candidates) instead of calling
+  the embedding provider with nothing to embed. `has_image`'s existing `decide_refusal` gate
+  already means "no candidates" does not force a refusal here, so this takes the exact same
+  degrade path a real no-candidates-with-image turn already took (citation enforcement strips the
+  empty-evidence generation into a `no_citations` refusal, while `image_analysis` still rides
+  along) — not a new behavior, just reachable without crashing. TDD: added a failing test with
+  raising fakes for both the rewriter and retriever (proving neither is ever called), confirmed it
+  failed against the old code, then fixed.
+- **Bug D — Anthropic itself rejects an empty text block.** With Bug C fixed, the SSE stream no
+  longer crashed, but `imageAnalysis` still came back as the generic fail-open apology. Reproduced
+  directly against the real Anthropic Messages API: a content array with an image block plus
+  `{"type": "text", "text": ""}` is rejected with a live `400`; a content array with **only** the
+  image block (no text block at all) is accepted and returns a real analysis, since the system
+  prompt alone gives the model enough instruction. `generate_image_analysis` always appended a text
+  block even when `query` was empty. **Fixed:** `anthropic_client.py`'s `_create_message` now omits
+  the text content block entirely when `user_text` is empty, instead of sending an empty string —
+  additive only, zero behavior change for every existing non-empty call site. TDD: added a failing
+  test asserting the text block is omitted for empty `user_text` (mocked transport, matching the
+  existing image-ordering test's pattern), confirmed it failed, then fixed.
+- **Bug E — the user asked "did you test if it works now?" — real browser testing (not curl) found
+  Bug B's fix was itself incomplete.** Curl reproductions only mimic what the browser sends, so this
+  prompted actually driving the real widget in a real Chrome tab (`chrome-devtools` MCP — the
+  Claude-in-Chrome extension wasn't connected this session). Screenshot-capture → send with no text
+  worked live. But sending a **second** message (a new image + real typed text) right after failed
+  with the exact same `"history turns must have role user|assistant and non-empty content"` error
+  Bug B had just fixed — on a perfectly normal, non-empty turn this time. Root cause: ADR-0009
+  decision 2 means images are resent only on the newest turn; once the first (image-only,
+  `content: ""`) turn ages out of "newest," its image is stripped, leaving it with neither content
+  nor images — Bug B's conditional fix only covered a turn *currently* carrying an image. Checked
+  the backend first rather than guessing at another special case: `router.py`'s `_validate_history`
+  has no minimum length anywhere, only a maximum — the proxy's non-empty-content rule was never a
+  real backend invariant. **Fixed by removing the requirement entirely** rather than adding another
+  special case, matching the backend's actual rules and the proxy's own "structural checks only"
+  philosophy. TDD: failing test reproducing the exact multi-turn shape, confirmed, fixed.
+
+**Verified, all five fixes together:** backend `make check` → **329 passed** (was 327 pre-session,
++2 new); web `pnpm --filter web test` → **125/125 passed** (was 121, +4 net new — Bug E replaced two
+existing tests with two, same total). `tsc --noEmit` clean; ruff/pyright unchanged at the 2/15/34
+baseline. Restarted the local `uvicorn` process (it runs without `--reload`) to pick up the backend
+changes. **Then drove the real, running widget in an actual Chrome tab**, not just curl: clicked the
+real screenshot-capture button, sent with no typed text — real "Obi looked at your image" analysis,
+grounded text correctly refusing separately. Uploaded a second real file via the actual file input,
+typed a real question, sent — this second message is what surfaced Bug E live. After fixing it,
+replayed the identical two-message sequence from a fresh page load: both turns succeeded, the second
+returning an accurate description of the actual uploaded image, feedback buttons rendering normally,
+no console errors from the chat flow. **All five fixes are docs+code, still uncommitted — ask before
+committing.** **Explicit user-set order for what's next, at the time, unaffected by this fix: Phase
+4.8, then Phase 9** (both were waiting on Phase 7, which is still fully closed; 4.8 still has three
+unresolved "needs your input" decisions — registry choice, new repo names, origin-monorepo fate —
+that block it regardless of ordering). **Superseded by the entry immediately below.**
+
+**Same session, immediately after: Phase 4.8 removed from the active plan, moved to
+`docs/future-ideas/IDEAS.md` (2026-08-12).** The user confirmed the repo-separation phase is a
+future want, not near-term work — nothing is live yet (no second product/deployment, no registry
+chosen, no repo names decided), matching exactly the concern ADR-0006 originally raised before
+ADR-0007 reversed it. Recorded as `docs/adr/0010-Redefer-Repository-Separation.md`, which reverses
+ADR-0007's Decision item 1 and reinstates ADR-0006's original deferral. **Phase 4.8's full content
+(goal, all 7 sub-steps, the three open decisions) moved to `docs/future-ideas/IDEAS.md` idea #5, not
+deleted.** Its own section below is now a short pointer instead of the full spec. **Sequencing
+simplifies:** Phase 9 (9.2 onward) was waiting on "Phase 7 + Phase 4.8"; with 4.8 removed, it now
+waits only on Phase 7, which is done. **Explicit order for what's next, current: Phase 9 (9.2
+onward) is unblocked** — still requires an explicit go-ahead before starting, same as every phase,
+per this repo's own no-auto-start rule. No code changed this pass — docs only (this ledger, Phase
+4.8's section, the phase table, Phase 9's sequencing text, `docs/future-ideas/IDEAS.md`,
+`docs/adr/0006*`/`0007*` status lines, new `docs/adr/0010*`). Still uncommitted, together with the
+7.7/7.8 fixes above — ask before committing.
+
 ### ▶ Resume here (after `/compact-ultra`) — first things first
 
 **Phase 3.5 is COMPLETE. Phase 4 is COMPLETE: 4.1 + 4.2 + 4.3 + 4.4 + 4.5 all done.**
@@ -320,32 +463,31 @@ fixes-backlog audit + the IDEAS.md #4 correction ADR-0006 required) and `4d0ba70
 + this ledger's own 4.6 section). 4.6.2 remains blocked on your input below — not started.
 
 **Phase 4.7 is done in code, its test gap closed (2026-08-11), committed `bf99635`** — see its own
-section for the full narrative and the "Known gaps / debt" list. What's
-left, independent of Phase 5: **Phase 4.8** (frontend/backend repository separation — split `apps/web` and
-`apps/automation` into independent repos, `packages/contracts`/`design-tokens` become published
-versioned packages). **4.8 supersedes ADR-0006's deferral** — see
-`docs/adr/0007-Frontend-Backend-Repository-Separation.md` for the actual decision and why ADR-0006 no
-longer holds for the repo-split question. 4.7 finishing first (settling the widget's file layout
-before moving it to a new repo) was the whole point of that ordering. **Sequencing, updated
-2026-08-11 per explicit user direction: do 4.8 after Phase 7 (vision-grounded image analysis) is
-done, not just after 4.7** — not a technical dependency (4.8 is repo-topology work, disjoint from
-Phase 7's contract/backend changes), a deliberate choice to let the currently-scoped backend phase
-land in the monorepo before splitting it. Phase 9 (Unanswerable/vague-query fallback) is sequenced
-after both 4.8 and Phase 7, so the order is **Phase 7 → Phase 4.8 → Phase 9**. 4.8 doesn't gate
-backend Phase 5; it's frontend/repo-topology work, disjoint from Phase 4.6's backend files.
+section for the full narrative and the "Known gaps / debt" list.
+
+**Phase 4.8 (frontend/backend repository separation) is no longer part of this plan (2026-08-12).**
+It briefly superseded ADR-0006's deferral (see `docs/adr/0007-Frontend-Backend-Repository-
+Separation.md`), then sat blocked on three unanswered decisions through Phase 7's whole lifecycle
+and never started. `docs/adr/0010-Redefer-Repository-Separation.md` reverses that and moves it to
+`docs/future-ideas/IDEAS.md` idea #5 as an unscheduled idea — nothing is live yet to design the
+split against. Phase 9 no longer waits on it.
 
 **No phase auto-starts.** Per the project's standing local working rule, a fresh session must stop
 and get an explicit go-ahead from the user before starting *any* phase/sub-step. On resume: read
-this ledger, state what's ready — **Phase 4.6 is fully closed (all 16 sub-steps + exit gate);
-Phase 4.7 is done, its test gap is closed, and the small-talk fix, Phase 4.7, and this session's
-docs are all committed (`90e96b1`/`bf99635`/`771cfce`); Phase 7.1 (design doc + ADR-0009) is also
-done, still uncommitted**; the next options are committing 7.1, Phase 7.2 onward (per the
-sequencing below), or Phase 5.4/the embedder bake-off once real API spend and a live Confluence
-token are available — and ask which to start rather than beginning any automatically. **Explicit
-user-set order for the rest: Phase 7 → Phase 4.8 → Phase 9** (Phase 4.8 also still has three
-unanswered "needs your input" decisions — registry choice, new repo names, origin-monorepo fate —
-that block it regardless of ordering; Phase 9's 9.1 design doc is already done and committed, but
-its code, 9.2 onward, waits for Phase 7 and 4.8 same as the rest of this ordering).
+this ledger, state what's ready — **Phase 4.6 is fully closed; Phase 4.7 is done, its test gap is
+closed, and it's committed; Phase 7 is now fully closed (7.1-7.8 all done, 2026-08-12) — its code
+sub-steps (7.1/7.2/7.3+7.4/7.5) are committed (`eb30837`/`7ffd916`/`12db45a`/`1398e64`), 7.6 was a
+verification pass with no code, and 7.7's exit-gate doc updates plus 7.8's real bug fix (a proxy
+body-size ceiling that silently 413'd real image attachments — this ledger + `route-handlers.ts` +
+both `FEATURES.md` files) are still uncommitted, pending go-ahead**; the next options are committing
+7.7+7.8 (plus this session's Phase-4.8-removal docs), starting Phase 9 (9.2 onward, now unblocked —
+waits only on Phase 7, which is done), or Phase 5.4/the embedder bake-off once real API spend and a
+live Confluence token are available — and ask which to start rather than beginning any
+automatically.
+**Explicit order for the rest, current: Phase 9 is next** — Phase 7 is done and Phase 4.8 is no
+longer in this plan (moved to `docs/future-ideas/IDEAS.md`); Phase 9's 9.1 design doc is already
+done and committed, its code (9.2 onward) has no remaining blocker besides the standing go-ahead
+gate.
 
 Fresh context: read this ledger + `docs/rag/DESIGN.md` (§2 target pipeline, §5 accuracy stack) +
 `docs/adr/0005*` + `docs/adr/0007*`, then ask which of the above to start. The chat
@@ -1076,9 +1218,9 @@ OCR/image reading untouched.
 | **5** (remaining) — 5.4 live-LLM red-team + latency/cost proof, embedder bake-off, adaptive routing | ⬜ todo (unblocked by 4.6; blocked on API spend + token) | — | 5.4 needs real API calls/spend; bake-off blocked on Confluence token + `VOYAGE_API_KEY` |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
 | **4.7** — Obi widget: chat UI rebuild, brand tokens, screenshot capture, real i18n, `/chat` route removed, image lightbox (4.7.8) | ✅ done, **committed** | `206baab` (first sub-step), `aae90e5` (4.7.2-4.7.6), `bf99635` (rest, incl. 4.7.8 + the test-gap closure) | frontend-only, `apps/web`; does not gate Phase 5; source of truth `docs/rag/reference/obi-mockup/` + `docs/rag/OBI-WIDGET-DESIGN.md` |
-| **4.8** — Frontend/backend repository separation (4.8.1 → 4.8.7) | ⬜ todo (blocked on registry/repo-name/monorepo-fate decisions) | — | supersedes ADR-0006's deferral; see `docs/adr/0007-Frontend-Backend-Repository-Separation.md`; do after Phase 7 |
-| **7** — Vision-grounded image analysis (attachments + screenshot capture) | 7.1-7.6 ✅ done; 7.7 ⬜ todo | `eb30837` (7.1), `7ffd916` (7.2), `12db45a` (7.3+7.4), `1398e64` (7.5); 7.6 is a verification pass, no commit (no code changed) | supersedes `docs/future-ideas/IDEAS.md` #3; ADR-0009 + DESIGN.md §12 lock the contract shape (`ChatTurn.images`, `Answer.imageAnalysis`, no new SSE event), the `has_image` refusal gate, and the independent (never citation-enforced) vision call; 7.6's live adversarial red-team found zero injection compliance, caps enforced live; only 7.7 (exit gate) remains |
-| **9** — Unanswerable/vague-query fallback (9.1 → 9.9) | 9.1 ✅ done, 2026-08-11 (committed `771cfce`); 9.2-9.9 ⬜ todo — **wait for Phase 7 + Phase 4.8, then dead last, no phase follows** | — | supersedes `docs/future-ideas/IDEAS.md` #1; ADR-0008 + DESIGN.md §11 lock the contract shape (extend `Answer`, no new SSE event), the 3-value refusal-reason taxonomy, and eval-kind reuse; ambiguity/vagueness classifier + clarification response, differentiated refusal reasons, human-hand-off stub (Salesforce noted as eventual target), fallback-quality eval metrics; MMR/diversity filtering and any new vector store explicitly out of scope |
+| **4.8** — Frontend/backend repository separation | **moved to `docs/future-ideas/IDEAS.md` #5 (2026-08-12)** | — | re-deferred per `docs/adr/0010-Redefer-Repository-Separation.md`; no longer part of this plan |
+| **7** — Vision-grounded image analysis (attachments + screenshot capture) | ✅ **done (2026-08-12), all 8 sub-steps closed** | `eb30837` (7.1), `7ffd916` (7.2), `12db45a` (7.3+7.4), `1398e64` (7.5); 7.6 is a verification pass, no commit (no code changed); 7.7/7.8 docs+fixes, no commit yet | supersedes `docs/future-ideas/IDEAS.md` #3; ADR-0009 + DESIGN.md §12 lock the contract shape (`ChatTurn.images`, `Answer.imageAnalysis`, no new SSE event), the `has_image` refusal gate, and the independent (never citation-enforced) vision call; 7.6's live adversarial red-team found zero injection compliance, caps enforced live; 7.7 re-ran the full gate with zero regressions and closed ADR-0009; **7.8 found and fixed 5 stacked, user-reported bugs** in a "triple-check the feature" pass — a pre-image-era proxy body-size ceiling (413), a proxy content-length check that rejected genuine image-only turns (400), a backend crash embedding an empty query (uncaught `EmbeddingError`), Anthropic itself rejecting an empty text content block (400), and — found only once real browser testing replaced curl repros — the same content-length check breaking again on any *later* turn once an earlier image-only turn aged out and lost both its content and its image; all five found by fixing one, re-testing, and hitting the next one underneath |
+| **9** — Unanswerable/vague-query fallback (9.1 → 9.9) | 9.1 ✅ done, 2026-08-11 (committed `771cfce`); 9.2-9.9 ⬜ todo — **wait for Phase 7 only (4.8 dependency dropped 2026-08-12), then dead last, no phase follows** | — | supersedes `docs/future-ideas/IDEAS.md` #1; ADR-0008 + DESIGN.md §11 lock the contract shape (extend `Answer`, no new SSE event), the 3-value refusal-reason taxonomy, and eval-kind reuse; ambiguity/vagueness classifier + clarification response, differentiated refusal reasons, human-hand-off stub (Salesforce noted as eventual target), fallback-quality eval metrics; MMR/diversity filtering and any new vector store explicitly out of scope |
 
 Gate at each ✅: `make check` green (**219 backend tests** as of 5.3 — 4.5 touched no backend code;
 was 213 at 5.1/5.2, 197 at 5.1, 194 at 4.4, 167 at 4.3, 164 at 4.2, 144 at 3.5.6, 130 at 4.1, 120 at
@@ -2513,81 +2655,16 @@ by this repo's normal bar; fixing it is not in this sub-step's scope.
 
 ---
 
-## Phase 4.8 — Frontend/backend repository separation ⬜ todo *(supersedes ADR-0006's deferral — see ADR-0007)*
+## Phase 4.8 — Frontend/backend repository separation — **MOVED to `docs/future-ideas/IDEAS.md` idea #5 (2026-08-12)**
 
-**Decision context.** ADR-0006 (2026-08-10) recorded a deferral of repo/package splitting until a
-second real product deployment existed, per the global proportionality gate ("two independent
-consumers exist today"). The user has since directed this to happen regardless, for separation of
-concerns (frontend reusable across future products independent of any single deployment's timeline,
-backend independently deployable/versioned). **ADR-0006 is superseded by `docs/adr/0007-Frontend-
-Backend-Repository-Separation.md`, which records this reversal and the actual decision.** Do this
-phase after **4.7** — split the widget's real, settled file layout once, not mid-refactor.
-
-**Goal.** `apps/web` (frontend) and `apps/automation` (backend) become independently deployable and
-independently versioned — able to live in separate git repositories — with `packages/contracts` and
-`packages/design-tokens` as the *published, versioned* interface between them instead of pnpm
-workspace `workspace:*` links (which only resolve inside one monorepo checkout).
-
-### 4.8.1 — Publish `packages/contracts` and `packages/design-tokens` as versioned packages ⬜ todo
-
-Today `apps/web`'s `package.json` depends on both via `workspace:*` — that only resolves inside this
-one pnpm workspace. Before either app can leave the monorepo, both packages need a real publish
-target (a private npm registry or GitHub Packages — **needs your input**: which registry) and
-semantic versioning discipline (a breaking contract change is a major version bump, consumed
-explicitly by each app, not silently picked up). `apps/automation` defines its own Pydantic models
-against the same wire shapes directly (no codegen) per `packages/contracts`' existing design note —
-that stays true; only the *distribution* mechanism changes, not the "hand-authored on both sides"
-convention.
-
-### 4.8.2 — Extract `apps/web` into its own repository ⬜ todo
-
-New repo (name **needs your input** — e.g. `omniboost-rag-web`), git history preserved via
-`git subtree split` or `git filter-repo` (not a fresh copy — keep blame/history). Its `package.json`
-switches `@omniboost/contracts`/`@omniboost/design-tokens` from `workspace:*` to real published
-version ranges (4.8.1). New standalone CI (lint/typecheck/test/build) — currently piggybacks on the
-monorepo's root scripts, which won't exist once this repo is standalone.
-
-### 4.8.3 — Extract `apps/automation` into its own repository ⬜ todo
-
-New repo (name **needs your input** — e.g. `omniboost-rag-automation`), same history-preserving
-extraction. Its `Makefile`/`uv` toolchain and `alembic/` migrations move with it unchanged (already
-self-contained, per ADR-0003). New standalone CI (`make check`, `make boundaries`, ruff, pyright).
-
-### 4.8.4 — Decide the origin monorepo's fate ⬜ todo *(needs your input)*
-
-Options: (a) archive it once both extractions are verified working; (b) keep it as a thin umbrella —
-`infra/` (local Docker Postgres for combined local dev), `docs/adr/`, `docs/rag/`, root `CLAUDE.md` —
-referencing the two new repos as git submodules or just documentation links, for anyone who wants
-"run both together locally" without cloning three repos. Recommend (b) for local-dev ergonomics
-unless you'd rather each repo be fully self-contained for local dev too (bigger duplication, simpler
-mental model) — **confirm which before executing**.
-
-### 4.8.5 — CI/CD and secrets per repo ⬜ todo
-
-Each new repo gets its own pipeline (currently one root pipeline, if any exists — verify) and its own
-secrets scope (`CHAT_API_KEY`, `CONFLUENCE_*`, `ANTHROPIC_API_KEY`, etc. belong to the backend repo
-only; the frontend repo needs only `CHAT_API_KEY` + `AUTOMATION_API_BASE_URL` for its proxy). No
-secret should live in a repo that doesn't need it.
-
-### 4.8.6 — Update governing docs ⬜ todo
-
-Supersede or amend `docs/adr/0001-Archetype-And-Stack.md` (currently describes one monorepo archetype)
-to reflect the multi-repo topology; write the ADR-0007 superseding ADR-0006 (see decision context
-above — do this first, before 4.8.1, so the rest of this phase executes against a recorded decision,
-not tribal knowledge); update root `CLAUDE.md`'s "Layout" section once the split is real (it currently
-documents the monorepo `apps/`/`packages/` layout as fact).
-
-### 4.8.7 — Exit gate ⬜ todo
-
-Both repos build/lint/typecheck/test/deploy independently with zero references to the other by path
-(only by published package version); a deliberate breaking change to `packages/contracts` proves the
-version-bump workflow catches it in CI on the *other* repo, not silently at runtime; local combined
-dev (`make up && make migrate && make web-dev` or equivalent) still works per whatever 4.8.4 decided.
-
-**Open decisions needing your input before executing this phase:** registry choice (4.8.1), the two
-new repo names (4.8.2/4.8.3), and the origin monorepo's fate (4.8.4). Nothing here executes without
-those answers — this phase is fully specced but blocked on them, same as any other "needs your
-input" item in this plan.
+Briefly a real, scoped phase (superseded ADR-0006's deferral — see `docs/adr/0007-Frontend-Backend-
+Repository-Separation.md`), then sat blocked on three unanswered decisions (registry choice, two
+new repo names, origin-monorepo fate) through Phase 7's whole lifecycle without starting.
+Re-deferred 2026-08-12 per `docs/adr/0010-Redefer-Repository-Separation.md`: nothing is live yet to
+design the split against (no second product/deployment), matching ADR-0006's original concern. The
+full spec (goal + all 7 sub-steps + the three open decisions) now lives in
+`docs/future-ideas/IDEAS.md` idea #5, unscheduled — not deleted, just relocated. **This phase number
+is retired from the active plan; nothing here executes without a fresh decision to re-schedule it.**
 
 ---
 
@@ -2688,7 +2765,7 @@ becomes its own ADR-gated phase** (mirroring how Supabase got Phase 6), not some
 
 ---
 
-## Phase 7 — Vision-grounded image analysis (attachments + screenshot capture) ⬜ todo *(7.1-7.6 done, 2026-08-11/12; only 7.7 exit gate left)*
+## Phase 7 — Vision-grounded image analysis (attachments + screenshot capture) ✅ done *(7.1-7.8 all done, 2026-08-11/12 — Phase 7 fully closed, incl. 5 post-closure bugs found+fixed at 7.8, the last only surfacing under real browser testing)*
 
 **Scoped 2026-08-11; 7.1 (design doc + ADR-0009) done the same day — nothing else started.**
 Raised by the user after observing (elsewhere, not in this repo) that an attached or screenshotted
@@ -2929,20 +3006,132 @@ that design into code, not started:
    test` unaffected (no source file touched); re-confirmed `make boundaries` clean and
    `pnpm --filter web test` 121/121 immediately before starting (see the "7.5 re-verified" note
    above), so this pass ran against a known-clean baseline.
-6. **7.7 — Exit gate.** Full regression (`make check`, `pnpm --filter web test`), zero regressions
-   vs. the Phase 4.6/4.7 baseline, ledger + `FEATURES.md` updated, ADR-0009 closed.
+6. **7.7 — Exit gate ✅ done (2026-08-12), docs-only, no code changed.** Re-ran the full gate
+   live rather than trusting the ledger's self-report: backend `make check` (repo root) →
+   **327 passed** (unchanged since 7.3+7.4), `make boundaries` clean; ruff-check/format and pyright
+   diffed by count against the 2/15/34 baseline — unchanged; `alembic current` →
+   `0006_dedupe_source_type_check (head)`, no pending migration (Phase 7 introduced no schema
+   change). Web: `pnpm --filter web test` → **121/121 passed** (unchanged since 7.5);
+   `pnpm --filter web exec tsc --noEmit` clean. **`pnpm --filter web build` deliberately not run** —
+   both dev servers (`:3000`, `:8000`) were live at the time per `lsof`, and this repo's own standing
+   rule (`~/.claude/…/memory/feedback_nextjs_build_vs_dev.md`, learned the hard way during 7.5's own
+   verification) is that a production build corrupts a live `next dev` server's `.next` in place;
+   `tsc --noEmit` + the vitest suite are the substitute check. **Zero regressions found across every
+   check** — no fix needed before closing. Docs updated: this ledger (§0 below + this table +
+   Phase 7's own header, all three), `apps/automation/app/features/FEATURES.md`'s `rag_agent` block
+   (dropped the stale "web widget does not send/render yet — that's 7.5" line, now that 7.5 has long
+   shipped, and added the 7.6 red-team summary). **ADR-0009 closed as-is, no amendment needed** — read
+   it fresh against the shipped code: all 8 decisions match what actually shipped, including decision
+   7's "concrete values TBD" being resolved exactly as anticipated (`chat_max_images_per_turn=4`,
+   `chat_max_image_bytes=5_000_000`, both already recorded at 7.4) and decision 8's required live
+   adversarial pass being 7.6, already done. `apps/web/src/features/chat/FEATURES.md` was already
+   current through PLAN 7.5 for everything except one stale, *pre-existing* "PLAN 4.7.7 is UNTESTED"
+   note claiming `language-menu.test.tsx`/`message-list.test.tsx` fail to render — corrected at 7.8
+   below once double-checking it turned out to be quick (this entry originally, incorrectly, said the
+   files no longer existed; `tail`-truncated command output was the cause — both files exist and pass,
+   see 7.8). **Phase 7 (7.1-7.7) is closed** — 7.8 below is a post-closure bug fix in the same phase's
+   territory (image handling), not a reopening of scope.
+7. **7.8 — Four real bugs found and fixed, "triple-check the image feature" ✅ done (2026-08-12),
+   all user-reported.** The user asked to triple-check image/screenshot analysis. Found and fixed
+   four separate, stacked bugs via `superpowers:systematic-debugging` (reproduce live before every
+   fix, in every case) — fixing each earlier bug exposed the next one underneath it:
+   - **Bug A — proxy body-size ceiling.** `apps/web/.../server/route-handlers.ts`'s
+     `MAX_BODY_BYTES = 200_000`, set at Phase 4.5 for text-only history (~80KB legitimate max), was
+     never raised when 7.3/7.4 added images — the backend's own real caps
+     (`chat_max_images_per_turn=4` x `chat_max_image_bytes=5_000_000`) allow up to ~26.7MB of
+     base64 image data per turn, so this proxy ceiling silently rejected almost any real
+     screenshot/photo before the backend ever saw it — exactly why 7.5/7.6's own live verification
+     never caught it (both used small, <200KB synthetic images that cleared it by luck). Reproduced
+     live (45KB image → 200 + real vision call; 637KB realistic screenshot → 413, matching the
+     report exactly). Fixed by raising `MAX_BODY_BYTES` to `30_000_000` — derived from the backend's
+     own caps (`4 * 5_000_000 * 4/3 ≈ 26.7MB`) plus headroom, not invented; still bounds a
+     pathological body (images stuffed onto every one of 20 history turns, since caps are checked
+     per-turn, not just the newest, per 7.4). TDD: failing test first, confirmed, fixed; a second
+     test proves a genuinely oversized body (60MB) still 413s.
+   - **Bug B — proxy rejects a genuine image-only turn.** `validation.ts`'s `isChatTurn`
+     unconditionally required non-empty `content`, but PLAN 7.5 explicitly designed image-only
+     turns (attach an image, send with no typed text — exactly what the screenshot-capture button
+     then "send" produces) to send `content: ""`, matching the backend's own no-`min_length`
+     design; 7.5's own live verification always typed a question alongside the image, so this exact
+     case was never actually exercised end to end. Fixed: `isChatTurn` now accepts empty content
+     when the turn carries at least one image. TDD: failing test (empty content + image parses ok)
+     plus a control (empty content + empty images array still rejected). **Superseded by Bug E
+     below** — this conditional (`content non-empty OR has images`) fix was itself incomplete.
+   - **Bug C — fixing Bug B exposed a backend crash on an empty query.** `AnswerService.answer`
+     always ran the full rewrite → retrieve pipeline regardless of `has_image`; retrieval embeds
+     the query, and OpenAI's embeddings API rejects an empty string outright (confirmed live: `400
+     "input cannot be an empty string"`), propagating as an uncaught `EmbeddingError` that
+     `router.py`'s generic handler turned into a bare `"answer generation failed"` SSE error, with
+     the real cause not even logged in enough detail to see server-side. Fixed: `answer()` now
+     skips rewrite/retrieve when `original_query` is blank, using an empty `RetrievalResult()`
+     instead of embedding nothing — `has_image`'s existing `decide_refusal` gate already means "no
+     candidates" doesn't force a refusal, so this is the same degrade path a real
+     no-candidates-with-image turn already took, just reachable without crashing. TDD: failing test
+     with raising fakes for both rewriter and retriever, proving neither is called.
+   - **Bug D — Anthropic itself rejects an empty text block.** With Bug C fixed, the stream no
+     longer crashed but `imageAnalysis` still came back as the generic fail-open apology.
+     Reproduced directly against the real Anthropic API: an image block plus
+     `{"type": "text", "text": ""}` gets a live 400; an image-only content list (no text block) is
+     accepted and returns a real analysis. `generate_image_analysis` always appended a text block
+     even when `query` was empty. Fixed: `anthropic_client.py`'s `_create_message` now omits the
+     text block entirely when `user_text` is empty — additive only, zero behavior change for every
+     non-empty call site. TDD: failing test (mocked transport, matching the existing
+     image-ordering test's pattern) asserting the text block is omitted.
+
+   - **Bug E — real-browser testing (not curl repros) found Bug B's fix was still incomplete.**
+     The user asked directly whether this had actually been tested; curl reproductions only mimic
+     what the browser sends, so this prompted driving the real widget in a real Chrome tab
+     (`chrome-devtools` MCP) instead. Screenshot-capture → send with no text worked. But sending a
+     **second** message (a new image + real typed text) right after that first one failed with the
+     *same* `"history turns must have role user|assistant and non-empty content"` error Bug B had
+     just fixed — this time on a perfectly normal, non-empty turn. Root cause: ADR-0009 decision 2
+     means images are resent only on the newest turn; once the first (image-only, `content: ""`)
+     turn ages out of "newest," its image is stripped on resend, leaving it with neither content
+     nor images — Bug B's fix (`content non-empty OR hasImage`) only covered a turn *currently*
+     carrying an image, not one that used to. Every conversation that ever sent one image-only turn
+     would have broken permanently from that point on. Checked whether the backend has any such
+     rule at all first, rather than guessing at another special case: `router.py`'s
+     `_validate_history` has no minimum length anywhere, only a maximum — the proxy's non-empty-
+     content rule was never a real backend invariant, just an assumption from before images
+     existed. **Fixed by removing the requirement entirely**, not special-casing it further:
+     `isChatTurn` now only checks role validity and the max-length ceiling, matching the backend's
+     actual rules exactly (the proxy's own documented philosophy — structural checks only, backend
+     is the authority on business rules). TDD: added a failing test reproducing the exact multi-turn
+     shape (an aged-out empty-content-no-images turn followed by a real turn), confirmed it failed,
+     fixed, then also flipped the old "rejects empty content with no images" test to "accepts" it
+     (backend tolerates this input fine — cleanly refuses via Bug C's fix, no crash) and deleted the
+     now-obsolete "empty images array still rejected" case.
+
+   **Verified, all five together:** backend `make check` → **329 passed** (was 327, +2 new); web
+   `pnpm --filter web test` → **125/125 passed** (was 121, +4 net new — same total before/after Bug
+   E, since it replaced two tests with two); `tsc --noEmit` clean; ruff/pyright unchanged at
+   2/15/34. Restarted the local `uvicorn` process (runs without `--reload`) to pick up the backend
+   changes. **Then drove the real, running widget in an actual Chrome tab** (`chrome-devtools` MCP
+   — the Claude-in-Chrome extension wasn't connected this session) rather than trusting curl alone:
+   clicked the real screenshot-capture button, sent with no typed text — real "Obi looked at your
+   image" analysis of the actual captured page, grounded text correctly refusing separately. Then,
+   in the same conversation, uploaded a second real file via the actual file input, typed "What
+   colors are in this image?", and sent — this is what surfaced Bug E live. After the fix, replayed
+   the identical two-message sequence from a fresh page load: both turns succeeded, the second
+   returning an accurate color description of the actual uploaded noise-pattern PNG, with feedback
+   buttons rendering normally. No console errors from the chat flow. **Also fixed:** the stale
+   "PLAN 4.7.7 is UNTESTED" paragraph in `apps/web/src/features/chat/FEATURES.md` (the two named
+   test files were already fixed during 4.7's own gap closure, `bf99635`, 2026-08-11 — the note just
+   never got removed). **Phase 7 (7.1-7.8) is now fully closed — no further sub-steps.**
 
 **Non-goals, explicitly (ADR-0009).** No real image PII redaction (CV/NER) — a documented gap, not
 built this phase. No merging image content into the same citation-scored generation call — citation
 enforcement's "every claim traces to a retrieved page" guarantee stays exclusively about Confluence
 evidence, never about image content.
 
-**Sequencing.** First in the explicit user-set order **Phase 7 → Phase 4.8 → Phase 9** (see §0).
-Independent of Phase 5/6 — no shared files, no shared risk with either.
+**Sequencing.** First in the explicit user-set order, current: **Phase 7 → Phase 9** (Phase 4.8 was
+briefly in this order too, but moved to `docs/future-ideas/IDEAS.md` on 2026-08-12 — see §0 and
+`docs/adr/0010-Redefer-Repository-Separation.md`). Independent of Phase 5/6 — no shared files, no
+shared risk with either.
 
 ---
 
-## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ⬜ todo *(9.1 done; 9.2-9.9 do not start before Phase 7 + Phase 4.8 are both done — see Sequencing)*
+## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ⬜ todo *(9.1 done; 9.2-9.9 do not start before Phase 7 is done — see Sequencing)*
 
 **Scoped 2026-08-11; 9.1 (design doc + ADR-0008) done the same day — nothing else started.** User
 supplied an external best-practices brief on handling
@@ -3043,10 +3232,12 @@ its own docstring; this is one more pre-pipeline short-circuit, not a multi-turn
 
 **Sequencing.** Dead last by explicit request — no phase in this plan follows Phase 9. **9.1 (this
 design doc + ADR-0008) is done — documentation only, no code, so it didn't need to wait.** Everything
-from **9.2 onward is explicitly sequenced after Phase 7 and Phase 4.8 are both done**, per the user's
-direct instruction — not because 9 has a technical dependency on either (no shared files, no shared
-risk with Phase 5/6/7/4.8). Do not start 9.2 without an explicit go-ahead, same as every other phase
-(§0 working rules), and confirm Phase 7 + 4.8 are both closed first.
+from **9.2 onward was sequenced after Phase 7 and Phase 4.8 were both done**, per the user's direct
+instruction at the time — not because 9 has a technical dependency on either (no shared files, no
+shared risk with Phase 5/6/7/4.8). **Phase 4.8 was moved to `docs/future-ideas/IDEAS.md` on
+2026-08-12 (see §0, `docs/adr/0010-Redefer-Repository-Separation.md`), dropping that half of the
+dependency — 9.2 onward now waits only on Phase 7, which is done.** Do not start 9.2 without an
+explicit go-ahead, same as every other phase (§0 working rules).
 
 ---
 
@@ -3081,9 +3272,9 @@ risk with Phase 5/6/7/4.8). Do not start 9.2 without an explicit go-ahead, same 
 | `app/features/rag_agent/` (new), `app/main.py` | answer workflow, `POST /chat`, `PATCH /chat/{id}/feedback` | 4 |
 | `apps/web/src/features/chat/*`, `app/api/chat/route.ts`, `packages/contracts` | chat UI + SSE proxy + contract | 4 |
 | `docs/rag/fixes/*`, `app/features/{confluence_sync,retrieval,rag_agent}/**`, `shared/rate_limiter.py`, `platform/clients/confluence_client.py`, `platform/db/models.py` | 16-item remediation (ACL bypass, cache leak, rate-limiter bypass, rollback gap, schema dup, doc drift) | 4.6 |
-| `docs/adr/0006-Defer-Multi-Product-Extraction.md` (superseded), `docs/adr/0007-Frontend-Backend-Repository-Separation.md`, `docs/future-ideas/IDEAS.md` | deferred-then-superseded multi-deployment/repo-split decisions + corrected corpus-segmentation idea | 4.7 / 4.8 |
+| `docs/adr/0006-Defer-Multi-Product-Extraction.md`, `docs/adr/0007-Frontend-Backend-Repository-Separation.md` (both superseded again), `docs/adr/0010-Redefer-Repository-Separation.md` (new), `docs/future-ideas/IDEAS.md` | deferred → superseded → re-deferred multi-deployment/repo-split decisions + corrected corpus-segmentation idea | 4.7 / 4.8 (removed) |
 | `packages/design-tokens/src/tokens.ts`, `apps/web/src/features/chat/ui/*` (new), `apps/web/src/app/layout.tsx` | brand-token adoption + Obi widget component rebuild | 4.7 |
-| `packages/contracts/package.json`, `packages/design-tokens/package.json`, new standalone repos | published versioned packages; frontend/backend repo extraction | 4.8 |
+| `packages/contracts/package.json`, `packages/design-tokens/package.json`, new standalone repos | **not built** — published versioned packages + frontend/backend repo extraction moved to `docs/future-ideas/IDEAS.md` #5, unscheduled | 4.8 (removed) |
 
 ---
 

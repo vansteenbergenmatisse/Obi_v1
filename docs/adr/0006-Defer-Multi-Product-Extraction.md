@@ -1,10 +1,13 @@
 # 0006 — Defer Multi-Product Extraction
 
-Status: **Superseded by 0007 (2026-08-10)** — the repo/package-split deferral in Decision items 1–2
-below no longer holds; the user directed the actual split to proceed regardless of a second product's
-timeline, for separation of concerns. See `docs/adr/0007-Frontend-Backend-Repository-Separation.md`
-for the current decision. Kept for history — Decision items 3–6 (design-tokens' single-file
-convention, ADR-0004 not being the multi-deployment mechanism) are unaffected and still apply.
+Status: **Reinstated by 0010 (2026-08-12)** — briefly superseded by 0007 (2026-08-10), which reversed
+the repo/package-split deferral in Decision items 1–2 below and scheduled it as PLAN.md Phase 4.8.
+0010 reverses that reversal: with no second product/deployment live and the phase's open decisions
+still unanswered, Decision items 1–2 are back in force and Phase 4.8 has moved to
+`docs/future-ideas/IDEAS.md` as an unscheduled idea. See
+`docs/adr/0010-Redefer-Repository-Separation.md` for the current decision. Decision items 3–6
+(design-tokens' single-file convention, ADR-0004 not being the multi-deployment mechanism) were never
+affected by either 0007 or 0010 and still apply.
 Date: 2026-08-10
 Governs: apps/web, apps/automation, packages/**, docs/future-ideas/IDEAS.md
 

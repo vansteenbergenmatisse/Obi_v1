@@ -94,6 +94,71 @@ against the real tag taxonomy and how connector instances are actually identifie
 assuming it's just a config change. Not scoped, designed, or scheduled — same as every other idea in
 this file.
 
+## 5. Frontend/backend repository separation — **de-scheduled from `docs/rag/PLAN.md` Phase 4.8 (2026-08-12)**
+
+**Was briefly a real, scoped phase, then un-scheduled.** This was raised in conversation on
+2026-08-10 and immediately turned into `docs/rag/PLAN.md` Phase 4.8 (see
+`docs/adr/0007-Frontend-Backend-Repository-Separation.md`), skipping this backlog entirely. It sat
+blocked on three unanswered decisions through Phase 7's whole lifecycle and never started. On
+2026-08-12 the user confirmed this is a **future** want, not a near-term one — nothing is live yet
+(no second product/deployment, no registry chosen, no repo-naming work done) — so it moved back
+here as an unscheduled idea, per `docs/adr/0010-Redefer-Repository-Separation.md`. Read that ADR
+(and 0006/0007 before it) for the full decision history; this entry keeps the design work itself so
+none of it is lost.
+
+**The idea.** `apps/web` (frontend) and `apps/automation` (backend) become independently deployable
+and independently versioned — able to live in separate git repositories — with
+`packages/contracts` and `packages/design-tokens` as *published, versioned* packages instead of
+pnpm workspace `workspace:*` links (which only resolve inside one monorepo checkout). Motivation is
+separation of concerns and independent deployability, not multi-product reuse per se (though it
+would also serve that later, see idea #4's note on Muse).
+
+**Relation to current architecture.** Today everything lives in one pnpm workspace; `apps/web`
+depends on both packages via `workspace:*`. That link only works inside this one checkout — before
+either app could leave the monorepo, both packages need a real publish target and semver
+discipline (a breaking contract change = a major version bump, consumed explicitly by each app, not
+silently picked up). `apps/automation` already hand-authors its own Pydantic models against the
+same wire shapes (no codegen) — that convention would stay true; only the distribution mechanism
+would change.
+
+**The work, as scoped when it was Phase 4.8** (kept in full — this is real design work, not a
+one-line idea):
+
+1. **Publish `packages/contracts` and `packages/design-tokens`** to a real registry (private npm
+   registry vs. GitHub Packages — **open decision**) with semantic versioning discipline.
+2. **Extract `apps/web` into its own repository** — name is an **open decision** (e.g.
+   `omniboost-rag-web`). History-preserving extraction (`git subtree split` / `git filter-repo`, not
+   a fresh copy — keep blame/history). Switch `@omniboost/contracts`/`@omniboost/design-tokens` from
+   `workspace:*` to real published version ranges. New standalone CI (lint/typecheck/test/build) —
+   today it piggybacks on the monorepo's root scripts, which won't exist once standalone.
+3. **Extract `apps/automation` into its own repository** — name is an **open decision** (e.g.
+   `omniboost-rag-automation`). Same history-preserving extraction; its Makefile/`uv` toolchain and
+   `alembic/` migrations move unchanged (already self-contained, per ADR-0003). New standalone CI
+   (`make check`, `make boundaries`, ruff, pyright).
+4. **Decide the origin monorepo's fate** — **open decision**. Options: (a) archive it once both
+   extractions are verified working; (b) keep it as a thin umbrella (`infra/` for combined local
+   Postgres, `docs/adr/`, `docs/rag/`, root `CLAUDE.md`), referencing the two new repos as git
+   submodules or documentation links, for "run both together locally" without cloning three repos.
+   (b) was the lean for local-dev ergonomics, unless full self-containment per repo (more
+   duplication, simpler mental model) is preferred instead.
+5. **CI/CD and secrets per repo.** Each new repo gets its own pipeline and its own secrets scope —
+   `CHAT_API_KEY`/`CONFLUENCE_*`/`ANTHROPIC_API_KEY` etc. belong to the backend repo only; the
+   frontend repo needs only `CHAT_API_KEY` + `AUTOMATION_API_BASE_URL` for its proxy. No secret
+   should live in a repo that doesn't need it.
+6. **Update governing docs.** Amend `docs/adr/0001-Archetype-And-Stack.md` (currently describes one
+   monorepo archetype) to reflect the multi-repo topology; write a new ADR recording the actual
+   split decision at that time; update root `CLAUDE.md`'s "Layout" section once the split is real.
+7. **Exit gate.** Both repos build/lint/typecheck/test/deploy independently with zero references to
+   the other by path (only by published package version); a deliberate breaking change to
+   `packages/contracts` proves the version-bump workflow catches it in CI on the *other* repo, not
+   silently at runtime; local combined dev still works per whatever the monorepo-fate decision was.
+
+**Open decisions, unchanged from when this was Phase 4.8** — nothing here executes without answers
+to: which registry (item 1), the two new repo names (items 2/3), and the origin monorepo's fate
+(item 4). Not scoped, designed, or scheduled — same as every other idea in this file. **Trigger to
+revisit** (per ADR-0010): a real second product/deployment with a committed launch date, or the user
+deciding the three open decisions with enough conviction to actually execute.
+
 ---
 
 ## Later: visualize the target system
@@ -106,7 +171,6 @@ ideas is actually being designed.
 
 ---
 
-**Already scheduled, not a backlog idea:** "separate the frontend, backend, knowledge base, etc.
-into different repos" — this was raised in conversation and immediately turned into a real, scoped
-phase rather than sitting here unscheduled. See `docs/rag/PLAN.md` **Phase 4.8 — Frontend/backend
-repository separation** and `docs/adr/0007-Frontend-Backend-Repository-Separation.md`.
+**No longer "already scheduled"** — see idea #5 above for the current state of the repo-separation
+idea (moved back here from `docs/rag/PLAN.md` Phase 4.8 on 2026-08-12, per
+`docs/adr/0010-Redefer-Repository-Separation.md`).

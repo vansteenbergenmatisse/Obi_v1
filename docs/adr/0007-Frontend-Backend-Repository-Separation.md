@@ -1,6 +1,11 @@
 # 0007 — Frontend/Backend Repository Separation
 
-Status: Accepted
+Status: **Superseded by 0010 (2026-08-12)** — Decision item 1 ("split now, ahead of a second
+product") is reversed: with no second product/deployment live and the three open decisions in item 6
+still unanswered, the split is re-deferred and PLAN.md Phase 4.8 has moved to
+`docs/future-ideas/IDEAS.md` as an unscheduled idea. See
+`docs/adr/0010-Redefer-Repository-Separation.md` for the current decision. Decision items 2–6 are
+kept for history and remain an accurate record of the reasoning if and when this is revisited.
 Date: 2026-08-10
 Governs: apps/web, apps/automation, packages/**, docs/adr/0001*, docs/adr/0006*, root CLAUDE.md
 
