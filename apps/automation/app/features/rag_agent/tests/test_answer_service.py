@@ -82,6 +82,21 @@ class _FakeGenerator:
         return self._image_analysis_text
 
 
+class _FakeClassifier:
+    def __init__(self, verdict: bool) -> None:
+        self._verdict = verdict
+        self.called_with: list[str] = []
+
+    def classify(self, query: str) -> bool:
+        self.called_with.append(query)
+        return self._verdict
+
+
+class _RaisingClassifier:
+    def classify(self, query: str) -> bool:
+        raise AssertionError("classifier must not be called when the branch is disabled")
+
+
 class _RaisingGenerator:
     def generate(self, query: str, evidence_block: str) -> str:
         raise AssertionError("generator must not be called once refusal is decided")
@@ -474,6 +489,81 @@ def test_image_only_turn_with_empty_content_skips_retrieval() -> None:
     assert result.text == _REFUSAL_TEXT
     assert result.image_analysis == "I see a cat."
     assert generator.image_analysis_called_with == [("", (_IMAGE,))]
+
+
+def test_clarification_branch_disabled_by_default_never_calls_the_classifier() -> None:
+    """PLAN 9.2: `enable_clarification_branch` defaults to False — the classifier must never be
+    constructed-and-called just because a real question reaches the pipeline."""
+    retriever = _FakeRetriever(
+        {"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, parent_texts={501: "text"}
+    )
+    generator = _FakeGenerator("Answer [1].")
+    service, _ = _service(
+        retriever, _FakeRewriter("q"), generator, clarification_classifier=_RaisingClassifier()
+    )
+
+    result = service.answer([ChatMessage(role="user", content="q")], scope=None)
+
+    assert not result.refused
+
+
+def test_clarification_branch_enabled_calls_the_classifier_but_never_changes_the_answer() -> None:
+    """PLAN 9.2's own scope: the classifier runs (for logging/tuning) when the flag is on, but the
+    pipeline result is byte-for-byte what it would have been without the branch at all — the
+    actual bypass + clarifying-question generation is PLAN 9.3, not built yet."""
+    retriever = _FakeRetriever(
+        {"rewritten q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, parent_texts={501: "text"}
+    )
+    generator = _FakeGenerator("Answer [1].")
+    classifier = _FakeClassifier(verdict=True)
+    service, _ = _service(
+        retriever,
+        _FakeRewriter("rewritten q"),
+        generator,
+        clarification_classifier=classifier,
+        enable_clarification_branch=True,
+    )
+
+    result = service.answer([ChatMessage(role="user", content="what are the limits?")], scope=None)
+
+    assert classifier.called_with == ["what are the limits?"]
+    assert not result.refused
+    assert result.text == "Answer [1]."
+    assert retriever.retrieve_calls == [("rewritten q", None, 5)]  # pipeline ran exactly as usual
+
+
+def test_clarification_branch_enabled_with_no_classifier_configured_is_a_no_op() -> None:
+    """A misconfiguration (flag on, no classifier wired) must degrade safely, not crash."""
+    retriever = _FakeRetriever(
+        {"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, parent_texts={501: "text"}
+    )
+    generator = _FakeGenerator("Answer [1].")
+    service, _ = _service(
+        retriever, _FakeRewriter("q"), generator, enable_clarification_branch=True
+    )
+
+    result = service.answer([ChatMessage(role="user", content="q")], scope=None)
+
+    assert not result.refused
+
+
+def test_small_talk_short_circuits_before_the_clarification_classifier_too() -> None:
+    """Explicit tie-break (ADR-0008's flagged open question): `is_small_talk`'s exact whole-
+    message match runs first, so a real small-talk phrase never reaches the clarification branch
+    even when it's enabled."""
+    retriever = _FakeRetriever({}, {})
+    generator = _FakeGenerator("unused", small_talk_text="Hi there!")
+    service, _ = _service(
+        retriever,
+        _RaisingRewriter(),
+        generator,
+        clarification_classifier=_RaisingClassifier(),
+        enable_clarification_branch=True,
+    )
+
+    result = service.answer([ChatMessage(role="user", content="hi")], scope="100")
+
+    assert result.text == "Hi there!"
 
 
 def test_image_analysis_is_never_passed_through_citation_enforcement() -> None:

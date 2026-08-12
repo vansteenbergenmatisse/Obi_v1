@@ -33,6 +33,7 @@ from .application.answer_cache import CachingAnswerService
 from .application.answer_service import AnswerProvider, AnswerService
 from .infrastructure.llm_client import (
     AnswerGenerator,
+    AnthropicAmbiguityClassifier,
     AnthropicAnswerGenerator,
     AnthropicQueryRewriter,
     QueryRewriter,
@@ -52,6 +53,7 @@ __all__ = [
     "AnswerGenerator",
     "AnthropicQueryRewriter",
     "AnthropicAnswerGenerator",
+    "AnthropicAmbiguityClassifier",
     "router",
     "chat_router_module",
 ]

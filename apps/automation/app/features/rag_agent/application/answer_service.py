@@ -25,6 +25,17 @@ enforcement. **Disclosed gap, not decided by ADR-0009:** a turn classified as sm
 short-circuits before this logic even runs, so a greeting with an attached image ("hi" + a
 screenshot) gets the small-talk reply and the image is silently dropped — `is_small_talk` only
 ever looks at message text. Revisit if this is raised as a real product gap.
+
+Ambiguity classification (PLAN 9.2, ADR-0008): checked right after small-talk, before
+rewrite/retrieval — a message that is an exact small-talk match (e.g. "hi") is checked first and
+never reaches this branch, which is this repo's explicit tie-break for the "hi, what's the approval
+process?" case ADR-0008 flagged as needing one: `is_small_talk` requires the *whole* message to
+match, so a real question glued onto a greeting still runs the clarification check normally.
+**PLAN 9.2's own scope is the classifier only** — when `enable_clarification_branch` is on, the
+decision is computed and logged for tuning against `evaluation/datasets/ambiguity.json`, but it
+does not change `Answer` or skip any pipeline stage; the actual bypass + clarifying-question
+generation is PLAN 9.3. When the flag is off (the default), `decide_clarification` is never called
+at all — zero added cost or behavior change.
 """
 
 from __future__ import annotations
@@ -35,12 +46,16 @@ from typing import Protocol, runtime_checkable
 from sqlalchemy.orm import Session
 
 from app.features.rag_agent.domain.citations import enforce_citations
+from app.features.rag_agent.domain.clarification import AmbiguityClassifier, decide_clarification
 from app.features.rag_agent.domain.prompt import build_evidence_block
 from app.features.rag_agent.domain.refusal import decide_refusal
 from app.features.rag_agent.domain.small_talk import is_small_talk
 from app.features.rag_agent.infrastructure.llm_client import AnswerGenerator, QueryRewriter
 from app.features.rag_agent.schemas import Answer, ChatMessage, Citation
 from app.features.retrieval import HybridRetriever, RetrievalResult, update_query_trace_answer
+from app.platform.logging import get_logger
+
+log = get_logger("rag_agent.answer_service")
 
 _REFUSAL_TEXT = "I don't have that in the documentation I can search — routing this to a human."
 _NO_GROUNDED_CLAIM_REASON = "no claim in the generated answer survived citation enforcement"
@@ -66,6 +81,8 @@ class AnswerService:
         refusal_min_rerank_score: float = 0.10,
         crag_max_retries: int = 1,
         retrieve_k: int = 5,
+        clarification_classifier: AmbiguityClassifier | None = None,
+        enable_clarification_branch: bool = False,
     ) -> None:
         self._retriever = retriever
         self._rewriter = rewriter
@@ -75,6 +92,8 @@ class AnswerService:
         self._refusal_min_rerank_score = refusal_min_rerank_score
         self._crag_max_retries = max(0, crag_max_retries)
         self._retrieve_k = retrieve_k
+        self._clarification_classifier = clarification_classifier
+        self._enable_clarification_branch = enable_clarification_branch
 
     def answer(self, history: Sequence[ChatMessage], scope: str | None) -> Answer:
         if not history or history[-1].role != "user":
@@ -86,6 +105,17 @@ class AnswerService:
         if is_small_talk(original_query):
             text = self._generator.generate_small_talk(original_query)
             return Answer(text=text, citations=[], refused=False, trace_id=None)
+
+        if self._enable_clarification_branch and self._clarification_classifier is not None:
+            decision = decide_clarification(original_query, history, self._clarification_classifier)
+            log.info(
+                "clarification_decision",
+                is_ambiguous=decision.is_ambiguous,
+                reason=decision.reason,
+            )
+            # PLAN 9.2 scope ends here: observe and tune the classifier only. PLAN 9.3 adds the
+            # actual bypass + clarifying-question generation once `is_ambiguous` verdicts are
+            # trusted — until then, the pipeline below always runs regardless of `decision`.
 
         if original_query.strip():
             rewritten = self._rewriter.rewrite(history) if self._rewrite_enabled else original_query

@@ -92,6 +92,12 @@ class Settings(BaseSettings):
     rewrite_enabled: bool = True  # conversational query rewrite (routing_model), always on
     crag_max_retries: int = 1  # corrective-retrieval cap on a weak first result (protects p95)
 
+    # ambiguity/vagueness clarification branch (PLAN 9.2, ADR-0008). Off by default — PLAN 9.2's
+    # own scope is the classifier itself, wired in for logging/tuning only; it does not yet change
+    # `Answer`'s output (that is PLAN 9.3), so leaving this on changes nothing user-facing today,
+    # only whether the classifier call runs at all. Ships dark until tuned.
+    enable_clarification_branch: bool = False
+
     # answer-runtime Anthropic call controls (PLAN 4.4, LLM-CALL tier: C4 timeout/retry/breaker,
     # C10 abuse cap). Backs both the rewrite (routing_model) and generation (answer_model) calls —
     # they share one AnthropicMessagesClient instance built from these settings.

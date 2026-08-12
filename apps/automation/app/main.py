@@ -27,6 +27,7 @@ from app.features.confluence_sync import (
 from app.features.confluence_sync import router as confluence_router
 from app.features.rag_agent import (
     AnswerService,
+    AnthropicAmbiguityClassifier,
     AnthropicAnswerGenerator,
     AnthropicQueryRewriter,
     CachingAnswerService,
@@ -99,6 +100,8 @@ def build_answer_service(settings: Settings) -> AnswerService:
         refusal_min_rerank_score=settings.refusal_min_rerank_score,
         crag_max_retries=settings.crag_max_retries,
         retrieve_k=settings.rerank_top_k,
+        clarification_classifier=AnthropicAmbiguityClassifier(client, settings.routing_model),
+        enable_clarification_branch=settings.enable_clarification_branch,
     )
 
 

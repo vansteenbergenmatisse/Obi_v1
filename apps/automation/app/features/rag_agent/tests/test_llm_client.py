@@ -9,6 +9,7 @@ import json
 import httpx
 
 from app.features.rag_agent.infrastructure.llm_client import (
+    AnthropicAmbiguityClassifier,
     AnthropicAnswerGenerator,
     AnthropicQueryRewriter,
 )
@@ -150,3 +151,47 @@ def test_generate_image_analysis_fails_open_to_a_short_notice_on_error() -> None
     )
 
     assert "couldn't look at that image" in out.lower()
+
+
+def _client_replying(text: str, seen: list[dict]) -> AnthropicMessagesClient:
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(json.loads(request.content))
+        return httpx.Response(200, json={"content": [{"type": "text", "text": text}]})
+
+    return AnthropicMessagesClient(
+        api_key="k", client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+
+
+def test_classify_redacts_pii_and_sends_the_ambiguity_system_prompt() -> None:
+    seen: list[dict] = []
+    classifier = AnthropicAmbiguityClassifier(_client_replying("SPECIFIC", seen), "routing-model")
+    classifier.classify("what are the limits for alice@example.com's account?")
+
+    body = seen[0]
+    sent_text = body["messages"][0]["content"][0]["text"]
+    assert "alice@example.com" not in sent_text
+    assert "[REDACTED_EMAIL]" in sent_text
+    assert body["model"] == "routing-model"
+    assert body["system"][0]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_classify_returns_true_for_an_ambiguous_verdict() -> None:
+    classifier = AnthropicAmbiguityClassifier(_client_replying("AMBIGUOUS", []), "routing-model")
+    assert classifier.classify("what are the limits?") is True
+
+
+def test_classify_returns_false_for_a_specific_verdict() -> None:
+    classifier = AnthropicAmbiguityClassifier(_client_replying("SPECIFIC", []), "routing-model")
+    assert classifier.classify("how do I reset my password?") is False
+
+
+def test_classify_fails_open_to_not_ambiguous_on_error() -> None:
+    client = AnthropicMessagesClient(
+        api_key="k",
+        client=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(500, json={}))),
+        max_retries=1,
+    )
+    classifier = AnthropicAmbiguityClassifier(client, "routing-model")
+
+    assert classifier.classify("what are the limits?") is False

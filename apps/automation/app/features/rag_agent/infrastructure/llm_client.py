@@ -19,6 +19,7 @@ from typing import Protocol, runtime_checkable
 
 from app.features.rag_agent.domain.pii import redact_pii
 from app.features.rag_agent.domain.prompt import (
+    AMBIGUITY_CLASSIFIER_SYSTEM_PROMPT,
     ANSWER_SYSTEM_PROMPT,
     IMAGE_ANALYSIS_SYSTEM_PROMPT,
     SMALL_TALK_SYSTEM_PROMPT,
@@ -42,6 +43,7 @@ _SMALL_TALK_MAX_TOKENS = 150
 _SMALL_TALK_FALLBACK = "Hi! I'm Obi — ask me anything about the documentation and I'll look it up."
 _IMAGE_ANALYSIS_MAX_TOKENS = 500
 _IMAGE_ANALYSIS_FALLBACK = "I couldn't look at that image right now — feel free to try again."
+_AMBIGUITY_CLASSIFIER_MAX_TOKENS = 10  # a single word (AMBIGUOUS/SPECIFIC), never a full reply
 
 
 @runtime_checkable
@@ -150,3 +152,30 @@ class AnthropicAnswerGenerator:
             log.warning("image_analysis_generation_failed_using_fallback")
             return _IMAGE_ANALYSIS_FALLBACK
         return out.strip() or _IMAGE_ANALYSIS_FALLBACK
+
+
+class AnthropicAmbiguityClassifier:
+    """Ambiguity classifier call (``routing_model``, PLAN 9.2 — same cheap tier as rewrite, not
+    the ``answer_model`` generation tier). Fails open to ``False`` (not ambiguous) on any
+    `AnthropicError`, the same reasoning `AnthropicQueryRewriter.rewrite` applies to a rewrite
+    failure: this call decides *whether to ask a clarifying question*, not *whether the query is
+    answerable at all* — a transient failure must not block a query from the existing, already-
+    shipped pipeline. `domain/clarification.py`'s heuristic already skips this call for queries
+    long enough to be confidently non-ambiguous, so this only ever runs on short/generic queries."""
+
+    def __init__(self, client: AnthropicMessagesClient, model: str) -> None:
+        self._client = client
+        self._model = model
+
+    def classify(self, query: str) -> bool:
+        try:
+            out = self._client.create_message(
+                model=self._model,
+                user_text=redact_pii(query),
+                system_blocks=[cached_system_block(AMBIGUITY_CLASSIFIER_SYSTEM_PROMPT)],
+                max_tokens=_AMBIGUITY_CLASSIFIER_MAX_TOKENS,
+            )
+        except AnthropicError:
+            log.warning("ambiguity_classification_failed_assuming_specific")
+            return False
+        return out.strip().upper().startswith("AMBIGUOUS")
