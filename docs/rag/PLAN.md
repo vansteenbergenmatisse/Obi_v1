@@ -31,8 +31,8 @@ closed as-is (no amendment — every decision matches what shipped). One small *
 below, then actually fixed at 7.8 once it turned out to be quick — see that entry for the correction
 (this entry originally mis-claimed the two test files no longer existed; they do, and pass — a `tail`-
 truncated command output misled the first check).
-**No code changed this pass — docs only, still uncommitted.** Per this session's standing pattern,
-asking before committing.
+**No code changed this pass — docs only.** Committed together with 7.8's fixes below as `1b35c92`
+(the `FEATURES.md` piece) and `dbea393` (this ledger's own narrative), 2026-08-12.
 
 **Same session, immediately after: 7.8 — proxy body-size ceiling fix (a real bug, user-reported).**
 The user asked to triple-check image/screenshot analysis; reported seeing "request body too large"
@@ -135,8 +135,8 @@ grounded text correctly refusing separately. Uploaded a second real file via the
 typed a real question, sent — this second message is what surfaced Bug E live. After fixing it,
 replayed the identical two-message sequence from a fresh page load: both turns succeeded, the second
 returning an accurate description of the actual uploaded image, feedback buttons rendering normally,
-no console errors from the chat flow. **All five fixes are docs+code, still uncommitted — ask before
-committing.** **Explicit user-set order for what's next, at the time, unaffected by this fix: Phase
+no console errors from the chat flow. **All five fixes, docs+code, committed `1b35c92`** (code+tests
++ both `FEATURES.md` files), 2026-08-12. **Explicit user-set order for what's next, at the time, unaffected by this fix: Phase
 4.8, then Phase 9** (both were waiting on Phase 7, which is still fully closed; 4.8 still has three
 unresolved "needs your input" decisions — registry choice, new repo names, origin-monorepo fate —
 that block it regardless of ordering). **Superseded by the entry immediately below.**
@@ -154,8 +154,8 @@ waits only on Phase 7, which is done. **Explicit order for what's next, current:
 onward) is unblocked** — still requires an explicit go-ahead before starting, same as every phase,
 per this repo's own no-auto-start rule. No code changed this pass — docs only (this ledger, Phase
 4.8's section, the phase table, Phase 9's sequencing text, `docs/future-ideas/IDEAS.md`,
-`docs/adr/0006*`/`0007*` status lines, new `docs/adr/0010*`). Still uncommitted, together with the
-7.7/7.8 fixes above — ask before committing.
+`docs/adr/0006*`/`0007*` status lines, new `docs/adr/0010*`). Committed `dbea393`, alongside
+`1b35c92` for the 7.7/7.8 code+tests fixes above.
 
 ### ▶ Resume here (after `/compact-ultra`) — first things first
 
@@ -478,16 +478,12 @@ this ledger, state what's ready — **Phase 4.6 is fully closed; Phase 4.7 is do
 closed, and it's committed; Phase 7 is now fully closed (7.1-7.8 all done, 2026-08-12) — its code
 sub-steps (7.1/7.2/7.3+7.4/7.5) are committed (`eb30837`/`7ffd916`/`12db45a`/`1398e64`), 7.6 was a
 verification pass with no code, and 7.7's exit-gate doc updates plus 7.8's real bug fix (a proxy
-body-size ceiling that silently 413'd real image attachments — this ledger + `route-handlers.ts` +
-both `FEATURES.md` files) are still uncommitted, pending go-ahead**; the next options are committing
-7.7+7.8 (plus this session's Phase-4.8-removal docs), starting Phase 9 (9.2 onward, now unblocked —
-waits only on Phase 7, which is done), or Phase 5.4/the embedder bake-off once real API spend and a
-live Confluence token are available — and ask which to start rather than beginning any
-automatically.
-**Explicit order for the rest, current: Phase 9 is next** — Phase 7 is done and Phase 4.8 is no
-longer in this plan (moved to `docs/future-ideas/IDEAS.md`); Phase 9's 9.1 design doc is already
-done and committed, its code (9.2 onward) has no remaining blocker besides the standing go-ahead
-gate.
+body-size ceiling that silently 413'd real image attachments) are committed as `1b35c92`
+(code+tests+`FEATURES.md`) with the accompanying ledger narrative in `dbea393`. Phase 4.8 (repo
+separation) has been re-deferred and moved to `docs/future-ideas/IDEAS.md` idea #5, also `dbea393`.
+Phase 9 (9.2 onward) is next, unblocked** — waits only on Phase 7, which is done; the user gave
+explicit go-ahead 2026-08-12 to start it. Phase 5.4/the embedder bake-off remain blocked on real API
+spend and a live Confluence token regardless of ordering.
 
 Fresh context: read this ledger + `docs/rag/DESIGN.md` (§2 target pipeline, §5 accuracy stack) +
 `docs/adr/0005*` + `docs/adr/0007*`, then ask which of the above to start. The chat
