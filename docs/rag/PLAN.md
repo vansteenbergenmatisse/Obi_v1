@@ -481,9 +481,12 @@ verification pass with no code, and 7.7's exit-gate doc updates plus 7.8's real 
 body-size ceiling that silently 413'd real image attachments) are committed as `1b35c92`
 (code+tests+`FEATURES.md`) with the accompanying ledger narrative in `dbea393`. Phase 4.8 (repo
 separation) has been re-deferred and moved to `docs/future-ideas/IDEAS.md` idea #5, also `dbea393`.
-Phase 9 (9.2 onward) is next, unblocked** — waits only on Phase 7, which is done; the user gave
-explicit go-ahead 2026-08-12 to start it. Phase 5.4/the embedder bake-off remain blocked on real API
-spend and a live Confluence token regardless of ordering.
+Phase 9.2 (the ambiguity/vagueness classifier) is done, 2026-08-12, per explicit go-ahead the same
+day — classifier + wiring only, `enable_clarification_branch` defaults off, zero behavior change.**
+See 9.2's own entry for the full detail. **Phase 9.3 (clarification response generation + wiring)
+is next** — the actual bypass + clarifying-question generation on top of 9.2's classifier. Phase
+5.4/the embedder bake-off remain blocked on real API spend and a live Confluence token regardless of
+ordering.
 
 Fresh context: read this ledger + `docs/rag/DESIGN.md` (§2 target pipeline, §5 accuracy stack) +
 `docs/adr/0005*` + `docs/adr/0007*`, then ask which of the above to start. The chat
@@ -1216,7 +1219,7 @@ OCR/image reading untouched.
 | **4.7** — Obi widget: chat UI rebuild, brand tokens, screenshot capture, real i18n, `/chat` route removed, image lightbox (4.7.8) | ✅ done, **committed** | `206baab` (first sub-step), `aae90e5` (4.7.2-4.7.6), `bf99635` (rest, incl. 4.7.8 + the test-gap closure) | frontend-only, `apps/web`; does not gate Phase 5; source of truth `docs/rag/reference/obi-mockup/` + `docs/rag/OBI-WIDGET-DESIGN.md` |
 | **4.8** — Frontend/backend repository separation | **moved to `docs/future-ideas/IDEAS.md` #5 (2026-08-12)** | — | re-deferred per `docs/adr/0010-Redefer-Repository-Separation.md`; no longer part of this plan |
 | **7** — Vision-grounded image analysis (attachments + screenshot capture) | ✅ **done (2026-08-12), all 8 sub-steps closed** | `eb30837` (7.1), `7ffd916` (7.2), `12db45a` (7.3+7.4), `1398e64` (7.5); 7.6 is a verification pass, no commit (no code changed); 7.7/7.8 docs+fixes, no commit yet | supersedes `docs/future-ideas/IDEAS.md` #3; ADR-0009 + DESIGN.md §12 lock the contract shape (`ChatTurn.images`, `Answer.imageAnalysis`, no new SSE event), the `has_image` refusal gate, and the independent (never citation-enforced) vision call; 7.6's live adversarial red-team found zero injection compliance, caps enforced live; 7.7 re-ran the full gate with zero regressions and closed ADR-0009; **7.8 found and fixed 5 stacked, user-reported bugs** in a "triple-check the feature" pass — a pre-image-era proxy body-size ceiling (413), a proxy content-length check that rejected genuine image-only turns (400), a backend crash embedding an empty query (uncaught `EmbeddingError`), Anthropic itself rejecting an empty text content block (400), and — found only once real browser testing replaced curl repros — the same content-length check breaking again on any *later* turn once an earlier image-only turn aged out and lost both its content and its image; all five found by fixing one, re-testing, and hitting the next one underneath |
-| **9** — Unanswerable/vague-query fallback (9.1 → 9.9) | 9.1 ✅ done, 2026-08-11 (committed `771cfce`); 9.2-9.9 ⬜ todo — **wait for Phase 7 only (4.8 dependency dropped 2026-08-12), then dead last, no phase follows** | — | supersedes `docs/future-ideas/IDEAS.md` #1; ADR-0008 + DESIGN.md §11 lock the contract shape (extend `Answer`, no new SSE event), the 3-value refusal-reason taxonomy, and eval-kind reuse; ambiguity/vagueness classifier + clarification response, differentiated refusal reasons, human-hand-off stub (Salesforce noted as eventual target), fallback-quality eval metrics; MMR/diversity filtering and any new vector store explicitly out of scope |
+| **9** — Unanswerable/vague-query fallback (9.1 → 9.9) | 9.1 ✅ done, 2026-08-11 (`771cfce`); 9.2 ✅ done, 2026-08-12 (classifier only, flag off, no behavior change — see 9.2's own entry); 9.3-9.9 ⬜ todo, dead last, no phase follows | — | supersedes `docs/future-ideas/IDEAS.md` #1; ADR-0008 + DESIGN.md §11 lock the contract shape (extend `Answer`, no new SSE event), the 3-value refusal-reason taxonomy, and eval-kind reuse; ambiguity/vagueness classifier + clarification response, differentiated refusal reasons, human-hand-off stub (Salesforce noted as eventual target), fallback-quality eval metrics; MMR/diversity filtering and any new vector store explicitly out of scope |
 
 Gate at each ✅: `make check` green (**219 backend tests** as of 5.3 — 4.5 touched no backend code;
 was 213 at 5.1/5.2, 197 at 5.1, 194 at 4.4, 167 at 4.3, 164 at 4.2, 144 at 3.5.6, 130 at 4.1, 120 at
@@ -3193,11 +3196,37 @@ turning that design into code, not started:
    a refusal); and eval-kind reuse (**decided: reuse the existing `ambiguity` `EvalKind`, no new
    literal**). One open question flagged for 9.2/9.3, not yet decided: the tie-break when a query is
    arguably both small-talk and ambiguous (e.g. "hi, what's the approval process?").
-2. **9.2 — Ambiguity/vagueness classifier.** New `rag_agent/domain/clarification.py`, structurally
-   parallel to `domain/small_talk.py`: heuristic first, LLM fallback for genuinely ambiguous cases,
-   wired into `AnswerService.answer` before rewrite/retrieval. Feature-flagged
-   (`enable_clarification_branch`, default off) so it ships dark. Tuned against
-   `evaluation/datasets/ambiguity.json` (expand its 3 cases).
+2. **9.2 — Ambiguity/vagueness classifier ✅ done (2026-08-12).** New `rag_agent/domain/
+   clarification.py::decide_clarification` (heuristic: a query with ≥12 words is confidently
+   self-specifying and skips the LLM call entirely, matching a real corpus-coverage concern rather
+   than a vagueness one; every shorter query — ambiguous or short-but-specific alike — falls
+   through, since the heuristic alone cannot tell them apart) + `AnthropicAmbiguityClassifier`
+   (`llm_client.py`, `routing_model` tier, fails open to "not ambiguous" on any `AnthropicError`).
+   Wired into `AnswerService.answer` right after the small-talk check — **this is the explicit
+   tie-break ADR-0008 flagged as open**: `is_small_talk` requires the whole message to match, so
+   "hi, what's the approval process?" is never small talk and still reaches this branch normally,
+   with zero extra code needed. **Deliberately scoped to the classifier only, per PLAN's own 9.2 vs.
+   9.3 split** — behind `enable_clarification_branch` (new setting, default `false`), the decision
+   is computed and logged (`clarification_decision`) but never changes `Answer` or skips a pipeline
+   stage; when the flag is off (the default), the classifier is never even called — zero added
+   cost. The actual bypass + clarifying-question generation is 9.3, not built here. **Deviation,
+   disclosed:** did not expand `evaluation/datasets/ambiguity.json` with hand-picked "specific"
+   control cases as originally written here — that dataset's cases are scored by the shared
+   retrieval-eval harness against real fixture-corpus `relevant_chunk_ids`, and fabricating new
+   chunk ids without verifying them against the actual fixture corpus risked silently wrong
+   eval-report numbers for no real benefit; classifier accuracy is instead tuned directly in
+   `test_clarification.py` (parametrized ambiguous + short-but-specific cases against a fake
+   classifier) and `test_llm_client.py` (the real Anthropic-backed classifier's prompt/parsing).
+   Revisit only if `evaluate()`/`run_baseline.py` itself starts asserting `needs_clarification`
+   (that's 9.7's job, once the field exists). **Security review (`securing-http-and-llm-endpoints`):**
+   no new HTTP surface; the new LLM-CALL inherits `AnthropicMessagesClient`'s existing C4 timeout/
+   retry/breaker + C10 abuse cap; C6 PII redaction applied to the query before it's sent, same as
+   every other call site; prompt-injection risk on the classifier call is bounded to nil this
+   sub-step specifically, since its only effect is a log line — no user-facing behavior yet for an
+   attacker to manipulate. **Verified:** backend `make check` → **342 passed** (was 329, +13:
+   `test_clarification.py` ×5, `test_llm_client.py` ×4, `test_answer_service.py` ×4), `make
+   boundaries` clean, ruff/pyright unchanged at the 2/15/34 baseline (files touched brought clean).
+   No web/contract changes — backend-only, per this sub-step's scope. Committed `6f7201d`.
 3. **9.3 — Clarification response generation + wiring.** On an ambiguous verdict, bypass rewrite/
    retrieval/CRAG/refusal (same shape as small-talk) and generate a clarifying question + 2-4
    concrete options via a new `CLARIFICATION_SYSTEM_PROMPT`. Fails open to the existing pipeline on
