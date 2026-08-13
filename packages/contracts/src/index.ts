@@ -128,6 +128,25 @@ export interface ChatDoneEvent {
    * when the turn had no image, or before the backend implements 7.3.
    */
   imageAnalysis?: string | null;
+  /**
+   * True when the query was judged too vague to search well (PLAN 9.3,
+   * ADR-0008 decision 3) and the pipeline bypassed rewrite/retrieval/
+   * refusal to ask a clarifying question instead. A still-open
+   * conversation turn, not a refusal — `refused` stays false on this path.
+   */
+  needsClarification?: boolean;
+  /**
+   * The clarifying question, identical to `answer` on this path — present
+   * as its own field so a client can distinguish a clarification turn
+   * without string-matching `answer`.
+   */
+  clarificationQuestion?: string | null;
+  /**
+   * 2-4 concrete options the clarifying question offers, for a client to
+   * render as quick-reply chips (PLAN 9.5). Absent/null when the turn is
+   * not a clarification turn.
+   */
+  clarificationOptions?: string[] | null;
 }
 
 /** Terminal error event. */

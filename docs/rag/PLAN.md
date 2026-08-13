@@ -14,6 +14,32 @@
 security (HTTP/LLM controls), real tests, acceptance actually met — and if it falls short, add the
 fix here as the next task; update this ledger after each phase.
 
+**New session (2026-08-13): 9.3 (clarification generation + wiring) done — see Phase 9's own 9.3
+entry for the full narrative.** User asked to proceed with Phase 9 (9.2 onward was already
+unblocked, 9.2 already committed). Ran the pre-phase verification gate first (`CLAUDE.local.md`
+§2) rather than trusting the ledger's self-report: re-ran `make check` (342 passed, matched),
+`make boundaries` (clean), ruff/pyright (2/15/34, unchanged) live before touching any code.
+Implemented via TDD: `domain/clarification.py` gained `ClarificationReply` +
+`parse_clarification_reply`; `domain/prompt.py` gained `CLARIFICATION_SYSTEM_PROMPT`;
+`AnthropicAnswerGenerator.generate_clarification` (fails open to a static fallback on either an
+`AnthropicError` or an unparseable reply); `AnswerService.answer`'s clarification branch now
+bypasses rewrite/retrieval/CRAG/refusal on an ambiguous verdict (same shape as small-talk); `Answer`
+gained `needs_clarification`/`clarification_question`/`clarification_options`; `router.py`'s `done`
+SSE payload and audit log gained the matching fields; `packages/contracts` gained the matching
+additive `ChatDoneEvent` fields (TS + OpenAPI). Ran `securing-http-and-llm-endpoints` before writing
+code (new LLM-CALL, output now user-visible unlike 9.2's classifier — mitigated with a defensive
+prompt instruction + small `max_tokens`, live-model red-team deferred to 9.8 per this phase's own
+roadmap). **A real regression caught by pyright, not the test suite:**
+`confluence_sync/tests/test_answer_workflow.py`'s three fake generators no longer structurally
+satisfied `AnswerGenerator` once it gained `generate_clarification` (34 → 42 pyright errors); fixed
+by adding a raising `generate_clarification` to each, back to the 2/15/34 baseline exactly.
+**Verified:** backend `make check` → **354 passed** (was 342, +12), `make boundaries` clean,
+ruff/pyright confirmed back at 2/15/34; web `pnpm --filter web test` → **125/125 passed**
+(unchanged — apps/web needed no code change, since `chat-client.ts` already forwards the whole
+parsed `done` object and the new contract fields are additive-optional; rendering them is PLAN
+9.5's job), `pnpm --filter web exec tsc --noEmit` clean. **Not yet committed** — ask before
+committing, per this repo's own convention.
+
 **New session (2026-08-12): 7.7 (exit gate) done — Phase 7 is now fully closed.** Asked the user
 before starting, per this repo's own no-auto-start rule; got explicit go-ahead. Re-ran the full gate
 live: backend `make check` → **327 passed** (unchanged since 7.3+7.4), `make boundaries` clean,
@@ -162,6 +188,11 @@ per this repo's own no-auto-start rule. No code changed this pass — docs only 
 **Phase 3.5 is COMPLETE. Phase 4 is COMPLETE: 4.1 + 4.2 + 4.3 + 4.4 + 4.5 all done.**
 **Phase 5.1 (`CHAT_API_KEY` rotation), 5.2 (exact-match answer caching), and 5.3 (prompt-injection +
 permission/isolation red-team) are done.**
+
+**Phase 9 progress (2026-08-13): 9.1, 9.2, and 9.3 are done — not yet committed.** Next up is
+**9.4 (differentiated refusal messaging)**, per this phase's own numbered sub-step order — do not
+start it without an explicit go-ahead, same as every other phase. See §0's newest entry above and
+Phase 9's own section below for the full 9.3 narrative.
 
 **✅ Phase 4.6 is COMPLETE (2026-08-11) — all 16 sub-steps done, exit gate 4.6.16 green.** An
 independent same-day audit (`docs/rag/fixes/`, six agents, 2026-08-10) had found real unresolved
@@ -3130,7 +3161,7 @@ shared risk with either.
 
 ---
 
-## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ⬜ todo *(9.1 done; 9.2-9.9 do not start before Phase 7 is done — see Sequencing)*
+## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ⬜ todo *(9.1/9.2/9.3 done; 9.4-9.9 remain — see Sequencing)*
 
 **Scoped 2026-08-11; 9.1 (design doc + ADR-0008) done the same day — nothing else started.** User
 supplied an external best-practices brief on handling
@@ -3227,10 +3258,67 @@ turning that design into code, not started:
    `test_clarification.py` ×5, `test_llm_client.py` ×4, `test_answer_service.py` ×4), `make
    boundaries` clean, ruff/pyright unchanged at the 2/15/34 baseline (files touched brought clean).
    No web/contract changes — backend-only, per this sub-step's scope. Committed `6f7201d`.
-3. **9.3 — Clarification response generation + wiring.** On an ambiguous verdict, bypass rewrite/
-   retrieval/CRAG/refusal (same shape as small-talk) and generate a clarifying question + 2-4
-   concrete options via a new `CLARIFICATION_SYSTEM_PROMPT`. Fails open to the existing pipeline on
-   any LLM error, matching `generate_small_talk`'s fail-open behavior.
+3. **9.3 — Clarification response generation + wiring ✅ done (2026-08-13).** On an ambiguous
+   verdict, `AnswerService.answer` now bypasses rewrite/retrieval/CRAG/refusal entirely (same shape
+   as small-talk: no `query_trace` row, `refused` stays `False`) and calls a new
+   `AnthropicAnswerGenerator.generate_clarification`, which sends a new `CLARIFICATION_SYSTEM_PROMPT`
+   (`domain/prompt.py`) asking for a fixed `Question: ...` / `Options:` / `- ...` shape — unlike the
+   9.2 classifier's single-word verdict, this reply is shown directly to the user, so the prompt
+   carries the same defensive instruction against treating query-embedded text as an instruction to
+   follow that `IMAGE_ANALYSIS_SYSTEM_PROMPT` already uses. A new pure function,
+   `domain/clarification.py::parse_clarification_reply`, parses that shape deterministically and
+   returns `None` on anything unparseable (no partial/guessed question); `generate_clarification`
+   fails open to a static fallback (`ClarificationReply` with an empty options list) on either
+   `None` or an `AnthropicError` — this is **the literal "matching `generate_small_talk`'s fail-open
+   behavior"** this row originally called for: a fallback string returned from the same method, not
+   a fall-through back into the grounded pipeline (the row's other phrase, "fails open to the
+   existing pipeline," was read as describing the fail-open *shape* small-talk already established,
+   not a second, different mechanism — a fail-through would mean the classifier's already-fired
+   `is_ambiguous=True` verdict gets silently discarded, worse than a generic fallback question, so
+   this reading was chosen without asking, per the repo's low-cost-to-reverse default). `Answer`
+   gains `needs_clarification`/`clarification_question`/`clarification_options` (`schemas.py`, exact
+   shape ADR-0008 decision 3 locked) and `ChatDoneEvent` gains the matching
+   `needsClarification`/`clarificationQuestion`/`clarificationOptions` (`packages/contracts`
+   `index.ts` + `openapi/chat.yaml`) — additive only, no new SSE event; `router.py`'s `done` payload
+   and `chat_request` audit log line (`needs_clarification`) both updated to match. **Disclosed gap,
+   same reasoning as small-talk's own:** an ambiguous query with an attached image gets the
+   clarifying question and the image is silently dropped (this bypass returns before image analysis
+   runs) — documented in `answer_service.py`'s module docstring, not silent. **apps/web scope check:**
+   `packages/contracts`'s new fields are additive-optional and `chat-client.ts`'s `case "done":
+   handlers.onDone?.(event)` already forwards the whole parsed object, so no web code changes were
+   needed for the contract to be wire-correct — rendering `clarificationOptions` as quick-reply
+   chips is PLAN 9.5's own job, not done here. **Pre-phase verification gate run before starting**
+   (`CLAUDE.local.md` §2): re-verified 9.2 live rather than trusting the ledger — `make check` →
+   342 passed (matched exactly), `make boundaries` clean, ruff 2/format 15/pyright 34 all unchanged;
+   confirmed `6f7201d`/`67532bb` were both already committed. **TDD throughout:** wrote each failing
+   test first (parser tests, `generate_clarification` tests, the bypass/no-op/no-trace-row
+   `AnswerService` tests) before the corresponding implementation. **A real regression caught by
+   `pyright`, not by the test suite:** `confluence_sync/tests/test_answer_workflow.py`'s
+   `_CitingGenerator`/`_SilentGenerator`/`_SmallTalkOnlyGenerator` structurally implement
+   `AnswerGenerator` for the end-to-end suite against the real indexed corpus — adding
+   `generate_clarification` to the Protocol made pyright flag all three (and `test_chat_endpoint.py`,
+   which imports them) as no longer satisfying it (34 → 42 errors); fixed by adding a raising
+   `generate_clarification` to each (the branch is disabled in every affected test, so raising is the
+   correct assertion, not a stub), back to the 2/15/34 baseline exactly, not just the same count.
+   **Security review (`securing-http-and-llm-endpoints`, run before writing code):** no new HTTP
+   surface; the new LLM-CALL inherits `AnthropicMessagesClient`'s existing C4 timeout/retry/breaker +
+   C10 abuse cap (one more bounded call per already-rate-limited request, gated behind
+   `enable_clarification_branch`, default off); C6 redacts the query text like every other call
+   site; C5's existing `chat_output_max_answer_chars` cap and chunked/paced streaming already apply
+   since the question rides on the existing `Answer.text`/`text` SSE field, no new code needed; C9
+   gained `needs_clarification` on the audit log line (parity with 4.6.12's `refusal_reason`
+   precedent). The one new consideration flagged (mitigated, not fully closed this sub-step): the
+   clarifying question is freeform, user-visible LLM output (unlike the classifier's one word) —
+   mitigated with the defensive prompt instruction above and a small `max_tokens` (200) bounding any
+   successful injection's blast radius; the required live-model adversarial pass for this specific
+   path is PLAN 9.8, sequenced later in this same phase, mirroring how 7.6 followed 7.3/7.4's
+   shipped mitigation rather than blocking on it. **Verified:** backend `make check` → **354 passed**
+   (was 342, +12: `test_clarification.py` ×6, `test_llm_client.py` ×5, `test_answer_service.py`
+   net +1 [2 new bypass/no-trace-row tests, 1 rewritten in place for the new bypass behavior, 0 net
+   from the rename]), `make boundaries` clean, ruff/pyright confirmed back at the 2/15/34 baseline
+   after the pyright regression above. Web: `pnpm --filter web test` → **125/125 passed** (unchanged
+   — no web code touched), `pnpm --filter web exec tsc --noEmit` clean. Committed pending — see this
+   ledger's own entry below once actually committed.
 4. **9.4 — Differentiated refusal messaging.** Distinct, honest copy per refusal reason from 9.1's
    taxonomy (today all three render the identical `_REFUSAL_TEXT`). Copy routed through
    `copywriting-rules`/`anti-ai-writing`, not hand-written inline.

@@ -34,7 +34,14 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
                               generation call (llm_client.py); see rag_agent/domain/pii.py.
                               PLAN 7.3 (ADR-0009 decision 6): does NOT extend to image bytes on
                               `ChatMessage.images` — a disclosed, accepted gap, not a silent one;
-                              see pii.py's module docstring addendum.
+                              see pii.py's module docstring addendum. PLAN 9.2/9.3 (ADR-0008): the
+                              ambiguity classifier and clarification-question generation calls
+                              redact the query text the same way — the latter's reply is shown
+                              directly to the user (unlike the classifier's single-word verdict),
+                              so its system prompt also carries a defensive instruction against
+                              treating query-embedded text as an instruction to follow (mirroring
+                              PLAN 7.3's image-analysis prompt); the required live-model
+                              adversarial pass for this new path is PLAN 9.8, not this sub-step.
   C7_idempotency: covered   - optional `Idempotency-Key` header; a replay within the TTL window
                               returns the cached Answer without re-running retrieval/generation.
                               The cache key binds the header to a hash of (principal, history) —
@@ -44,15 +51,21 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
   C8_concurrency: opted_out - each request creates its own query_trace row; no shared-resource
                               read-modify-write.
   C9_audit:       covered   - one structured `chat_request` log line per call (conversation id,
-                              trace id, refused, refusal reason, citation count, latency) — never
-                              the raw message or answer text; `refusal_reason` is a static,
-                              templated diagnostic string (never user query or retrieved content).
+                              trace id, refused, refusal reason, needs_clarification (PLAN 9.3),
+                              citation count, latency) — never the raw message or answer text;
+                              `refusal_reason` is a static, templated diagnostic string (never
+                              user query or retrieved content).
   C10_abuse:      covered   - rate limit + history/message-length caps + the Anthropic client's
                               abuse cap (answer_max_input_chars) + circuit breaker. PLAN 7.3
                               (ADR-0009 decision 7): `generate_image_analysis` is a second,
                               unconditional LLM call whenever a turn has images — the per-turn
                               image-count/byte caps above are this call's own abuse control,
                               since `answer_max_input_chars` only ever measures text length.
+                              PLAN 9.2/9.3 (ADR-0008): the ambiguity classifier + clarification-
+                              question generation are two more bounded calls, gated behind
+                              `enable_clarification_branch` (default off) and only reachable
+                              through this already-rate-limited endpoint — no incremental abuse
+                              surface beyond one more call per already-capped request.
 
 security_baseline (surface: PATCH /chat/{trace_id}/feedback, tier STATE-MUTATING):
   C1_auth:        covered   - same shared-secret check (current + previous) as POST /chat.
@@ -323,6 +336,7 @@ async def _stream_answer(
             trace_id=answer.trace_id,
             refused=answer.refused,
             refusal_reason=answer.refusal_reason,
+            needs_clarification=answer.needs_clarification,
             citation_count=len(answer.citations),
             latency_ms=latency_ms,
         )
@@ -356,6 +370,11 @@ async def _stream_answer(
             "traceId": answer.trace_id,
             "refused": answer.refused,
             "imageAnalysis": image_analysis,
+            # PLAN 9.3, ADR-0008 decision 3: additive fields only, no new SSE event type.
+            # `needsClarification=False`/`null` on every pre-existing response shape.
+            "needsClarification": answer.needs_clarification,
+            "clarificationQuestion": answer.clarification_question,
+            "clarificationOptions": answer.clarification_options,
         }
     )
 

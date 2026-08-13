@@ -42,6 +42,9 @@ class _CitingGenerator:
     def generate_image_analysis(self, query: str, images) -> str:
         raise AssertionError("generate_image_analysis must not be called: no test turn has images")
 
+    def generate_clarification(self, query: str):
+        raise AssertionError("generate_clarification must not be called: the branch is disabled")
+
 
 class _SilentGenerator:
     """Deterministic stand-in that cites nothing — exercises the no-grounded-claim refusal path."""
@@ -54,6 +57,9 @@ class _SilentGenerator:
 
     def generate_image_analysis(self, query: str, images) -> str:
         raise AssertionError("generate_image_analysis must not be called: no test turn has images")
+
+    def generate_clarification(self, query: str):
+        raise AssertionError("generate_clarification must not be called: the branch is disabled")
 
 
 class _ImageAnalyzingGenerator(_CitingGenerator):
@@ -76,6 +82,9 @@ class _SmallTalkOnlyGenerator:
 
     def generate_image_analysis(self, query: str, images) -> str:
         raise AssertionError("generate_image_analysis must not be called: no test turn has images")
+
+    def generate_clarification(self, query: str):
+        raise AssertionError("generate_clarification must not be called: the branch is disabled")
 
 
 def _build_retriever(

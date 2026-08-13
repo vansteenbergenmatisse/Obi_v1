@@ -17,10 +17,15 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
+from app.features.rag_agent.domain.clarification import (
+    ClarificationReply,
+    parse_clarification_reply,
+)
 from app.features.rag_agent.domain.pii import redact_pii
 from app.features.rag_agent.domain.prompt import (
     AMBIGUITY_CLASSIFIER_SYSTEM_PROMPT,
     ANSWER_SYSTEM_PROMPT,
+    CLARIFICATION_SYSTEM_PROMPT,
     IMAGE_ANALYSIS_SYSTEM_PROMPT,
     SMALL_TALK_SYSTEM_PROMPT,
     build_answer_prompt,
@@ -44,6 +49,10 @@ _SMALL_TALK_FALLBACK = "Hi! I'm Obi — ask me anything about the documentation 
 _IMAGE_ANALYSIS_MAX_TOKENS = 500
 _IMAGE_ANALYSIS_FALLBACK = "I couldn't look at that image right now — feel free to try again."
 _AMBIGUITY_CLASSIFIER_MAX_TOKENS = 10  # a single word (AMBIGUOUS/SPECIFIC), never a full reply
+_CLARIFICATION_MAX_TOKENS = 200  # one short question + up to 4 short options, never a full answer
+_CLARIFICATION_FALLBACK = ClarificationReply(
+    question="Could you tell me a bit more about what you're looking for?", options=[]
+)
 
 
 @runtime_checkable
@@ -68,6 +77,13 @@ class AnswerGenerator(Protocol):
         """Return an ungrounded description/answer for the images on a turn (PLAN 7.3, ADR-0009
         decision 4) — a second, independent call, structurally parallel to ``generate_small_talk``.
         Never passed through ``enforce_citations``; its output carries no citation marker."""
+        ...
+
+    def generate_clarification(self, query: str) -> ClarificationReply:
+        """Return a clarifying question + 2-4 options for a query `domain/clarification.py`'s
+        classifier judged ambiguous (PLAN 9.3, ADR-0008 decision 3). Always returns a value, never
+        raises — fails open to a static fallback on any generation or parsing failure, the same
+        shape as ``generate_small_talk``."""
         ...
 
 
@@ -104,10 +120,11 @@ class AnthropicQueryRewriter:
 class AnthropicAnswerGenerator:
     """Grounded generation call (``answer_model``). ``generate`` errors propagate — unlike rewrite,
     there is no safe fallback *grounded* answer to fail open to; the caller (Phase 4.4's endpoint)
-    decides how a generation failure surfaces to the user. ``generate_small_talk`` and
-    ``generate_image_analysis`` (PLAN 7.3) are both different: neither makes a factual, grounded
-    claim, so both carry no accuracy risk and fail open on any `AnthropicError` — the same
-    reasoning `AnthropicQueryRewriter.rewrite` uses, applied to a reply instead of a rewrite."""
+    decides how a generation failure surfaces to the user. ``generate_small_talk``,
+    ``generate_image_analysis`` (PLAN 7.3), and ``generate_clarification`` (PLAN 9.3) are all
+    different: none makes a factual, grounded claim, so all three carry no accuracy risk and fail
+    open on any `AnthropicError` — the same reasoning `AnthropicQueryRewriter.rewrite` uses, applied
+    to a reply instead of a rewrite."""
 
     def __init__(self, client: AnthropicMessagesClient, model: str) -> None:
         self._client = client
@@ -152,6 +169,32 @@ class AnthropicAnswerGenerator:
             log.warning("image_analysis_generation_failed_using_fallback")
             return _IMAGE_ANALYSIS_FALLBACK
         return out.strip() or _IMAGE_ANALYSIS_FALLBACK
+
+    def generate_clarification(self, query: str) -> ClarificationReply:
+        """No evidence block, no citation instruction — structurally parallel to
+        ``generate_small_talk``/``generate_image_analysis``. Unlike the ambiguity classifier's
+        single-word output, this reply is shown directly to the end user, so
+        `CLARIFICATION_SYSTEM_PROMPT` carries the same defensive instruction against treating
+        query-embedded text as an instruction (mirroring `IMAGE_ANALYSIS_SYSTEM_PROMPT`'s
+        precedent) — the required live-model adversarial pass for this new path is PLAN 9.8, not
+        this sub-step. Fails open to a static fallback on either an `AnthropicError` or an
+        unparseable reply (`parse_clarification_reply` returning ``None``) — never surfaces a
+        broken or partial question."""
+        try:
+            out = self._client.create_message(
+                model=self._model,
+                user_text=redact_pii(query),
+                system_blocks=[cached_system_block(CLARIFICATION_SYSTEM_PROMPT)],
+                max_tokens=_CLARIFICATION_MAX_TOKENS,
+            )
+        except AnthropicError:
+            log.warning("clarification_generation_failed_using_fallback")
+            return _CLARIFICATION_FALLBACK
+        parsed = parse_clarification_reply(out)
+        if parsed is None:
+            log.warning("clarification_generation_unparseable_using_fallback")
+            return _CLARIFICATION_FALLBACK
+        return parsed
 
 
 class AnthropicAmbiguityClassifier:

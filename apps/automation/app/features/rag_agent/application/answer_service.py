@@ -24,18 +24,23 @@ refuse) and adds a second, independent `generate_image_analysis` call whose outp
 enforcement. **Disclosed gap, not decided by ADR-0009:** a turn classified as small-talk still
 short-circuits before this logic even runs, so a greeting with an attached image ("hi" + a
 screenshot) gets the small-talk reply and the image is silently dropped — `is_small_talk` only
-ever looks at message text. Revisit if this is raised as a real product gap.
+ever looks at message text. **Same gap, same reason, for the clarification branch below (PLAN 9.3):
+its bypass also returns before image analysis runs, so an ambiguous query with an attached image
+gets a clarifying question and the image is silently dropped.** Revisit either if raised as a real
+product gap.
 
-Ambiguity classification (PLAN 9.2, ADR-0008): checked right after small-talk, before
-rewrite/retrieval — a message that is an exact small-talk match (e.g. "hi") is checked first and
-never reaches this branch, which is this repo's explicit tie-break for the "hi, what's the approval
-process?" case ADR-0008 flagged as needing one: `is_small_talk` requires the *whole* message to
-match, so a real question glued onto a greeting still runs the clarification check normally.
-**PLAN 9.2's own scope is the classifier only** — when `enable_clarification_branch` is on, the
-decision is computed and logged for tuning against `evaluation/datasets/ambiguity.json`, but it
-does not change `Answer` or skip any pipeline stage; the actual bypass + clarifying-question
-generation is PLAN 9.3. When the flag is off (the default), `decide_clarification` is never called
-at all — zero added cost or behavior change.
+Ambiguity classification + clarification (PLAN 9.2/9.3, ADR-0008): checked right after small-talk,
+before rewrite/retrieval — a message that is an exact small-talk match (e.g. "hi") is checked first
+and never reaches this branch, which is this repo's explicit tie-break for the "hi, what's the
+approval process?" case ADR-0008 flagged as needing one: `is_small_talk` requires the *whole*
+message to match, so a real question glued onto a greeting still runs the clarification check
+normally. When `enable_clarification_branch` is on and the classifier verdict is `is_ambiguous`,
+this bypasses rewrite/retrieval/CRAG/refusal and returns a clarifying question (PLAN 9.3,
+`generate_clarification`) instead — same shape as small-talk: no `query_trace` row, `refused`
+stays False (`needs_clarification=True` is a still-open turn, not a refusal, per ADR-0008 decision
+4). A non-ambiguous verdict is only logged (`clarification_decision`) and changes nothing — the
+pipeline below runs exactly as it would with the branch disabled. When the flag is off (the
+default), `decide_clarification` is never called at all — zero added cost or behavior change.
 """
 
 from __future__ import annotations
@@ -113,9 +118,20 @@ class AnswerService:
                 is_ambiguous=decision.is_ambiguous,
                 reason=decision.reason,
             )
-            # PLAN 9.2 scope ends here: observe and tune the classifier only. PLAN 9.3 adds the
-            # actual bypass + clarifying-question generation once `is_ambiguous` verdicts are
-            # trusted — until then, the pipeline below always runs regardless of `decision`.
+            if decision.is_ambiguous:
+                # PLAN 9.3: bypass rewrite/retrieval/CRAG/refusal, same shape as small-talk above —
+                # writes no `query_trace` row (ADR-0008 decision 1), and an image on this turn is
+                # silently dropped (see module docstring's disclosed gap, extended from small-talk).
+                reply = self._generator.generate_clarification(original_query)
+                return Answer(
+                    text=reply.question,
+                    citations=[],
+                    refused=False,
+                    trace_id=None,
+                    needs_clarification=True,
+                    clarification_question=reply.question,
+                    clarification_options=reply.options,
+                )
 
         if original_query.strip():
             rewritten = self._rewriter.rewrite(history) if self._rewrite_enabled else original_query

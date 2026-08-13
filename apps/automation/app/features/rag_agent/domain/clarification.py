@@ -1,4 +1,5 @@
-"""Ambiguity/vagueness detection (PLAN 9.2, ADR-0008 decision 1).
+"""Ambiguity/vagueness detection (PLAN 9.2, ADR-0008 decision 1) + clarifying-reply parsing
+(PLAN 9.3, ADR-0008 decision 3).
 
 Structurally mirrors `domain/small_talk.py`'s shape — a pre-pipeline classifier `AnswerService`
 consults before rewrite/retrieval — but cannot be a closed exact-match set: whether a question is
@@ -14,9 +15,10 @@ This module cannot see retrieved evidence (it runs before retrieval), so "ambigu
 "underspecified on its own terms," not "the corpus has multiple matches" — confirming the latter
 would require running retrieval first, defeating the point of a pre-retrieval short-circuit.
 
-Deliberately produces only a yes/no verdict, never clarification text or options — generating the
-actual clarifying question and its 2-4 concrete options is PLAN 9.3's job, once a verdict says
-`is_ambiguous=True`.
+`decide_clarification` deliberately produces only a yes/no verdict, never clarification text or
+options — `parse_clarification_reply` below is the separate, pure piece PLAN 9.3 adds once a verdict
+says `is_ambiguous=True`: parsing the actual clarifying question and its 2-4 concrete options out of
+`AnthropicAnswerGenerator.generate_clarification`'s raw reply (`infrastructure/llm_client.py`).
 
 `history` is accepted to match the signature ADR-0008 decision 1 locked, but neither the heuristic
 nor the classifier call consults it yet — both judge the latest query's text alone. A follow-up
@@ -48,6 +50,44 @@ class ClarificationDecision:
 
     is_ambiguous: bool
     reason: str
+
+
+@dataclass(frozen=True)
+class ClarificationReply:
+    """A clarifying question plus 2-4 concrete options (PLAN 9.3, ADR-0008 decision 3) — the
+    user-facing payload `AnswerService` puts on `Answer` once `ClarificationDecision.is_ambiguous`
+    is True. ``options`` may be empty (e.g. the fail-open fallback) — the question alone is still
+    a valid, if less helpful, clarifying reply."""
+
+    question: str
+    options: list[str]
+
+
+_QUESTION_PREFIX = "question:"
+_OPTION_PREFIX = "-"
+
+
+def parse_clarification_reply(raw: str) -> ClarificationReply | None:
+    """Parse the ``CLARIFICATION_SYSTEM_PROMPT``-mandated ``Question: ...\\nOptions:\\n- ...``
+    shape. Returns ``None`` on any unparseable reply (no ``Question:`` line found) rather than
+    guessing at a partial question — the caller
+    (``AnthropicAnswerGenerator.generate_clarification``) fails open to a static fallback on
+    ``None``, the same reasoning `AnthropicQueryRewriter.rewrite` applies to a rewrite failure,
+    applied here to a malformed generation instead of a transport error.
+    """
+    question: str | None = None
+    options: list[str] = []
+    for line in raw.strip().splitlines():
+        stripped = line.strip()
+        if stripped.lower().startswith(_QUESTION_PREFIX):
+            question = stripped[len(_QUESTION_PREFIX) :].strip()
+        elif stripped.startswith(_OPTION_PREFIX):
+            option = stripped[len(_OPTION_PREFIX) :].strip()
+            if option:
+                options.append(option)
+    if not question:
+        return None
+    return ClarificationReply(question=question, options=options)
 
 
 @runtime_checkable

@@ -17,6 +17,7 @@ from app.features.rag_agent.application.answer_service import (
     _REFUSAL_TEXT,
     AnswerService,
 )
+from app.features.rag_agent.domain.clarification import ClarificationReply
 from app.features.rag_agent.schemas import ChatMessage, ImageAttachment
 from app.features.retrieval import RetrievalResult, RetrievedHit
 
@@ -61,13 +62,18 @@ class _FakeGenerator:
         text: str,
         small_talk_text: str = "Hi there!",
         image_analysis_text: str = "I see a cat.",
+        clarification_reply: ClarificationReply | None = None,
     ) -> None:
         self._text = text
         self._small_talk_text = small_talk_text
         self._image_analysis_text = image_analysis_text
+        self._clarification_reply = clarification_reply or ClarificationReply(
+            question="Which system do you mean?", options=["Muse", "Toast"]
+        )
         self.called_with: list[tuple[str, str]] = []
         self.small_talk_called_with: list[str] = []
         self.image_analysis_called_with: list[tuple[str, tuple]] = []
+        self.clarification_called_with: list[str] = []
 
     def generate(self, query: str, evidence_block: str) -> str:
         self.called_with.append((query, evidence_block))
@@ -80,6 +86,10 @@ class _FakeGenerator:
     def generate_image_analysis(self, query: str, images) -> str:
         self.image_analysis_called_with.append((query, tuple(images)))
         return self._image_analysis_text
+
+    def generate_clarification(self, query: str) -> ClarificationReply:
+        self.clarification_called_with.append(query)
+        return self._clarification_reply
 
 
 class _FakeClassifier:
@@ -108,6 +118,9 @@ class _RaisingGenerator:
         raise AssertionError(
             "generate_image_analysis must not be called when the turn has no image"
         )
+
+    def generate_clarification(self, query: str) -> ClarificationReply:
+        raise AssertionError("generate_clarification must not be called for a non-ambiguous query")
 
 
 class _FakeTraceRow:
@@ -507,15 +520,15 @@ def test_clarification_branch_disabled_by_default_never_calls_the_classifier() -
     assert not result.refused
 
 
-def test_clarification_branch_enabled_calls_the_classifier_but_never_changes_the_answer() -> None:
-    """PLAN 9.2's own scope: the classifier runs (for logging/tuning) when the flag is on, but the
-    pipeline result is byte-for-byte what it would have been without the branch at all — the
-    actual bypass + clarifying-question generation is PLAN 9.3, not built yet."""
+def test_clarification_branch_with_non_ambiguous_verdict_runs_the_full_pipeline_unchanged() -> None:
+    """A non-ambiguous verdict only logs (PLAN 9.2's `clarification_decision`) and changes nothing
+    — the pipeline result is byte-for-byte what it would have been without the branch at all, and
+    `generate_clarification` is never called."""
     retriever = _FakeRetriever(
         {"rewritten q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, parent_texts={501: "text"}
     )
     generator = _FakeGenerator("Answer [1].")
-    classifier = _FakeClassifier(verdict=True)
+    classifier = _FakeClassifier(verdict=False)
     service, _ = _service(
         retriever,
         _FakeRewriter("rewritten q"),
@@ -528,8 +541,60 @@ def test_clarification_branch_enabled_calls_the_classifier_but_never_changes_the
 
     assert classifier.called_with == ["what are the limits?"]
     assert not result.refused
+    assert not result.needs_clarification
     assert result.text == "Answer [1]."
     assert retriever.retrieve_calls == [("rewritten q", None, 5)]  # pipeline ran exactly as usual
+    assert generator.clarification_called_with == []
+
+
+def test_clarification_branch_enabled_with_ambiguous_verdict_bypasses_the_pipeline() -> None:
+    """PLAN 9.3: an ambiguous verdict bypasses rewrite/retrieval/CRAG/refusal entirely and returns
+    a clarifying question — the raising rewriter/retriever prove the bypass happens before either
+    stage, mirroring the small-talk short-circuit's own test shape."""
+    retriever = _FakeRetriever({}, {})  # any retrieve_with_context call -> KeyError
+    reply = ClarificationReply(question="Which system do you mean?", options=["Muse", "Toast"])
+    generator = _FakeGenerator("unused", clarification_reply=reply)
+    classifier = _FakeClassifier(verdict=True)
+    service, _ = _service(
+        retriever,
+        _RaisingRewriter(),
+        generator,
+        clarification_classifier=classifier,
+        enable_clarification_branch=True,
+    )
+
+    result = service.answer([ChatMessage(role="user", content="what are the limits?")], scope=None)
+
+    assert classifier.called_with == ["what are the limits?"]
+    assert generator.clarification_called_with == ["what are the limits?"]
+    assert generator.called_with == []  # the grounded `generate` never ran
+    assert not result.refused
+    assert result.needs_clarification
+    assert result.text == "Which system do you mean?"
+    assert result.clarification_question == "Which system do you mean?"
+    assert result.clarification_options == ["Muse", "Toast"]
+    assert result.citations == []
+    assert result.trace_id is None
+
+
+def test_clarification_branch_ambiguous_verdict_writes_no_query_trace_row() -> None:
+    retriever = _FakeRetriever({}, {})
+    generator = _FakeGenerator("unused")
+    classifier = _FakeClassifier(verdict=True)
+    row = _FakeTraceRow()
+    service, session = _service(
+        retriever,
+        _RaisingRewriter(),
+        generator,
+        row=row,
+        clarification_classifier=classifier,
+        enable_clarification_branch=True,
+    )
+
+    service.answer([ChatMessage(role="user", content="what are the limits?")], scope=None)
+
+    assert session is not None and not session.committed  # _persist never ran (trace_id is None)
+    assert row.answer is None
 
 
 def test_clarification_branch_enabled_with_no_classifier_configured_is_a_no_op() -> None:

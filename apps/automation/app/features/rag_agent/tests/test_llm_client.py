@@ -195,3 +195,58 @@ def test_classify_fails_open_to_not_ambiguous_on_error() -> None:
     classifier = AnthropicAmbiguityClassifier(client, "routing-model")
 
     assert classifier.classify("what are the limits?") is False
+
+
+def test_generate_clarification_redacts_pii_and_sends_the_clarification_system_prompt() -> None:
+    seen: list[dict] = []
+    reply_text = "Question: Which limits?\nOptions:\n- Expense limits\n- Approval thresholds"
+    generator = AnthropicAnswerGenerator(_client_replying(reply_text, seen), "answer-model")
+
+    reply = generator.generate_clarification("what are the limits for alice@example.com?")
+
+    body = seen[0]
+    sent_text = body["messages"][0]["content"][0]["text"]
+    assert "alice@example.com" not in sent_text
+    assert "[REDACTED_EMAIL]" in sent_text
+    assert body["model"] == "answer-model"
+    assert body["system"][0]["cache_control"] == {"type": "ephemeral"}
+    assert reply.question == "Which limits?"
+    assert reply.options == ["Expense limits", "Approval thresholds"]
+
+
+def test_generate_clarification_never_sends_an_evidence_block_or_citation_instruction() -> None:
+    seen: list[dict] = []
+    generator = AnthropicAnswerGenerator(
+        _client_replying("Question: Which system?\nOptions:\n- A\n- B", seen), "answer-model"
+    )
+    generator.generate_clarification("what are the limits?")
+
+    sent_text = seen[0]["messages"][0]["content"][0]["text"]
+    assert sent_text == "what are the limits?"
+    assert "Evidence:" not in sent_text
+
+
+def test_generate_clarification_fails_open_to_a_static_fallback_on_error() -> None:
+    client = AnthropicMessagesClient(
+        api_key="k",
+        client=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(500, json={}))),
+        max_retries=1,
+    )
+    generator = AnthropicAnswerGenerator(client, "answer-model")
+
+    reply = generator.generate_clarification("what are the limits?")
+
+    assert reply.question
+    assert reply.options == []
+
+
+def test_generate_clarification_fails_open_to_a_static_fallback_on_an_unparseable_reply() -> None:
+    seen: list[dict] = []
+    generator = AnthropicAnswerGenerator(
+        _client_replying("I'm not sure what you mean.", seen), "answer-model"
+    )
+
+    reply = generator.generate_clarification("what are the limits?")
+
+    assert reply.question
+    assert reply.options == []

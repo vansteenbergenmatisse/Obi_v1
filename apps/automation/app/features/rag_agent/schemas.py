@@ -83,3 +83,27 @@ class Answer(BaseModel):
             "as its own labeled block (decision 5)."
         ),
     )
+    needs_clarification: bool = Field(
+        default=False,
+        description=(
+            "True when the query was judged too vague to search well (PLAN 9.3, ADR-0008 "
+            "decision 3) and the pipeline bypassed rewrite/retrieval/refusal to ask a clarifying "
+            "question instead. A still-open conversation turn, not a refusal — `refused` stays "
+            "False on this path."
+        ),
+    )
+    clarification_question: str | None = Field(
+        default=None,
+        description=(
+            "The clarifying question, identical to `text` on this path (ADR-0008 decision 3) — "
+            "present as its own field so a client can distinguish a clarification turn without "
+            "string-matching `text`."
+        ),
+    )
+    clarification_options: list[str] | None = Field(
+        default=None,
+        description=(
+            "2-4 concrete options the clarifying question offers, for a client to render as "
+            "quick-reply chips (PLAN 9.5). Absent/null when the turn is not a clarification turn."
+        ),
+    )

@@ -1,9 +1,13 @@
 """`decide_clarification`: heuristic-first, LLM-fallback-only-when-inconclusive — pure logic
-against a fake classifier, no network."""
+against a fake classifier, no network. Also `parse_clarification_reply` (PLAN 9.3): pure parsing
+of the clarifying-question generation call's raw text, no network."""
 
 from __future__ import annotations
 
-from app.features.rag_agent.domain.clarification import decide_clarification
+from app.features.rag_agent.domain.clarification import (
+    decide_clarification,
+    parse_clarification_reply,
+)
 from app.features.rag_agent.schemas import ChatMessage
 
 
@@ -72,3 +76,46 @@ def test_history_is_accepted_but_not_required_to_be_non_empty() -> None:
     decision = decide_clarification("what are the limits?", history, classifier)
 
     assert decision.is_ambiguous is True
+
+
+def test_parse_clarification_reply_extracts_question_and_options() -> None:
+    raw = "Question: Which limits do you mean?\nOptions:\n- Expense limits\n- Approval thresholds"
+
+    reply = parse_clarification_reply(raw)
+
+    assert reply is not None
+    assert reply.question == "Which limits do you mean?"
+    assert reply.options == ["Expense limits", "Approval thresholds"]
+
+
+def test_parse_clarification_reply_accepts_question_only_with_no_options() -> None:
+    reply = parse_clarification_reply("Question: What are you asking about?")
+
+    assert reply is not None
+    assert reply.question == "What are you asking about?"
+    assert reply.options == []
+
+
+def test_parse_clarification_reply_is_case_insensitive_on_the_question_prefix() -> None:
+    reply = parse_clarification_reply("QUESTION: What do you mean?\nOptions:\n- A\n- B")
+
+    assert reply is not None
+    assert reply.question == "What do you mean?"
+
+
+def test_parse_clarification_reply_returns_none_when_no_question_line_is_found() -> None:
+    assert parse_clarification_reply("I'm not sure what you mean.") is None
+
+
+def test_parse_clarification_reply_returns_none_on_empty_text() -> None:
+    assert parse_clarification_reply("") is None
+
+
+def test_parse_clarification_reply_ignores_blank_and_stray_lines() -> None:
+    raw = "\n\nQuestion: Which system?\n\nOptions:\n\n- Muse\n\n- Toast\n\n"
+
+    reply = parse_clarification_reply(raw)
+
+    assert reply is not None
+    assert reply.question == "Which system?"
+    assert reply.options == ["Muse", "Toast"]
