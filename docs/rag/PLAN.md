@@ -3317,8 +3317,10 @@ turning that design into code, not started:
    net +1 [2 new bypass/no-trace-row tests, 1 rewritten in place for the new bypass behavior, 0 net
    from the rename]), `make boundaries` clean, ruff/pyright confirmed back at the 2/15/34 baseline
    after the pyright regression above. Web: `pnpm --filter web test` → **125/125 passed** (unchanged
-   — no web code touched), `pnpm --filter web exec tsc --noEmit` clean. Committed pending — see this
-   ledger's own entry below once actually committed.
+   — no web code touched), `pnpm --filter web exec tsc --noEmit` clean. Committed `d20257c`
+   (2026-08-13) — the unrelated stray `docs/future-ideas/IDEAS.md` "Baze" edit found sitting in the
+   working tree at commit time was deliberately excluded (unrelated to this sub-step, left
+   uncommitted for the user to handle separately).
 4. **9.4 — Differentiated refusal messaging.** Distinct, honest copy per refusal reason from 9.1's
    taxonomy (today all three render the identical `_REFUSAL_TEXT`). Copy routed through
    `copywriting-rules`/`anti-ai-writing`, not hand-written inline.
