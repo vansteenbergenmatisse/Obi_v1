@@ -24,10 +24,9 @@ before shipping it (used the existing `accent-hover` token instead of `accent`),
 verified via `chrome-devtools` MCP (not `claude-in-chrome` — its `javascript_tool` runs in an
 isolated JS world and could not patch the page's real `fetch`). **Verified:** `pnpm --filter web
 test` → 132 passed (was 125, +7), `tsc --noEmit` clean, `pnpm --filter web build` clean. Backend
-untouched — no security review applicable. Not yet committed — ask before committing, per this
-repo's own convention. The pre-existing, unrelated stray `docs/future-ideas/IDEAS.md` "Baze" edit
-found sitting in the working tree is still there, still deliberately excluded, still left for the
-user.
+untouched — no security review applicable. Committed `f9ed445` (2026-08-13), user confirmed via
+`AskUserQuestion` first. The pre-existing, unrelated stray `docs/future-ideas/IDEAS.md` "Baze" edit
+found sitting in the working tree was left out of that commit, still there, still left for the user.
 
 **Same session, immediately after: 9.4 (differentiated refusal messaging) done — see Phase 9's own
 9.4 entry for the full narrative.** User asked to read the plan for the next Phase 9 task; 9.3's
@@ -3451,8 +3450,9 @@ turning that design into code, not started:
      deliberate, already-documented departure (a "light, Stripe-esque theme with an indigo accent")
      from the Omniboost marketing brand, predating this sub-step (PLAN 4.7) — reused as-is, not
      "corrected" to the marketing palette, per `fe:omniboost-brand`'s own "preserve the existing
-     project unless the task is explicitly to correct the brand system" rule. Not yet committed —
-     ask before committing, per this repo's own convention.
+     project unless the task is explicitly to correct the brand system" rule. Committed `f9ed445`
+     (2026-08-13) — asked the user first via `AskUserQuestion`, per this repo's own convention; the
+     pre-existing, unrelated stray `docs/future-ideas/IDEAS.md` "Baze" edit was again left out.
 6. **9.6 — Human hand-off stub.** See "Confirmed scope decisions" above.
 7. **9.7 — Fallback-quality evaluation.** A `fallback_rate` metric and a lightweight faithfulness/
    hallucination-rate signal in `evaluation/metrics/`; extend `ambiguity.json` to assert actual
