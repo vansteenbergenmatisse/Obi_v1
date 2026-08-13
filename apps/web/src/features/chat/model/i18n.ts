@@ -33,6 +33,11 @@ export interface WidgetCopy {
   /** Status-pill label for a `clarifying` turn (PLAN 9.5) — distinct from the refusal banner:
    * an open next step, not a failure. */
   clarifyingLabel: string;
+  /** Human hand-off CTA lead-in shown under a `refused` turn (PLAN 9.6, ADR-0008 decision 6) —
+   * the email address itself renders separately as a `mailto:` link, not interpolated into this
+   * string, so word order stays natural per locale. Stub only: `test@gmail.com` is a placeholder
+   * address, not a real support channel — see `docs/future-ideas/IDEAS.md` #1. */
+  handoffCta: string;
   placeholder: string;
   footer: string;
   /** Persistent composer disclosure shown while an image is staged to send — discloses the C6
@@ -61,6 +66,7 @@ const COPY: Record<Locale, WidgetCopy> = {
       "How specific should my question be?",
     ],
     clarifyingLabel: "Need one more detail before I search",
+    handoffCta: "Email us and a real person will help.",
     placeholder: "Ask about your Confluence workspace…",
     footer: "AI may make mistakes. Verify important information.",
     imageDisclosure: "We don't check images for personal info. Skip sensitive screenshots.",
@@ -84,6 +90,7 @@ const COPY: Record<Locale, WidgetCopy> = {
       "Hoe specifiek moet mijn vraag zijn?",
     ],
     clarifyingLabel: "Ik heb nog één detail nodig voordat ik zoek",
+    handoffCta: "Mail ons en een echt persoon helpt je verder.",
     placeholder: "Stel een vraag over je Confluence-werkruimte…",
     footer: "AI kan fouten maken. Controleer belangrijke informatie.",
     imageDisclosure: "We checken afbeeldingen niet op persoonlijke info. Vermijd gevoelige screenshots.",
@@ -107,6 +114,7 @@ const COPY: Record<Locale, WidgetCopy> = {
       "Wie genau sollte meine Frage sein?",
     ],
     clarifyingLabel: "Ich brauche noch ein Detail, bevor ich suche",
+    handoffCta: "Schreib uns eine E-Mail, und ein echter Mensch hilft dir weiter.",
     placeholder: "Stelle eine Frage zu deinem Confluence-Arbeitsbereich…",
     footer: "KI kann Fehler machen. Überprüfe wichtige Informationen.",
     imageDisclosure: "Wir prüfen Bilder nicht auf persönliche Daten. Vermeide sensible Screenshots.",
@@ -130,6 +138,7 @@ const COPY: Record<Locale, WidgetCopy> = {
       "À quel point dois-je être précis dans ma question ?",
     ],
     clarifyingLabel: "J’ai besoin d’un détail avant de chercher",
+    handoffCta: "Envoyez-nous un e-mail, une vraie personne vous aidera.",
     placeholder: "Posez une question sur votre espace Confluence…",
     footer: "L’IA peut faire des erreurs. Vérifiez les informations importantes.",
     imageDisclosure: "Nous ne vérifions pas les infos personnelles dans les images. Évitez les captures sensibles.",
@@ -153,6 +162,7 @@ const COPY: Record<Locale, WidgetCopy> = {
       "¿Qué tan específica debe ser mi pregunta?",
     ],
     clarifyingLabel: "Necesito un detalle más antes de buscar",
+    handoffCta: "Envíanos un correo y una persona real te ayudará.",
     placeholder: "Haz una pregunta sobre tu espacio de Confluence…",
     footer: "La IA puede cometer errores. Verifica la información importante.",
     imageDisclosure: "No revisamos las imágenes en busca de información personal. Evita capturas sensibles.",
@@ -176,6 +186,7 @@ const COPY: Record<Locale, WidgetCopy> = {
       "Quanto specifica deve essere la mia domanda?",
     ],
     clarifyingLabel: "Mi serve un altro dettaglio prima di cercare",
+    handoffCta: "Scrivici una email e una persona reale ti aiuterà.",
     placeholder: "Fai una domanda sul tuo spazio Confluence…",
     footer: "L’IA può commettere errori. Verifica le informazioni importanti.",
     imageDisclosure: "Non controlliamo le immagini per dati personali. Evita screenshot sensibili.",

@@ -14,6 +14,30 @@
 security (HTTP/LLM controls), real tests, acceptance actually met — and if it falls short, add the
 fix here as the next task; update this ledger after each phase.
 
+**New session (2026-08-13): 9.6 (human hand-off stub) done — see Phase 9's own 9.6 entry for the
+full narrative.** User asked to read the plan and continue; ran the pre-phase verification gate
+live first (`make check` 354 passed, `make boundaries` clean, ruff/pyright 2/15/34, all matched the
+ledger) before starting. Added the `human_handoff` structured log line to both refusal branches in
+`answer_service.py` and a `mailto:` "connect me to a human" CTA (`HandoffCta`) to `message-bubble.tsx`,
+per ADR-0008 decision 6 exactly — a logged event plus static contact copy, no real integration.
+Asked the user what the CTA's actual contact target should be rather than inventing one; the answer
+was `test@gmail.com` as an explicit placeholder, recorded as an open decision in
+`docs/future-ideas/IDEAS.md` #1. Found and fixed a real, order-dependent test flake along the way:
+`structlog.testing.capture_logs()` passed in isolation but failed under the full suite, because
+`main.create_app`'s `configure_logging()` call sets `cache_logger_on_first_use=True`, permanently
+caching this module's logger once any earlier full-app test fires it for real — fixed by
+monkeypatching a fake `log` collaborator instead, matching this test file's existing convention.
+**Verified:** backend `make check` → 357 passed (was 354, +3), `make boundaries` clean, ruff/pyright
+back at 2/15/34 after one `ruff format` pass on the new test code; web `pnpm --filter web test` →
+133 passed (was 132, +1 net), `tsc --noEmit` clean, `pnpm --filter web build` clean. Live-browser-
+verified via `chrome-devtools` MCP (started the dev server for this check, patched `fetch` to a
+canned `refused` `done` event, confirmed the banner + CTA + working `mailto:` link + feedback
+thumbs all render correctly, then stopped the dev server). **Not yet committed** — ask before
+committing, per this repo's own convention; the same pre-existing, unrelated stray
+`docs/future-ideas/IDEAS.md` "Baze" edit is still sitting in the working tree, still left for the
+user, and this sub-step's own `docs/future-ideas/IDEAS.md` addition was made alongside it without
+touching that unrelated content.
+
 **Same session, immediately after: 9.5 (Obi widget fallback UX) done — see Phase 9's own 9.5 entry
 for the full narrative.** User asked to read the plan and finish Phase 9; ran the pre-phase
 verification gate live first (`make check` 354 passed, `make boundaries` clean, ruff/pyright
@@ -219,10 +243,10 @@ per this repo's own no-auto-start rule. No code changed this pass — docs only 
 **Phase 5.1 (`CHAT_API_KEY` rotation), 5.2 (exact-match answer caching), and 5.3 (prompt-injection +
 permission/isolation red-team) are done.**
 
-**Phase 9 progress (2026-08-13): 9.1, 9.2, and 9.3 are done — not yet committed.** Next up is
-**9.4 (differentiated refusal messaging)**, per this phase's own numbered sub-step order — do not
-start it without an explicit go-ahead, same as every other phase. See §0's newest entry above and
-Phase 9's own section below for the full 9.3 narrative.
+**Phase 9 progress (2026-08-13): 9.1-9.6 are done — 9.6 not yet committed** (9.1-9.5 already are,
+see recent commit log). Next up is **9.7 (fallback-quality evaluation)**, per this phase's own
+numbered sub-step order — do not start it without an explicit go-ahead, same as every other phase.
+See §0's newest entry above and Phase 9's own section below for the full 9.6 narrative.
 
 **✅ Phase 4.6 is COMPLETE (2026-08-11) — all 16 sub-steps done, exit gate 4.6.16 green.** An
 independent same-day audit (`docs/rag/fixes/`, six agents, 2026-08-10) had found real unresolved
@@ -3191,7 +3215,7 @@ shared risk with either.
 
 ---
 
-## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ⬜ todo *(9.1/9.2/9.3/9.4/9.5 done; 9.6-9.9 remain — see Sequencing)*
+## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ⬜ todo *(9.1-9.6 done; 9.7-9.9 remain — see Sequencing)*
 
 **Scoped 2026-08-11; 9.1 (design doc + ADR-0008) done the same day — nothing else started.** User
 supplied an external best-practices brief on handling
@@ -3453,7 +3477,68 @@ turning that design into code, not started:
      project unless the task is explicitly to correct the brand system" rule. Committed `f9ed445`
      (2026-08-13) — asked the user first via `AskUserQuestion`, per this repo's own convention; the
      pre-existing, unrelated stray `docs/future-ideas/IDEAS.md` "Baze" edit was again left out.
-6. **9.6 — Human hand-off stub.** See "Confirmed scope decisions" above.
+6. **9.6 — Human hand-off stub ✅ done (2026-08-13).** Two additive pieces, exactly per ADR-0008
+   decision 6 and the "Confirmed scope decisions" note above — no webhook, ticket, or email
+   integration; a logged event plus a static CTA. **Pre-phase verification gate run first**
+   (`CLAUDE.local.md` §2): re-ran `make check` (354 passed, matched), `make boundaries` clean,
+   ruff/pyright at the 2/15/34 baseline (matched) before touching any code.
+   - **Backend: `human_handoff` structured log.** `answer_service.py`'s two refusal branches
+     (`decide_refusal` and the citation-enforcement degrade) each gained one additional
+     `log.info("human_handoff", trace_id=..., raw_query=..., refusal_reason=...)` call, right after
+     the existing diagnostic `"refusal"` log. `raw_query` is deliberately `original_query` (the
+     user's verbatim text), not `rewritten` — a human triaging this queue needs what was actually
+     asked, proven by a test where the two differ. `created_at` needed no explicit field —
+     `configure_logging`'s `TimeStamper` processor already stamps every log line. This is the
+     entire hand-off mechanism this phase; the widget CTA below is presentation only.
+   - **Frontend: mailto CTA.** `message-bubble.tsx`'s `refused` block gained `HandoffCta` — a
+     `mailto:` link, styled as plain muted text under the existing danger banner, using a new
+     `copy.handoffCta` lead-in sentence (drafted via `copywriting-rules` → `ux-writing` →
+     `anti-ai-writing`, all six locales) plus the address rendered as its own link so word order
+     stays natural per locale.
+   - **The CTA address was a real open question, not this agent's call — asked, not assumed.**
+     Inventing a real support email or Salesforce case-creation link would have been fabricating
+     business contact information. Asked the user directly; the answer was to use `test@gmail.com`
+     as an explicit placeholder for now and record it as an open decision in
+     `docs/future-ideas/IDEAS.md` #1, alongside the already-noted eventual Salesforce integration —
+     both are "where does a refused query actually go" decisions for a future revisit, not decided
+     here.
+   - **A real, order-dependent test flake found and fixed, not just avoided:** the first draft of
+     the backend test used `structlog.testing.capture_logs()`, which passed in isolation but failed
+     under the full `make check` run. Root cause (not guessed — traced to `main.py`): `create_app`
+     calls `configure_logging(...)`, which sets `cache_logger_on_first_use=True`; once any earlier
+     test in the same session (e.g. `confluence_sync`'s end-to-end suite, which runs first
+     alphabetically) exercises the real FastAPI app and this module's logger fires once for real,
+     that logger's processor chain is cached permanently — `capture_logs()`'s later monkeypatch of
+     `structlog.configure` can no longer intercept it. Fixed by monkeypatching the module's `log`
+     object with a small fake collaborator instead (matching this test file's existing
+     fakes-over-mocks convention), which is order-independent by construction.
+   - **Security review (`securing-http-and-llm-endpoints`):** no new HTTP endpoint, no new LLM
+     call — this sub-step only adds a log line to an existing refusal path and a static UI element,
+     so the skill's own decision tree does not fire a new `security_baseline` block. Disclosed,
+     not silent: `raw_query` in the new log line is a deliberate exception to `router.py`'s own
+     `chat_request` C9_audit rule ("never the raw message") — justified because it mirrors the
+     pre-existing `query_trace.raw_query` DB column already keyed by the same `trace_id` (PLAN 3.5.4
+     onward), so this is a second place the same already-persisted text is *read* from, not a new
+     place it is *written*. `router.py`'s own `security_baseline` docstring and
+     `apps/automation/app/features/FEATURES.md` were both updated to record this exception rather
+     than leaving the "never the raw message" claim stale and now-inaccurate.
+   - **Verified:** backend `make check` → **357 passed** (was 354, +3: two `human_handoff`-emission
+     tests plus one control asserting a successful answer emits none), `make boundaries` clean,
+     ruff/pyright reconfirmed at the 2/15/34 baseline (the new test file needed one
+     `ruff format` pass after a line-length violation, fixed immediately, not left as a new
+     regression). Web: `pnpm --filter web test` → **133 passed** (was 132, +1 net — one existing
+     refusal-banner test extended into two: the original assertion plus a new CTA assertion, both
+     now wrapped in `ChatSessionProvider` since the CTA needs `useChatSession` for locale),
+     `pnpm --filter web exec tsc --noEmit` clean, `pnpm --filter web build` clean (no dev server was
+     live at the start of this sub-step). Live-browser-verified via `chrome-devtools` MCP: started
+     the dev server, patched `fetch` (CDP `evaluate_script`, real page world) to return a canned
+     `refused` `done` event, sent a real message through the widget, and confirmed the danger
+     banner, the "Email us and a real person will help." CTA line, and a working
+     `mailto:test@gmail.com` link all render together correctly alongside the pre-existing feedback
+     thumbs — then stopped the dev server (it was started only for this check, not left running).
+     Routed through `fe:foundations-router` → `fe:interface-design` (functional product UI, same
+     as 9.5) for the one new microcopy element; `copywriting-rules` → `ux-writing` →
+     `anti-ai-writing` for the CTA sentence itself.
 7. **9.7 — Fallback-quality evaluation.** A `fallback_rate` metric and a lightweight faithfulness/
    hallucination-rate signal in `evaluation/metrics/`; extend `ambiguity.json` to assert actual
    clarification-triggering (not just `expected_answer` text); add a genuinely out-of-corpus dataset

@@ -34,9 +34,22 @@ describe("MessageBubble", () => {
     expect(screen.getByTestId("typing-word")).toBeInTheDocument();
   });
 
-  it("shows the refusal banner for a refused turn", () => {
-    render(<MessageBubble message={assistantMessage({ status: "refused" })} />);
-    expect(screen.getByText(/routed to a human/i)).toBeInTheDocument();
+  describe("refusal + human hand-off (PLAN 9.6, ADR-0008 decision 6)", () => {
+    it("shows the refusal banner and a mailto hand-off CTA for a refused turn", () => {
+      render(
+        <ChatSessionProvider>
+          <MessageBubble message={assistantMessage({ status: "refused" })} />
+        </ChatSessionProvider>,
+      );
+      expect(screen.getByText(/routed to a human/i)).toBeInTheDocument();
+      const handoffLink = screen.getByRole("link", { name: "test@gmail.com" });
+      expect(handoffLink).toHaveAttribute("href", "mailto:test@gmail.com");
+    });
+
+    it("renders no hand-off CTA on a non-refused turn", () => {
+      render(<MessageBubble message={assistantMessage({ status: "complete" })} />);
+      expect(screen.queryByRole("link", { name: "test@gmail.com" })).not.toBeInTheDocument();
+    });
   });
 
   describe("clarification turns (PLAN 9.3/9.5)", () => {

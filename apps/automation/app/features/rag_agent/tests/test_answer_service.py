@@ -12,6 +12,7 @@ from typing import cast
 
 from sqlalchemy.orm import Session
 
+from app.features.rag_agent.application import answer_service as answer_service_module
 from app.features.rag_agent.application.answer_service import (
     _REFUSAL_COPY,
     AnswerService,
@@ -122,6 +123,20 @@ class _RaisingGenerator:
         raise AssertionError("generate_clarification must not be called for a non-ambiguous query")
 
 
+class _FakeLog:
+    """Records `log.info(event, **fields)` calls directly, bypassing structlog's global config —
+    `configure_logging` sets `cache_logger_on_first_use=True` (PLAN 9 module docstring), which
+    caches a real logger's processor chain the first time any test exercises the FastAPI app
+    (e.g. `confluence_sync`'s end-to-end tests), permanently defeating `structlog.testing.
+    capture_logs()` for the rest of the session. A monkeypatched fake is order-independent."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, dict]] = []
+
+    def info(self, event: str, **fields: object) -> None:
+        self.calls.append((event, fields))
+
+
 class _FakeTraceRow:
     def __init__(self) -> None:
         self.rewritten_query: str | None = None
@@ -221,6 +236,67 @@ def test_no_candidates_refuses_without_calling_generator() -> None:
     assert result.citations == []
     assert session is not None and session.committed
     assert row.answer == _REFUSAL_COPY["no_candidates"]
+
+
+def test_no_candidates_refusal_emits_human_handoff_log(monkeypatch) -> None:
+    """PLAN 9.6, ADR-0008 decision 6: every `refused=True` answer emits one `human_handoff`
+    structured log record (`trace_id`, `raw_query`, `refusal_reason`) — the stub hand-off's only
+    real effect this phase, alongside the widget's static CTA (PLAN 9.6 frontend piece)."""
+    fake_log = _FakeLog()
+    monkeypatch.setattr(answer_service_module, "log", fake_log)
+    retriever = _FakeRetriever({"q": RetrievalResult(hits=[], trace_id=3)}, parent_texts={})
+    service, _ = _service(retriever, _FakeRewriter("q"), _RaisingGenerator())
+
+    result = service.answer([ChatMessage(role="user", content="q")], scope=None)
+
+    assert result.refused
+    handoff = [fields for event, fields in fake_log.calls if event == "human_handoff"]
+    assert len(handoff) == 1
+    assert handoff[0]["trace_id"] == "3"
+    assert handoff[0]["raw_query"] == "q"
+    assert handoff[0]["refusal_reason"] == "no_candidates"
+
+
+def test_no_citations_refusal_emits_human_handoff_log_with_verbatim_original_query(
+    monkeypatch,
+) -> None:
+    """`raw_query` is the user's verbatim original text, not the rewritten search string —
+    the human picking this up needs what the user actually asked, not the internal rewrite."""
+    fake_log = _FakeLog()
+    monkeypatch.setattr(answer_service_module, "log", fake_log)
+    retriever = _FakeRetriever(
+        {"rewritten q": RetrievalResult(hits=[_HIT_A], trace_id=9)}, parent_texts={501: "text"}
+    )
+    generator = _FakeGenerator("This sentence cites nothing at all.")
+    service, _ = _service(retriever, _FakeRewriter("rewritten q"), generator)
+
+    result = service.answer([ChatMessage(role="user", content="original q")], scope=None)
+
+    assert result.refused
+    handoff = [fields for event, fields in fake_log.calls if event == "human_handoff"]
+    assert len(handoff) == 1
+    assert handoff[0]["trace_id"] == "9"
+    assert handoff[0]["raw_query"] == "original q"
+    assert handoff[0]["refusal_reason"] == "no_citations"
+
+
+def test_successful_answer_emits_no_human_handoff_log(monkeypatch) -> None:
+    fake_log = _FakeLog()
+    monkeypatch.setattr(answer_service_module, "log", fake_log)
+    retriever = _FakeRetriever(
+        {"rewritten q": RetrievalResult(hits=[_HIT_A, _HIT_B], trace_id=7)},
+        parent_texts={
+            501: "Request access via the onboarding portal.",
+            502: "Access is role-based.",
+        },
+    )
+    generator = _FakeGenerator("You request access via the portal [1]. Access is role-based [2].")
+    service, _ = _service(retriever, _FakeRewriter("rewritten q"), generator)
+
+    result = service.answer([ChatMessage(role="user", content="q")], scope="100")
+
+    assert not result.refused
+    assert not [event for event, _ in fake_log.calls if event == "human_handoff"]
 
 
 def test_weak_result_retries_once_and_succeeds_on_original_query() -> None:

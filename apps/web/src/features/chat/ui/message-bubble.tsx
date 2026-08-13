@@ -68,6 +68,29 @@ function ImageAnalysisSection({ text }: { text: string }) {
   );
 }
 
+/** Placeholder hand-off address (PLAN 9.6, ADR-0008 decision 6) — a disclosed stub, not a real
+ * support channel. See `docs/future-ideas/IDEAS.md` #1: the real address/channel is still an
+ * open product decision, alongside the noted eventual Salesforce hand-off integration. */
+const HANDOFF_EMAIL = "test@gmail.com";
+
+/** The "connect me to a human" CTA under a `refused` turn (PLAN 9.6, ADR-0008 decision 6) — a
+ * `mailto:` link only, no ticket/webhook integration. */
+function HandoffCta() {
+  const { locale } = useChatSession();
+  const copy = getCopy(locale);
+  return (
+    <p className="mb-xs text-xs text-text-muted">
+      {copy.handoffCta}{" "}
+      <a
+        href={`mailto:${HANDOFF_EMAIL}`}
+        className={`font-medium text-accent-hover underline hover:text-accent ${FOCUS_RING}`}
+      >
+        {HANDOFF_EMAIL}
+      </a>
+    </p>
+  );
+}
+
 /** The "clarifying" status pill (PLAN 9.5, ADR-0008 decision 3) — deliberately styled on the
  * accent tokens, never `danger`, since a clarifying turn is a still-open next step, not a
  * failure like `refused` right above it. */
@@ -117,9 +140,12 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   return (
     <div className={isUser ? "self-end text-right" : "self-start"}>
       {message.status === "refused" && (
-        <p className="mb-xs inline-block rounded-sm border border-danger-bg bg-danger-bg px-xs py-xs text-xs font-medium text-danger">
-          Not found in the docs — routed to a human
-        </p>
+        <>
+          <p className="mb-xs inline-block rounded-sm border border-danger-bg bg-danger-bg px-xs py-xs text-xs font-medium text-danger">
+            Not found in the docs — routed to a human
+          </p>
+          <HandoffCta />
+        </>
       )}
 
       {message.status === "clarifying" && <ClarifyingBanner />}

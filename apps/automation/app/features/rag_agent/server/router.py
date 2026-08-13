@@ -56,7 +56,14 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
                               `refusal_reason` is one of the closed `no_candidates | weak_score |
                               no_citations` category strings (PLAN 9.4, ADR-0008 decision 4/type-
                               enforced by `RefusalReason`), never a free-text diagnostic and never
-                              user query or retrieved content.
+                              user query or retrieved content. PLAN 9.6 (ADR-0008 decision 6) adds
+                              a second, disclosed exception to "never user query": on every
+                              `refused=True` answer, `answer_service.py` emits one `human_handoff`
+                              log line carrying `trace_id`/`raw_query`/`refusal_reason`, for the
+                              stub human hand-off queue — `raw_query` is the verbatim user text,
+                              not redacted, matching the pre-existing `query_trace.raw_query` DB
+                              column already keyed by the same `trace_id` (not a new place this
+                              text is persisted, only a second place it is read from).
   C10_abuse:      covered   - rate limit + history/message-length caps + the Anthropic client's
                               abuse cap (answer_max_input_chars) + circuit breaker. PLAN 7.3
                               (ADR-0009 decision 7): `generate_image_analysis` is a second,

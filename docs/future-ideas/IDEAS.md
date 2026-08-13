@@ -25,6 +25,15 @@ Salesforce noted as the eventual target when that's prioritized), and fallback-q
 Read that section, not this one, for the current state — this entry is kept only as the original
 raised-in-conversation framing, per this file's own convention of not deleting history.
 
+**9.6 hand-off CTA address is a placeholder, not a real decision (2026-08-13).** Asked the user
+what the "connect me to a human" CTA (ADR-0008 decision 6) should actually say/do, since inventing
+a real support email or link isn't this agent's call to make. User's answer: use `test@gmail.com`
+as the CTA's `mailto:` target for now, and record here that it is a stand-in — **the real contact
+address/channel is still an open product decision**, separate from the already-noted eventual
+Salesforce hand-off integration (decision 6's own note, above). Whoever revisits Salesforce hand-off
+should also settle this address at the same time, since both are "where does a refused query
+actually go" decisions.
+
 **Relation to current architecture (as originally written).** Today, an underspecified query just falls through the
 existing pipeline (rewrite → retrieve → rerank → refuse if the top score is weak) and comes out
 the other end as a refusal ("not in the docs — routed to a human") — see `refusal_min_rerank_score`

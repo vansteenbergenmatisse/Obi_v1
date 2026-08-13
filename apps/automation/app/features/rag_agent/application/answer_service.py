@@ -50,6 +50,20 @@ from "my draft answer didn't hold up," while `refusal_reason` itself stays a sta
 a diagnostic string with an interpolated score) so it can be grouped on for fallback-rate reporting
 (PLAN 9.7). Human hand-off (ADR-0008 decision 6) is still a stub this phase — every reason's copy
 ends the same way, and no real integration exists yet.
+
+Human hand-off logging (PLAN 9.6, ADR-0008 decision 6): every `refused=True` answer (both branches
+above) emits one additional `human_handoff` structured log record — `trace_id`, `raw_query`,
+`refusal_reason` (`created_at` comes free from `configure_logging`'s `TimeStamper` processor, not a
+manual field, matching every other log call in this module). `raw_query` is deliberately the user's
+verbatim original text, not `rewritten` — a human triaging this queue needs what was actually asked,
+not the internal search rewrite. This is a disclosed departure from `router.py`'s own `chat_request`
+C9_audit line, which deliberately never logs raw query text; `query_trace.raw_query` (the DB column,
+`retrieval/infrastructure/trace_repo.py`) already stores the same unredacted text keyed by this same
+`trace_id`, so this log line does not introduce a new place that text is persisted, only a second
+place it is readable from. The widget-side "connect me to a human" CTA (PLAN 9.6, `apps/web`) is
+static contact copy only — this log line is the entire hand-off mechanism this phase; no webhook,
+ticket, or email integration is built (Salesforce is the noted eventual target, see
+`docs/future-ideas/IDEAS.md` #1).
 """
 
 from __future__ import annotations
@@ -189,6 +203,12 @@ class AnswerService:
                 top_score=result.top_score,
                 threshold=self._refusal_min_rerank_score,
             )
+            log.info(
+                "human_handoff",
+                trace_id=trace_id,
+                raw_query=original_query,
+                refusal_reason=decision.reason,
+            )
             refusal_text = _REFUSAL_COPY[decision.reason]
             self._persist(result.trace_id, rewritten, refusal_text, [])
             return Answer(
@@ -213,6 +233,12 @@ class AnswerService:
             # `image_analysis` (if any) still rides along — the citation-enforcement refusal is
             # about the grounded claim only and is unaffected by has_image (ADR-0009 decision 3).
             log.info("refusal", reason=_NO_CITATIONS_REASON)
+            log.info(
+                "human_handoff",
+                trace_id=trace_id,
+                raw_query=original_query,
+                refusal_reason=_NO_CITATIONS_REASON,
+            )
             refusal_text = _REFUSAL_COPY[_NO_CITATIONS_REASON]
             self._persist(result.trace_id, rewritten, refusal_text, [])
             return Answer(
