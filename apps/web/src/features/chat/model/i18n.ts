@@ -25,7 +25,14 @@ export const LOCALE_LABELS: Record<Locale, string> = {
 export interface WidgetCopy {
   greetingPre: string;
   greetingPost: string;
-  suggestion: string;
+  /** Empty-state example-query chips (PLAN 9.5) — the first stayed the assistant's own scope
+   * ("what can you help me with"); the other two are honest for any client's Confluence content
+   * (self-referential, not assuming specific document topics exist) and one doubles as a nudge
+   * toward the specificity this phase's clarification branch is meant to reduce the need for. */
+  suggestions: [string, string, string];
+  /** Status-pill label for a `clarifying` turn (PLAN 9.5) — distinct from the refusal banner:
+   * an open next step, not a failure. */
+  clarifyingLabel: string;
   placeholder: string;
   footer: string;
   /** Persistent composer disclosure shown while an image is staged to send — discloses the C6
@@ -48,7 +55,12 @@ const COPY: Record<Locale, WidgetCopy> = {
   en: {
     greetingPre: "Hi there, how can I help you with ",
     greetingPost: "? The more details you provide, the better.",
-    suggestion: "What can you help me with?",
+    suggestions: [
+      "What can you help me with?",
+      "What topics do you know about?",
+      "How specific should my question be?",
+    ],
+    clarifyingLabel: "Need one more detail before I search",
     placeholder: "Ask about your Confluence workspace…",
     footer: "AI may make mistakes. Verify important information.",
     imageDisclosure: "We don't check images for personal info. Skip sensitive screenshots.",
@@ -66,7 +78,12 @@ const COPY: Record<Locale, WidgetCopy> = {
   nl: {
     greetingPre: "Hoi, waarmee kan ik je helpen met ",
     greetingPost: "? Hoe meer details je geeft, hoe beter.",
-    suggestion: "Waarmee kun je me helpen?",
+    suggestions: [
+      "Waarmee kun je me helpen?",
+      "Over welke onderwerpen weet je iets?",
+      "Hoe specifiek moet mijn vraag zijn?",
+    ],
+    clarifyingLabel: "Ik heb nog één detail nodig voordat ik zoek",
     placeholder: "Stel een vraag over je Confluence-werkruimte…",
     footer: "AI kan fouten maken. Controleer belangrijke informatie.",
     imageDisclosure: "We checken afbeeldingen niet op persoonlijke info. Vermijd gevoelige screenshots.",
@@ -84,7 +101,12 @@ const COPY: Record<Locale, WidgetCopy> = {
   de: {
     greetingPre: "Hallo, wie kann ich dir mit ",
     greetingPost: " helfen? Je mehr Details du angibst, desto besser.",
-    suggestion: "Wobei kannst du mir helfen?",
+    suggestions: [
+      "Wobei kannst du mir helfen?",
+      "Über welche Themen weißt du Bescheid?",
+      "Wie genau sollte meine Frage sein?",
+    ],
+    clarifyingLabel: "Ich brauche noch ein Detail, bevor ich suche",
     placeholder: "Stelle eine Frage zu deinem Confluence-Arbeitsbereich…",
     footer: "KI kann Fehler machen. Überprüfe wichtige Informationen.",
     imageDisclosure: "Wir prüfen Bilder nicht auf persönliche Daten. Vermeide sensible Screenshots.",
@@ -102,7 +124,12 @@ const COPY: Record<Locale, WidgetCopy> = {
   fr: {
     greetingPre: "Bonjour, comment puis-je vous aider avec ",
     greetingPost: " ? Plus vous donnez de détails, mieux c’est.",
-    suggestion: "En quoi puis-je vous aider ?",
+    suggestions: [
+      "En quoi puis-je vous aider ?",
+      "Sur quels sujets avez-vous des informations ?",
+      "À quel point dois-je être précis dans ma question ?",
+    ],
+    clarifyingLabel: "J’ai besoin d’un détail avant de chercher",
     placeholder: "Posez une question sur votre espace Confluence…",
     footer: "L’IA peut faire des erreurs. Vérifiez les informations importantes.",
     imageDisclosure: "Nous ne vérifions pas les infos personnelles dans les images. Évitez les captures sensibles.",
@@ -120,7 +147,12 @@ const COPY: Record<Locale, WidgetCopy> = {
   es: {
     greetingPre: "Hola, ¿en qué puedo ayudarte con ",
     greetingPost: "? Cuantos más detalles, mejor.",
-    suggestion: "¿En qué puedes ayudarme?",
+    suggestions: [
+      "¿En qué puedes ayudarme?",
+      "¿Sobre qué temas tienes información?",
+      "¿Qué tan específica debe ser mi pregunta?",
+    ],
+    clarifyingLabel: "Necesito un detalle más antes de buscar",
     placeholder: "Haz una pregunta sobre tu espacio de Confluence…",
     footer: "La IA puede cometer errores. Verifica la información importante.",
     imageDisclosure: "No revisamos las imágenes en busca de información personal. Evita capturas sensibles.",
@@ -138,7 +170,12 @@ const COPY: Record<Locale, WidgetCopy> = {
   it: {
     greetingPre: "Ciao, come posso aiutarti con ",
     greetingPost: "? Più dettagli fornisci, meglio è.",
-    suggestion: "Con cosa puoi aiutarmi?",
+    suggestions: [
+      "Con cosa puoi aiutarmi?",
+      "Su quali argomenti hai informazioni?",
+      "Quanto specifica deve essere la mia domanda?",
+    ],
+    clarifyingLabel: "Mi serve un altro dettaglio prima di cercare",
     placeholder: "Fai una domanda sul tuo spazio Confluence…",
     footer: "L’IA può commettere errori. Verifica le informazioni importanti.",
     imageDisclosure: "Non controlliamo le immagini per dati personali. Evita screenshot sensibili.",

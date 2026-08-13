@@ -19,6 +19,7 @@ export const tailwindTheme = {
     "accent-hover": color.accentHover,
     "accent-secondary": color.accentSecondary,
     "accent-contrast": color.accentContrast,
+    "accent-bg": color.accentBg,
     border: color.border,
     success: color.success,
     "success-bg": color.successBg,

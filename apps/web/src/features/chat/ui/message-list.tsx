@@ -12,7 +12,7 @@ import type { ChatMessage } from "../model/messages";
 export interface MessageListProps {
   messages: ChatMessage[];
   onFeedback?: (messageId: string, traceId: string, value: 1 | -1) => void;
-  /** Sends the empty-state suggestion chip's query through the real chat session. */
+  /** Sends an empty-state suggestion chip's query through the real chat session. */
   onSuggestion?: (text: string) => void;
 }
 
@@ -34,25 +34,31 @@ export function Greeting() {
 
 /** The mockup's chip literally reads "My verification status" — a Stripe-demo placeholder with
  * no Omniboost/Confluence equivalent, so reusing it verbatim would suggest a feature that doesn't
- * exist. Copy adapted, not dropped: this question is always honestly answerable (it asks the
- * assistant to describe its own scope) and goes through the real session like any typed message. */
-function SuggestionChip({ onSelect }: { onSelect: (text: string) => void }) {
+ * exist. Copy adapted, not dropped: every chip here is always honestly answerable for any client's
+ * Confluence content (self-referential — the assistant describing its own scope/behavior — never
+ * assuming a specific document exists), and each goes through the real session like any typed
+ * message. Expanded from one chip to three at PLAN 9.5, to give a genuinely vague-question-prone
+ * user more than one honest example to start from. */
+function SuggestionChips({ onSelect }: { onSelect: (text: string) => void }) {
   const { locale } = useChatSession();
   const copy = getCopy(locale);
   return (
-    <div className="mt-sm flex justify-end">
-      <button
-        type="button"
-        onClick={() => onSelect(copy.suggestion)}
-        className={[
-          "rounded-full border border-[#8d8bfa] bg-surface-raised px-md py-sm text-sm text-text",
-          "transition-all duration-fast hover:-translate-y-px hover:border-accent hover:bg-[#f6f6ff]",
-          "hover:shadow-[0_2px_8px_rgba(99,91,255,0.15)]",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-        ].join(" ")}
-      >
-        {copy.suggestion}
-      </button>
+    <div className="mt-sm flex flex-col items-end gap-xs">
+      {copy.suggestions.map((suggestion) => (
+        <button
+          key={suggestion}
+          type="button"
+          onClick={() => onSelect(suggestion)}
+          className={[
+            "rounded-full border border-accent-secondary bg-surface-raised px-md py-sm text-sm text-text",
+            "transition-all duration-fast hover:-translate-y-px hover:border-accent hover:bg-accent-bg",
+            "hover:shadow-[0_2px_8px_rgba(99,91,255,0.15)]",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+          ].join(" ")}
+        >
+          {suggestion}
+        </button>
+      ))}
     </div>
   );
 }
@@ -62,7 +68,7 @@ export function MessageList({ messages, onFeedback, onSuggestion }: MessageListP
     return (
       <>
         <Greeting />
-        {onSuggestion ? <SuggestionChip onSelect={onSuggestion} /> : null}
+        {onSuggestion ? <SuggestionChips onSelect={onSuggestion} /> : null}
       </>
     );
   }

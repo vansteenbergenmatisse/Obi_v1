@@ -68,6 +68,46 @@ function ImageAnalysisSection({ text }: { text: string }) {
   );
 }
 
+/** The "clarifying" status pill (PLAN 9.5, ADR-0008 decision 3) — deliberately styled on the
+ * accent tokens, never `danger`, since a clarifying turn is a still-open next step, not a
+ * failure like `refused` right above it. */
+function ClarifyingBanner() {
+  const { locale } = useChatSession();
+  const copy = getCopy(locale);
+  return (
+    <p className="mb-xs inline-block rounded-sm border border-accent-secondary bg-accent-bg px-xs py-xs text-xs font-medium text-accent-hover">
+      {copy.clarifyingLabel}
+    </p>
+  );
+}
+
+/** Quick-reply chips for `clarificationOptions` (PLAN 9.3/9.5) — clicking one sends it as the
+ * next user message through the same session every typed message goes through. Disabled while
+ * another turn is in flight, same guard as the composer. */
+function ClarificationChips({ options }: { options: string[] }) {
+  const { sendMessage, pending } = useChatSession();
+  return (
+    <div className="mt-sm flex flex-wrap gap-xs">
+      {options.map((option) => (
+        <button
+          key={option}
+          type="button"
+          disabled={pending}
+          onClick={() => sendMessage(option)}
+          className={[
+            "rounded-full border border-accent-secondary bg-surface-raised px-md py-sm text-sm text-text",
+            "transition-all duration-fast hover:-translate-y-px hover:border-accent hover:bg-accent-bg",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+            "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:translate-y-0",
+          ].join(" ")}
+        >
+          {option}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   const isUser = message.role === "user";
   const isPlaceholder = message.status === "streaming" && message.text.length === 0;
@@ -81,6 +121,8 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
           Not found in the docs — routed to a human
         </p>
       )}
+
+      {message.status === "clarifying" && <ClarifyingBanner />}
 
       {isUser && message.images && message.images.length > 0 && (
         <UserImages images={message.images} />
@@ -113,6 +155,13 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
       )}
 
       {!isUser && message.imageAnalysis && <ImageAnalysisSection text={message.imageAnalysis} />}
+
+      {!isUser &&
+        message.status === "clarifying" &&
+        message.clarificationOptions &&
+        message.clarificationOptions.length > 0 && (
+          <ClarificationChips options={message.clarificationOptions} />
+        )}
 
       {message.citations && message.citations.length > 0 && (
         <ul className="mt-xs flex flex-wrap gap-xs">

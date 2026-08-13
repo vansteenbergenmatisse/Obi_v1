@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MessageBubble } from "../ui/message-bubble";
 import { ChatSessionProvider } from "../ui/chat-session-provider";
@@ -37,6 +37,73 @@ describe("MessageBubble", () => {
   it("shows the refusal banner for a refused turn", () => {
     render(<MessageBubble message={assistantMessage({ status: "refused" })} />);
     expect(screen.getByText(/routed to a human/i)).toBeInTheDocument();
+  });
+
+  describe("clarification turns (PLAN 9.3/9.5)", () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it("shows a distinct clarifying banner, not the refusal banner", () => {
+      render(
+        <ChatSessionProvider>
+          <MessageBubble message={assistantMessage({ status: "clarifying", text: "Which kind of limit?" })} />
+        </ChatSessionProvider>,
+      );
+      expect(screen.getByText(/one more detail/i)).toBeInTheDocument();
+      expect(screen.queryByText(/routed to a human/i)).not.toBeInTheDocument();
+    });
+
+    it("renders a quick-reply chip per clarification option and sends it on click", async () => {
+      let requestBody: unknown;
+      const fetchMock = vi.fn().mockImplementation((_url: string, init?: RequestInit) => {
+        requestBody = init?.body ? JSON.parse(init.body as string) : undefined;
+        return Promise.resolve(
+          new Response(new ReadableStream({ start: (c) => c.close() }), {
+            status: 200,
+            headers: { "content-type": "text/event-stream" },
+          }),
+        );
+      });
+      vi.stubGlobal("fetch", fetchMock);
+
+      render(
+        <ChatSessionProvider>
+          <MessageBubble
+            message={assistantMessage({
+              status: "clarifying",
+              text: "Which kind of limit?",
+              clarificationOptions: ["Expense limits", "Approval thresholds"],
+            })}
+          />
+        </ChatSessionProvider>,
+      );
+
+      expect(screen.getByRole("button", { name: "Expense limits" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Approval thresholds" })).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole("button", { name: "Expense limits" }));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+      expect((requestBody as { history: Array<{ content: string }> }).history.at(-1)?.content).toBe(
+        "Expense limits",
+      );
+    });
+
+    it("renders no chips when the turn has no clarification options", () => {
+      render(
+        <ChatSessionProvider>
+          <MessageBubble message={assistantMessage({ status: "clarifying", text: "Which kind of limit?" })} />
+        </ChatSessionProvider>,
+      );
+      expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    });
+
+    it("never shows feedback controls on a clarifying turn (no trace row is written)", () => {
+      render(
+        <ChatSessionProvider>
+          <MessageBubble message={assistantMessage({ status: "clarifying", text: "Which kind of limit?" })} />
+        </ChatSessionProvider>,
+      );
+      expect(screen.queryByRole("button", { name: "Helpful" })).not.toBeInTheDocument();
+    });
   });
 
   it("renders citation links when a url is present", () => {

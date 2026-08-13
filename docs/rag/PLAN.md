@@ -14,6 +14,21 @@
 security (HTTP/LLM controls), real tests, acceptance actually met — and if it falls short, add the
 fix here as the next task; update this ledger after each phase.
 
+**Same session, immediately after: 9.5 (Obi widget fallback UX) done — see Phase 9's own 9.5 entry
+for the full narrative.** User asked to read the plan and finish Phase 9; ran the pre-phase
+verification gate live first (`make check` 354 passed, `make boundaries` clean, ruff/pyright
+2/15/34, all matched the ledger). Implemented the three additive frontend pieces (clarifying-status
+model field, quick-reply chips, distinct clarifying banner vs. refusal, expanded 3-chip empty state),
+added an `accentBg` design token, caught and fixed a marginal AA text-contrast gap on the new banner
+before shipping it (used the existing `accent-hover` token instead of `accent`), and live-browser-
+verified via `chrome-devtools` MCP (not `claude-in-chrome` — its `javascript_tool` runs in an
+isolated JS world and could not patch the page's real `fetch`). **Verified:** `pnpm --filter web
+test` → 132 passed (was 125, +7), `tsc --noEmit` clean, `pnpm --filter web build` clean. Backend
+untouched — no security review applicable. Not yet committed — ask before committing, per this
+repo's own convention. The pre-existing, unrelated stray `docs/future-ideas/IDEAS.md` "Baze" edit
+found sitting in the working tree is still there, still deliberately excluded, still left for the
+user.
+
 **Same session, immediately after: 9.4 (differentiated refusal messaging) done — see Phase 9's own
 9.4 entry for the full narrative.** User asked to read the plan for the next Phase 9 task; 9.3's
 changes were still uncommitted at that point, so committed those first (`d20257c`, ledger ref
@@ -3177,7 +3192,7 @@ shared risk with either.
 
 ---
 
-## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ⬜ todo *(9.1/9.2/9.3/9.4 done; 9.5-9.9 remain — see Sequencing)*
+## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ⬜ todo *(9.1/9.2/9.3/9.4/9.5 done; 9.6-9.9 remain — see Sequencing)*
 
 **Scoped 2026-08-11; 9.1 (design doc + ADR-0008) done the same day — nothing else started.** User
 supplied an external best-practices brief on handling
@@ -3372,10 +3387,72 @@ turning that design into code, not started:
    baseline (all touched files individually clean on both). No web/contract changes — `refusal_reason`
    was never on the wire, so there was nothing for `packages/contracts` or `apps/web` to update.
    Committed `ba5416a` (2026-08-13).
-5. **9.5 — Obi widget fallback UX** (`apps/web/src/features/chat/`). Quick-reply chips for
-   clarification options, a distinct "need a bit more detail" state vs. today's refusal rendering,
-   an expanded empty-state example-query list. Through `fe:foundations-router` +
-   `fe:visual-verification` per this repo's UI convention.
+5. **9.5 — Obi widget fallback UX ✅ done (2026-08-13).** Three additive pieces in `apps/web/src/
+   features/chat/`, all consuming fields 9.3 already put on the wire (`needsClarification`/
+   `clarificationOptions`) — no contract change this sub-step. **Pre-phase verification gate run
+   first** (`CLAUDE.local.md` §2): re-ran `make check` (354 passed, matched), `make boundaries`
+   clean, ruff/pyright at the 2/15/34 baseline (matched) before touching any code.
+   - **Model:** `MessageStatus` gained `"clarifying"`; `ChatMessage` gained `clarificationOptions`.
+     `chat-session-provider.tsx`'s `onDone` now branches `needsClarification → "clarifying"` ahead
+     of `refused → "refused"` (order matches ADR-0008 decision 4 — clarification is never a
+     refusal); `toHistory` now resends a `"clarifying"` turn same as `"complete"`/`"refused"`,
+     since the backend needs the question it asked as context for the next call.
+   - **Quick-reply chips.** `ClarificationChips` (new, `message-bubble.tsx`) renders one button per
+     `clarificationOptions` entry; click calls `useChatSession().sendMessage(option)` directly (same
+     lazy-`useChatSession` pattern as `ImageAnalysisSection`, so the hook isn't needed on every
+     bubble render) and disables while `pending`, same guard as the composer.
+   - **Distinct clarifying state.** `ClarifyingBanner` (new) renders on `status === "clarifying"`,
+     styled on the `accent` token family — never `danger` — since a clarifying turn is a still-open
+     next step, not a failure like `refused` right above it in the same component. Feedback thumbs
+     stay hidden on this turn for free: the backend never writes a `query_trace` row on the
+     clarification path (9.3), so `traceId` is never set and `showFeedback`'s existing guard already
+     excludes it — no new logic needed.
+   - **Expanded empty state.** `message-list.tsx`'s single `SuggestionChip` → `SuggestionChips`,
+     three chips (`copy.suggestions`, was `copy.suggestion`, one string). Copy drafted via
+     `copywriting-rules` → `ux-writing` → `anti-ai-writing` per this repo's own convention, all
+     three meta/self-referential (never assuming a specific document exists, since Omniboost is
+     white-labeled across many customers' Confluence content) — the third, "How specific should my
+     question be?", doubles as a nudge toward the specificity this phase's whole clarification
+     branch exists to reduce the need for. Hand-translated (direct, unreviewed style, matching the
+     existing table) into all six locales.
+   - **Tokens.** Added `accentBg` (`packages/design-tokens/src/tokens.ts` + `tailwind-theme.ts` —
+     the mapping is hand-maintained, not derived, so both needed the entry) — a light accent-family
+     fill, alongside the pre-existing `success`/`danger` Bg/Fill pairs, used by both the banner and
+     the new chips' hover fill (replacing `SuggestionChip`'s pre-existing hardcoded `#8d8bfa`/
+     `#f6f6ff` with `accent-secondary`/`accent-bg` in the code this sub-step touched; the pre-existing
+     hardcoded hex was left alone anywhere this sub-step didn't already need to touch it — not a
+     drive-by rewrite). **A real, if marginal, AA contrast gap caught before shipping, not after:**
+     the banner's first draft used `text-accent` on the new `bg-accent-bg` — 4.37:1, just under the
+     4.5:1 normal-text AA minimum (computed directly, not eyeballed) — matching, not exceeding, the
+     already-shipped `danger`-on-`danger-bg` pair's own 4.39:1. Fixed by using the existing, darker
+     `accent-hover` token for this text instead (5.79:1, clean pass) rather than shipping a marginal
+     failure just because a precedent already had one.
+   - **Security review:** not applicable — no HTTP/LLM surface touched (`git status` confirms only
+     `apps/web` + `packages/design-tokens` files changed); this sub-step only renders fields already
+     shipped additively at 9.3.
+   - **Verified:** `pnpm --filter web test` → **132 passed** (was 125, +7: 2 `chat-session-provider`,
+     4 `message-bubble`, 1 `message-list`), `pnpm --filter web exec tsc --noEmit` clean, `pnpm
+     --filter web build` clean (no dev server was live, so — unlike prior phases — the build was
+     actually run, not skipped). Live-browser-verified via `chrome-devtools` MCP (not
+     `claude-in-chrome` — that extension's `javascript_tool` runs in an isolated JS world and its
+     `window.fetch` patch never reached the page's real `fetch`, confirmed by the request still
+     hitting the real, unconfigured backend and failing; `chrome-devtools`'s CDP-based
+     `evaluate_script` runs in the actual page world and worked): patched `fetch` to return a canned
+     `needsClarification` `done` event, confirmed the clarifying banner renders in accent indigo
+     (not danger red), the two option chips render and clicking one sends it as a real next turn
+     (which itself rendered a second clarifying turn correctly), then patched `fetch` again to
+     return a `refused` `done` event on the same running session and confirmed that turn renders
+     the pre-existing red banner + working feedback thumbs, visually confirmed distinct from the
+     clarifying turns above it in the same thread. Also confirmed the three empty-state chips render
+     and send their exact text. Routed through `fe:foundations-router` → `fe:interface-design` per
+     this repo's UI convention (functional product UI, not marketing — confirmed by the router
+     itself); `fe:omniboost-brand` was loaded and confirmed **not** to apply its marketing-site
+     token values here, since this widget's own token system (`packages/design-tokens`) is a
+     deliberate, already-documented departure (a "light, Stripe-esque theme with an indigo accent")
+     from the Omniboost marketing brand, predating this sub-step (PLAN 4.7) — reused as-is, not
+     "corrected" to the marketing palette, per `fe:omniboost-brand`'s own "preserve the existing
+     project unless the task is explicitly to correct the brand system" rule. Not yet committed —
+     ask before committing, per this repo's own convention.
 6. **9.6 — Human hand-off stub.** See "Confirmed scope decisions" above.
 7. **9.7 — Fallback-quality evaluation.** A `fallback_rate` metric and a lightweight faithfulness/
    hallucination-rate signal in `evaluation/metrics/`; extend `ambiguity.json` to assert actual

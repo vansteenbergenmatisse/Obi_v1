@@ -28,6 +28,20 @@ describe("MessageList", () => {
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
   });
 
+  it("renders all three empty-state example-query chips and sends the clicked one", async () => {
+    const onSuggestion = vi.fn();
+    renderList({ messages: [], onSuggestion });
+
+    expect(screen.getByRole("button", { name: "What can you help me with?" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "What topics do you know about?" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "How specific should my question be?" }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "What topics do you know about?" }));
+    expect(onSuggestion).toHaveBeenCalledWith("What topics do you know about?");
+  });
+
   it("renders each message via MessageBubble", () => {
     const messages: ChatMessage[] = [
       { id: "u1", role: "user", text: "hi", status: "complete" },

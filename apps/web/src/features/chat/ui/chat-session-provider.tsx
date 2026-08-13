@@ -17,12 +17,19 @@ import { ChatRequestError, sendFeedback, streamChat } from "../api/chat-client";
 import type { ChatMessage, SentImage } from "../model/messages";
 import type { Locale } from "../model/i18n";
 
-/** Only complete/refused turns (plus every user turn) become resendable history — a
- * streaming placeholder has no final text yet, and an error turn is our own proxy's
- * error message, not something the model actually said. */
+/** Only complete/refused/clarifying turns (plus every user turn) become resendable history —
+ * a streaming placeholder has no final text yet, and an error turn is our own proxy's error
+ * message, not something the model actually said. A clarifying turn's question is real
+ * assistant output the next call needs as context (PLAN 9.5), so it counts here too. */
 function toHistory(messages: ChatMessage[]): ChatTurn[] {
   return messages
-    .filter((message) => message.role === "user" || message.status === "complete" || message.status === "refused")
+    .filter(
+      (message) =>
+        message.role === "user" ||
+        message.status === "complete" ||
+        message.status === "refused" ||
+        message.status === "clarifying",
+    )
     .map((message) => ({ role: message.role, content: message.text }));
 }
 
@@ -118,9 +125,10 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
             updateAssistant({
               text: event.answer,
               citations: event.citations,
-              status: event.refused ? "refused" : "complete",
+              status: event.needsClarification ? "clarifying" : event.refused ? "refused" : "complete",
               traceId: event.traceId ?? undefined,
               imageAnalysis: event.imageAnalysis ?? undefined,
+              clarificationOptions: event.clarificationOptions ?? undefined,
             });
           },
           onError: (message) => updateAssistant({ text: message, status: "error" }),

@@ -29,6 +29,8 @@ export const color = {
   accentSecondary: "#8f8af7",
   /** Text/icon color that reads on top of the accent. */
   accentContrast: "#ffffff",
+  /** Fill behind an open/inviting accent state (e.g. a clarification prompt) — never a failure. */
+  accentBg: "#f6f6ff",
   /** Hairline borders and dividers. */
   border: "#e6e8ee",
   /** Positive feedback (e.g. a selected "helpful" thumbs-up). */

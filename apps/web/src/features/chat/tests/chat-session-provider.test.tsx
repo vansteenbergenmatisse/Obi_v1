@@ -167,4 +167,83 @@ describe("ChatSessionProvider", () => {
       images: [{ mediaType: "image/png", data: "ZmFrZS1ieXRlcw==" }],
     });
   });
+
+  it("marks a turn as clarifying (not refused) and keeps its options, per ADR-0008 decision 3", async () => {
+    fetchMock.mockResolvedValue(
+      okStreamResponse([
+        sse({ type: "start", conversationId: "conv-1" }),
+        sse({
+          type: "done",
+          answer: "Which kind of limit do you mean: expense or approval?",
+          citations: [],
+          traceId: null,
+          refused: false,
+          needsClarification: true,
+          clarificationQuestion: "Which kind of limit do you mean: expense or approval?",
+          clarificationOptions: ["Expense limits", "Approval thresholds"],
+        }),
+      ]),
+    );
+
+    function ClarifyHarness() {
+      const { messages, sendMessage } = useChatSession();
+      const assistant = messages.find((m) => m.role === "assistant");
+      return (
+        <div>
+          <button onClick={() => sendMessage("what are the limits?")}>send</button>
+          <div data-testid="status">{assistant?.status ?? ""}</div>
+          <div data-testid="options">{(assistant?.clarificationOptions ?? []).join(",")}</div>
+        </div>
+      );
+    }
+
+    render(
+      <ChatSessionProvider>
+        <ClarifyHarness />
+      </ChatSessionProvider>,
+    );
+
+    await userEvent.click(screen.getByText("send"));
+    await waitFor(() => expect(screen.getByTestId("status").textContent).toBe("clarifying"));
+    expect(screen.getByTestId("options").textContent).toBe("Expense limits,Approval thresholds");
+  });
+
+  it("resends a clarifying turn's question as history on the next message", async () => {
+    const requestBodies: unknown[] = [];
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+      requestBodies.push(init?.body ? JSON.parse(init.body as string) : undefined);
+      const isFirst = requestBodies.length === 1;
+      return Promise.resolve(
+        okStreamResponse([
+          sse({ type: "start", conversationId: "conv-1" }),
+          isFirst
+            ? sse({
+                type: "done",
+                answer: "Which kind of limit?",
+                citations: [],
+                traceId: null,
+                refused: false,
+                needsClarification: true,
+                clarificationOptions: ["Expense limits", "Approval thresholds"],
+              })
+            : sse({ type: "done", answer: "Expense limits are $500.", citations: [], traceId: "trace-2", refused: false }),
+        ]),
+      );
+    });
+
+    render(
+      <ChatSessionProvider>
+        <Harness />
+      </ChatSessionProvider>,
+    );
+
+    await userEvent.click(screen.getByText("send"));
+    await waitFor(() => expect(screen.getByTestId("count").textContent).toBe("2"));
+    await userEvent.click(screen.getByText("send"));
+    await waitFor(() => expect(screen.getByTestId("count").textContent).toBe("4"));
+
+    const secondHistory = (requestBodies[1] as { history: Array<Record<string, unknown>> }).history;
+    expect(secondHistory).toHaveLength(3);
+    expect(secondHistory[1]).toMatchObject({ role: "assistant", content: "Which kind of limit?" });
+  });
 });
