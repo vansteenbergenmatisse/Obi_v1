@@ -27,7 +27,8 @@ clean, ruff/pyright confirmed at 2/15/34. Implemented via TDD: `domain/refusal.p
 `anti-ai-writing`; `Answer.refusal_reason` re-typed to the same `Literal`. Confirmed `refusal_reason`
 was never on the `/chat` SSE wire before or after this change — only the internal DTO and audit log.
 **Verified:** `make check` → 354 passed (unchanged), `make boundaries` clean, ruff/pyright at 2/15/34
-(all touched files individually clean on both). Not yet committed — ask before committing.
+(all touched files individually clean on both). Committed `ba5416a` (2026-08-13) — the same stray
+`docs/future-ideas/IDEAS.md` "Baze" edit was again deliberately excluded, left for the user.
 
 **New session (2026-08-13): 9.3 (clarification generation + wiring) done — see Phase 9's own 9.3
 entry for the full narrative.** User asked to proceed with Phase 9 (9.2 onward was already
@@ -3370,7 +3371,7 @@ turning that design into code, not started:
    test still counts as one test), `make boundaries` clean, ruff/pyright reconfirmed at the 2/15/34
    baseline (all touched files individually clean on both). No web/contract changes — `refusal_reason`
    was never on the wire, so there was nothing for `packages/contracts` or `apps/web` to update.
-   Not yet committed — ask before committing, per this repo's own convention.
+   Committed `ba5416a` (2026-08-13).
 5. **9.5 — Obi widget fallback UX** (`apps/web/src/features/chat/`). Quick-reply chips for
    clarification options, a distinct "need a bit more detail" state vs. today's refusal rendering,
    an expanded empty-state example-query list. Through `fe:foundations-router` +
