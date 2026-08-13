@@ -14,6 +14,21 @@
 security (HTTP/LLM controls), real tests, acceptance actually met — and if it falls short, add the
 fix here as the next task; update this ledger after each phase.
 
+**Same session, immediately after: 9.4 (differentiated refusal messaging) done — see Phase 9's own
+9.4 entry for the full narrative.** User asked to read the plan for the next Phase 9 task; 9.3's
+changes were still uncommitted at that point, so committed those first (`d20257c`, ledger ref
+`9f2d891`) — deliberately excluding an unrelated stray `docs/future-ideas/IDEAS.md` "Baze" edit
+found sitting in the working tree, left for the user to handle separately. Ran the pre-phase
+verification gate live before starting 9.4: `make check` → 354 passed (matched), `make boundaries`
+clean, ruff/pyright confirmed at 2/15/34. Implemented via TDD: `domain/refusal.py`'s
+`RefusalDecision.reason` changed from a free-text diagnostic to a closed `RefusalReason` category
+(`no_candidates | weak_score | no_citations`); `answer_service.py`'s single `_REFUSAL_TEXT` became
+`_REFUSAL_COPY`, three distinct strings drafted via `copywriting-rules` → `ux-writing` →
+`anti-ai-writing`; `Answer.refusal_reason` re-typed to the same `Literal`. Confirmed `refusal_reason`
+was never on the `/chat` SSE wire before or after this change — only the internal DTO and audit log.
+**Verified:** `make check` → 354 passed (unchanged), `make boundaries` clean, ruff/pyright at 2/15/34
+(all touched files individually clean on both). Not yet committed — ask before committing.
+
 **New session (2026-08-13): 9.3 (clarification generation + wiring) done — see Phase 9's own 9.3
 entry for the full narrative.** User asked to proceed with Phase 9 (9.2 onward was already
 unblocked, 9.2 already committed). Ran the pre-phase verification gate first (`CLAUDE.local.md`
@@ -3161,7 +3176,7 @@ shared risk with either.
 
 ---
 
-## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ⬜ todo *(9.1/9.2/9.3 done; 9.4-9.9 remain — see Sequencing)*
+## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ⬜ todo *(9.1/9.2/9.3/9.4 done; 9.5-9.9 remain — see Sequencing)*
 
 **Scoped 2026-08-11; 9.1 (design doc + ADR-0008) done the same day — nothing else started.** User
 supplied an external best-practices brief on handling
@@ -3321,9 +3336,41 @@ turning that design into code, not started:
    (2026-08-13) — the unrelated stray `docs/future-ideas/IDEAS.md` "Baze" edit found sitting in the
    working tree at commit time was deliberately excluded (unrelated to this sub-step, left
    uncommitted for the user to handle separately).
-4. **9.4 — Differentiated refusal messaging.** Distinct, honest copy per refusal reason from 9.1's
-   taxonomy (today all three render the identical `_REFUSAL_TEXT`). Copy routed through
-   `copywriting-rules`/`anti-ai-writing`, not hand-written inline.
+4. **9.4 — Differentiated refusal messaging ✅ done (2026-08-13).** `domain/refusal.py` gained
+   `RefusalReason = Literal["no_candidates", "weak_score", "no_citations"]`; `decide_refusal` now
+   returns that category directly (`None` when not refusing) instead of a free-text diagnostic
+   string with an interpolated score — the old `f"top relevance {top_score:.3f} below refusal
+   threshold {threshold:.3f}"` shape is gone. `answer_service.py`'s single `_REFUSAL_TEXT` constant
+   is replaced by `_REFUSAL_COPY: dict[RefusalReason, str]`, three distinct, honest strings drafted
+   under `copywriting-rules` → `ux-writing` → `anti-ai-writing` (routed, not hand-written inline,
+   per this row's own instruction) — a user can now tell "nothing like this exists"
+   (`no_candidates`) from "I found something too weak to trust" (`weak_score`) from "my draft
+   answer didn't hold up" (`no_citations`); all three still end on the same human-hand-off line
+   (ADR-0008 decision 6 unchanged — still a stub). `Answer.refusal_reason` (`schemas.py`) is now
+   typed to the same closed `Literal` instead of `str | None`. **Confirmed before writing code:**
+   `refusal_reason` was never on the `/chat` SSE wire (`router.py`'s `done` payload has no
+   `refusalReason` field; only `refused: bool` is sent) — it only ever reached the internal
+   `Answer` DTO and the `chat_request` audit log line, so this sub-step's "surfaced" (ADR-0008
+   decision 4) reading is "a stable field any caller can read," not "sent to the browser"; no new
+   wire exposure was added, and none is needed for 9.8 to check. This also closes a real,
+   pre-existing drift: `router.py`'s own `C9_audit` doc comment already claimed `refusal_reason`
+   was "a static, templated diagnostic string" — it wasn't (the `weak_score` case embedded a live
+   numeric score, making it useless as a fallback-rate groupby key, PLAN 9.7) — now it genuinely
+   is; the score/threshold detail that string used to carry moved to a dedicated `log.info("refusal",
+   reason=..., top_score=..., threshold=...)` call so no debugging signal was lost, just relocated
+   off the user/audit-facing field. **TDD:** updated the existing failing assertions first
+   (`test_refusal.py`'s substring checks → exact category checks; `test_answer_service.py`'s
+   `_REFUSAL_TEXT`/`_NO_GROUNDED_CLAIM_REASON` imports/assertions → `_REFUSAL_COPY[...]`/category
+   string; `confluence_sync/tests/test_answer_workflow.py`'s two real-corpus assertions), confirmed
+   each failed against the pre-change code, then implemented. **Security review
+   (`securing-http-and-llm-endpoints`):** no new HTTP surface, no new LLM call — this sub-step only
+   changes static copy selection and an internal category's type; the audit finding above (fixing
+   `refusal_reason` to actually be static/templated, not a live diagnostic) is itself a C9_audit
+   hardening. **Verified:** backend `make check` → **354 passed** (unchanged count — every changed
+   test still counts as one test), `make boundaries` clean, ruff/pyright reconfirmed at the 2/15/34
+   baseline (all touched files individually clean on both). No web/contract changes — `refusal_reason`
+   was never on the wire, so there was nothing for `packages/contracts` or `apps/web` to update.
+   Not yet committed — ask before committing, per this repo's own convention.
 5. **9.5 — Obi widget fallback UX** (`apps/web/src/features/chat/`). Quick-reply chips for
    clarification options, a distinct "need a bit more detail" state vs. today's refusal rendering,
    an expanded empty-state example-query list. Through `fe:foundations-router` +

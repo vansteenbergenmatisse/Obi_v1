@@ -41,6 +41,15 @@ stays False (`needs_clarification=True` is a still-open turn, not a refusal, per
 4). A non-ambiguous verdict is only logged (`clarification_decision`) and changes nothing — the
 pipeline below runs exactly as it would with the branch disabled. When the flag is off (the
 default), `decide_clarification` is never called at all — zero added cost or behavior change.
+
+Differentiated refusal copy (PLAN 9.4, ADR-0008 decision 5): each of the three refusal-reason
+categories (`no_candidates | weak_score | no_citations`, `domain/refusal.RefusalReason`) gets its
+own honest, user-facing string (`_REFUSAL_COPY`) instead of one identical `_REFUSAL_TEXT` for all
+three — a user can now tell "nothing like this exists" from "I found something too weak to trust"
+from "my draft answer didn't hold up," while `refusal_reason` itself stays a stable category (not
+a diagnostic string with an interpolated score) so it can be grouped on for fallback-rate reporting
+(PLAN 9.7). Human hand-off (ADR-0008 decision 6) is still a stub this phase — every reason's copy
+ends the same way, and no real integration exists yet.
 """
 
 from __future__ import annotations
@@ -53,7 +62,7 @@ from sqlalchemy.orm import Session
 from app.features.rag_agent.domain.citations import enforce_citations
 from app.features.rag_agent.domain.clarification import AmbiguityClassifier, decide_clarification
 from app.features.rag_agent.domain.prompt import build_evidence_block
-from app.features.rag_agent.domain.refusal import decide_refusal
+from app.features.rag_agent.domain.refusal import RefusalReason, decide_refusal
 from app.features.rag_agent.domain.small_talk import is_small_talk
 from app.features.rag_agent.infrastructure.llm_client import AnswerGenerator, QueryRewriter
 from app.features.rag_agent.schemas import Answer, ChatMessage, Citation
@@ -62,8 +71,27 @@ from app.platform.logging import get_logger
 
 log = get_logger("rag_agent.answer_service")
 
-_REFUSAL_TEXT = "I don't have that in the documentation I can search — routing this to a human."
-_NO_GROUNDED_CLAIM_REASON = "no claim in the generated answer survived citation enforcement"
+_NO_CITATIONS_REASON: RefusalReason = "no_citations"
+
+# PLAN 9.4, ADR-0008 decision 5: distinct, honest copy per refusal-reason category (drafted under
+# copywriting-rules/ux-writing/anti-ai-writing) — previously all three rendered one identical
+# string, so a user could not tell "nothing like this exists" from "I found something too weak to
+# trust" from "my draft answer didn't hold up." All three still end on the same human-hand-off
+# affordance (ADR-0008 decision 6 is unchanged — still a stub, no real integration).
+_REFUSAL_COPY: dict[RefusalReason, str] = {
+    "no_candidates": (
+        "I couldn't find anything about this in the documentation I can search — "
+        "routing this to a human."
+    ),
+    "weak_score": (
+        "I found a few possible matches, but none of them look reliable enough to trust — "
+        "routing this to a human."
+    ),
+    "no_citations": (
+        "I put together an answer, but couldn't back every part of it with a real source — "
+        "routing this to a human."
+    ),
+}
 
 
 @runtime_checkable
@@ -152,10 +180,19 @@ class AnswerService:
 
         decision = decide_refusal(result.top_score, self._refusal_min_rerank_score, has_image)
         trace_id = str(result.trace_id) if result.trace_id is not None else None
-        if decision.refuse:
-            self._persist(result.trace_id, rewritten, _REFUSAL_TEXT, [])
+        if decision.refuse and decision.reason is not None:
+            # Score-level detail lives here, in the log, not in `refusal_reason` (a static,
+            # templated category per router.py's own C9_audit contract, not a diagnostic string).
+            log.info(
+                "refusal",
+                reason=decision.reason,
+                top_score=result.top_score,
+                threshold=self._refusal_min_rerank_score,
+            )
+            refusal_text = _REFUSAL_COPY[decision.reason]
+            self._persist(result.trace_id, rewritten, refusal_text, [])
             return Answer(
-                text=_REFUSAL_TEXT,
+                text=refusal_text,
                 refused=True,
                 refusal_reason=decision.reason,
                 trace_id=trace_id,
@@ -175,11 +212,13 @@ class AnswerService:
             # generation (only retrieval, via CRAG) — so this degrades to a refusal instead.
             # `image_analysis` (if any) still rides along — the citation-enforcement refusal is
             # about the grounded claim only and is unaffected by has_image (ADR-0009 decision 3).
-            self._persist(result.trace_id, rewritten, _REFUSAL_TEXT, [])
+            log.info("refusal", reason=_NO_CITATIONS_REASON)
+            refusal_text = _REFUSAL_COPY[_NO_CITATIONS_REASON]
+            self._persist(result.trace_id, rewritten, refusal_text, [])
             return Answer(
-                text=_REFUSAL_TEXT,
+                text=refusal_text,
                 refused=True,
-                refusal_reason=_NO_GROUNDED_CLAIM_REASON,
+                refusal_reason=_NO_CITATIONS_REASON,
                 trace_id=trace_id,
                 image_analysis=image_analysis,
             )

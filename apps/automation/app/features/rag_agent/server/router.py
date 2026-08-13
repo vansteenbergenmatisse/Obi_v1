@@ -53,8 +53,10 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
   C9_audit:       covered   - one structured `chat_request` log line per call (conversation id,
                               trace id, refused, refusal reason, needs_clarification (PLAN 9.3),
                               citation count, latency) — never the raw message or answer text;
-                              `refusal_reason` is a static, templated diagnostic string (never
-                              user query or retrieved content).
+                              `refusal_reason` is one of the closed `no_candidates | weak_score |
+                              no_citations` category strings (PLAN 9.4, ADR-0008 decision 4/type-
+                              enforced by `RefusalReason`), never a free-text diagnostic and never
+                              user query or retrieved content.
   C10_abuse:      covered   - rate limit + history/message-length caps + the Anthropic client's
                               abuse cap (answer_max_input_chars) + circuit breaker. PLAN 7.3
                               (ADR-0009 decision 7): `generate_image_analysis` is a second,

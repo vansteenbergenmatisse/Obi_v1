@@ -13,8 +13,7 @@ from typing import cast
 from sqlalchemy.orm import Session
 
 from app.features.rag_agent.application.answer_service import (
-    _NO_GROUNDED_CLAIM_REASON,
-    _REFUSAL_TEXT,
+    _REFUSAL_COPY,
     AnswerService,
 )
 from app.features.rag_agent.domain.clarification import ClarificationReply
@@ -218,10 +217,10 @@ def test_no_candidates_refuses_without_calling_generator() -> None:
     result = service.answer([ChatMessage(role="user", content="q")], scope=None)
 
     assert result.refused
-    assert "no retrieved candidates" in (result.refusal_reason or "")
+    assert result.refusal_reason == "no_candidates"
     assert result.citations == []
     assert session is not None and session.committed
-    assert row.answer == _REFUSAL_TEXT
+    assert row.answer == _REFUSAL_COPY["no_candidates"]
 
 
 def test_weak_result_retries_once_and_succeeds_on_original_query() -> None:
@@ -253,7 +252,7 @@ def test_weak_result_still_weak_after_retry_refuses() -> None:
 
     assert retriever.retrieve_calls == [("rewritten q", None, 5), ("original q", None, 5)]
     assert result.refused
-    assert "below refusal threshold" in (result.refusal_reason or "")
+    assert result.refusal_reason == "weak_score"
 
 
 def test_crag_max_retries_zero_never_retries() -> None:
@@ -280,8 +279,8 @@ def test_no_surviving_citation_degrades_to_refusal() -> None:
     result = service.answer([ChatMessage(role="user", content="q")], scope=None)
 
     assert result.refused
-    assert result.refusal_reason == _NO_GROUNDED_CLAIM_REASON
-    assert session is not None and row.answer == _REFUSAL_TEXT
+    assert result.refusal_reason == "no_citations"
+    assert session is not None and row.answer == _REFUSAL_COPY["no_citations"]
 
 
 def test_rejects_history_not_ending_in_user_turn() -> None:
@@ -351,7 +350,7 @@ def test_generator_that_ignores_citation_instructions_entirely_refuses_rather_th
     result = service.answer([ChatMessage(role="user", content="q")], scope=None)
 
     assert result.refused
-    assert result.refusal_reason == _NO_GROUNDED_CLAIM_REASON
+    assert result.refusal_reason == "no_citations"
     assert "no need for sources" not in result.text
 
 
@@ -476,8 +475,8 @@ def test_image_analysis_survives_a_citation_enforcement_refusal() -> None:
     result = service.answer(history, scope=None)
 
     assert result.refused
-    assert result.refusal_reason == _NO_GROUNDED_CLAIM_REASON
-    assert result.text == _REFUSAL_TEXT
+    assert result.refusal_reason == "no_citations"
+    assert result.text == _REFUSAL_COPY["no_citations"]
     assert result.image_analysis == "I see a cat."
 
 
@@ -498,8 +497,8 @@ def test_image_only_turn_with_empty_content_skips_retrieval() -> None:
     result = service.answer(history, scope=None)
 
     assert result.refused
-    assert result.refusal_reason == _NO_GROUNDED_CLAIM_REASON
-    assert result.text == _REFUSAL_TEXT
+    assert result.refusal_reason == "no_citations"
+    assert result.text == _REFUSAL_COPY["no_citations"]
     assert result.image_analysis == "I see a cat."
     assert generator.image_analysis_called_with == [("", (_IMAGE,))]
 

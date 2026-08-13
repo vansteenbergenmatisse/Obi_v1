@@ -147,7 +147,7 @@ def test_answer_service_refuses_when_source_scope_excludes_everything(
 
     assert answer.refused
     assert answer.citations == []
-    assert "no retrieved candidates" in (answer.refusal_reason or "")
+    assert answer.refusal_reason == "no_candidates"
 
 
 def test_answer_service_refuses_when_generator_cites_nothing(gateway, settings: Settings) -> None:
@@ -160,7 +160,7 @@ def test_answer_service_refuses_when_generator_cites_nothing(gateway, settings: 
     answer = service.answer([ChatMessage(role="user", content=question)], scope="100")
 
     assert answer.refused
-    assert answer.refusal_reason == "no claim in the generated answer survived citation enforcement"
+    assert answer.refusal_reason == "no_citations"
     assert answer.trace_id is not None
 
     with get_sessionmaker()() as s:

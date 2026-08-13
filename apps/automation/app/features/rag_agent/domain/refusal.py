@@ -11,19 +11,31 @@ scored below threshold, can still produce a real answer from an attached image a
 it here would be wrong, not a safe default. This does not touch the separate ``no_citations``
 refusal `AnswerService` decides after generation (citation enforcement stripped every claim) —
 that one stays unaffected by an image being present, per the ADR.
+
+``RefusalReason`` (PLAN 9.4, ADR-0008 decision 4) is the closed, three-value taxonomy —
+``no_candidates`` and ``weak_score`` are decided here; ``no_citations`` is decided by
+`AnswerService` after generation (citation enforcement) and reuses this same type rather than
+inventing a second one. This is deliberately a stable category, not the old free-text diagnostic
+(e.g. the exact score) — a diagnostic with an interpolated number can't be a groupby key for
+fallback-rate reporting (PLAN 9.7) and isn't the "static, templated" string `router.py`'s own
+audit-log contract already promised. Score-level detail, if needed for debugging, belongs in a
+log line at the call site, not in the value that reaches `Answer.refusal_reason`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
+
+RefusalReason = Literal["no_candidates", "weak_score", "no_citations"]
 
 
 @dataclass(frozen=True)
 class RefusalDecision:
-    """Whether to refuse, and a human-readable reason (empty when not refusing)."""
+    """Whether to refuse, and the taxonomy reason (``None`` when not refusing)."""
 
     refuse: bool
-    reason: str
+    reason: RefusalReason | None
 
 
 def decide_refusal(top_score: float | None, threshold: float, has_image: bool) -> RefusalDecision:
@@ -38,12 +50,9 @@ def decide_refusal(top_score: float | None, threshold: float, has_image: bool) -
     "Consequences" note), so a caller cannot silently forget it.
     """
     if has_image:
-        return RefusalDecision(False, "")
+        return RefusalDecision(False, None)
     if top_score is None:
-        return RefusalDecision(True, "no retrieved candidates to ground an answer")
+        return RefusalDecision(True, "no_candidates")
     if top_score < threshold:
-        return RefusalDecision(
-            True,
-            f"top relevance {top_score:.3f} below refusal threshold {threshold:.3f}",
-        )
-    return RefusalDecision(False, "")
+        return RefusalDecision(True, "weak_score")
+    return RefusalDecision(False, None)

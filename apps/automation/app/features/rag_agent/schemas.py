@@ -15,6 +15,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.features.rag_agent.domain.refusal import RefusalReason
+
 
 class ImageAttachment(BaseModel):
     """One inline image attached to a chat turn (PLAN 7.2/7.3, ADR-0009). ``data`` is
@@ -72,7 +74,15 @@ class Answer(BaseModel):
     text: str
     citations: list[Citation] = Field(default_factory=list)
     refused: bool = False
-    refusal_reason: str | None = None
+    refusal_reason: RefusalReason | None = Field(
+        default=None,
+        description=(
+            "One of the closed taxonomy `no_candidates | weak_score | no_citations` (PLAN 9.4, "
+            "ADR-0008 decision 4) — never a free-text diagnostic. Not sent over the `/chat` SSE "
+            "wire today; surfaced here so callers (and the `chat_request` audit log line) have a "
+            "stable, groupable category rather than the interpolated-score string this used to be."
+        ),
+    )
     trace_id: str | None = None
     image_analysis: str | None = Field(
         default=None,

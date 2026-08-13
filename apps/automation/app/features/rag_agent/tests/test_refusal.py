@@ -8,7 +8,7 @@ from app.features.rag_agent.domain.refusal import decide_refusal
 def test_refuses_when_top_score_below_threshold() -> None:
     d = decide_refusal(top_score=0.05, threshold=0.10, has_image=False)
     assert d.refuse is True
-    assert "below refusal threshold" in d.reason
+    assert d.reason == "weak_score"
 
 
 def test_allows_when_top_score_at_or_above_threshold() -> None:
@@ -17,13 +17,13 @@ def test_allows_when_top_score_at_or_above_threshold() -> None:
 
 
 def test_allowed_decision_has_no_reason() -> None:
-    assert decide_refusal(top_score=0.9, threshold=0.10, has_image=False).reason == ""
+    assert decide_refusal(top_score=0.9, threshold=0.10, has_image=False).reason is None
 
 
 def test_refuses_when_no_candidates() -> None:
     d = decide_refusal(top_score=None, threshold=0.10, has_image=False)
     assert d.refuse is True
-    assert "no retrieved candidates" in d.reason
+    assert d.reason == "no_candidates"
 
 
 def test_has_image_never_refuses_on_no_candidates() -> None:
@@ -31,7 +31,7 @@ def test_has_image_never_refuses_on_no_candidates() -> None:
     answer from an attached image alone."""
     d = decide_refusal(top_score=None, threshold=0.10, has_image=True)
     assert d.refuse is False
-    assert d.reason == ""
+    assert d.reason is None
 
 
 def test_has_image_never_refuses_on_weak_score() -> None:
