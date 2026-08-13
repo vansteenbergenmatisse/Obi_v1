@@ -14,6 +14,32 @@
 security (HTTP/LLM controls), real tests, acceptance actually met — and if it falls short, add the
 fix here as the next task; update this ledger after each phase.
 
+**Same session (2026-08-13): 9.9 (exit gate) done — Phase 9 is now fully closed.** Committed 9.8
+first (`34706e1`, user confirmed via `AskUserQuestion`). Re-ran the full regression live rather than
+trusting the ledger's self-report: backend `make check` (repo root) → **372 passed** (unchanged
+since 9.8), `make boundaries` clean, ruff/pyright unchanged at 2/14/34; `alembic current` →
+`0006_dedupe_source_type_check (head)` — no pending migration (Phase 9 introduced no schema
+change, matching its own scope). Web: `pnpm --filter web test` → **133/133 passed** (unchanged since
+9.5, the last sub-step to touch `apps/web`); `pnpm --filter web exec tsc --noEmit` clean. **No dev
+servers were live at the time** (confirmed via `lsof` before starting), so `pnpm --filter web build`
+was run rather than skipped — compiled cleanly, all 5 routes generated, no errors. **Zero
+regressions across every check.** **ADR-0008 read fresh against everything that actually shipped
+across 9.1-9.8 — all 9 decisions match, no amendment needed** (same convention as ADR-0009's closure
+at 7.7: the ADR document's own `Status: Accepted` line is left as-is; closure is recorded here, in
+the ledger, against the shipped reality): the pre-retrieval short-circuit mirrors small-talk's shape
+exactly (decision 1); `enable_clarification_branch` shipped default `false` (decision 2); `Answer`
+gained the three additive fields with no new SSE event (decision 3); `RefusalReason` stayed a closed
+three-value taxonomy, clarification never joined it as a fourth value (decision 4); each reason got
+its own copy, still routing to the same stub hand-off (decision 5); the hand-off stayed a log line +
+static CTA, Salesforce noted as the eventual target, no credential invented (decision 6); evaluation
+reused the existing `ambiguity`/`answer` `EvalKind` values, no new literal added (decision 7); no
+MMR/diversity filtering, no new vector store, no agent-loop rewrite were built anywhere in this phase
+(decision 8); sequencing waited on Phase 7 as directed, with Phase 4.8's half of that dependency
+formally dropped via ADR-0010 (decision 9). **Docs closed out:** this ledger, Phase 9's own header
+(now 9.1-9.9 all done), the phase-9 summary-table row, and `apps/automation/app/features/FEATURES.md`
+(already current as of 9.8's own entry — no further edit needed). **No code changed this pass — docs
+only.**
+
 **Same session (2026-08-13): 9.8 (security review) done — see Phase 9's own 9.8 entry for the full
 narrative.** Committed 9.7 first (`8e1450a`, user confirmed via `AskUserQuestion`), excluding the
 same pre-existing unrelated `domain/prompt.py`/`test_llm_client.py` natural-writing-style change and
@@ -317,11 +343,11 @@ per this repo's own no-auto-start rule. No code changed this pass — docs only 
 **Phase 5.1 (`CHAT_API_KEY` rotation), 5.2 (exact-match answer caching), and 5.3 (prompt-injection +
 permission/isolation red-team) are done.**
 
-**Phase 9 progress (2026-08-13): 9.1-9.8 are done — 9.8 not yet committed** (9.1-9.7 already are,
-see recent commit log, 9.7 `8e1450a`). Next up is **9.9 (exit gate)** — the last sub-step in this
-phase, per this phase's own numbered sub-step order; do not start it without an explicit go-ahead,
-same as every other phase. See §0's newest entry above and Phase 9's own section below for the full
-9.8 narrative.
+**✅ Phase 9 is COMPLETE (2026-08-13) — all 9 sub-steps done, exit gate 9.9 green, ADR-0008 closed.**
+This was deliberately the plan's last phase — no phase follows it. See §0's newest entry above and
+Phase 9's own section below for the full 9.9 exit-gate narrative and commit refs (`771cfce` 9.1;
+`ba5416a`/`d20257c`/`f9ed445`/`10947d8`/`8e1450a` 9.2-9.7; `34706e1` 9.8; 9.9 is docs-only, not yet
+committed).
 
 **✅ Phase 4.6 is COMPLETE (2026-08-11) — all 16 sub-steps done, exit gate 4.6.16 green.** An
 independent same-day audit (`docs/rag/fixes/`, six agents, 2026-08-10) had found real unresolved
@@ -1379,7 +1405,7 @@ OCR/image reading untouched.
 | **4.7** — Obi widget: chat UI rebuild, brand tokens, screenshot capture, real i18n, `/chat` route removed, image lightbox (4.7.8) | ✅ done, **committed** | `206baab` (first sub-step), `aae90e5` (4.7.2-4.7.6), `bf99635` (rest, incl. 4.7.8 + the test-gap closure) | frontend-only, `apps/web`; does not gate Phase 5; source of truth `docs/rag/reference/obi-mockup/` + `docs/rag/OBI-WIDGET-DESIGN.md` |
 | **4.8** — Frontend/backend repository separation | **moved to `docs/future-ideas/IDEAS.md` #5 (2026-08-12)** | — | re-deferred per `docs/adr/0010-Redefer-Repository-Separation.md`; no longer part of this plan |
 | **7** — Vision-grounded image analysis (attachments + screenshot capture) | ✅ **done (2026-08-12), all 8 sub-steps closed** | `eb30837` (7.1), `7ffd916` (7.2), `12db45a` (7.3+7.4), `1398e64` (7.5); 7.6 is a verification pass, no commit (no code changed); 7.7/7.8 docs+fixes, no commit yet | supersedes `docs/future-ideas/IDEAS.md` #3; ADR-0009 + DESIGN.md §12 lock the contract shape (`ChatTurn.images`, `Answer.imageAnalysis`, no new SSE event), the `has_image` refusal gate, and the independent (never citation-enforced) vision call; 7.6's live adversarial red-team found zero injection compliance, caps enforced live; 7.7 re-ran the full gate with zero regressions and closed ADR-0009; **7.8 found and fixed 5 stacked, user-reported bugs** in a "triple-check the feature" pass — a pre-image-era proxy body-size ceiling (413), a proxy content-length check that rejected genuine image-only turns (400), a backend crash embedding an empty query (uncaught `EmbeddingError`), Anthropic itself rejecting an empty text content block (400), and — found only once real browser testing replaced curl repros — the same content-length check breaking again on any *later* turn once an earlier image-only turn aged out and lost both its content and its image; all five found by fixing one, re-testing, and hitting the next one underneath |
-| **9** — Unanswerable/vague-query fallback (9.1 → 9.9) | 9.1-9.8 ✅ done (9.1 `771cfce`, 2026-08-11; 9.2-9.7 committed across `ba5416a`/`d20257c`/`f9ed445`/`10947d8`/`8e1450a`, 2026-08-13; 9.8 done, not yet committed — see §0's newest entry); **9.9 (exit gate) ⬜ todo, dead last, no phase follows** | — | supersedes `docs/future-ideas/IDEAS.md` #1; ADR-0008 + DESIGN.md §11 lock the contract shape (extend `Answer`, no new SSE event), the 3-value refusal-reason taxonomy, and eval-kind reuse; ambiguity/vagueness classifier + clarification response, differentiated refusal reasons, human-hand-off stub (Salesforce noted as eventual target), fallback-quality eval metrics, live+deterministic red-team (9.8, zero findings); MMR/diversity filtering and any new vector store explicitly out of scope |
+| **9** — Unanswerable/vague-query fallback (9.1 → 9.9) | ✅ **done (2026-08-13), all 9 sub-steps closed** (9.1 `771cfce`; 9.2-9.7 across `ba5416a`/`d20257c`/`f9ed445`/`10947d8`/`8e1450a`; 9.8 `34706e1`; 9.9 docs-only, not yet committed) — dead last, no phase follows | — | supersedes `docs/future-ideas/IDEAS.md` #1; ADR-0008 + DESIGN.md §11 lock the contract shape (extend `Answer`, no new SSE event), the 3-value refusal-reason taxonomy, and eval-kind reuse — **all 9 decisions confirmed matching shipped code at 9.9, ADR-0008 closed as-is**; ambiguity/vagueness classifier + clarification response, differentiated refusal reasons, human-hand-off stub (Salesforce noted as eventual target), fallback-quality eval metrics, live+deterministic red-team (9.8, zero findings); MMR/diversity filtering and any new vector store explicitly out of scope |
 
 Gate at each ✅: `make check` green (**219 backend tests** as of 5.3 — 4.5 touched no backend code;
 was 213 at 5.1/5.2, 197 at 5.1, 194 at 4.4, 167 at 4.3, 164 at 4.2, 144 at 3.5.6, 130 at 4.1, 120 at
@@ -3290,7 +3316,7 @@ shared risk with either.
 
 ---
 
-## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ⬜ todo *(9.1-9.8 done; 9.9 remains — see Sequencing)*
+## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ✅ done *(9.1-9.9 all done, 2026-08-11/13 — Phase 9 fully closed, ADR-0008 confirmed matching shipped code)*
 
 **Scoped 2026-08-11; 9.1 (design doc + ADR-0008) done the same day — nothing else started.** User
 supplied an external best-practices brief on handling
@@ -3673,8 +3699,16 @@ turning that design into code, not started:
    the one malformed reply correctly failed open to the static fallback rather than surfacing
    anything unparsed. Log lines stayed within their closed category/boolean fields even under
    adversarial input. No code changed. See §0's own 9.8 entry for full detail.
-9. **9.9 — Exit gate.** Full regression (`make check`, `pnpm --filter web test`), zero regressions
-   vs. the Phase 4.6/4.7 baseline, ledger + `FEATURES.md` updated, ADR-0008 closed.
+9. **9.9 — Exit gate ✅ done (2026-08-13), zero regressions.** Re-ran the full gate live: backend
+   `make check` → **372 passed** (unchanged since 9.8), `make boundaries` clean, ruff/pyright
+   unchanged at 2/14/34, `alembic current` → `0006_dedupe_source_type_check (head)` (no pending
+   migration — Phase 9 introduced no schema change); web `pnpm --filter web test` →
+   **133/133 passed** (unchanged since 9.5), `tsc --noEmit` clean, `pnpm --filter web build`
+   compiled cleanly (no dev servers were live, confirmed via `lsof`, so the build wasn't skipped).
+   **ADR-0008 read fresh against everything shipped across 9.1-9.8 — all 9 decisions match, closed
+   as-is, no amendment needed** (see §0's own 9.9 entry for the full decision-by-decision
+   confirmation). Docs closed out: this ledger, this phase's own header, and the phase-9 summary-
+   table row; `FEATURES.md` was already brought current at 9.8. **No code changed — docs only.**
 
 **Non-goals, explicitly.** No MMR/diversity filtering (see above). No new vector store. No
 agent-loop rewrite of `AnswerService` — it stays "a plain function pipeline, not an agent loop" per
