@@ -1,0 +1,12 @@
+{
+  "name": "out_of_corpus",
+  "cases": [
+    {
+      "id": "ooc-01",
+      "question": "What is our policy on registering a company trademark?",
+      "relevant_chunk_ids": [],
+      "expected_answer": "Not covered anywhere in this corpus (Onboarding, Deployment Runbook, Expense Policy, Approval Workflow) — the pipeline must refuse, not guess or clarify (PLAN 9.7, ADR-0008 decision 7).",
+      "kind": "answer"
+    }
+  ]
+}

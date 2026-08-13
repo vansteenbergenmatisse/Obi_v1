@@ -31,7 +31,12 @@ from app.platform.logging import get_logger
 logger = get_logger(__name__)
 
 _DATASET_DIR = Path(__file__).resolve().parent / "datasets"
-_DATASET_FILES = ["retrieval_smoke.json", "ambiguity.json", "permission.json"]
+_DATASET_FILES = [
+    "retrieval_smoke.json",
+    "ambiguity.json",
+    "permission.json",
+    "out_of_corpus.json",
+]
 _K = 5
 
 
@@ -170,9 +175,7 @@ def _write_reports(reports: list[EvalReport], now_iso: str) -> None:
     with md_path.open("w", encoding="utf-8") as handle:
         handle.write(_render_markdown(reports, now_iso))
 
-    logger.info(
-        "baseline_reports_written", json=str(json_path), markdown=str(md_path)
-    )
+    logger.info("baseline_reports_written", json=str(json_path), markdown=str(md_path))
 
 
 def _render_markdown(reports: list[EvalReport], now_iso: str) -> str:
@@ -200,10 +203,7 @@ def _render_markdown(reports: list[EvalReport], now_iso: str) -> str:
             recall = result.metrics.get(f"recall@{report.k}", 0.0)
             rr = result.metrics.get("mrr", 0.0)
             top = ", ".join(result.ranked_ids[:5]) or "(none)"
-            lines.append(
-                f"| {result.case_id} | {result.kind} | {recall:.3f} | "
-                f"{rr:.3f} | {top} |"
-            )
+            lines.append(f"| {result.case_id} | {result.kind} | {recall:.3f} | {rr:.3f} | {top} |")
         lines.append("")
     return "\n".join(lines)
 

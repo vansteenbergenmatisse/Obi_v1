@@ -13,6 +13,7 @@ ImportError.
 from __future__ import annotations
 
 from .fixtures import confluence_fixtures_dir, datasets_dir, load_corpus_loader
+from .metrics.fallback_metrics import citation_grounding_rate, fallback_rate
 from .run_baseline import load_dataset, write_rerank_lift_reports
 from .runner import RankFn, evaluate, evaluate_rerank_lift
 from .schemas import EvalCase, EvalDataset, EvalReport, EvalResult, RerankLiftReport
@@ -24,10 +25,12 @@ __all__ = [
     "EvalResult",
     "RankFn",
     "RerankLiftReport",
+    "citation_grounding_rate",
     "confluence_fixtures_dir",
     "datasets_dir",
     "evaluate",
     "evaluate_rerank_lift",
+    "fallback_rate",
     "load_corpus_loader",
     "load_dataset",
     "write_rerank_lift_reports",

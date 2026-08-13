@@ -14,6 +14,46 @@
 security (HTTP/LLM controls), real tests, acceptance actually met — and if it falls short, add the
 fix here as the next task; update this ledger after each phase.
 
+**New session (2026-08-13): 9.7 (fallback-quality evaluation) done — see Phase 9's own 9.7 entry for
+the full narrative.** User asked to read the plan and continue Phase 9; ran the pre-phase
+verification gate live first (`make check` → 358 passed — 357 baseline **+1 from an unrelated,
+already-uncommitted, pre-existing working-tree change** [`domain/prompt.py`'s natural-writing-style
+guidance, a same-day user request that predates this session and was left as-is, not part of this
+sub-step], `make boundaries` clean, ruff/pyright 2/15/34, web `pnpm --filter web test` 133 passed,
+`tsc --noEmit` clean — all matched/reconciled against the ledger) before starting. Added
+`evaluation/metrics/fallback_metrics.py` (`fallback_rate`, `citation_grounding_rate`, both exported
+at the feature root), a new `evaluation/datasets/out_of_corpus.json` (one case, empty
+`relevant_chunk_ids`, `answer` `EvalKind` — no new literal, ADR-0008 decision 7) wired into
+`run_baseline._DATASET_FILES`, and `confluence_sync/tests/test_fallback_eval.py` — a DB-backed
+end-to-end proof against the real `AnswerService` that `ambiguity.json`'s 3 cases actually trigger
+`needs_clarification=True` (not just retrieval recall, which is all that dataset was scored on
+before) and that the new out-of-corpus case refuses rather than clarifying or hallucinating.
+**A real gap this surfaced and fixed, not worked around:** the test's fake `generate_clarification`
+initially duck-typed a local stand-in for `ClarificationReply` instead of the real type, since that
+type was never exported from `rag_agent`'s public root (only policy — `decide_clarification`,
+`ClarificationDecision` — was deliberately kept internal; nobody had needed the plain *data* shape
+from outside before). Pyright caught the mismatch (34 → 36) because `AnswerGenerator`'s
+`generate_clarification` is declared to return the real `ClarificationReply`, not a structurally
+similar stand-in — fixed by exporting `ClarificationReply` itself (data, not policy) from
+`rag_agent/__init__.py`, back to the 2/14/34 baseline (format count *improved* 15 → 14: reformatting
+`run_baseline.py` for this sub-step's own edit fixed one pre-existing, unrelated formatting
+violation as a side effect, not a new one introduced). **Disclosed limitation, in the new test's own
+docstring:** CI's `FakeReranker` fabricates a score from candidate rank, not relevance
+(`float(n - i)`, always ≥ 1.0), so it can never produce a genuinely low score — the out-of-corpus
+case's refusal is proven deterministically via the same `no_candidates`/source-scope-exclusion
+mechanism `test_answer_service_refuses_when_source_scope_excludes_everything` already established,
+not via a live semantic "this really is irrelevant" signal; that requires a live reranker/embedder
+key, the same disclosed gap `test_rerank_lift_before_vs_after` already carries for the same reason.
+**Security review:** not applicable — no new HTTP/LLM surface (`git status` confirms only
+`evaluation`/`rag_agent`/`confluence_sync` test and metrics/dataset files changed; PLAN 9.8 is the
+phase's own dedicated security-review sub-step, not superseded by this one). **Verified:** backend
+`make check` → **369 passed** (was 358 immediately before this sub-step's own tests, +11:
+`test_fallback_metrics.py` ×8, `test_fallback_eval.py` ×3), `make boundaries` clean, ruff 2/format
+14/pyright 34 (format count improved, not regressed — see above). No web changes this sub-step.
+**Not yet committed** — ask before committing, per this repo's own convention; the unrelated,
+already-uncommitted natural-writing-style change noted above was left exactly as found, not folded
+into this commit.
+
 **New session (2026-08-13): 9.6 (human hand-off stub) done — see Phase 9's own 9.6 entry for the
 full narrative.** User asked to read the plan and continue; ran the pre-phase verification gate
 live first (`make check` 354 passed, `make boundaries` clean, ruff/pyright 2/15/34, all matched the
@@ -3215,7 +3255,7 @@ shared risk with either.
 
 ---
 
-## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ⬜ todo *(9.1-9.6 done; 9.7-9.9 remain — see Sequencing)*
+## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ⬜ todo *(9.1-9.7 done; 9.8-9.9 remain — see Sequencing)*
 
 **Scoped 2026-08-11; 9.1 (design doc + ADR-0008) done the same day — nothing else started.** User
 supplied an external best-practices brief on handling
@@ -3541,12 +3581,44 @@ turning that design into code, not started:
      `anti-ai-writing` for the CTA sentence itself. Committed `10947d8` (2026-08-13) — asked the
      user first via `AskUserQuestion`, per this repo's own convention; the pre-existing, unrelated
      stray `docs/future-ideas/IDEAS.md` "Baze" edit was again left out.
-7. **9.7 — Fallback-quality evaluation.** A `fallback_rate` metric and a lightweight faithfulness/
-   hallucination-rate signal in `evaluation/metrics/`; extend `ambiguity.json` to assert actual
-   clarification-triggering (not just `expected_answer` text); add a genuinely out-of-corpus dataset
-   as a `retrieval`/`answer`-kind case with an empty relevant-chunk set (9.1 decided this reuses the
-   existing `ambiguity` `EvalKind` for clarification cases — no new literal in the closed 5-way
-   `EvalKind` type).
+7. **9.7 — Fallback-quality evaluation ✅ done (2026-08-13).** `evaluation/metrics/
+   fallback_metrics.py` (new): `fallback_rate` (fraction of cases that fell back instead of
+   answering) and `citation_grounding_rate` (the lightweight faithfulness/hallucination-rate
+   proxy — fraction of an answer's cited ids within a case's own labelled-relevant set; not an
+   LLM-judge, by design, matching every other metric this DB-free harness has), both exported at
+   `evaluation`'s public root. **`ambiguity.json` extended to assert actual clarification-triggering:**
+   a new `confluence_sync/tests/test_fallback_eval.py` (DB-backed, real fixture corpus) runs every
+   one of its 3 cases through a real `AnswerService` with the clarification branch enabled and
+   proves each returns `needs_clarification=True`, bypassing retrieval/generation entirely — the
+   dataset previously only fed the pure retrieval-metrics harness (recall/mrr against
+   `relevant_chunk_ids`), which asserted nothing about the clarification behavior the cases exist to
+   represent. **A genuinely out-of-corpus case**, `evaluation/datasets/out_of_corpus.json` (one
+   case, `kind: "answer"`, empty `relevant_chunk_ids` — reuses the closed 5-way `EvalKind`, no new
+   literal, ADR-0008 decision 7), wired into `run_baseline._DATASET_FILES`; the same end-to-end test
+   proves it refuses (`no_candidates`) rather than clarifying or fabricating an answer, with the
+   clarification branch left at its production-default `False` (a short out-of-corpus query must not
+   get relabelled ambiguous just because it's short). **A real gap this surfaced and fixed, not
+   worked around:** the test's fake `generate_clarification` first duck-typed a local stand-in for
+   `ClarificationReply` instead of the real type — that type had never been exported from
+   `rag_agent`'s public root (only the *policy*, `decide_clarification`/`ClarificationDecision`, was
+   deliberately kept internal; nobody had needed the plain *data* shape from outside before this).
+   Pyright caught the mismatch (34 → 36 errors) because `AnswerGenerator.generate_clarification` is
+   declared to return the real `ClarificationReply`, not a structurally similar stand-in — fixed by
+   exporting `ClarificationReply` itself (data, not policy) from `rag_agent/__init__.py`, back to
+   baseline. **Disclosed limitation, in the new test's own docstring:** CI's `FakeReranker`
+   fabricates a score from candidate *rank*, not relevance (`float(n - i)`, always ≥ 1.0 for any
+   non-empty result), so it can never produce a genuinely low score — the out-of-corpus case's
+   refusal is proven deterministically via the same `no_candidates`/source-scope-exclusion mechanism
+   `test_answer_service_refuses_when_source_scope_excludes_everything` already established, not via
+   a live semantic "this really is irrelevant" signal; that requires a live reranker/embedder key,
+   the same disclosed gap `test_rerank_lift_before_vs_after` already carries for the same reason.
+   **Security review:** not applicable — no new HTTP/LLM surface; PLAN 9.8 is this phase's own
+   dedicated security-review sub-step, not superseded by this one. **Verified:** backend `make
+   check` → **369 passed** (was 358 immediately before this sub-step, +11: `test_fallback_metrics.py`
+   ×8, `test_fallback_eval.py` ×3), `make boundaries` clean, ruff 2/format 14/pyright 34 — format
+   count *improved* (15 → 14: reformatting `run_baseline.py` for this sub-step's own edit fixed one
+   pre-existing, unrelated formatting violation as a side effect, not a new one introduced). No web
+   changes this sub-step.
 8. **9.8 — Security review**, per `securing-http-and-llm-endpoints`: prompt-injection risk on the
    new classifier LLM call (user query flows into a classifier prompt), confirm the new response
    field doesn't leak internal refusal-reason detail inappropriately.

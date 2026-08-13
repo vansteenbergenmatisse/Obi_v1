@@ -9,8 +9,11 @@ Public surface: the DTOs `POST /chat` serialises (`Answer`/`ChatMessage`/`Citati
 `router.py` actually depends on) plus `CachingAnswerService` (Phase 5, an exact-match cache
 decorator around any `AnswerProvider`), the `QueryRewriter`/`AnswerGenerator` collaborator
 protocols + their Anthropic-backed implementations, and — as of Phase 4.4 — `router` (the
-`POST /chat` + `PATCH /chat/{trace_id}/feedback` HTTP surface `app.main` includes). The refusal /
-citation / prompt / PII-redaction domain logic stays internal.
+`POST /chat` + `PATCH /chat/{trace_id}/feedback` HTTP surface `app.main` includes). PLAN 9.7 adds
+`ClarificationReply` — a plain data shape, not policy (unlike `decide_clarification`, which stays
+internal) — so a test double outside this feature implementing `generate_clarification` can
+return the exact type `AnswerGenerator` declares instead of a merely duck-typed stand-in. The
+refusal / clarification-decision / citation / prompt / PII-redaction domain *logic* stays internal.
 
 `chat_router_module` (Phase 4.6.12) is the `server/router.py` module itself, exported solely so
 tests outside this feature can `monkeypatch.setattr(chat_router_module, "log", ...)` and intercept
@@ -31,6 +34,7 @@ from __future__ import annotations
 
 from .application.answer_cache import CachingAnswerService
 from .application.answer_service import AnswerProvider, AnswerService
+from .domain.clarification import ClarificationReply
 from .infrastructure.llm_client import (
     AnswerGenerator,
     AnthropicAmbiguityClassifier,
@@ -45,6 +49,7 @@ __all__ = [
     "Answer",
     "ChatMessage",
     "Citation",
+    "ClarificationReply",
     "ImageAttachment",
     "AnswerService",
     "AnswerProvider",

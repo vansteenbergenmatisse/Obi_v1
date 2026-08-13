@@ -54,3 +54,17 @@
 | perm-01 | permission | 1.000 | 0.250 | 1001, 1002, 2001, 2002 |
 | perm-02 | permission | 1.000 | 0.500 | 1001, 1002, 2001, 2002 |
 | perm-03 | permission | 0.000 | 0.000 | 1001, 1002, 2001, 2002 |
+
+## Dataset: `out_of_corpus` (1 cases)
+
+| Metric | Mean |
+| --- | --- |
+| hit_rate@5 | 0.0000 |
+| mrr | 0.0000 |
+| ndcg@5 | 0.0000 |
+| precision@5 | 0.0000 |
+| recall@5 | 0.0000 |
+
+| Case | Kind | recall@k | mrr | ranked (top 5) |
+| --- | --- | --- | --- | --- |
+| ooc-01 | answer | 0.000 | 0.000 | 1001, 1002, 2001, 2002 |
