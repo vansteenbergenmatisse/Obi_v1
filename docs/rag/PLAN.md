@@ -14,6 +14,40 @@
 security (HTTP/LLM controls), real tests, acceptance actually met — and if it falls short, add the
 fix here as the next task; update this ledger after each phase.
 
+**Same session (2026-08-13): 9.8 (security review) done — see Phase 9's own 9.8 entry for the full
+narrative.** Committed 9.7 first (`8e1450a`, user confirmed via `AskUserQuestion`), excluding the
+same pre-existing unrelated `domain/prompt.py`/`test_llm_client.py` natural-writing-style change and
+`docs/future-ideas/IDEAS.md` "Baze" stray edit as every prior sub-step this session. Ran the
+pre-phase verification gate live first (`make check` → 369 passed, `make boundaries` clean,
+ruff/pyright 2/14/34, matched the ledger) before starting. Per `securing-http-and-llm-endpoints`,
+audited the two PLAN 9.2/9.3 LLM surfaces (`AnthropicAmbiguityClassifier.classify`,
+`AnthropicAnswerGenerator.generate_clarification`) against `router.py`'s own already-current
+`security_baseline` block — found it accurate, not stale, so no doc rewrite was needed there. Added
+3 deterministic red-team regression tests (same discipline as PLAN 5.3): a hostile completion that
+buries the word "AMBIGUOUS" inside a narrated refusal must not flip the classifier's verdict (only a
+*leading* token is trusted); `parse_clarification_reply` structurally discards any text outside the
+`Question:`/`Options:` shape even when the fake model return leaks extra content alongside it; and a
+wire-level lock on the `/chat` `done` event proving a clarifying turn's key set never includes
+`refusalReason` or any other internal category. **Then, per the user's explicit go-ahead
+(`AskUserQuestion`, given the real Anthropic API cost involved), ran the live-model adversarial pass
+this path's own code deferred to 9.8 — mirroring PLAN 7.6's precedent exactly** (real running
+backend on `localhost:8000`, `ENABLE_CLARIFICATION_BRANCH=true`, a throwaway `CHAT_API_KEY` set only
+for this run, real Anthropic calls, no mocking). Four short (<12-word, so none skip the heuristic)
+adversarial queries against the real classifier + clarification-generation calls: system-prompt
+exfiltration, a DAN-style role switch, an internal-refusal-category exfiltration attempt, plus a
+benign control. **Zero findings, no code changed** — every case's classifier verdict came back
+`AMBIGUOUS` (confirming the calls genuinely ran, not just the heuristic short-circuit), and every
+clarifying reply stayed on-topic and safe: no system-prompt leak, no role switch, no category names
+surfaced; the internal-category attempt produced a reply that didn't match the fixed
+`Question:`/`Options:` shape and correctly fell open to the static fallback
+(`clarification_generation_unparseable_using_fallback`, confirmed in the live server log) rather
+than surfacing anything unparsed. The `clarification_decision`/`chat_request` log lines stayed
+within their closed category/boolean fields in every case — no raw query or model text logged, even
+under adversarial input. Test server stopped cleanly afterward; no server left running. **Verified:**
+backend `make check` → **372 passed** (was 369, +3 new tests), `make boundaries` clean, ruff/pyright
+unchanged at 2/14/34 (both new test files individually format-clean). No web changes this sub-step.
+**Not yet committed** — ask before committing, per this repo's own convention.
+
 **New session (2026-08-13): 9.7 (fallback-quality evaluation) done — see Phase 9's own 9.7 entry for
 the full narrative.** User asked to read the plan and continue Phase 9; ran the pre-phase
 verification gate live first (`make check` → 358 passed — 357 baseline **+1 from an unrelated,
@@ -283,10 +317,11 @@ per this repo's own no-auto-start rule. No code changed this pass — docs only 
 **Phase 5.1 (`CHAT_API_KEY` rotation), 5.2 (exact-match answer caching), and 5.3 (prompt-injection +
 permission/isolation red-team) are done.**
 
-**Phase 9 progress (2026-08-13): 9.1-9.6 are done — 9.6 not yet committed** (9.1-9.5 already are,
-see recent commit log). Next up is **9.7 (fallback-quality evaluation)**, per this phase's own
-numbered sub-step order — do not start it without an explicit go-ahead, same as every other phase.
-See §0's newest entry above and Phase 9's own section below for the full 9.6 narrative.
+**Phase 9 progress (2026-08-13): 9.1-9.8 are done — 9.8 not yet committed** (9.1-9.7 already are,
+see recent commit log, 9.7 `8e1450a`). Next up is **9.9 (exit gate)** — the last sub-step in this
+phase, per this phase's own numbered sub-step order; do not start it without an explicit go-ahead,
+same as every other phase. See §0's newest entry above and Phase 9's own section below for the full
+9.8 narrative.
 
 **✅ Phase 4.6 is COMPLETE (2026-08-11) — all 16 sub-steps done, exit gate 4.6.16 green.** An
 independent same-day audit (`docs/rag/fixes/`, six agents, 2026-08-10) had found real unresolved
@@ -1344,7 +1379,7 @@ OCR/image reading untouched.
 | **4.7** — Obi widget: chat UI rebuild, brand tokens, screenshot capture, real i18n, `/chat` route removed, image lightbox (4.7.8) | ✅ done, **committed** | `206baab` (first sub-step), `aae90e5` (4.7.2-4.7.6), `bf99635` (rest, incl. 4.7.8 + the test-gap closure) | frontend-only, `apps/web`; does not gate Phase 5; source of truth `docs/rag/reference/obi-mockup/` + `docs/rag/OBI-WIDGET-DESIGN.md` |
 | **4.8** — Frontend/backend repository separation | **moved to `docs/future-ideas/IDEAS.md` #5 (2026-08-12)** | — | re-deferred per `docs/adr/0010-Redefer-Repository-Separation.md`; no longer part of this plan |
 | **7** — Vision-grounded image analysis (attachments + screenshot capture) | ✅ **done (2026-08-12), all 8 sub-steps closed** | `eb30837` (7.1), `7ffd916` (7.2), `12db45a` (7.3+7.4), `1398e64` (7.5); 7.6 is a verification pass, no commit (no code changed); 7.7/7.8 docs+fixes, no commit yet | supersedes `docs/future-ideas/IDEAS.md` #3; ADR-0009 + DESIGN.md §12 lock the contract shape (`ChatTurn.images`, `Answer.imageAnalysis`, no new SSE event), the `has_image` refusal gate, and the independent (never citation-enforced) vision call; 7.6's live adversarial red-team found zero injection compliance, caps enforced live; 7.7 re-ran the full gate with zero regressions and closed ADR-0009; **7.8 found and fixed 5 stacked, user-reported bugs** in a "triple-check the feature" pass — a pre-image-era proxy body-size ceiling (413), a proxy content-length check that rejected genuine image-only turns (400), a backend crash embedding an empty query (uncaught `EmbeddingError`), Anthropic itself rejecting an empty text content block (400), and — found only once real browser testing replaced curl repros — the same content-length check breaking again on any *later* turn once an earlier image-only turn aged out and lost both its content and its image; all five found by fixing one, re-testing, and hitting the next one underneath |
-| **9** — Unanswerable/vague-query fallback (9.1 → 9.9) | 9.1 ✅ done, 2026-08-11 (`771cfce`); 9.2 ✅ done, 2026-08-12 (classifier only, flag off, no behavior change — see 9.2's own entry); 9.3-9.9 ⬜ todo, dead last, no phase follows | — | supersedes `docs/future-ideas/IDEAS.md` #1; ADR-0008 + DESIGN.md §11 lock the contract shape (extend `Answer`, no new SSE event), the 3-value refusal-reason taxonomy, and eval-kind reuse; ambiguity/vagueness classifier + clarification response, differentiated refusal reasons, human-hand-off stub (Salesforce noted as eventual target), fallback-quality eval metrics; MMR/diversity filtering and any new vector store explicitly out of scope |
+| **9** — Unanswerable/vague-query fallback (9.1 → 9.9) | 9.1-9.8 ✅ done (9.1 `771cfce`, 2026-08-11; 9.2-9.7 committed across `ba5416a`/`d20257c`/`f9ed445`/`10947d8`/`8e1450a`, 2026-08-13; 9.8 done, not yet committed — see §0's newest entry); **9.9 (exit gate) ⬜ todo, dead last, no phase follows** | — | supersedes `docs/future-ideas/IDEAS.md` #1; ADR-0008 + DESIGN.md §11 lock the contract shape (extend `Answer`, no new SSE event), the 3-value refusal-reason taxonomy, and eval-kind reuse; ambiguity/vagueness classifier + clarification response, differentiated refusal reasons, human-hand-off stub (Salesforce noted as eventual target), fallback-quality eval metrics, live+deterministic red-team (9.8, zero findings); MMR/diversity filtering and any new vector store explicitly out of scope |
 
 Gate at each ✅: `make check` green (**219 backend tests** as of 5.3 — 4.5 touched no backend code;
 was 213 at 5.1/5.2, 197 at 5.1, 194 at 4.4, 167 at 4.3, 164 at 4.2, 144 at 3.5.6, 130 at 4.1, 120 at
@@ -3255,7 +3290,7 @@ shared risk with either.
 
 ---
 
-## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ⬜ todo *(9.1-9.7 done; 9.8-9.9 remain — see Sequencing)*
+## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ⬜ todo *(9.1-9.8 done; 9.9 remains — see Sequencing)*
 
 **Scoped 2026-08-11; 9.1 (design doc + ADR-0008) done the same day — nothing else started.** User
 supplied an external best-practices brief on handling
@@ -3619,9 +3654,25 @@ turning that design into code, not started:
    count *improved* (15 → 14: reformatting `run_baseline.py` for this sub-step's own edit fixed one
    pre-existing, unrelated formatting violation as a side effect, not a new one introduced). No web
    changes this sub-step.
-8. **9.8 — Security review**, per `securing-http-and-llm-endpoints`: prompt-injection risk on the
-   new classifier LLM call (user query flows into a classifier prompt), confirm the new response
-   field doesn't leak internal refusal-reason detail inappropriately.
+8. **9.8 — Security review ✅ done (2026-08-13), zero findings.** Per
+   `securing-http-and-llm-endpoints`: audited the two new LLM surfaces
+   (`AnthropicAmbiguityClassifier.classify`, `AnthropicAnswerGenerator.generate_clarification`)
+   against `router.py`'s already-current `security_baseline` block — accurate, no rewrite needed.
+   Added 3 deterministic red-team regression tests (PLAN 5.3's discipline): the classifier trusts
+   only a *leading* `AMBIGUOUS` token, never one buried in a hostile completion;
+   `parse_clarification_reply` structurally discards any text outside the
+   `Question:`/`Options:` shape even when the (fake) model leaks extra content alongside it; and a
+   wire-level lock proving a clarifying turn's `done` event never includes `refusalReason` or any
+   other internal category. **Then ran the live-model adversarial pass this path's own code
+   deferred here — mirroring PLAN 7.6's precedent** (real running backend, real Anthropic calls, no
+   mocking, user's explicit go-ahead given first since real API cost was involved): 4 short
+   adversarial queries (system-prompt exfiltration, DAN-style role switch, internal-refusal-
+   category exfiltration, plus a benign control) against the real classifier + clarification
+   calls. **Zero findings** — every verdict came back genuinely `AMBIGUOUS` (proving the calls ran,
+   not just the heuristic skip), no system-prompt leak, no role switch, no category names surfaced;
+   the one malformed reply correctly failed open to the static fallback rather than surfacing
+   anything unparsed. Log lines stayed within their closed category/boolean fields even under
+   adversarial input. No code changed. See §0's own 9.8 entry for full detail.
 9. **9.9 — Exit gate.** Full regression (`make check`, `pnpm --filter web test`), zero regressions
    vs. the Phase 4.6/4.7 baseline, ledger + `FEATURES.md` updated, ADR-0008 closed.
 

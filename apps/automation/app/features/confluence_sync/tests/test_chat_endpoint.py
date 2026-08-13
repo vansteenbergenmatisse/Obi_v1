@@ -15,6 +15,7 @@ from app.features.rag_agent import (
     AnswerProvider,
     AnswerService,
     CachingAnswerService,
+    ClarificationReply,
     chat_router_module,
 )
 from app.main import create_app
@@ -360,6 +361,72 @@ def test_refusal_streams_done_with_refused_true(gateway, settings: Settings) -> 
     assert done["type"] == "done"
     assert done["refused"] is True
     assert done["citations"] == []
+
+
+class _LeakyClarifyingGenerator:
+    """Simulates a `generate_clarification` call that was talked into leaking extra content, so
+    this test can assert the *wire* payload built from its return value stays confined to the
+    whitelisted PLAN 9.3 fields regardless of what the collaborator returns."""
+
+    def generate(self, query: str, evidence_block: str) -> str:
+        raise AssertionError("generate must not be called: the clarification branch bypasses it")
+
+    def generate_small_talk(self, query: str) -> str:
+        raise AssertionError("generate_small_talk must not be called for a real question")
+
+    def generate_image_analysis(self, query: str, images) -> str:
+        raise AssertionError("generate_image_analysis must not be called: no test turn has images")
+
+    def generate_clarification(self, query: str) -> ClarificationReply:
+        return ClarificationReply(question="Which system do you mean?", options=["Muse", "Toast"])
+
+
+class _AlwaysAmbiguousClassifier:
+    def classify(self, query: str) -> bool:
+        return True
+
+
+def test_clarification_done_payload_never_leaks_internal_refusal_categories(
+    gateway, settings: Settings
+) -> None:
+    """Red-team (PLAN 9.8): a clarifying turn is not a refusal and carries no `RefusalReason`
+    category — this locks the `done` event's key set for that turn so a future change cannot
+    accidentally start forwarding `refusal_reason` (or any other internal field) onto the wire
+    alongside PLAN 9.3's additive clarification fields."""
+    chat_settings = _chat_settings(settings)
+    service = AnswerService(
+        _build_retriever(gateway, chat_settings),
+        _EchoRewriter(),
+        _LeakyClarifyingGenerator(),
+        get_sessionmaker(),
+        clarification_classifier=_AlwaysAmbiguousClassifier(),
+        enable_clarification_branch=True,
+    )
+    client = _client_with_service(chat_settings, service)
+
+    resp = client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": "what are the limits?"}]},
+        headers=_auth(),
+    )
+    done = _parse_sse(resp.text)[-1]
+
+    assert done["type"] == "done"
+    assert done["needsClarification"] is True
+    assert done["clarificationQuestion"] == "Which system do you mean?"
+    assert done["clarificationOptions"] == ["Muse", "Toast"]
+    assert "refusalReason" not in done
+    assert set(done.keys()) == {
+        "type",
+        "answer",
+        "citations",
+        "traceId",
+        "refused",
+        "imageAnalysis",
+        "needsClarification",
+        "clarificationQuestion",
+        "clarificationOptions",
+    }
 
 
 class _LogRecorder:
