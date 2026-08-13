@@ -32,11 +32,11 @@ back at 2/15/34 after one `ruff format` pass on the new test code; web `pnpm --f
 133 passed (was 132, +1 net), `tsc --noEmit` clean, `pnpm --filter web build` clean. Live-browser-
 verified via `chrome-devtools` MCP (started the dev server for this check, patched `fetch` to a
 canned `refused` `done` event, confirmed the banner + CTA + working `mailto:` link + feedback
-thumbs all render correctly, then stopped the dev server). **Not yet committed** — ask before
-committing, per this repo's own convention; the same pre-existing, unrelated stray
-`docs/future-ideas/IDEAS.md` "Baze" edit is still sitting in the working tree, still left for the
-user, and this sub-step's own `docs/future-ideas/IDEAS.md` addition was made alongside it without
-touching that unrelated content.
+thumbs all render correctly, then stopped the dev server). Committed `10947d8` (2026-08-13) —
+asked the user first via `AskUserQuestion`, per this repo's own convention. The same pre-existing,
+unrelated stray `docs/future-ideas/IDEAS.md` "Baze" edit was again left out (staged and committed
+only this sub-step's own addition to that file via a hand-crafted partial patch, leaving the Baze
+hunk unstaged, still sitting in the working tree for the user).
 
 **Same session, immediately after: 9.5 (Obi widget fallback UX) done — see Phase 9's own 9.5 entry
 for the full narrative.** User asked to read the plan and finish Phase 9; ran the pre-phase
@@ -3538,7 +3538,9 @@ turning that design into code, not started:
      thumbs — then stopped the dev server (it was started only for this check, not left running).
      Routed through `fe:foundations-router` → `fe:interface-design` (functional product UI, same
      as 9.5) for the one new microcopy element; `copywriting-rules` → `ux-writing` →
-     `anti-ai-writing` for the CTA sentence itself.
+     `anti-ai-writing` for the CTA sentence itself. Committed `10947d8` (2026-08-13) — asked the
+     user first via `AskUserQuestion`, per this repo's own convention; the pre-existing, unrelated
+     stray `docs/future-ideas/IDEAS.md` "Baze" edit was again left out.
 7. **9.7 — Fallback-quality evaluation.** A `fallback_rate` metric and a lightweight faithfulness/
    hallucination-rate signal in `evaluation/metrics/`; extend `ambiguity.json` to assert actual
    clarification-triggering (not just `expected_answer` text); add a genuinely out-of-corpus dataset
