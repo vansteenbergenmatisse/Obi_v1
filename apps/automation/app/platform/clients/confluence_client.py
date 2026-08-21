@@ -251,10 +251,30 @@ class HttpConfluenceClient:
         return out
 
     def get_restrictions(self, page_id: int) -> list[str]:
-        # v2 read-restriction principals; returns [] when not accessible/none.
-        resp = self._get(f"{self._api}/pages/{page_id}/restrictions")
+        """Read-restriction principals for a page.
+
+        Uses REST **v1** (``/rest/api/content/{id}/restriction``), not v2. The v2 equivalent
+        (``/api/v2/pages/{id}/restrictions``) is documented by Atlassian as still "under
+        construction" and returns a non-standard 418 in practice — confirmed live against a real
+        Confluence Cloud instance (PLAN 4.6.2, 2026-08-21 update); v1 is the endpoint that
+        actually works today, and its response shape (``results[].operation`` /
+        ``restrictions.user.results[].accountId`` / ``restrictions.group.results[]``) is exactly
+        what ``_resolve_read_restriction`` already expects, confirmed against real pages, no
+        parsing change needed.
+
+        Fails **closed** on any request failure (``GROUP_RESTRICTED_SENTINEL``, the same sentinel
+        4.6.1 established for an unresolvable group restriction) rather than treating an error as
+        "no restrictions". The old v2 path's ``>=400 -> []`` was fail-*open*: since that endpoint
+        never actually worked, every synced page persisted with zero restriction rows — silently
+        world-readable regardless of its real Confluence ACL — until this fix (PLAN 4.6.2's
+        2026-08-21 finding, live-confirmed against real synced pages before this fix landed).
+        """
+        resp = self._get(
+            f"{self._base}/rest/api/content/{page_id}/restriction",
+            params={"expand": "restrictions.user,restrictions.group"},
+        )
         if resp.status_code >= 400:
-            return []
+            return [GROUP_RESTRICTED_SENTINEL]
         principals: list[str] = []
         for r in resp.json().get("results", []):
             if r.get("operation") != "read":

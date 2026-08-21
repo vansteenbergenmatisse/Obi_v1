@@ -14,6 +14,106 @@
 security (HTTP/LLM controls), real tests, acceptance actually met — and if it falls short, add the
 fix here as the next task; update this ledger after each phase.
 
+**Same session, immediately after: full auth audit across both apps — one real gap found, not
+fixed, logged as backlog, not a silent PLAN item.** User asked whether the backend API requires
+auth "on all relevant parts." Read every HTTP entrypoint's actual handler code (not docstrings) in
+both `apps/automation` and `apps/web`: `GET /health` is intentionally open (no sensitive data);
+`POST /chat` + its feedback endpoint (backend) require `CHAT_API_KEY`, enforced as the first line
+of both handlers; `POST /confluence/events` requires an HMAC signature, currently fails closed
+since `CONFLUENCE_WEBHOOK_SECRET` is unset (not open, just inert). **The real finding:** `apps/web`'s
+own proxy routes (`POST /api/chat`, feedback) have **zero end-user authentication** — the backend's
+shared secret only covers proxy→backend, never browser→proxy, and this was already a disclosed gap
+in `route-handlers.ts`'s own docstring, just never surfaced to the user directly before. Not a
+bug to silently fix — which auth model to use is a product decision, not a technical one. Logged as
+**`docs/future-ideas/IDEAS.md` idea #6** (full audit table + three concrete options: Confluence-
+native embed passing a real verified identity through, a standalone login system, or a lightweight
+shared access token for a small pilot), with an explicit trigger to revisit: before any deployment
+reachable outside `localhost`. No code changed.
+
+**Same session, immediately after: the restrictions-endpoint bug fixed, verified live —
+`get_restrictions()` now uses the real, working endpoint.** Researched Confluence's actual v2 API
+(official docs + Atlassian developer-community threads, not guessed): the v2 restrictions endpoint
+(`/api/v2/pages/{id}/restrictions`) is **documented by Atlassian itself as "under construction"** —
+that's the root cause of the 418, not a fixable path typo on our side. The real, working endpoint is
+REST **v1**: `GET {base}/rest/api/content/{id}/restriction`. Verified its exact response shape
+directly against two of the real synced pages (a throwaway script, not committed) before writing any
+code: `results[].operation` / `restrictions.user.results[].accountId` /
+`restrictions.group.results[]` — **exactly** what `_resolve_read_restriction` already expected, so
+no parsing logic needed to change, only the endpoint + the fail-open bug. **Fixed**
+(`confluence_client.py`'s `get_restrictions`): switched to the v1 URL, and changed
+`if resp.status_code >= 400: return []` to `return [GROUP_RESTRICTED_SENTINEL]` — reusing 4.6.1's
+existing fail-closed sentinel rather than inventing a new one, since the effect (inaccessible to
+everyone but sync/admin) is identical. TDD: updated the 2 existing tests whose mocks matched the old
+URL path, added `test_http_client_restriction_fetch_failure_fails_closed` (a request failure must
+not resolve to "unrestricted") and `test_http_client_restrictions_use_v1_content_endpoint` (locks
+the real endpoint shape so a regression back to the dead v2 path fails a test, not silently).
+**Verified, live, twice:** re-ran the exact same real reconciliation + drain against the `SUPPORT`
+space — **zero 418s this time**, all previously-`[]` restriction rows re-confirmed as genuinely `[]`
+(these 4 real pages have no read restrictions — confirmed directly against Confluence, not assumed),
+not an artifact of a failed request anymore. Backend `make check` → **374 passed** (was 372, +2 new),
+`make boundaries` clean, ruff/format/pyright unchanged at **2/14/34**. Restarted the live `uvicorn`
+process so the running chat demo serves the fix, not stale code. **Still open, not silently
+skipped:** none of the 4 real synced pages carry an actual group-based *read* restriction (one has
+an unrelated *update* restriction), so 4.6.2's group-membership-expansion path itself is still only
+verified against a mock, not a real group-restricted page — would need a real Confluence page
+restricted by group to close that specific gap, which wasn't available to test against this session.
+**No code changed beyond this fix; committed together with the rest of this session's ledger
+update** — ask before committing, per this repo's own convention.
+
+**New session (2026-08-21): first-ever real Confluence sync run + live end-to-end chat
+verification — one real bug found, not yet fixed.** User asked how to actually test the system
+works. Seeded the `SUPPORT` space (`space_id=24248322`, id surfaced by the 2026-08-19 connectivity
+check) via `seed_source_scope.py`, then ran a real `run_reconciliation`(`kind=complete`) + `drain()`
+against the live Confluence API (real HTTP calls, real embedding calls — not mocked). **5 pages
+found, 4 synced successfully** (12/24/66/16 chunks respectively), **1 failed**
+(`ValueError('staging produced no child chunks for page 1206517786')` — an empty/non-text page,
+not investigated further, low priority). **A real, newly-found gap:** every page's
+`GET {base}/api/v2/pages/{id}/restrictions` call returned **418**, not a normal 4xx — almost
+certainly the wrong endpoint shape for Confluence's actual v2 API (real v2 restriction endpoints
+nest under `.../restrictions/byOperation/...`, not a flat `/restrictions`). `get_restrictions()`
+(`confluence_client.py:253-257`) treats **any** ≥400 response as "no restrictions" — **fail-open,
+not fail-closed** — so all 4 synced pages persisted with zero `page_restriction` rows, meaning
+they're currently world-readable to any principal in this system regardless of their real
+Confluence restrictions. Confirmed by direct DB query, not assumed. This is the same severity class
+as the 4.6.1 CRITICAL finding, discovered live because 4.6.2 build-time testing only ever exercised
+a mock. **Fixed later this same session** — see the entry immediately below for the full fix + live
+re-verification. **Live chat verified end-to-end after that**, real browser (`claude-in-chrome`), real running
+`uvicorn`/`next dev`: asked "What is the FOSSE PMS Daily Closing Report?" → grounded answer, citation
+`[1]` exactly matched the real synced page title ("Understanding FOSSE PMS (Marriott) Files | Daily
+Closing Report and Revenue Report") — confirmed via `get_page_text`, not just a screenshot glance.
+Asked an out-of-corpus question ("parental leave policy") → correctly refused with the 9.6 human
+hand-off CTA (`test@gmail.com`), not a hallucinated answer. **Both the grounded-citation path and the
+refusal/fallback path are now proven against real data, not just fixtures**, for the first time.
+Backend/web dev servers left running (`localhost:8000`/`:3000`) for the user's own continued testing.
+**No code changed, nothing committed** — the same two stray pre-existing files are still sitting
+uncommitted, plus this ledger update.
+
+**New session (2026-08-19): blocker #3 (Confluence token) fixed, verified live — no phase work
+started.** User asked to check what still needs doing; re-ran the full regression live first
+(`CLAUDE.local.md` §2), not trusting the ledger's self-report. First pass surfaced a real
+environment issue, not a code regression: `make check` failed with **92 DB-connection errors**
+(`OperationalError` on `localhost:5434`) — the local Docker daemon had stopped responding again,
+the same class of issue as blocker #5 from 2026-08-11. Relaunched Docker Desktop (`open -a Docker`),
+waited for `docker info` to answer, `make up` (recreated `omniboost_rag_pg` — expected/harmless,
+nothing had ever been ingested into local dev Postgres to lose), `make migrate` confirmed
+`alembic current` → `0006_dedupe_source_type_check (head)`, no pending migration. Re-ran clean after
+that: backend `make check` → **372 passed** (unchanged since 9.9), `make boundaries` clean,
+ruff/format/pyright unchanged at **2/14/34**; web `pnpm --filter web test` → **133/133 passed**,
+`tsc --noEmit` clean; no dev servers live — zero drift from the 9.9 exit-gate state once Docker was
+actually up. Separately, the user generated a fresh Atlassian API token from
+a Confluence-Cloud-licensed account and updated `CONFLUENCE_EMAIL`/`CONFLUENCE_API_TOKEN` in `.env`.
+Verified live, not assumed: `GET {base_url}/api/v2/spaces` → **200**, 5 real spaces returned (was
+401/403). **Blocker #3 closed** — see its own updated entry below for the full detail and what's
+still outstanding (no space seeded yet, no live sync run, 4.6.2's live-verification gap still open).
+`CONFLUENCE_WEBHOOK_SECRET`/`CONFLUENCE_SERVICE_ACCOUNT_ID` confirmed both genuinely empty (not
+"already set" as this ledger previously and incorrectly claimed) and confirmed both optional at this
+stage — corrected in blocker #3's own entry. **No code changed, nothing committed this session** —
+the same two pre-existing stray uncommitted files (`domain/prompt.py` natural-writing-style edit,
+`IDEAS.md` "Baze" note) are still sitting in the tree; the user explicitly chose to keep leaving them
+uncommitted. **What's next is still gated on the user:** seeding a real space via
+`seed_source_scope.py`, running a live sync to close 4.6.2's gap, a go-ahead on real API spend for
+5.4, and a `VOYAGE_API_KEY` for the embedder bake-off — none started.
+
 **Same session (2026-08-13): 9.9 (exit gate) done — Phase 9 is now fully closed.** Committed 9.8
 first (`34706e1`, user confirmed via `AskUserQuestion`). Re-ran the full regression live rather than
 trusting the ledger's self-report: backend `make check` (repo root) → **372 passed** (unchanged
@@ -1399,8 +1499,8 @@ OCR/image reading untouched.
 | **5.1** — `CHAT_API_KEY` rotation mechanism | ✅ done | `261ac1e` | 3 tests → 197 total; overlap-window auth, rotation script, runbook |
 | **5.2** — exact-match answer caching | ✅ done | `261ac1e` | 16 tests → 213 total; `TTLCache` extracted to `shared/`, `CachingAnswerService` wraps `AnswerService`, no cross-principal leak |
 | **5.3** — prompt-injection + permission/isolation red-team | ✅ done | `92bbb7f` | 6 tests → 219 total; found + fixed a real numeric-principal space-trust bypass; no live LLM spend |
-| **4.6** — fixes-backlog remediation (16 sub-steps + exit gate) | ✅ done | see "4.6 progress snapshot" (§0) for all 16 commit refs | independent same-day audit (`docs/rag/fixes/`) found a CRITICAL ACL bypass + a HIGH cross-principal leak + 12 more findings in already-"done" phases 0-4; all fixed, exit gate 4.6.16 green, 274 tests, no ruff/pyright regression; 4.6.2 live-verification still outstanding (Confluence token dead), does not gate anything |
-| **5** (remaining) — 5.4 live-LLM red-team + latency/cost proof, embedder bake-off, adaptive routing | ⬜ todo (unblocked by 4.6; blocked on API spend + token) | — | 5.4 needs real API calls/spend; bake-off blocked on Confluence token + `VOYAGE_API_KEY` |
+| **4.6** — fixes-backlog remediation (16 sub-steps + exit gate) | ✅ done | see "4.6 progress snapshot" (§0) for all 16 commit refs | independent same-day audit (`docs/rag/fixes/`) found a CRITICAL ACL bypass + a HIGH cross-principal leak + 12 more findings in already-"done" phases 0-4; all fixed, exit gate 4.6.16 green, 274 tests, no ruff/pyright regression; 4.6.2 live-verification still outstanding — Confluence token now works (blocker #3, fixed 2026-08-19) but no space is seeded and no live sync has actually run yet, does not gate anything |
+| **5** (remaining) — 5.4 live-LLM red-team + latency/cost proof, embedder bake-off, adaptive routing | ⬜ todo (unblocked by 4.6; Confluence token fixed 2026-08-19, still blocked on API spend go-ahead + `VOYAGE_API_KEY`) | — | 5.4 needs real API calls/spend (go-ahead not yet given); bake-off still blocked on `VOYAGE_API_KEY` (not in `.env`) |
 | **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
 | **4.7** — Obi widget: chat UI rebuild, brand tokens, screenshot capture, real i18n, `/chat` route removed, image lightbox (4.7.8) | ✅ done, **committed** | `206baab` (first sub-step), `aae90e5` (4.7.2-4.7.6), `bf99635` (rest, incl. 4.7.8 + the test-gap closure) | frontend-only, `apps/web`; does not gate Phase 5; source of truth `docs/rag/reference/obi-mockup/` + `docs/rag/OBI-WIDGET-DESIGN.md` |
 | **4.8** — Frontend/backend repository separation | **moved to `docs/future-ideas/IDEAS.md` #5 (2026-08-12)** | — | re-deferred per `docs/adr/0010-Redefer-Repository-Separation.md`; no longer part of this plan |
@@ -1445,29 +1545,30 @@ re-tune in Phase 5. **→ Phase 3.5 closed; Phase 4.1 shipped (`e4490aa`); next 
    `RERANKER_PROVIDER=cohere` + a live `RERANKER_API_KEY`; 3.5.5 measured a real lift with it (see the
    exit-gate note above). CI still forces `FakeReranker` via `conftest.py`, so the suite stays
    deterministic. No further action.
-3. **Confluence token** — still dead (401 Jira / 403 Confluence "caller cannot access Confluence").
-   Blocks *live* ingestion only; all offline phases (3.5 → most of 4) run on the fixture corpus. **Exact
-   fix needed from the user** (env vars live in `app/platform/config/settings.py:33-38` /
-   `.env.example:1-10`):
-   - Generate a **fresh Atlassian API token** at
-     `https://id.atlassian.com/manage-profile/security/api-tokens`, from an account that holds an actual
-     **Confluence Cloud product license/seat** — not just Jira. The 403 means the current token
-     authenticates but that account isn't licensed for Confluence; a fresh token from an unlicensed
-     account will fail the same way.
-   - `CONFLUENCE_EMAIL` must be that same licensed account's email (Basic Auth pairs `email` +
-     `api_token` in `confluence_client.py:72`).
-   - Confirm `CONFLUENCE_BASE_URL` is the real site's `/wiki` base, e.g.
-     `https://<your-org>.atlassian.net/wiki` (already set — just confirm it matches the account above).
-   - Which spaces/pages to sync is no longer an env var (`CONFLUENCE_SPACES` was dead code, removed
-     in 3.5.6) — once the token works, seed the spaces/page-subtrees to track via
-     `uv run python scripts/seed_source_scope.py --root-type space --root-id <numeric space id>`
-     (or `--root-type page --root-id <page id>` for a narrower subtree). Space/page ids are
-     numeric Confluence content ids, not the short space *key* — get them from
-     `GET {base_url}/api/v2/spaces` or a page's "Page Information" panel.
-   - `CONFLUENCE_WEBHOOK_SECRET` is already set — no action needed.
-   - `CONFLUENCE_SERVICE_ACCOUNT_ID` is optional — only used (`event_service.py:47-50`) to filter the
-     integration's own webhook events and avoid self-triggered loops; leave empty unless the sync
-     account also writes back to Confluence.
+3. **Confluence token** — ✅ **FIXED & VERIFIED LIVE (2026-08-19).** User generated a fresh Atlassian
+   API token from a Confluence-Cloud-licensed account and updated `CONFLUENCE_EMAIL` +
+   `CONFLUENCE_API_TOKEN` in `.env`. Verified directly, not assumed: `GET {base_url}/api/v2/spaces` →
+   **HTTP 200**, 5 real spaces returned (was 401 Jira / 403 Confluence "caller cannot access
+   Confluence" before). `CONFLUENCE_BASE_URL` needed no change. **Still outstanding, not done by this
+   fix alone:**
+   - No spaces/page-subtrees are seeded yet — nothing will actually sync until
+     `uv run python scripts/seed_source_scope.py --root-type space --root-id <numeric space id>` is
+     run (or `--root-type page --root-id <page id>` for a narrower subtree). Space/page ids are
+     numeric Confluence content ids, not the short space *key* — the live check above already
+     surfaced real ids to use (e.g. `24248322` / `SUPPORT`).
+   - No live sync/ingestion has actually been run against the now-working token — 4.6.2's own
+     disclosed gap (the real group-membership endpoint path/shape, `GET {base}/rest/api/group/
+     by-id/{groupId}/member`, is still unverified against this real instance) is now unblocked but
+     not yet exercised. Do this before trusting 4.6.2's live behavior, per `CLAUDE.local.md` §2.
+   - `CONFLUENCE_WEBHOOK_SECRET` and `CONFLUENCE_SERVICE_ACCOUNT_ID` are both **empty**, not set —
+     this ledger's earlier "webhook secret already set" note was itself stale/wrong, confirmed with
+     the user this session. Both are genuinely optional right now: the webhook endpoint fails closed
+     with an empty secret (just refuses traffic, nothing else depends on it) and isn't needed until a
+     real webhook is registered against a public URL (not deployed yet); the service-account-id only
+     matters if the sync account writes back to Confluence, which it doesn't. Neither blocks anything
+     in the table below.
+   - `CONFLUENCE_SPACES` env var is dead code (removed in 3.5.6) — safe to ignore/delete if still
+     present locally.
 4. **Phase 5 infra (later)** — Redis for caching only if the proportionality gate is met; Langfuse
    optional. Will re-ask when Phase 5 starts.
 5. **Docker Desktop down (2026-08-11 session, ACTIVE).** Mid-4.6.12, the local Docker daemon
@@ -1999,6 +2100,23 @@ never silently open access.
 a live group-member sync once the Confluence token works — re-verify before trusting this
 sub-step's live behavior, per `CLAUDE.local.md` §2. A consecutive-failure circuit breaker for
 Confluence calls (including this new endpoint) is 4.6.7's job, not duplicated here.
+
+**Update (2026-08-21): live-run found a real bug one layer up from this sub-step's own code, fixed
+the same session.** A real sync against the `SUPPORT` space never reached
+`_group_members`/`_fetch_group_members` at all — the *parent* call, `get_restrictions()`'s own
+`GET {base}/api/v2/pages/{id}/restrictions`, returned **418** for every page (Atlassian's own docs
+confirm v2 restrictions is "under construction" — not a path typo), and that function's existing
+`if resp.status_code >= 400: return []` swallowed the error as "no restrictions" — fail-open. Fixed:
+switched to the real, working v1 endpoint (`/rest/api/content/{id}/restriction`, shape verified
+live against real pages) and changed the failure case to `[GROUP_RESTRICTED_SENTINEL]` (fail-closed,
+reusing this sub-step's own sentinel). See §0's 2026-08-21 entries for the full fix + verification
+detail. This sub-step's own group-membership-expansion code and tests were unaffected and always
+correct — they just couldn't run, because the restriction fetch they depend on never succeeded
+against the real API before this fix. **Still not fully closed:** the parent restriction fetch now
+demonstrably works live, but none of the real pages synced so far carry an actual group-based read
+restriction, so `_group_members`/`_fetch_group_members`'s own live path/shape (this sub-step's
+original, narrower disclosed gap) is technically still unverified against a real group-restricted
+page — would need one to exist in the synced space to close entirely.
 
 **Shipped (tests, by file):** `app/platform/clients/tests/test_confluence_client.py` (+8): pure
 resolver expands via a fake `resolve_group` and unions across groups without duplicates; a

@@ -168,6 +168,49 @@ to: which registry (item 1), the two new repo names (items 2/3), and the origin 
 revisit** (per ADR-0010): a real second product/deployment with a committed launch date, or the user
 deciding the three open decisions with enough conviction to actually execute.
 
+## 6. End-user authentication for the public chat surface — raised 2026-08-21
+
+**Full audit, not a guess** — every HTTP entrypoint in both apps was read directly (not inferred
+from docstrings) to answer "is this open or does it require auth":
+
+| Surface | Auth today | Enforced in code? |
+|---|---|---|
+| `GET /health` (`apps/automation`) | none | intentional — no sensitive data beyond `{"status", "env"}`, standard health-check practice |
+| `POST /chat`, `PATCH /chat/{traceId}/feedback` (`apps/automation`, `rag_agent/server/router.py`) | shared-secret `CHAT_API_KEY` via `Authorization: Bearer`, constant-time compare, fails closed (503) if unset | yes — `_verify_api_key()` is the first line of both handlers, confirmed by reading the code, not the docstring |
+| `POST /confluence/events` (`apps/automation`, webhook) | HMAC-SHA256 signature via `CONFLUENCE_WEBHOOK_SECRET`, fails closed (503) if unset | yes — and today `CONFLUENCE_WEBHOOK_SECRET` genuinely is unset (confirmed 2026-08-19), so this endpoint currently rejects everything; not open, just not yet functional |
+| `POST /api/chat`, `PATCH /api/chat/{traceId}/feedback` (`apps/web` proxy) | **none** | the proxy injects `CHAT_API_KEY` server-side on the *outbound* call to the backend — that secret is never sent to or readable by the browser, and correctly protects proxy→backend. But the **browser→proxy leg has zero authentication.** This is not an oversight I'm surfacing for the first time — it's already an explicitly disclosed gap in `route-handlers.ts`'s own `security_baseline` docstring ("no end-user login system exists yet") and in `router.py`'s own docstring (principal is "caller-self-reported, trusted only as far as C1 trusts the calling web proxy") |
+
+**The actual gap, stated plainly:** once `apps/web` is deployed anywhere reachable (today it's
+only `localhost`), **anyone who can load the page can chat with the bot** — no login, no invite,
+no API key of their own. They can only ever retrieve pages with no `page_restriction` rows
+(ADR-0004's default-deny model still holds — this is not an access-control bypass into restricted
+content), but they can still consume your Anthropic/embedding spend and read the entire
+unrestricted corpus, unauthenticated, at will.
+
+**Why this is a real backlog item and not an immediate fix:** it's a legitimate, deliberate,
+already-documented product-stage decision (no end-user identity system exists yet anywhere in this
+app), not a bug introduced by accident — so it doesn't belong as a silent PLAN.md phase without the
+user first deciding *how* end users should authenticate, which is a product question, not a
+technical one.
+
+**Options to actually close it, for whoever picks this up:**
+1. **Confluence-native embed (Atlassian Connect / Forge).** If Obi is meant to live *inside*
+   Confluence (matching this project's "Confluence-native" framing), embedding it as a Confluence
+   app would let Atlassian's own session pass the real logged-in user's `accountId` through as
+   `principal` — turning today's self-reported, untrusted `principal` into a verified one, which
+   also finally makes `page_restriction`'s per-user ACL meaningful end to end (right now an
+   anonymous caller can only ever see unrestricted pages; a *verified* principal could correctly
+   see their own restricted pages too, which the system already stores but currently has no honest
+   way to check identity for).
+2. **A real login system on `apps/web`** (e.g. NextAuth/Clerk with your org's SSO) if Obi is meant
+   to be a standalone site, not embedded — heavier to build, but works outside Confluence.
+3. **A shared invite/access token per deployment** (lighter than full login) — good enough for an
+   internal pilot with a trusted small audience, not a real multi-tenant answer.
+
+Not scoped, designed, or scheduled — same as every other idea in this file. **Trigger to revisit:**
+before any deployment reachable outside `localhost`, since that's the point this stops being a
+theoretical gap.
+
 ---
 
 ## Later: visualize the target system

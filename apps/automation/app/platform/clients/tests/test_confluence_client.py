@@ -4,9 +4,10 @@ Covers the CRITICAL finding (4.6.1): a page restricted only by Confluence group(
 individually-restricted user, must not sync as unrestricted. And the real fix (4.6.2): group
 membership resolves to real account ids via a per-client-instance cache, falling back to the
 same fail-closed sentinel when a group can't be expanded (no resolver, or the resolver finds no
-members). Both `HttpConfluenceClient` (live REST v2 restrictions + v1 group-membership) and
-`FixtureConfluenceGateway` (offline/test double) share the same pure resolver, so both are
-exercised here against the exact restriction-record shape each speaks.
+members). Both `HttpConfluenceClient` (live REST v1 restrictions + v1 group-membership — v2
+restrictions is unusable, see `get_restrictions`'s own docstring) and `FixtureConfluenceGateway`
+(offline/test double) share the same pure resolver, so both are exercised here against the exact
+restriction-record shape each speaks.
 """
 
 from __future__ import annotations
@@ -87,7 +88,7 @@ def test_group_restriction_resolver_finding_no_members_still_fails_closed() -> N
     assert resolved == [GROUP_RESTRICTED_SENTINEL]
 
 
-# -- HttpConfluenceClient (live REST v2 shape) -------------------------------------------
+# -- HttpConfluenceClient (live REST v1 restriction shape) -------------------------------
 
 
 def test_http_client_group_only_restriction_fails_closed() -> None:
@@ -142,6 +143,36 @@ def test_http_client_no_restrictions_returns_empty() -> None:
     assert client.get_restrictions(9001) == []
 
 
+def test_http_client_restriction_fetch_failure_fails_closed() -> None:
+    # PLAN 4.6.2's 2026-08-21 finding: a request failure on the restriction fetch itself (e.g.
+    # the real-world 418 hit when the old v2 endpoint was used) must not be read as "no
+    # restrictions" — that was fail-open, silently making every page world-readable whenever the
+    # endpoint errored.
+    client = HttpConfluenceClient(
+        _settings(),
+        client=httpx.Client(
+            transport=httpx.MockTransport(lambda r: httpx.Response(418, text="teapot"))
+        ),
+    )
+    assert client.get_restrictions(9001) == [GROUP_RESTRICTED_SENTINEL]
+
+
+def test_http_client_restrictions_use_v1_content_endpoint() -> None:
+    # Locks the real, working endpoint shape (confirmed live, 2026-08-21) so a regression back to
+    # the non-functional v2 path (`/api/v2/pages/{id}/restrictions`) fails a test, not silently.
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        return httpx.Response(200, json={"results": []})
+
+    client = HttpConfluenceClient(
+        _settings(), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    client.get_restrictions(9001)
+    assert seen["path"] == "/wiki/rest/api/content/9001/restriction"
+
+
 def _restrictions_response(*, page_id: int, group_id: str) -> dict:
     return {
         "results": [
@@ -155,7 +186,7 @@ def _restrictions_response(*, page_id: int, group_id: str) -> dict:
 
 def test_http_client_group_restriction_expands_via_group_member_lookup() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/restrictions"):
+        if request.url.path.endswith("/restriction"):
             return httpx.Response(
                 200, json=_restrictions_response(page_id=9001, group_id="grp-finance")
             )
@@ -172,7 +203,7 @@ def test_http_client_group_member_lookup_is_cached_across_pages() -> None:
     calls = {"restrictions": 0, "members": 0}
 
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/restrictions"):
+        if request.url.path.endswith("/restriction"):
             calls["restrictions"] += 1
             return httpx.Response(
                 200, json=_restrictions_response(page_id=9001, group_id="grp-finance")
@@ -191,7 +222,7 @@ def test_http_client_group_member_lookup_is_cached_across_pages() -> None:
 
 def test_http_client_group_member_lookup_failure_stays_fail_closed() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        if request.url.path.endswith("/restrictions"):
+        if request.url.path.endswith("/restriction"):
             return httpx.Response(
                 200, json=_restrictions_response(page_id=9001, group_id="grp-finance")
             )
