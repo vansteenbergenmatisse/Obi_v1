@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Envs where a missing hosted-provider key or DB role falls back to a safe offline default
@@ -173,10 +174,31 @@ class Settings(BaseSettings):
     contextualization_version: int = 1
     retrieval_schema_version: int = 1
 
+    # knowledge-scope tagging (PLAN 10.1; ADR-0011) — comma-separated recognized scope
+    # identifiers. Always includes "general"; a deployment sets e.g.
+    # "general,mews,opera-cloud,toast". "toast" here is the Toast POS platform, never this
+    # repo's own codename (ADR-0011 Context) — a real, disclosed naming collision.
+    knowledge_scopes: str = "general"
+    # deployment-level fallback scope when a chat request omits knowledge_scope (PLAN 10.5).
+    # Empty -> general-only.
+    default_knowledge_scope: str = ""
+
     def is_offline_env(self) -> bool:
         """True in local/test/dev/ci — envs where a missing hosted key or DB role is a safe
         default-to-fake / default-to-writer fallback rather than a real deployment gap."""
         return self.env.lower() in _OFFLINE_ENVS
+
+    @property
+    def knowledge_scope_set(self) -> frozenset[str]:
+        return frozenset(s.strip().lower() for s in self.knowledge_scopes.split(",") if s.strip())
+
+    @model_validator(mode="after")
+    def _require_general_knowledge_scope(self) -> Settings:
+        if "general" not in self.knowledge_scope_set:
+            raise ValueError(
+                f"knowledge_scopes must include 'general' (got {self.knowledge_scopes!r})"
+            )
+        return self
 
 
 @lru_cache
