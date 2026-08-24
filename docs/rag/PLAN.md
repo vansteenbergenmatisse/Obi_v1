@@ -9,6 +9,59 @@
 
 ## 0. Status ledger & blockers  *(keep current — update after every phase)*
 
+**New session (2026-08-24): two out-of-band improvements ahead of 10.7 — recognized knowledge
+scopes moved to a dedicated global config file, and a 6-agent audit + parametrize pass on the test
+suite. Neither advances the Phase 10 sub-step sequence; both were done at the user's explicit
+request before starting 10.7's operator-facing work.**
+
+- **Recognized knowledge-scope config relocated** (`18ee219`) — deviates from 10.1's original
+  design (`Settings.knowledge_scopes: str` env var, §10.1 below) after the user twice pushed back
+  on `.env` as the edit surface ("I don't want the knowledge scopes in the .env... it should be a
+  global file"). The recognized set (`general`/`mews`/`opera-cloud`/`toast`) now lives in
+  **`config/knowledge_scopes.json` at the true repo root** — sibling to `apps/`, `packages/`,
+  `docs/`, not nested under `apps/automation` or `apps/web` — loaded via new
+  `platform/config/knowledge_scopes.py::load_recognized_knowledge_scopes`.
+  `Settings.knowledge_scope_set` now delegates to that loader instead of parsing an env-var
+  string; the fail-fast-on-missing-`general` validator is preserved (now triggered by the loader
+  raising, not string parsing). `.env`/`.env.example` keep only the two genuine runtime toggles
+  (`default_knowledge_scope`, `enable_knowledge_scope_filtering`) — never the scope list itself.
+  Chosen over `.env` specifically so `apps/web` can read the same file later (e.g. a future 10.8
+  scope-switcher dropdown) instead of duplicating the list — the repo-root placement was deliberate
+  for that cross-app reason, not just cosmetic. `docs/rag/{ingestion,retrieval}/phase-10.md` updated
+  to point at the new file. 5 new tests (`test_knowledge_scopes.py`, incl. one asserting the
+  committed repo file itself parses to exactly the 4 expected scopes), `test_settings.py` and
+  `test_ingestion_pipeline.py`'s two label-driven tests adjusted to match (the latter got simpler —
+  no longer need a `model_copy` override, since the committed file already recognizes all 4 scopes
+  deterministically regardless of the developer's local `.env`). 471 passed, `make boundaries`
+  clean, ruff/pyright unchanged at baseline (2/34).
+- **Test-suite authoring-overhead audit** (`ce517be`) — user asked whether all 471 tests are
+  "necessary," specifically to reduce per-change maintenance overhead, not runtime (measured first:
+  471 tests run in 28.5s wall-clock, confirmed not the actual pain point). 6 parallel read-only
+  fork agents each audited a distinct directory slice (rag_agent core, rag_agent guardrails,
+  platform clients, chat+knowledge-scope tests, remaining confluence_sync tests, ingestion/
+  retrieval/eval/platform tests), each instructed to check every flagged test against the real
+  source it protects and to stay conservative per this repo's CLAUDE.md regression-safety mandate.
+  **Result: zero tests recommended for outright removal** — every auditor independently found the
+  suite "lean" and "proportionate to real complexity" (e.g. `test_answer_service.py`'s 40 tests
+  each isolate one real branch of a 387-line orchestrator; the 4 HTTP clients each independently
+  implement their own retry/breaker with no shared base, so their near-identical-looking tests
+  protect 4 separate code paths, not 1 tested 4 times). 7 genuine same-function/same-shape groups
+  were found and collapsed into one `@pytest.mark.parametrize` test each (test_pii.py 4→1,
+  test_clarification.py 6→1, test_chat_endpoint.py's 3 idempotency-replay tests →1,
+  test_attachment_extraction.py's whitespace case folded into its main test, test_fallback_metrics.py
+  4+4→2, test_anthropic_client.py 3→1) — same 471 *collected* test cases (pytest re-expands each
+  parametrize set at collection time, confirmed), only fewer test *function definitions* to touch
+  when one of those specific functions changes. One explicit non-merge: two near-identical-looking
+  `test_knowledge_scope.py` conflict tests were deliberately left alone because they exist
+  specifically to prove the Toast/Muse naming collision isn't special-cased, not because the code
+  path differs. 471 passed after, `make boundaries` clean, ruff/pyright unchanged at baseline.
+
+**Next: 10.7** (corpus migration/backfill + flag flip + exit gate) — unchanged by the above, still
+not started. The 9 live pages still need an operator to add a recognized label
+(`general`/`mews`/`opera-cloud`/`toast`) via Confluence directly — the user chose to do this
+labeling themselves rather than have an agent propose a mapping (a content decision), per this
+session's `AskUserQuestion`. Ask before starting the reconciliation-verification half of 10.7.
+
 **Same session (2026-08-24): full commit sweep — 6 commits, everything this session's own work and
 several earlier sessions' already-verified-but-uncommitted work landed, nothing left dangling.**
 After 10.6 shipped (below), the working tree had grown to 73 changed files across several distinct,
@@ -232,6 +285,13 @@ exactly `settings.py` (+22) and the new test file (+45); `docs/rag/fixes/` delet
 as it was pre-session; `pytest app/platform/config/tests/test_settings.py` passes against the
 committed file. **Next: 10.2 (label-driven per-page knowledge-scope tags) — not started, ask before
 beginning**, same stop-after-sub-step rule as every other step in this phase.
+
+**Superseded, same date, later session (`18ee219`):** the env-var-driven `Settings.knowledge_scopes`
+design described above was replaced — the recognized scope list now lives in a dedicated
+`config/knowledge_scopes.json` at the repo root instead of `.env`. See the "two out-of-band
+improvements ahead of 10.7" entry at the top of this ledger for why and what changed;
+`knowledge_scope_set` is still the property every downstream consumer (10.2/10.4/10.5) reads, so
+nothing past 10.1 needed to change.
 
 **New session (2026-08-24): Phase 10 extended with 10.8/10.9, design-only, no code yet.** User asked
 for two things that were previously implicit, not scheduled: (1) empirical, *live* proof that editing
@@ -4389,6 +4449,16 @@ unformatted files** (14, unchanged), **0 new pyright errors** (34, unchanged). N
 network surface is touched by this sub-step (pure in-process config), so
 `securing-http-and-llm-endpoints`'s controls don't apply here — same reasoning as every other
 config-only sub-step in this plan.
+
+**Superseded later the same date (`18ee219`), see §0's top entry.** The `knowledge_scopes: str` env
+field and its comma-split parsing above no longer exist — the recognized set moved to
+`config/knowledge_scopes.json` at the repo root, loaded by
+`platform/config/knowledge_scopes.py::load_recognized_knowledge_scopes`. The public
+`knowledge_scope_set` property signature, the fail-fast `model_validator`, and every downstream
+consumer (10.2's label matching, 10.4's retrieval filter, 10.5's chat threading) are unchanged —
+only where the list is authored moved, from `.env` to a dedicated file, at the user's explicit
+request. The `Setting | Default | Introduced | Purpose` table above is stale for the `knowledge_scopes`
+row specifically; treat `config/knowledge_scopes.json` as authoritative for the recognized-scope list.
 
 ### 10.2 — Label-driven per-page knowledge-scope tags (ingestion) ✅ done (2026-08-24, `9fb134f`)
 
