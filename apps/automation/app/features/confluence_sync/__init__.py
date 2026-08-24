@@ -15,6 +15,10 @@ reconciliation (the worker<->reconciliation cycle-breaker); do not hoist it.
 
 from __future__ import annotations
 
+from .application.knowledge_scope_backfill import (
+    KnowledgeScopeCoverage,
+    verify_knowledge_scope_coverage,
+)
 from .application.reconciliation import (
     KIND_COMPLETE,
     KIND_LIGHTWEIGHT,
@@ -34,6 +38,7 @@ from .server import router
 __all__ = [
     "KIND_COMPLETE",
     "KIND_LIGHTWEIGHT",
+    "KnowledgeScopeCoverage",
     "KnowledgeScopeResult",
     "ROOT_TYPE_PAGE",
     "ROOT_TYPE_SPACE",
@@ -45,4 +50,5 @@ __all__ = [
     "resolve_space_scope",
     "router",
     "run_reconciliation",
+    "verify_knowledge_scope_coverage",
 ]

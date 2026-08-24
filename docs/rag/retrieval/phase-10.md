@@ -1,8 +1,14 @@
 # Phase 10 — Knowledge-scope tagging (retrieval-side half)
 
-**Status:** §§10.3–10.5 done (2026-08-24 — 10.3 `daecb58` migration; 10.4 `d347dc8` retrieval-time
-filtering, behind `enable_knowledge_scope_filtering`, default off; 10.5 chat request/contract
-threading, not yet committed); §10.6 not started. `docs/rag/PLAN.md` Phase 10 §§10.3–10.6. Design doc:
+**Status:** §§10.3–10.6 done and committed (2026-08-24 — 10.3 `daecb58` migration; 10.4 `d347dc8`
+retrieval-time filtering, behind `enable_knowledge_scope_filtering`, default off; 10.5 chat request/
+contract threading + 10.6 always-present curated knowledge in `a663a95`). **§10.7 done (2026-08-24):**
+the live corpus was labeled + migrated (all 9 pages → `['base', 'general']`), the readiness gate
+reported READY, and `enable_knowledge_scope_filtering` was flipped **`true`** — the filter is now
+live. Confirmed end-to-end after the flip: a `mews`-scoped request (`resolve_allowed_scopes` →
+`['general','mews']`) returns grounded hits, while a `['mews']`-only filter returns none. The
+migration/flip half is ingestion-side ([`../ingestion/phase-10.md`](../ingestion/phase-10.md)'s §10.7).
+`docs/rag/PLAN.md` Phase 10 §§10.3–10.7. Design doc:
 [`docs/adr/0011-Knowledge-Scope-Tagging-And-Retrieval-Filtering.md`](../../adr/0011-Knowledge-Scope-Tagging-And-Retrieval-Filtering.md).
 The writer/tagging half — deriving tags from Confluence labels — is in
 [`../ingestion/phase-10.md`](../ingestion/phase-10.md).
@@ -107,11 +113,17 @@ switching/comparison questions ("we're on Mews, does this also work on Opera?") 
 soft-scoping need, and any explicit "search all scopes" mode, are deliberately deferred (ADR-0011
 Decision 8) — see idea #8's updated notes in `IDEAS.md`.
 
-The filter ships behind `enable_knowledge_scope_filtering` (default off) specifically because the live
-corpus (9 pages, `source_scope`-tagged `base` only, per `PLAN.md` §0 2026-08-21) has no recognized
-knowledge-scope label yet — flipping the filter on before that corpus is relabeled would make it
-silently disappear from every scoped query, which is correct behavior per this phase's own rules but
-must be a deliberate, verified operator action, not an accidental regression.
+The filter ships behind `enable_knowledge_scope_filtering` — the code default is `false` (ships dark)
+specifically because a live corpus with no recognized knowledge-scope label would silently disappear
+from every scoped query the moment the filter turned on, which is correct behavior per this phase's
+own rules but must be a deliberate, verified operator action, not an accidental regression. §10.7's
+`scripts/verify_knowledge_scope_backfill.py` is the machine gate for exactly that action: it exits
+non-zero (and names the offending `page_id`s) while any live chunk still lacks a recognized scope
+tag, and exits 0 only once the corpus is fully labeled — see
+[`../ingestion/phase-10.md`](../ingestion/phase-10.md)'s §10.7 for the check itself. **As of 2026-08-24
+that gate passed and the deployment `.env` flag is now `true`** — the corpus was relabeled (all 9
+pages → `['base', 'general']`) and the flip verified end-to-end, so the filter is live in this
+deployment while the code default stays dark for any fresh environment.
 
 ## Files & folders used
 

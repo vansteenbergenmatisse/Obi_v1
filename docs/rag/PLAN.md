@@ -9,7 +9,120 @@
 
 ## 0. Status ledger & blockers  *(keep current — update after every phase)*
 
-**New session (2026-08-24): two out-of-band improvements ahead of 10.7 — recognized knowledge
+**Same session (2026-08-24): 10.7 DONE — corpus migrated, flag flipped ON, live scoped retrieval
+proven end-to-end.** This completes Phase 10's ingestion+retrieval spine: every live page now carries
+a recognized knowledge-scope tag and retrieval filters by it. Sequence (operator go-ahead given for
+"full cycle, pause before flip", then explicit go-ahead to finish):
+- **Corpus migration.** After the operator's `general` labels were added in Confluence (half (a),
+  below), a one-shot **complete reconciliation sweep** propagated them into `chunk.tags` via new
+  **`scripts/run_reconciliation_once.py`** — a one-off CLI mirroring the scheduled
+  `scheduled_complete_reconcile` + `worker_tick`: builds the **live** `HttpConfluenceClient` (refuses
+  the offline fixture gateway), runs `run_reconciliation(kind=COMPLETE)`, then `drain()`s the jobs.
+  Live result: `pages_scanned=9 jobs_enqueued=9 orphans_deleted=0 errors=0`; all 9 `sync_page` jobs
+  drained with action **`metadata_only`** — `handle_sync_page` re-read the fresh labels, resolved
+  `general`, and re-stamped tags **without re-embedding** (a label change bumps `labels_hash`, not the
+  body, so `classify` never routes it to a rebuild — exactly the no-re-embed path 10.7 promised).
+- **Readiness gate.** `verify_knowledge_scope_backfill.py` → **READY**, 85 active chunks, **0
+  untagged**, exit `0` (was NOT READY / 85 untagged / 9 pages / exit 1 immediately before). Direct DB
+  inspection: all 85 active chunks and all 9 `page_source` rows now carry exactly `['base', 'general']`
+  — the Confluence `general` label unioned with the pre-existing `base` source_scope tag, nothing
+  dropped, nothing over-tagged.
+- **Flag flipped.** `ENABLE_KNOWLEDGE_SCOPE_FILTERING` set **`true`** in the root `.env` (gitignored)
+  only after the gate passed. The deliberate final act of 10.7.
+- **Proven live end-to-end (retrieval-only, no Anthropic spend).** With the flag read as `True`, the
+  real wired `HybridRetriever` (built as `main.py` builds it) was exercised against the live corpus:
+  (A) a normal `mews`-scoped request → `resolve_allowed_scopes` = `['general','mews']` → **5 grounded
+  hits** (filtering-on does not empty retrieval); (B) `['mews']`-only → **0 hits** (the bound
+  `tags && :scopes` predicate genuinely excludes — nothing is tagged `mews`); (C) `['general']`
+  control → 5 hits. This is the live confirmation that the filter is on, correct, and non-breaking —
+  complementing 10.4's 7 real-DB cross-scope-leakage unit tests.
+- **No HTTP/LLM surface changed.** The flip is an `.env` toggle over the already-security-reviewed
+  10.4 filter path; `POST /chat`'s control set is unchanged. Confirmed the corpus-all-`general` state
+  means scoping to any provider still surfaces general content (expected — `general` is always
+  included, ADR-0011 Decision 1); real per-provider exclusion becomes visible once provider-specific
+  pages are labeled (10.8's job).
+- **One test fixed by the flip (not a regression).** Flipping the `.env` flag surfaced
+  `test_settings.py::test_enable_knowledge_scope_filtering_defaults_to_false`, which asserted the code
+  default via `Settings()` — that constructor reads the root `.env`, so it was silently coupled to the
+  developer's config and went red the moment the real deployment set the flag `true`. Fixed both it
+  and its identically-fragile sibling (`..._default_knowledge_scope_defaults_to_empty`) to read the
+  declared field default off `Settings.model_fields[...]` — genuinely hermetic, never touching `.env`,
+  which is what "defaults to X" is supposed to mean (matches this repo's stated "tests independent of
+  `.env` contents" principle). `make check` → **481 passed** with the flag on; ruff/format/pyright
+  clean on every touched file, baseline unchanged.
+- **Still uncommitted (repo convention — ask before committing).** Pending commit: new
+  `knowledge_scope_backfill.py`, `run_reconciliation_once.py`, `verify_knowledge_scope_backfill.py`,
+  `test_knowledge_scope_backfill.py`; modified `.env.example`, `FEATURES.md`,
+  `confluence_sync/__init__.py`, `platform/config/tests/test_settings.py`, and the three phase docs.
+  **Next: 10.8** (live label-propagation self-test — add/edit/remove a label against the real API +
+  DB — plus a minimal widget scope switcher), then 10.9 (user-run acceptance pass). Ask before
+  beginning.
+
+**Same session (2026-08-24): 10.7 half (a) done — all 9 live pages labeled `general` in Confluence.**
+User instructed "label all 9 as general for me, make sure we can delabel them later." Before touching
+the real labels, reversibility was **proven empirically against the live instance**, not assumed: a
+throwaway label was added (`POST .../rest/api/content/{id}/label` → `200`, confirmed present via
+`GET`), then removed (`DELETE .../label?name=...` → `204`, confirmed gone) on page `28934165`, leaving
+no residue. Then the `general` label was added to all 9 pages via the Confluence v1 REST label API and
+each re-read back to confirm — **9/9 now carry `general`**. This was a live operational action, not
+committed code (same disposition as prior sessions' live syncs). The exact de-label path for the
+future is `DELETE {base}/wiki/rest/api/content/{pageId}/label?name={scope}` (→ `204`), or by hand in
+Confluence — both verified.
+
+**What is NOT yet true — disclosed, not smoothed over:** the labels live in Confluence but the RAG
+**database** is unchanged — those 9 pages' chunks still carry no `general` tag in Postgres, because no
+sync has re-stamped them yet (the webhook auto-propagation leg isn't live — no public URL registered,
+same gap as blocker #3). So `verify_knowledge_scope_backfill.py` would still report **NOT READY** right
+now. **Committed next steps (mine, on the user's go-ahead — this is what happens next, not a maybe):**
+(1) run a reconciliation sweep so 10.2's `handle_sync_page` path reads the new labels and re-stamps
+`chunk.tags` (metadata-only, no re-embed); (2) re-run `verify_knowledge_scope_backfill.py` until it
+exits `0`; (3) **flip `enable_knowledge_scope_filtering=true`** and confirm live scoped retrieval
+end-to-end. Step 3 — the flag flip — is the deliberate final act of 10.7; it is planned, not optional.
+
+**Same session (2026-08-24): 10.7 tooling half done — the corpus-readiness gate is built, tested, and
+proven live; the manual relabel + flag flip now wait on the operator.** User gave the go-ahead for
+10.7 and asked what to do in Confluence. 10.7 is two halves: (a) the *operator* adds a recognized
+knowledge-scope label to each live page (a content decision, the user's own job), and (b) the
+*reconciliation-verification* half — code that proves the corpus is fully labeled before
+`enable_knowledge_scope_filtering` is ever flipped on. Half (b)'s tooling shipped this pass; half (a)
+and the actual sync-verify-flip cycle wait on the user's labels.
+
+- **New `confluence_sync/application/knowledge_scope_backfill.py::verify_knowledge_scope_coverage`**
+  (exported from the feature root, with `KnowledgeScopeCoverage`) — read-only, counts every
+  `is_active` chunk whose `tags` overlap **none** of the recognized scopes (`general`/`mews`/
+  `opera-cloud`/`toast`), grouped by `page_id`, using the **same bound `tags && :param` overlap
+  predicate as 10.4's `search_repo`**, never a literal `ARRAY[...]`. Counts all active chunks (parent
+  *and* child) and only active ones — retrieval reads only `is_active` rows and superseded rows are
+  GC'd, so no historical backfill is needed (matches 10.7's own "no backfill" note). Returns
+  `is_ready = (untagged_active_chunks == 0)`; an empty corpus is vacuously ready.
+- **New `scripts/verify_knowledge_scope_backfill.py`** — thin CLI over that function (mirrors
+  `seed_source_scope.py`'s one-off ownership), loads the recognized set from
+  `config/knowledge_scopes.json`, prints coverage + the offending `page_id`s when not ready, and
+  **exits non-zero until the corpus is fully labeled**. It never flips the flag — that stays a
+  deliberate operator `.env` change (`ENABLE_KNOWLEDGE_SCOPE_FILTERING=true`), documented in
+  `.env.example` now pointing at this script as the gate.
+- **10 new tests** (`test_knowledge_scope_backfill.py`, real-DB, `index_page` style): all-tagged →
+  ready; untagged → not-ready + page listed; `base`-only (source_scope tag, not a knowledge scope) →
+  still not-ready (the correctness case — proves it's not just "any tag"); each of the 4 recognized
+  scopes counts (parametrized); partial coverage lists only the untagged pages; inactive untagged
+  chunks are ignored; empty corpus vacuously ready. `uv run pytest -q` → **481 passed** (was 471,
+  +10), `make boundaries` clean (the test deep-imports its own feature per rule c), ruff/pyright at
+  baseline (2/34 — touched files individually clean, `ruff format` applied to the 3 new files).
+- **Proven live, not just unit-tested:** ran the CLI against the local dev DB, which still holds the
+  85 chunks from the 2026-08-21 "Base" folder sync. It correctly reported **NOT READY**, listing
+  exactly the 9 live `page_id`s that need a label, and **exited 1**. This is the same check that will
+  gate the real flip once the pages are labeled.
+- No HTTP/LLM surface added or modified — a read-only DB query + CLI, `securing-http-and-llm-endpoints`
+  doesn't apply, same reasoning as every prior Phase 10 sub-step.
+
+**Blocker / need from you (10.7 half a):** the 9 live pages (all Omniboost "Base"/Omnibase internal
+docs) each need a recognized label added **directly in Confluence** — `general`, `mews`, `opera-cloud`,
+or `toast`. The page ids + titles are listed for you in this session's hand-back. Once labeled, the
+next step (mine, on your go-ahead) is: run a reconciliation sweep to re-stamp `tags`, re-run
+`verify_knowledge_scope_backfill.py` until it exits 0, then flip the flag and confirm live scoped
+retrieval. **Nothing committed yet — ask before committing, per this repo's convention.**
+
+**Earlier same session (2026-08-24): two out-of-band improvements ahead of 10.7 — recognized knowledge
 scopes moved to a dedicated global config file, and a 6-agent audit + parametrize pass on the test
 suite. Neither advances the Phase 10 sub-step sequence; both were done at the user's explicit
 request before starting 10.7's operator-facing work.**
@@ -56,11 +169,11 @@ request before starting 10.7's operator-facing work.**
   specifically to prove the Toast/Muse naming collision isn't special-cased, not because the code
   path differs. 471 passed after, `make boundaries` clean, ruff/pyright unchanged at baseline.
 
-**Next: 10.7** (corpus migration/backfill + flag flip + exit gate) — unchanged by the above, still
-not started. The 9 live pages still need an operator to add a recognized label
-(`general`/`mews`/`opera-cloud`/`toast`) via Confluence directly — the user chose to do this
-labeling themselves rather than have an agent propose a mapping (a content decision), per this
-session's `AskUserQuestion`. Ask before starting the reconciliation-verification half of 10.7.
+**10.7** (corpus migration/backfill + flag flip + exit gate) — **tooling half done this session, see
+the top entry.** The reconciliation-verification-flip cycle still waits on the operator: the 9 live
+pages need a recognized label (`general`/`mews`/`opera-cloud`/`toast`) added via Confluence directly —
+the user chose to do this labeling themselves rather than have an agent propose a mapping (a content
+decision), per this session's `AskUserQuestion`. Ask before running the sync/verify/flip cycle.
 
 **Same session (2026-08-24): full commit sweep — 6 commits, everything this session's own work and
 several earlier sessions' already-verified-but-uncommitted work landed, nothing left dangling.**
@@ -947,8 +1060,12 @@ per this repo's own no-auto-start rule. No code changed this pass — docs only 
 
 ### ▶ Resume here (after `/compact-ultra`) — first things first
 
-**Phase 10 is IN PROGRESS: 10.1 done (2026-08-24, `ad29f1b`). Next: 10.2 — not started, ask
-before beginning.** See §0's newest entry above and Phase 10.1's own section for detail.
+**Phase 10 is IN PROGRESS: 10.1–10.7 done. 10.1–10.6 committed (10.5/10.6 in `a663a95`); 10.7
+(corpus migration + flag flip) done 2026-08-24 — corpus relabeled to `['base','general']`, gate READY,
+`ENABLE_KNOWLEDGE_SCOPE_FILTERING` flipped `true`, scoped retrieval proven live — but 10.7's tooling
+is STILL UNCOMMITTED (ask before committing). Next: 10.8 (live label-propagation self-test + widget
+scope switcher), then 10.9 — not started, ask before beginning.** See §0's newest entry above for full
+detail.
 
 **Phase 3.5 is COMPLETE. Phase 4 is COMPLETE: 4.1 + 4.2 + 4.3 + 4.4 + 4.5 all done.**
 **Phase 5.1 (`CHAT_API_KEY` rotation), 5.2 (exact-match answer caching), and 5.3 (prompt-injection +
@@ -4354,12 +4471,16 @@ explicit go-ahead, same as every other phase (§0 working rules).
 
 ---
 
-## Phase 10 — Knowledge-scope tagging (Confluence-label-driven retrieval scoping) — **scoped, not started**
+## Phase 10 — Knowledge-scope tagging (Confluence-label-driven retrieval scoping) — **IN PROGRESS: 10.1–10.7 done, 10.8–10.9 remain**
 
 **Scoped 2026-08-21.** Promotes `docs/future-ideas/IDEAS.md` idea #8 ("Multi-provider platform
 architecture: reusable core, provider-scoped knowledge"), folding in the retrieval-side gap idea #2
-already identified by direct code read. **Design doc + ADR done same day, no code yet** — 10.1 onward
-is the roadmap. Do not start without an explicit go-ahead, same as every other phase.
+already identified by direct code read. **Status (2026-08-24):** 10.1–10.6 done and committed
+(10.5/10.6 in `a663a95`); 10.7 (corpus migration + flag flip) done — corpus relabeled, gate READY,
+`ENABLE_KNOWLEDGE_SCOPE_FILTERING=true`, scoped retrieval proven live — with its tooling still
+uncommitted. 10.8 (live label-propagation self-test + widget scope switcher) and 10.9 (user
+acceptance pass) not started. Do not start the next sub-step without an explicit go-ahead, same as
+every other phase.
 
 **Goal.** The same chat widget and backend can be deployed against multiple third-party hospitality
 platforms (**Mews, Opera Cloud, Toast POS** — the confirmed initial set, not illustrative
@@ -4398,7 +4519,7 @@ disambiguation.
 |---|---|---|---|
 | `knowledge_scopes` | `"general"` (code default); deployment `.env` sets `general,mews,opera-cloud,toast` at 10.7 rollout | 10.1 | Comma-separated recognized scope identifiers; must include `general` (validated at settings construction). |
 | `default_knowledge_scope` | `""` | 10.1 | Deployment-level fallback scope when a request omits `knowledge_scope`. Empty → general-only. |
-| `enable_knowledge_scope_filtering` | `false` | 10.4 | Rollout flag. Off → zero behavior change (ships dark, mirrors `enable_clarification_branch`). |
+| `enable_knowledge_scope_filtering` | `false` (code default); deployment `.env` set `true` at 10.7 rollout (2026-08-24) | 10.4 | Rollout flag. Off → zero behavior change (ships dark, mirrors `enable_clarification_branch`); on → retrieval filters by `tags && :allowed_scopes`. |
 | `curated_knowledge_max_entries` | `5` | 10.6 | Cap on always-present entries injected per answer (protects `evidence_token_budget`). |
 
 ### 10.1 — Recognized knowledge-scope configuration ✅ done (2026-08-24, `ad29f1b`)
@@ -4724,7 +4845,7 @@ restored to the working tree unstaged, confirmed via `git diff` before and after
 --stat` verified exactly the 13 intended files; `make check` (441 passed) and `make boundaries`
 re-run clean against the fully-restored working tree afterward.
 
-### 10.5 — Chat request/contract: `knowledge_scope` threading ✅ done (2026-08-24, uncommitted)
+### 10.5 — Chat request/contract: `knowledge_scope` threading ✅ done (2026-08-24, committed `a663a95`)
 
 **Files:** `app/features/rag_agent/server/router.py` (`ChatRequestBody`);
 `app/features/rag_agent/application/answer_service.py` (`AnswerService.answer`);
@@ -4829,8 +4950,8 @@ file (repo-wide count unchanged at 34). `pnpm --filter web test` → **162 passe
 already documented in `router.py`'s own `security_baseline` docstring) — this sub-step only adds one
 more shape-validated optional field (C3) and extends the existing idempotency binding (C7); both
 docstring sections updated in place rather than left stale. **Committed as `a663a95`** (bundled with
-10.6 and the widget access-token auth work, idea #6 — see the ledger entry above for why). **Next:
-10.7 (corpus migration/backfill + flag flip + exit gate) — not started, ask before beginning.**
+10.6 and the widget access-token auth work, idea #6 — see the ledger entry above for why). *(10.6
+and 10.7 are since done — 10.7 flipped the flag live; next is 10.8. See §0's newest entry.)*
 
 ### 10.6 — Always-present curated knowledge layer
 
@@ -4865,7 +4986,7 @@ regardless of `knowledge_scope`; a `mews`-tagged entry appears only when `mews` 
 `allowed_scopes`; a claim sourced from a curated entry survives `enforce_citations` exactly like a
 claim sourced from real retrieval.
 
-### 10.6 — Shipped/Verified (2026-08-24, uncommitted)
+### 10.6 — Shipped/Verified (2026-08-24, committed `a663a95`)
 
 **Shipped close to scoped, with one file-location correction, disclosed.** The plan's own text named
 a single `domain/curated_knowledge.py` housing both the pure shapes and the session-taking
@@ -4966,13 +5087,25 @@ already accepted for retrieved Confluence chunk text (operator-authored via the 
 user-controlled), and `curated_knowledge_max_entries` bounds prompt-size/cost growth the same way
 `rerank_top_k` already bounds it for retrieved evidence (C10). **Committed as `a663a95`** (bundled
 with 10.5 and the widget access-token auth work, idea #6 — entangled in the same shared chat-feature
-files, splitting further wasn't worth the fragility; see the ledger entry above). **Next: 10.7
-(corpus migration/backfill + flag flip + exit gate) — not started, ask before beginning.**
+files, splitting further wasn't worth the fragility; see the ledger entry above). *(10.7 is since
+done — corpus migrated, flag flipped live; next is 10.8. See §0's newest entry.)*
 
-### 10.7 — Corpus migration/backfill + flag flip + exit gate
+### 10.7 — Corpus migration/backfill + flag flip + exit gate ✅ done (2026-08-24, tooling uncommitted)
 
-**Task.** The 9 live `base`-tagged pages carry no recognized knowledge-scope label today (confirmed,
-PLAN §0 2026-08-21 sync). Before `enable_knowledge_scope_filtering` is ever set `true` in any
+**Done (2026-08-24), full sequence complete — see §0's newest entry for the blow-by-blow.** Tooling:
+`verify_knowledge_scope_coverage` + `scripts/verify_knowledge_scope_backfill.py` (readiness gate) built,
+tested (10 real-DB tests), proven live. Half (a): all 9 live pages labeled `general` in Confluence
+(v1 REST label API, reversibility proven first). Then the sequence ran to completion: (1) a one-off
+complete reconciliation sweep (`scripts/run_reconciliation_once.py`) re-stamped `chunk.tags` from the
+new labels via 10.2's metadata-only path (9 pages, 9 `sync_page` jobs `metadata_only`, no re-embed);
+(2) the readiness gate exited `0` (85 active chunks, 0 untagged — all now `['base','general']`);
+(3) **`enable_knowledge_scope_filtering` flipped `true`** in the root `.env`, and live scoped retrieval
+confirmed end-to-end (a `general`/`mews` request returns grounded hits; a `mews`-only filter returns
+none — the predicate genuinely excludes). `make check` → 481 passed with the flag on.
+
+**Task.** The 9 live `base`-tagged pages carried no recognized knowledge-scope label at the start
+(confirmed, PLAN §0 2026-08-21 sync; now labeled `general`, see Progress above). Before
+`enable_knowledge_scope_filtering` is ever set `true` in any
 environment with real content: an operator adds the `general` Confluence label, or one of `mews` /
 `opera-cloud` / `toast`, to each currently-synced page, a reconciliation sweep or webhook picks up the
 label change and re-stamps `tags` via 10.2's new path, and a verification query confirms every
@@ -4987,10 +5120,15 @@ operator doing this relabeling should have ADR-0011's Context open, not just thi
 reads `is_active` chunks (confirmed, `_base_filters()`), and superseded rows are already GC'd by
 `_gc_superseded`.
 
-**Exit gate.** `make check`/`make boundaries` green; the four new test files pass; `EXPLAIN` confirms
-`ix_chunk_tags_gin` is used once the flag is on in a test/staging environment; a live verification
-query (`SELECT count(*) FROM chunk WHERE is_active AND NOT (tags && ARRAY['general'] OR cardinality(tags) > 0 ...)` — exact form decided at implementation time) confirms zero untagged live chunks before
-flipping the flag in any non-offline environment; ruff/pyright at no worse than the current baseline.
+**Exit gate.** `make check`/`make boundaries` green; the 10 new readiness-gate tests pass; `EXPLAIN`
+confirms `ix_chunk_tags_gin` is plan-usable once the flag is on (already closed at 10.4). The live
+verification query is now implemented as `verify_knowledge_scope_coverage` — a bound `tags && :scopes`
+overlap count of `is_active` chunks (never the literal `ARRAY[...]`/`cardinality()` pseudocode sketched
+here originally) — surfaced by `scripts/verify_knowledge_scope_backfill.py`, which must exit `0` (zero
+untagged live chunks) **before** the flag is flipped in any non-offline environment. **The sub-step
+completes by flipping `enable_knowledge_scope_filtering=true`** (the operator `.env` change) once the
+gate is green, then confirming a live scoped query returns correctly isolated evidence; ruff/pyright at
+no worse than the current baseline.
 
 ### 10.8 — Live verification: label-driven auto-sync + knowledge-scope switcher (build + self-test)
 

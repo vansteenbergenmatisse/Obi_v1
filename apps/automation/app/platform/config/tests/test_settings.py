@@ -34,9 +34,14 @@ def test_construction_fails_fast_when_config_file_is_invalid(
         Settings()
 
 
+# These two assert the CODE default, read straight off the declared field — not a constructed
+# `Settings()`, which loads the root `.env` and would (correctly) reflect an operator's real config.
+# PLAN 10.7 flips ENABLE_KNOWLEDGE_SCOPE_FILTERING=true in that `.env` once the corpus is labeled,
+# so a `.env`-coupled assertion here would fail on the real deployment; the field default is what
+# "X defaults to Y" actually means.
 def test_default_knowledge_scope_defaults_to_empty() -> None:
-    assert Settings().default_knowledge_scope == ""
+    assert Settings.model_fields["default_knowledge_scope"].default == ""
 
 
 def test_enable_knowledge_scope_filtering_defaults_to_false() -> None:
-    assert Settings().enable_knowledge_scope_filtering is False
+    assert Settings.model_fields["enable_knowledge_scope_filtering"].default is False
