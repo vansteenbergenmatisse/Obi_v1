@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from sqlalchemy import delete, insert, update
 from sqlalchemy.orm import Session
 
+from app.features.confluence_sync.domain.knowledge_scope import resolve_knowledge_scope_tags
 from app.features.ingestion import (
     ChangeClass,
     PageHashes,
@@ -26,6 +27,9 @@ from app.features.ingestion import (
 from app.platform.clients import ConfluenceGateway
 from app.platform.config import Settings
 from app.platform.db.models import Chunk, PageRestriction, PageSource
+from app.platform.logging import get_logger
+
+log = get_logger("confluence_sync.sync_service")
 
 _REBUILD_CLASSES = {
     ChangeClass.body_changed,
@@ -82,6 +86,20 @@ def handle_sync_page(
     restrictions = gateway.get_restrictions(page_id)
     attachments = gateway.get_attachments(page_id)
 
+    # PLAN 10.2: label-driven knowledge-scope tags, unioned with (never replacing) the caller's
+    # source_scope tags. A conflicting pair of provider labels contributes no label-derived tag
+    # this sync — logged so an operator can fix the Confluence labels; re-evaluated automatically
+    # on the next sync.
+    scope_result = resolve_knowledge_scope_tags(labels, settings.knowledge_scope_set)
+    if scope_result.conflict:
+        log.warning(
+            "knowledge_scope_conflict",
+            page_id=page_id,
+            title=meta.title,
+            matched_labels=list(scope_result.matched_labels),
+        )
+    final_tags = sorted(set(tags or []) | set(scope_result.tags))
+
     need_body = decide_body_fetch(local, meta, target)
     blocks: list[norm.Block] | None = None
     if need_body:
@@ -130,7 +148,7 @@ def handle_sync_page(
             target=target,
             page_status=page_status,
             services=services,
-            tags=tags,
+            tags=final_tags,
         )
         if restrictions_changed:
             _replace_restrictions(session, page_id=page_id, principals=restrictions)
@@ -139,7 +157,7 @@ def handle_sync_page(
         )
 
     if decision.meaningful:
-        _apply_metadata_only(session, meta, decision, page_status, tags=tags)
+        _apply_metadata_only(session, meta, decision, page_status, tags=final_tags)
         if restrictions_changed:
             _replace_restrictions(session, page_id=page_id, principals=restrictions)
         return SyncOutcome(

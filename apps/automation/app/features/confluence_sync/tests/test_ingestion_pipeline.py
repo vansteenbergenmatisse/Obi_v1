@@ -56,9 +56,11 @@ def test_only_one_document_version_active_after_reindex(gateway, settings: Setti
     index_page(gateway, settings, 1001, 1)
     index_page(gateway, settings, 1001, 3)
     with read() as s:
-        active = s.query(DocumentVersion).filter(
-            DocumentVersion.page_id == 1001, DocumentVersion.state == DocState.active
-        ).count()
+        active = (
+            s.query(DocumentVersion)
+            .filter(DocumentVersion.page_id == 1001, DocumentVersion.state == DocState.active)
+            .count()
+        )
         # every active chunk points at that one active version
         active_dv_ids = {
             c.doc_version_id
@@ -108,3 +110,61 @@ def test_schema_bump_triggers_full_reembed_release(gateway, settings: Settings) 
     assert active_versions_count(1001) == 1
     children = active_child_chunks(1001)
     assert children and all(c.embedding is not None for c in children)
+
+
+def test_label_driven_knowledge_scope_tag_unions_with_source_scope(
+    gateway, settings: Settings
+) -> None:
+    """PLAN 10.2: a page labeled `toast` (a recognized POS-provider knowledge scope — asserted as
+    the platform, not this repo's own `Muse` codename, per ADR-0011's disclosed collision) is
+    stamped with that tag on both page_source and every active chunk, unioned with the page's
+    existing source_scope tag (`base`), not replacing it."""
+    from app.features.confluence_sync.application.sync_service import handle_sync_page
+    from app.platform.db.engine import session_scope
+    from app.platform.db.models import PageSource
+
+    scoped = settings.model_copy(update={"knowledge_scopes": "general,mews,opera-cloud,toast"})
+    gateway.set_labels(1001, ["toast"])
+    gateway.set_version(1001, 1)
+    with session_scope() as s:
+        outcome = handle_sync_page(s, page_id=1001, gateway=gateway, settings=scoped, tags=["base"])
+    assert outcome.action == "indexed"
+
+    with read() as s:
+        ps = s.get(PageSource, 1001)
+        assert ps is not None
+        assert set(ps.tags) == {"base", "toast"}
+    children = active_child_chunks(1001)
+    assert children and all(set(c.tags) == {"base", "toast"} for c in children)
+
+
+def test_conflicting_provider_labels_contribute_no_tag_and_log_conflict(
+    gateway, settings: Settings, monkeypatch
+) -> None:
+    """Two provider labels on the same page (`mews` + `toast`) is a conflict: zero label-derived
+    tags land on the page (the existing `base` source_scope tag is untouched), and a
+    `knowledge_scope_conflict` event is logged so an operator can fix the Confluence labels."""
+    from app.features.confluence_sync.application import sync_service
+    from app.platform.db.engine import session_scope
+    from app.platform.db.models import PageSource
+
+    captured: dict = {}
+    monkeypatch.setattr(
+        sync_service.log, "warning", lambda event, **kw: captured.update(event=event, **kw)
+    )
+
+    scoped = settings.model_copy(update={"knowledge_scopes": "general,mews,opera-cloud,toast"})
+    gateway.set_labels(1001, ["mews", "toast"])
+    gateway.set_version(1001, 1)
+    with session_scope() as s:
+        outcome = sync_service.handle_sync_page(
+            s, page_id=1001, gateway=gateway, settings=scoped, tags=["base"]
+        )
+    assert outcome.action == "indexed"
+    assert captured.get("event") == "knowledge_scope_conflict"
+    assert set(captured.get("matched_labels", [])) == {"mews", "toast"}
+
+    with read() as s:
+        ps = s.get(PageSource, 1001)
+        assert ps is not None
+        assert set(ps.tags) == {"base"}

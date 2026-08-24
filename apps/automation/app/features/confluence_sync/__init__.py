@@ -21,6 +21,7 @@ from .application.reconciliation import (
     run_reconciliation,
 )
 from .application.worker import drain, reap
+from .domain.knowledge_scope import KnowledgeScopeResult, resolve_knowledge_scope_tags
 from .domain.scope_resolver import (
     ROOT_TYPE_PAGE,
     ROOT_TYPE_SPACE,
@@ -33,11 +34,13 @@ from .server import router
 __all__ = [
     "KIND_COMPLETE",
     "KIND_LIGHTWEIGHT",
+    "KnowledgeScopeResult",
     "ROOT_TYPE_PAGE",
     "ROOT_TYPE_SPACE",
     "ScopeResolution",
     "drain",
     "reap",
+    "resolve_knowledge_scope_tags",
     "resolve_scope_roots",
     "resolve_space_scope",
     "router",

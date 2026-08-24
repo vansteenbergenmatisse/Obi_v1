@@ -9,10 +9,281 @@
 
 ## 0. Status ledger & blockers  *(keep current — update after every phase)*
 
+**New session (2026-08-24): 10.2 done — label-driven per-page knowledge-scope tags.** User gave the
+explicit go-ahead for 10.2 only, per this repo's stop-after-sub-step convention. Shipped exactly as
+scoped: new pure `confluence_sync/domain/knowledge_scope.py` (`resolve_knowledge_scope_tags`,
+`KnowledgeScopeResult`), wired into `sync_service.handle_sync_page` right after the existing
+`gateway.get_labels()` call — label-derived tags union with (never replace) the live `source_scope`
+tags, a two-provider-label conflict logs `knowledge_scope_conflict` and contributes zero
+label-derived tags until the labels are fixed, and `KnowledgeScopeResult`/
+`resolve_knowledge_scope_tags` are exported from the feature's public root. 7 new pure unit tests +
+2 new DB-backed integration tests (label → tag union with `source_scope`; conflicting labels → no
+tag + logged conflict). `make check` → **416 passed** (was 407, +9), `make boundaries` clean.
+Ruff/pyright diffed against the pre-change baseline: **0 new ruff errors** (2 unchanged),
+unformatted-file count **improved** 14 → 13 (the one file this session touched that had a
+pre-existing unformatted block was brought clean), **0 new pyright errors** (34 unchanged). No
+new/modified HTTP endpoint or LLM call — `securing-http-and-llm-endpoints` doesn't apply here, same
+reasoning as 10.1. See 10.2's own section for full detail. **Not yet committed — ask before
+committing.** **Next: 10.3 (migration: `curated_knowledge_entry` table + `tags` GIN index +
+`query_trace` column) — not started, ask before beginning**, same stop-after-sub-step rule as every
+other step in this phase.
+
+**Same session (2026-08-24): 10.1 done — recognized knowledge-scope configuration.** User gave the
+explicit go-ahead for 10.1 only, per this repo's stop-after-sub-step convention. Shipped exactly as
+scoped: `Settings.knowledge_scopes` (default `"general"`), `knowledge_scope_set` property
+(lowercased/trimmed/comma-split), `default_knowledge_scope`, and a `model_validator(mode="after")`
+that fails process construction if `"general"` isn't in the recognized set — fail-fast, matching
+`ReaderRoleMisconfiguredError`'s existing posture, not a silent default-injection. New
+`app/platform/config/tests/test_settings.py` (6 cases). `make check` → **407 passed** (was 401, +6),
+`make boundaries` clean. Ruff/pyright diffed against the pre-change baseline: **0 new ruff errors**
+(2 unchanged), **0 new unformatted files** (14 unchanged), **0 new pyright errors** (34 unchanged). No
+HTTP/LLM surface touched — `securing-http-and-llm-endpoints` doesn't apply to a pure config change.
+See 10.1's own section below for the full detail. **Committed as `ad29f1b`** (user asked to commit
+10.1 specifically, not the rest of the tree). **One mistake made and corrected before reporting
+done, disclosed here rather than smoothed over:** `settings.py` also carried an unrelated,
+already-verified-but-uncommitted change from an earlier session (`confluence_attachment_max_bytes`/
+`confluence_attachment_max_per_page`); the user asked to keep the commit 10.1-only, so a surgical
+`git apply --cached` patch was used to stage just the knowledge-scope hunk. `git commit -- <pathspec>`
+then silently used the working-tree content instead of that staged index (a real git behavior, not a
+guess), pulling the attachment-cap lines back in; the follow-up `git commit --amend` compounded it by
+also sweeping in the already-staged `docs/rag/fixes/` deletions (amend rebuilds from the full index,
+not incrementally on the prior commit). Caught by re-diffing `HEAD` against the intended 10.1-only
+content after each step, not assumed correct — both were corrected (fixes/ restored via
+`git checkout HEAD~1 -- docs/rag/fixes/` then re-deleted to its original staged state; the attachment-
+cap lines restored to the working tree as unstaged). Final state verified: `git show HEAD --stat` is
+exactly `settings.py` (+22) and the new test file (+45); `docs/rag/fixes/` deletion is staged exactly
+as it was pre-session; `pytest app/platform/config/tests/test_settings.py` passes against the
+committed file. **Next: 10.2 (label-driven per-page knowledge-scope tags) — not started, ask before
+beginning**, same stop-after-sub-step rule as every other step in this phase.
+
+**New session (2026-08-24): Phase 10 extended with 10.8/10.9, design-only, no code yet.** User asked
+for two things that were previously implicit, not scheduled: (1) empirical, *live* proof that editing
+a Confluence label actually propagates to the RAG database automatically, not just a unit-test proof;
+(2) a way to visibly switch between the four knowledge scopes (`general`/`mews`/`opera-cloud`/`toast`)
+and see different data per scope. Clarified two likely dictation errors before writing anything, via
+`AskUserQuestion` rather than guessing: "News" confirmed to mean `general` (already the always-included
+scope, not a 5th new one); "Muse page" confirmed to mean the **Mews** platform, not this repo's own
+`Muse` codename (ADR-0006) — the exact collision ADR-0011 already warned about for `toast`, now also
+disclosed for `mews`/`Muse`. Read the actual code before scoping the work: `label_added`/`label_deleted`
+were already in `SYNC_EVENTS` and already routed to a `sync_page` job (`schemas/events.py` +
+`event_service.py`), and `handle_sync_page`'s label-only path already updates `tags` via
+`_apply_metadata_only` without a re-embed — so the "automatic update" mechanism the user asked for was
+already designed at 10.2, just never proven live. Added **10.8** (build a minimal scope switcher in the
+widget + a live self-test script exercising a real add/edit/remove label against the live Confluence API
+and a real DB — disclosing that the network-delivery leg of the webhook itself can't be proven yet, since
+no public URL is registered with Confluence) and **10.9** (the user independently reproduces 10.8's
+procedure — per the user's own framing: "10.8 is you testing everything, 10.9 is me testing everything").
+Two new acceptance criteria (21, 22) added; Testing summary and the current-state-vs-target table (§1)
+updated to match. **Not started — same as every other Phase 10 sub-step, ask before beginning.**
+
+**Same session (2026-08-21): first real live sync ever run — user asked to index the "Base" folder
+(`https://omniboost.atlassian.net/wiki/spaces/omnidoc/folder/711622658/Base`), found and fixed a
+real production pagination bug along the way, indexed it, verified live end-to-end.**
+
+- **Investigated before acting** (read-only Confluence API calls): the URL is a real Confluence
+  **folder** (type=`folder`, not `page`), space `omnidoc` (real key `SupOnb`, numeric id
+  `701857803`), containing **9 pages, all direct children, no sub-folders, none restricted**
+  (confirmed via `GET /api/v2/folders/711622658`, the v1 `ancestor=` CQL search, and per-page
+  restriction checks).
+- **`source_scope` has no `folder` root type** (`seed_source_scope.py`'s `_ROOT_TYPES = ("space",
+  "page")`; `scope_resolver.py`'s walk requires the root id itself to be a live page). Asked the
+  user: seed the 9 pages individually now (uses the already-shipped `page`-root path, zero new
+  code) vs. build real `folder`-root support first. **User chose: seed individually.** Disclosed
+  limitation, not silent: a page added **directly** under "Base" later (a sibling of the 9 seeded
+  roots, not a descendant of any of them) won't be auto-discovered by reconciliation until
+  someone reseeds it — folder-root support would close that gap if it's ever worth building.
+- **Real bug found live, not assumed:** `HttpConfluenceClient.list_space_pages`'s cursor
+  pagination (`confluence_client.py`) doubled the `/wiki` context path on every page past the
+  first — `f"{self._base}{next_link}"` when `next_link` is already a site-root-relative path
+  (`/wiki/api/v2/pages?cursor=...`) that itself starts with `/wiki`, the same prefix `self._base`
+  already carries → `.../wiki/wiki/api/v2/pages?...` → 404. Only surfaces once a space has >100
+  pages; every existing test mocked a single page of results, so this was never exercised — matches
+  the blocker-#3 disclosed gap ("no live sync has actually been run yet"). The identical pattern
+  existed in `_fetch_group_members`'s v1 pagination (4.6.2) too. **Fixed** both call sites with
+  `httpx.URL(self._base).join(next_link)` (correctly resolves a root-relative ref against the
+  origin, passes an already-absolute link through unchanged). **2 new regression tests**
+  (`test_http_client_list_space_pages_paginates_without_doubling_wiki_prefix`,
+  `test_http_client_group_member_lookup_paginates_without_doubling_wiki_prefix`) reproduce the
+  double-prefix via a mocked multi-page `_links.next` and assert the exact request path seen — they
+  fail on the pre-fix code. `make check` (repo root) → **401 passed** (was 399), `make boundaries`
+  clean, ruff/pyright unchanged at baseline (2 errors/14 unformatted, 34 pyright errors — git-stash
+  diffed, not just counted).
+- **Ran the real sync**, using the app's own intended path (not a bespoke script): seeded 9
+  `source_scope` rows (`--root-type page`, tag `base`) → `run_reconciliation(kind=KIND_COMPLETE,
+  space_ids=[701857803])` enqueued 9 `sync_page` jobs, 0 errors → `worker.drain(...)` processed all
+  9, every one `indexed`/`body_changed`. **Verified in the DB, not just "job succeeded":** all 9
+  `page_source` rows have `active_doc_version_id` set + `status=current`; **85 chunks** total (45
+  child chunks, all embedded, all `is_active=true`). **Verified live retrieval, not just storage:**
+  a real `HybridRetriever.retrieve_with_context` query ("How do I add a new integration to
+  app.omniboost.io?") against scope `701857803` returned the exact right page
+  ("Adding new integration to app.omniboost.io (Base v2)") top-ranked, rerank score 0.94.
+- **Blocker #3 update:** "no live sync has actually been run against the now-working token" is no
+  longer true — this is the first real production Confluence content in the corpus. 4.6.2's
+  group-membership endpoint is still unverified (none of these 9 pages carry a group restriction),
+  unchanged from before.
+- Nothing committed yet — ask before committing, per this repo's own convention.
+
+**Same session (2026-08-21): Phase 10 scoped (design-only, no code) — knowledge-scope tagging.**
+Promotes `docs/future-ideas/IDEAS.md` idea #8 (multi-provider platform architecture) + the
+retrieval-side gap idea #2 already identified: `tags` on `page_source`/`chunk` (ADR-0004) has been
+written at every ingestion activation since 3.5.3 and read by nothing at query time. `docs/adr/
+0011-Knowledge-Scope-Tagging-And-Retrieval-Filtering.md` records the decision (label-driven per-page
+tags, unioned with existing `source_scope` tags, hard filter behind a dark-by-default flag, request-
+level `knowledge_scope` threaded like `principal`, curated always-present knowledge reusing the
+existing citation machinery). See Phase 10 below for the full sub-step breakdown. **Not started —
+ask before beginning 10.1.**
+
 **Working rules (see local `CLAUDE.local.md`):** stop after **every** phase/sub-step so the user can
 `/compact-ultra` (keep context < ~200k); before starting a new phase, **verify the previous one** —
 security (HTTP/LLM controls), real tests, acceptance actually met — and if it falls short, add the
 fix here as the next task; update this ledger after each phase.
+
+**Same session (2026-08-21): `docs/rag/fixes/` audit fully closed — last open item
+(attachment-extraction dead code, phase-2 finding) wired in, verified, folder removed.** User asked
+to go through the fixes folder phase 0→4 and fix everything there. Verified first, per this repo's
+own habit, rather than assuming: dispatched 6 parallel read-only agents, one per phase file
+(phase-0 through phase-4 + 3.5), each independently re-checking every finding against the actual
+current code (not the ledger's self-report). Result: **13 of 14 findings were already fixed** —
+Phase 4.6 (closed 2026-08-11) had already remediated everything in this exact audit. Only one item
+was genuinely still open: `ingestion/domain/attachment_extraction.py` (`extract_attachment`) was
+fully built and tested but had zero production call sites — attachment content (PDF/DOCX/XLSX/CSV/
+HTML) was tracked for change detection but never chunked/embedded/searchable (PLAN 4.6.13's
+deliberate "park, don't wire" disposition).
+
+**Design, confirmed with the user before writing code (`AskUserQuestion`):** reuse the existing
+`Chunk` table — no new table, no migration. Each attachment's extracted text is wrapped as
+`norm.Block`s under a title-keyed heading path (`["Attachments", title]`, `attachment_to_blocks`)
+and merged into the page's `blocks` on any rebuild, so it flows through the *exact* same
+section/chunk/diff/embedding-reuse pipeline as page body text, inheriting the page's RLS/ACL for
+free via the existing `page_id` FK. Size cap: 20 MB/attachment (user's pick, matching option A),
+enforced both from cheap pre-download metadata (`fileSize`) and via streaming self-abort so a lied
+Content-Length can't bypass it; a 200-attachments/page safety ceiling too.
+
+**Real API research before writing any client code** (this repo's established pattern, same as the
+4.6.2 restrictions-endpoint fix): live-tested against the already-working Confluence token —
+`get_attachments` only ever fetched metadata, never bytes; the real download link
+(`downloadLink`/`_links.download`) 302-redirects **cross-host** to a signed
+`api.media.atlassian.com` URL, confirmed httpx does not forward the Basic Auth header across that
+redirect (no credential leak). Real SUPPORT-space attachments (PNG/JPEG/XML/TXT/XLSX/PDF, up to
+~1.7 MB) exercised this end-to-end, including a real PDF download (`%PDF-1.7` header confirmed).
+
+**One real bug found and fixed via a failing test, not assumed away:** the first design added
+`ChangeClass.attachment_changed` to `_REBUILD_CLASSES` so an attachment-only edit (no body change)
+would still get indexed. A live-run test caught `DocumentVersion`'s `uq_document_version_idem`
+constraint — unique per `(document_id, cf_version, retrieval_schema_version, embedding_model)` —
+raising `IntegrityError`: Confluence attachments carry their own version numbers independent of the
+page's `cf_version`, so an attachment-only change never bumps it, and a second build at the same
+`cf_version` collides. **Fixed by reverting that one line**, not by forcing a migration-sized
+versioning-model change the user never asked for: `attachment_changed` stays out of
+`_REBUILD_CLASSES` (comment in `sync_service.py` explains why in full), and an attachment-only
+change is now correctly picked up at the *next* rebuild-triggering event instead of crashing. This
+is a disclosed limitation, not a silent gap.
+
+**Shipped:** `platform/config/settings.py` (`confluence_attachment_max_bytes`,
+`confluence_attachment_max_per_page`); `platform/clients/confluence_client.py`
+(`download_attachment` — streaming, capped, retried, breaker-protected, fail-soft; `get_attachments`
+now surfaces `downloadLink`); `platform/clients/fixture_confluence_client.py` (matching
+`download_attachment` resolving real fixture files + a `set_attachment_content` test mutator);
+`ingestion/domain/attachment_extraction.py` (`attachment_to_blocks`, now exported from the feature
+root); `confluence_sync/application/sync_service.py` (`_attachment_blocks` orchestration;
+`content_hash`/`structure_hash` deliberately stay body-only — folding attachment content into them
+would have made `classify()`'s next-sync comparison permanently disagree with what's persisted,
+spuriously reclassifying every subsequent sync as `body_changed`; caught and fixed before it ever
+ran, not found live). Installed the already-declared `attachments` optional-dependency group
+(`pypdf`/`python-docx`/`openpyxl`) so extraction is real, not degraded — this repo has no CI to
+also update; a local-only dev-environment change.
+
+**Verified, not just asserted:** TDD throughout — 26 new tests (13 `confluence_client`, 4
+`attachment_extraction`, 9 new `test_attachment_wiring.py` covering: real text/CSV/markdown
+attachment content becomes searchable; PDF/XLSX placeholders degrade to zero chunks, not a crash;
+attachment chunks inherit the page's ACL/source; re-syncing an unchanged page stays a true
+`no_change` (the regression proof for the hash-consistency bug above); an unchanged attachment
+reuses its embedding — not recomputed — across a body-driven rebuild; oversized-metadata and
+unfetchable attachments are skipped without failing the sync; the attachment-only-change limitation
+itself). `make check` (repo root) → **399 passed** (was 374 + this session's earlier restrictions
+fix's +2, net +25/26 accounting for one assertion consolidation), `make boundaries` clean. Ruff/
+pyright diffed precisely against a clean-tree baseline (`git stash -u`, not just eyeballed) to
+isolate this change's true contribution from the `attachments` extra's own effect on pre-existing
+code: **zero new ruff errors, zero new pyright errors** — baseline unchanged at 2 errors / 14
+unformatted (already ≤ the documented 15-ceiling) / 34 pyright errors. Ran
+`securing-http-and-llm-endpoints` against the new outbound `download_attachment` surface: auth/
+timeout/retry/breaker inherited from the existing authenticated client; C6 (PII redaction) opted
+out with the same justification already on file for the embeddings/contextualization LLM-CALL
+surfaces (first-party wiki corpus, not third-party PII); C10 (abuse/cost) covered by the new size +
+count caps. **One residual risk disclosed, not silently accepted:** the size cap bounds the
+*compressed* download only — `pypdf`/`python-docx`/`openpyxl` decompress ZIP-based formats in
+memory, so a malicious/corrupt attachment could still trigger a decompression-bomb-style memory
+spike during parsing; accepted given attachments originate from a single authenticated Confluence
+tenant, not arbitrary internet uploads, and every parser already catches broad exceptions rather
+than crash. Docs updated to match: `apps/features/FEATURES.md` (ingestion's PARKED note replaced
+with the real wiring + both disclosed limitations; confluence_sync's contracts section), `.env.example`
+(new vars), `docs/rag/how_this_works.md` §4.6. **`docs/rag/fixes/` folder deleted outright** (all 14
+findings now genuinely fixed, confirmed by direct code inspection, not the ledger's word for it) —
+matching this session's earlier convention for idea #6. Nothing committed yet — ask before
+committing, per this repo's own convention.
+
+**New session (2026-08-21): idea #6 closed — shared invite/access token gates `apps/web`'s
+browser→proxy leg.** Continuation of the auth-audit finding below: the user picked the lightest of
+the three options on the table (shared token, not Confluence-native embed or full SSO — the latter
+two stay open for later, revisit once the multi-provider direction has more shape, see
+`docs/future-ideas/IDEAS.md` idea #8). Entered plan mode first (security-sensitive, touches an
+existing HTTP surface); a `Plan` subagent validated the design against the real files before any
+code was written and caught two things the draft missed: (1) the new module must not read
+`WIDGET_ACCESS_TOKEN` through `platform/automation-api` (that module is scoped to the
+proxy→backend leg only, per its own docstring) — it got its own `server/auth.ts` instead, mirroring
+the existing `server/validation.ts` per-control-per-file pattern; (2) `vitest.config.ts`'s jsdom
+environment has no real document URL by default, so a `history.replaceState`-based test throws a
+`SecurityError` until `environmentOptions.jsdom.url` is set explicitly — fixed once, repo-wide, not
+worked around per-test.
+
+security_baseline (surface: POST /api/chat + PATCH /api/chat/{traceId}/feedback, `apps/web` leg only):
+  C1_auth: covered - new `WIDGET_ACCESS_TOKEN` shared secret, constant-time compared
+    (`node:crypto.timingSafeEqual`, length-checked first since it throws on mismatched lengths,
+    unlike Python's `hmac.compare_digest`), checked as the first line of both handlers before any
+    body parsing. Fails closed (503) if unconfigured, 401 on missing/wrong token — same posture as
+    `CHAT_API_KEY`. Client-side: `access-token.ts` captures `?access_token=` from an invite link into
+    `sessionStorage` (tab-lifetime, not `localStorage` — deliberately pilot-scoped, not full
+    multi-tenant) and strips it from the visible URL via `history.replaceState`; `chat-client.ts`
+    attaches it as `x-widget-access-token` on both fetches when present.
+  C2_rate_limit: opted_out (updated) - unchanged backend-inherited reasoning, plus: a request now
+    rejected by C1 before reaching the backend is invisible to the backend's IP counter. Accepted —
+    the rejection itself is cheap (no LLM call, no backend round trip, no corpus access) and the
+    token is meant to be high-entropy (`openssl rand -hex 32`, documented in `.env.example`),
+    making brute-forcing it impractical regardless of request volume.
+  C9_audit: covered - `console.warn("chat_proxy_unauthorized"/"chat_feedback_proxy_unauthorized",
+    { status })` on every rejection — status only, the attempted token value is never logged
+    (verified by a dedicated test asserting the result never contains the attempted value).
+  (C3/C4/C5/C6/C10 unchanged from the pre-existing block in `route-handlers.ts`'s own docstring.)
+
+TDD throughout, tests written before each implementation. New: `server/auth.ts` +
+`tests/auth.test.ts` (9 cases — unconfigured, missing/wrong/mismatched-length/correct token, no
+token value ever in a result). New: `api/access-token.ts` + `tests/access-token.test.tsx` (5 cases
+— capture+persist+strip, preserves other query params, reuse across calls, overwrite on a new
+token). Modified: `route-handlers.ts` (auth check first in both handlers; docstring's C1/C2
+updated) + `route-handlers.test.ts` (+6 new 401/503 cases, all happy-path fixtures updated to carry
+a valid token). Modified: `chat-client.ts` (attaches the header when present) +
+`chat-client.test.ts` (+4 cases). Modified: `chat-session-provider.tsx` (captures on mount; a 401
+now shows "Your access link has expired — open the chat from your invite link again" instead of the
+generic error fallback) + its test (+2 cases). `apps/web/.env.example` documents the new
+`WIDGET_ACCESS_TOKEN`; `features/chat/FEATURES.md` updated to match.
+
+**Verified, not just asserted:** `pnpm --filter web test` → **159 passed** (was 153, 22 files, all
+green, zero regressions); `tsc --noEmit` clean (no `next build` run — a `next dev` was live on the
+same `.next`, per this repo's own known collision). No ESLint config exists in `apps/web` (`next
+lint` tried to interactively bootstrap one — declined, out of scope for this fix). **Live smoke
+test against the real running stack**, not just mocks: `curl` with no token → **401**; wrong token →
+**401**; correct token → real SSE stream through to a real backend answer. Real-browser check
+(`chrome-devtools` MCP): loaded `?access_token=<real value>`, confirmed the URL bar shows the
+token stripped while `sessionStorage` holds it, opened the widget, sent a message, got a real
+grounded/refused answer through end to end — no auth error. `.env.local` (both root and
+`apps/web`) needed the new var added for local dev to keep working under the new fail-closed
+check, same as `CHAT_API_KEY` already required.
+
+**`docs/future-ideas/IDEAS.md` idea #6 deleted outright** (not left as a pointer, unlike this
+file's usual promoted-idea convention — explicit user instruction this session: delete once
+provably done, keep what isn't). Idea #7 (folder-level `source_scope` roots) is a separate,
+unrelated backend change and was explicitly deferred to its own follow-up, per this repo's
+stop-after-phase rule.
 
 **Same session, immediately after: full auth audit across both apps — one real gap found, not
 fixed, logged as backlog, not a silent PLAN item.** User asked whether the backend API requires
@@ -438,6 +709,9 @@ per this repo's own no-auto-start rule. No code changed this pass — docs only 
 `1b35c92` for the 7.7/7.8 code+tests fixes above.
 
 ### ▶ Resume here (after `/compact-ultra`) — first things first
+
+**Phase 10 is IN PROGRESS: 10.1 done (2026-08-24, `ad29f1b`). Next: 10.2 — not started, ask
+before beginning.** See §0's newest entry above and Phase 10.1's own section for detail.
 
 **Phase 3.5 is COMPLETE. Phase 4 is COMPLETE: 4.1 + 4.2 + 4.3 + 4.4 + 4.5 all done.**
 **Phase 5.1 (`CHAT_API_KEY` rotation), 5.2 (exact-match answer caching), and 5.3 (prompt-injection +
@@ -1985,7 +2259,7 @@ row. `make check` green; boundaries clean; no-regression on ruff/pyright.
 
 ---
 
-## Phase 4.6 — Fixes-backlog remediation (gates Phase 5.4) ⬜ todo
+## Phase 4.6 — Fixes-backlog remediation (gates Phase 5.4) ✅ done (16 sub-steps + exit gate, closed 2026-08-11)
 
 **Origin.** Six independent audit agents re-ran tests/boundaries/ruff/pyright live and read code
 directly (not trusting this ledger's self-report) across Phases 0, 1, 2, 3, 3.5, and 4 on
@@ -3434,7 +3708,7 @@ shared risk with either.
 
 ---
 
-## Phase 9 — Unanswerable/vague-query fallback (deliberately last — no phase follows this one) ✅ done *(9.1-9.9 all done, 2026-08-11/13 — Phase 9 fully closed, ADR-0008 confirmed matching shipped code)*
+## Phase 9 — Unanswerable/vague-query fallback *(2026-08-21: "deliberately last" is superseded — Phase 10 below was scoped the same day, promoting `docs/future-ideas/IDEAS.md` idea #8. This line is kept, not deleted, per this repo's own convention of not silently rewriting history.)* ✅ done *(9.1-9.9 all done, 2026-08-11/13 — Phase 9 fully closed, ADR-0008 confirmed matching shipped code)*
 
 **Scoped 2026-08-11; 9.1 (design doc + ADR-0008) done the same day — nothing else started.** User
 supplied an external best-practices brief on handling
@@ -3843,6 +4117,519 @@ explicit go-ahead, same as every other phase (§0 working rules).
 
 ---
 
+## Phase 10 — Knowledge-scope tagging (Confluence-label-driven retrieval scoping) — **scoped, not started**
+
+**Scoped 2026-08-21.** Promotes `docs/future-ideas/IDEAS.md` idea #8 ("Multi-provider platform
+architecture: reusable core, provider-scoped knowledge"), folding in the retrieval-side gap idea #2
+already identified by direct code read. **Design doc + ADR done same day, no code yet** — 10.1 onward
+is the roadmap. Do not start without an explicit go-ahead, same as every other phase.
+
+**Goal.** The same chat widget and backend can be deployed against multiple third-party hospitality
+platforms (**Mews, Opera Cloud, Toast POS** — the confirmed initial set, not illustrative
+placeholders) plus a general/standalone deployment, each seeing `general`-tagged content plus only its
+own platform's content, with zero leakage — enforced structurally at query time, not by hoping the LLM
+ignores irrelevant evidence — while adding at most one new Confluence label per page and zero new
+deployments, repos, or databases.
+
+**Terminology note (read `docs/adr/0011-*.md`'s Context first if this is confusing):** this phase calls
+the concept a **knowledge scope**, never a "provider" — this repo's existing "provider" vocabulary
+(ADR-0004: `source_type`/`source_id`, a data *connector* like Confluence vs. a future Zendesk) and
+ADR-0006's "Toast"/"Muse" (this deployment vs. a hypothetical second deployment) are unrelated
+concepts that happen to share the word. **Confirmed 2026-08-21, collision disclosed and accepted:**
+recognized scope values are `general`, `mews`, `opera-cloud`, `toast` — yes, including `toast`, meaning
+the third-party Toast POS platform, never this repository's own codename. Every mention of `toast` as a
+scope/tag value from here on means the POS platform; see ADR-0011's Context for the full
+disambiguation.
+
+### 1. Current state vs. target (per component)
+
+| Component | Current | Target | Gap |
+|---|---|---|---|
+| Config | No recognized-scope registry exists anywhere. | `Settings.knowledge_scopes` (env, comma-separated), always includes `general`. | New setting + validation (10.1). |
+| Confluence labels | `HttpConfluenceClient.get_labels()` already fetches every page's labels, every sync — used only for `labels_hash` change detection. | Labels intersected with the recognized set become knowledge-scope tags. | New pure resolver + sync_service wiring (10.2). |
+| `tags` column (`page_source`/`chunk`) | Populated only from `source_scope` (operator-run seed script, per space/page-root, unrelated to Confluence's own labels). Never read at query time. | Populated by **union** of `source_scope` tags (unchanged) + label-derived tags (new). Read at query time behind a flag. | New tag source unioned in at the existing seam (10.2); new filter (10.4). |
+| Retrieval filtering | `_base_filters()` filters `is_active`/`kind`/`page_status`/`space_id`/`source_id`. `tags` never referenced. | Optional `AND tags && ARRAY[:scopes]`, gated by `enable_knowledge_scope_filtering` (default off). | New predicate + partial GIN index + flag (10.3, 10.4). |
+| Chat request context | `ChatRequestBody` has `principal` only; nothing carries "which platform is this embedded on." Confirmed nowhere in `chat-session-provider.tsx`, `router.py`, or `OBI-WIDGET-DESIGN.md`. | New `knowledge_scope` field, threaded the same way `principal` already is, resolved once per session. | New field + resolver + contract + frontend plumbing (10.5). |
+| Always-present knowledge | Does not exist. `rag_agent/domain/prompt.py` has exactly one evidence source: retrieved hits. | A small, admin-maintained set of curated entries, tagged by scope, always injected as leading cited evidence. | New table + seed script + evidence-block composition (10.6). |
+| Live corpus | 9 pages, `source_scope`-tagged `base` only, zero knowledge-scope tag. | Same 9 pages carry a recognized scope (at minimum `general`) before the filter flag is ever flipped on. | Manual relabel + verification step (10.7). |
+| Label→sync activation | `label_added`/`label_deleted` are already in `SYNC_EVENTS` (`schemas/events.py`) and already route to a `sync_page` job (`event_service.py`) — the *mechanism* pre-dates this phase. Never exercised live: no public URL is registered with Confluence for the webhook, so today a label change is only picked up on the next reconciliation sweep, not instantly. | The existing webhook code path (or an equivalent direct call, given no public deploy yet) proven live: add/edit/remove a real Confluence label → `page_source.tags`/`chunk.tags` update without a full re-embed. | Live self-verification, no new mechanism (10.8). |
+| Scope-switching UI | Does not exist. `knowledge_scope` (10.5) is a backend/contract field with no frontend control to set it. | A minimal switcher (`general`/`mews`/`opera-cloud`/`toast`) in the widget, wired to 10.5's field, so each scope visibly returns different evidence. | New UI control (10.8). |
+
+### 2. Config & flags reference (additions to §4's table)
+
+| Setting | Default | Introduced | Purpose |
+|---|---|---|---|
+| `knowledge_scopes` | `"general"` (code default); deployment `.env` sets `general,mews,opera-cloud,toast` at 10.7 rollout | 10.1 | Comma-separated recognized scope identifiers; must include `general` (validated at settings construction). |
+| `default_knowledge_scope` | `""` | 10.1 | Deployment-level fallback scope when a request omits `knowledge_scope`. Empty → general-only. |
+| `enable_knowledge_scope_filtering` | `false` | 10.4 | Rollout flag. Off → zero behavior change (ships dark, mirrors `enable_clarification_branch`). |
+| `curated_knowledge_max_entries` | `5` | 10.6 | Cap on always-present entries injected per answer (protects `evidence_token_budget`). |
+
+### 10.1 — Recognized knowledge-scope configuration ✅ done (2026-08-24, `ad29f1b`)
+
+**Files:** `app/platform/config/settings.py`.
+
+**Implementation.**
+```python
+knowledge_scopes: str = "general"  # comma-separated recognized scope identifiers
+
+@property
+def knowledge_scope_set(self) -> frozenset[str]:
+    return frozenset(s.strip().lower() for s in self.knowledge_scopes.split(",") if s.strip())
+
+default_knowledge_scope: str = ""
+
+@model_validator(mode="after")
+def _require_general_scope(self) -> "Settings":
+    if "general" not in self.knowledge_scope_set:
+        raise ValueError("knowledge_scopes must include 'general'")
+    return self
+```
+Fail-fast at process start on misconfiguration, matching this repo's existing fail-closed conventions
+(e.g. `ReaderRoleMisconfiguredError`) rather than silently injecting `general`.
+
+**Tests:** `platform/config/tests/test_settings.py` (new or extended) — default set is `{"general"}`;
+comma-separated env value parses/lowercases/trims correctly (assert
+`Settings(knowledge_scopes="general,mews,opera-cloud,toast").knowledge_scope_set ==
+{"general","mews","opera-cloud","toast"}`, the confirmed real deployment value); a `knowledge_scopes`
+value missing `general` raises at construction.
+
+**Acceptance.** `Settings().knowledge_scope_set == {"general"}` by default; a misconfigured env fails
+process startup, not a silent runtime default; the confirmed deployment `.env` value
+(`general,mews,opera-cloud,toast`) parses cleanly.
+
+**Shipped exactly as scoped above**, plus one deviation: `Settings` already has
+`from __future__ import annotations` at module scope, so the validator's return-type annotation is
+unquoted `-> Settings` (ruff `UP037` flagged the quoted form as needless — matches the file's existing
+style, not a design change).
+
+**Verified.** New `app/platform/config/tests/test_settings.py` (6 cases: default set, comma-separated
+parse/lowercase/trim, the confirmed deployment value, missing-`general` raises, empty-string raises,
+`default_knowledge_scope` default) — all pass. `make check` (repo root) → **407 passed** (was 401,
++6), `make boundaries` clean (a bare `platform/config` change, no feature import). Ruff/pyright diffed
+against the pre-change baseline, not just eyeballed: **0 new ruff errors** (2, unchanged — one
+transient `UP037` on the quoted return type was introduced and fixed before this count), **0 new
+unformatted files** (14, unchanged), **0 new pyright errors** (34, unchanged). No HTTP/LLM/outbound-
+network surface is touched by this sub-step (pure in-process config), so
+`securing-http-and-llm-endpoints`'s controls don't apply here — same reasoning as every other
+config-only sub-step in this plan.
+
+### 10.2 — Label-driven per-page knowledge-scope tags (ingestion) ✅ done (2026-08-24, uncommitted)
+
+**Files:** new `app/features/confluence_sync/domain/knowledge_scope.py`; modify
+`app/features/confluence_sync/application/sync_service.py`; export from `confluence_sync/__init__.py`.
+
+**Implementation.**
+```python
+@dataclass(frozen=True)
+class KnowledgeScopeResult:
+    tags: tuple[str, ...]
+    conflict: bool
+    matched_labels: tuple[str, ...]
+
+def resolve_knowledge_scope_tags(
+    labels: Sequence[str], recognized: frozenset[str]
+) -> KnowledgeScopeResult:
+    matched = tuple(sorted({l.strip().lower() for l in labels} & recognized))
+    provider_tags = tuple(t for t in matched if t != "general")
+    if len(provider_tags) > 1:
+        return KnowledgeScopeResult(tags=(), conflict=True, matched_labels=matched)
+    return KnowledgeScopeResult(tags=matched, conflict=False, matched_labels=matched)
+```
+Pure, no I/O — trivially unit-testable, same shape as `chunk_diff.diff_chunks`.
+
+`sync_service.handle_sync_page` (after the existing `labels = gateway.get_labels(page_id)` call,
+unchanged): compute `scope_result = resolve_knowledge_scope_tags(labels, settings.knowledge_scope_set)`;
+`final_tags = sorted(set(source_scope_tags) | set(scope_result.tags))` — **union, not replacement**,
+so the live `base` `source_scope` tag is unaffected. Pass `final_tags` into whichever path
+`handle_sync_page` already calls (`stage_and_activate` for a rebuild, `_apply_metadata_only` for a
+metadata/label-only change) — **both already accept and stamp a `tags` param end to end**
+(`ingestion/application/versioning.py`); no change to `versioning.py`'s core logic. On
+`scope_result.conflict`, log a `knowledge_scope_conflict` structlog event (`page_id`, `title`,
+`matched_labels=scope_result.matched_labels`) before continuing — the page is ingested normally but
+contributes zero knowledge-scope tags from labels until an operator fixes the Confluence labels; the
+next sync (webhook or reconciliation) re-evaluates automatically.
+
+**Idempotency.** `resolve_knowledge_scope_tags` is pure and deterministic — re-processing the same
+webhook event or reconciliation sweep twice (already deduped by the existing event-ledger + job
+idempotency key) recomputes the identical result. No new idempotency mechanism needed.
+
+**Tests:** new `confluence_sync/tests/test_knowledge_scope.py` — recognized label → tag; unrecognized
+label ignored; `general` + one provider label → both tags, no conflict; two provider labels (including
+a `mews`+`toast` case, not just `mews`+`opera-cloud` — the `toast` case is the one worth a dedicated
+assertion given the codename collision) → empty tags + `conflict=True`; empty labels → empty tags.
+Extend `test_ingestion_pipeline.py` (or `test_worker_sync.py`) with an integration case: a fixture page
+labeled `toast` ends up with `page_source.tags`/`chunk.tags` containing `toast`, unioned with any
+`source_scope` tag already present via `FixtureConfluenceGateway.set_labels()`.
+
+**Acceptance.** A page labeled `mews` in the fixture gateway is stamped `tags` including `mews` after
+sync; a page labeled `toast` is stamped `tags` including `toast` (and this is asserted to mean the POS
+platform — the fixture/test data must not be confused with this repo's own name); a page labeled both
+`mews` and `opera-cloud` is stamped with only its `source_scope` tags (no label-derived tag) and logs
+`knowledge_scope_conflict`; a `source_scope`-tagged-only page (like the 9 live `base` pages) is
+unaffected.
+
+**Shipped exactly as scoped above**, no deviations. `sync_service.handle_sync_page` computes
+`scope_result` right after the existing `labels = gateway.get_labels(page_id)` call, unions
+`scope_result.tags` into the caller-supplied `tags` (the live `source_scope` tags — union, not
+replacement) as `final_tags`, and passes `final_tags` into both `stage_and_activate` (rebuild path)
+and `_apply_metadata_only` (label/metadata-only path) instead of the raw `tags` param. A conflict
+(two provider labels on one page) logs `knowledge_scope_conflict` (`page_id`, `title`,
+`matched_labels`) via the module's existing `log`, contributes zero label-derived tags this sync,
+and re-evaluates automatically on the next sync. Exported `KnowledgeScopeResult`/
+`resolve_knowledge_scope_tags` from `confluence_sync/__init__.py`'s public root, per the plan.
+
+**One behavior note, not a deviation:** because `final_tags` is now always a concrete list (never
+`None`), `_apply_metadata_only` now always stamps `ps.tags`/chunk `tags` on every metadata-only
+sync, not only when the caller explicitly passed tags — this is the intended mechanism (a
+label-only edit must update tags without a re-embed, exactly what 10.8's live-verification plan
+relies on), not a regression: no existing caller of `handle_sync_page` ever passed a non-empty
+`tags` through the metadata-only path in practice, so the prior "leave untouched when `None`"
+branch was already dead code for this path.
+
+**Tests:** new `confluence_sync/tests/test_knowledge_scope.py` (7 pure unit cases — recognized
+label, unrecognized label ignored, `general`+one provider = both tags no conflict, `mews`+
+`opera-cloud` conflict, `mews`+`toast` conflict as its own dedicated case per the codename
+collision, empty labels, trim/lowercase-before-match). Extended
+`confluence_sync/tests/test_ingestion_pipeline.py` with 2 integration cases over the real DB/worker
+path: a page labeled `toast` ends up with `{"base", "toast"}` on both `page_source.tags` and every
+active chunk's `tags` (union with the existing `base` source_scope tag, not a replacement); a page
+labeled `mews`+`toast` ends up with only `{"base"}` (no label-derived tag) and logs
+`knowledge_scope_conflict` with the matched labels (asserted via a monkeypatched `sync_service.log`,
+mirroring `test_chat_endpoint.py`'s existing log-capture pattern).
+
+**Verified.** `make check` (repo root) → **416 passed** (was 407, +9), `make boundaries` clean (a
+same-feature deep import, `sync_service.py` → `confluence_sync/domain/knowledge_scope.py`, same
+pattern already used for `scope_resolver.py`). Ruff/pyright diffed against the pre-change baseline:
+**0 new ruff errors** (2, unchanged), unformatted-file count **improved** 14 → 13 (this session's
+edit to `test_ingestion_pipeline.py` also brought that file's one pre-existing unformatted block
+clean, per this repo's "files you edit are brought clean" rule — the block itself predated this
+session and wasn't otherwise touched), **0 new pyright errors** (34, unchanged).
+`securing-http-and-llm-endpoints`: no new/modified HTTP endpoint or LLM call —
+`resolve_knowledge_scope_tags` is pure, and `handle_sync_page`'s external surface (the existing
+webhook/worker path, already audited in earlier phases) is unchanged; same reasoning as 10.1.
+**Not yet committed — ask before committing, per this repo's own convention.**
+
+### 10.3 — Migration: `curated_knowledge_entry` table + `tags` GIN index + `query_trace` column
+
+**Files:** new `apps/automation/alembic/versions/0007_knowledge_scope.py`
+(`down_revision="0006_dedupe_source_type_check"`); `app/platform/db/models.py`.
+
+**Implementation.**
+- `CuratedKnowledgeEntry` ORM model: `id` (PK), `tags ARRAY(Text)` (default `{}` — empty means
+  "applies to every scope," matching `general`'s always-included semantics rather than a literal
+  `general` string requirement, so an entry doesn't need editing if `general` is ever renamed),
+  `title`, `body` (Text), `is_active` (default true), `created_at`, `updated_at`.
+- `Index("ix_chunk_tags_gin", Chunk.tags, postgresql_using="gin", postgresql_where=text("is_active"))`
+  — partial GIN index, matching this schema's existing `WHERE is_active`-partial convention
+  (`ix_chunk_active_source`, the HNSW partial index, the `tsv` partial GIN index).
+- `QueryTrace.allowed_knowledge_scopes: ARRAY(Text)` (nullable) — audit trail, mirrors the existing
+  `allowed_sources` column exactly.
+
+Reversible: `alembic downgrade -1` drops the new table, index, and column, restoring `0006` state —
+same shape as every prior migration in this chain.
+
+**Tests:** migration round-trip test (`head → -1 → head`, diffed identical to ORM), matching the
+pattern already used for `0004_source_scope`.
+
+**Acceptance.** `alembic upgrade head` succeeds against the hermetic test DB; `EXPLAIN` on a
+`tags && ARRAY[...]` query against an active chunk uses `ix_chunk_tags_gin`, not a sequential scan
+(verified at 10.4, once the predicate exists to explain).
+
+### 10.4 — Retrieval-time filtering (behind the flag)
+
+**Files:** `app/features/retrieval/infrastructure/search_repo.py`;
+`app/features/retrieval/application/retriever.py`; new
+`app/features/retrieval/domain/knowledge_scope.py`.
+
+**Implementation.**
+```python
+# retrieval/domain/knowledge_scope.py — co-located with permission.py's classify_scope,
+# which already plays this "interpret an incoming request-shaped scope value" role for `principal`.
+def resolve_allowed_scopes(
+    requested: str | None, recognized: frozenset[str], default: str | None
+) -> list[str]:
+    scopes = {"general"}
+    if requested and requested.lower() in recognized:
+        scopes.add(requested.lower())
+    elif default and default.lower() in recognized:
+        scopes.add(default.lower())
+    # requested-but-unrecognized degrades silently to {"general"} ∪ default — logged by the caller,
+    # never a hard failure: a stale/misconfigured embed should not break chat entirely.
+    return sorted(scopes)
+```
+`_base_filters()` gains `knowledge_scopes: Sequence[str] | None = None` → when
+`settings.enable_knowledge_scope_filtering` is true **and** the caller passes a non-`None` list, add
+`AND tags && ARRAY[:knowledge_scopes]` (bound parameter, never interpolated — same discipline as the
+existing `source_id = ANY(:sources)` predicate). When the flag is off, the caller never passes the
+list — the query is byte-for-byte unchanged from today. `HybridRetriever` gains a `knowledge_scopes`
+constructor/call-time parameter threaded into `_search`, `fetch_rerank_texts`, and
+`_apply_crag_retry` (all three already take `sources`/`space_id`-shaped filters the same way).
+`trace_repo.write_query_trace` gains `allowed_knowledge_scopes` alongside the existing
+`allowed_sources`.
+
+**Tests:** new cases in `retrieval/tests/test_search_repo_gucs.py`-adjacent file (or extend it) —
+mirrors the existing RLS isolation tests exactly:
+- Flag off (default): a chunk tagged `mews` is still returned when no `knowledge_scopes` filter is
+  requested (query unchanged from pre-10.4 behavior).
+- Flag on, `allowed_scopes=["general","mews"]`: a `mews`-tagged chunk returns; an `opera-cloud`-only
+  chunk does not; a `toast`-only chunk does not.
+- Flag on, `allowed_scopes=["general","toast"]`: a `toast`-tagged chunk returns (and it is a fixture
+  chunk about POS behavior, not this repo — assert the fixture content itself to rule out a copy-paste
+  mix-up); a `mews`-only chunk does not.
+- Flag on, `allowed_scopes=["general"]` (no active scope resolved): only `general`-tagged chunks
+  return; a `mews`-tagged, non-`general` chunk does not; a `toast`-tagged, non-`general` chunk does not.
+- A chunk with **no** knowledge-scope tag at all (e.g. the live `base`-only pages, pre-relabel) does
+  not return under any non-empty scope filter — proves Decision 1's "no recognized tag → does not
+  participate" rule, not silently falls back to visible.
+
+**Acceptance.** `make eval`/`make check` green with the flag off (default, no regression); a new
+isolation-style negative test proves cross-scope leakage is impossible with the flag on; `EXPLAIN`
+confirms the GIN index is used.
+
+### 10.5 — Chat request/contract: `knowledge_scope` threading
+
+**Files:** `app/features/rag_agent/server/router.py` (`ChatRequestBody`);
+`app/features/rag_agent/application/answer_service.py` (`AnswerService.answer`);
+`packages/contracts/src/index.ts` (`ChatRequest`); `apps/web/src/features/chat/server/route-handlers.ts`
+(`toBackendChatBody`); `apps/web/src/features/chat/ui/chat-session-provider.tsx`;
+`apps/web/src/features/chat/api/chat-client.ts`.
+
+**Implementation.** `ChatRequestBody.knowledge_scope: str | None = None` (validated the same way
+`principal` already is — reject obviously-malformed values, not a full whitelist check here since
+`resolve_allowed_scopes` already degrades gracefully). `AnswerService.answer(history, scope,
+knowledge_scope=None)` resolves `allowed_scopes = resolve_allowed_scopes(knowledge_scope,
+settings.knowledge_scope_set, settings.default_knowledge_scope)` once, passes it to every retriever
+call in the method (initial search + `_apply_crag_retry`) — resolved once per request, not
+per-retrieval-attempt, matching Decision 6's "determined once, not per message." `ChatRequest`
+(contracts) gains `knowledgeScope?: string`; `toBackendChatBody()` forwards it unmodified, exactly
+like `principal` today. `ChatSessionProvider`/the widget embed configuration gain a
+`knowledgeScope` prop/config value — this is genuinely new plumbing (confirmed nothing like it exists
+today), most naturally supplied once at widget initialization (the embedding page/deployment declares
+which platform it is), not re-derived per message.
+
+**Tests:** extend `rag_agent/tests/test_answer_service.py` — `knowledge_scope="mews"` is resolved and
+passed to the retriever mock; an unrecognized value degrades to general-only without raising.
+Frontend: extend `route-handlers.test.ts` to assert `knowledgeScope` forwards unmodified;
+`chat-session-provider.test.tsx` to assert a configured scope reaches the outgoing request.
+
+**Acceptance.** A request with `knowledge_scope="mews"` reaches `HybridRetriever` with
+`allowed_scopes=["general","mews"]`; an omitted or unrecognized value reaches it with
+`allowed_scopes=["general"]` (or `["general", default]` if `default_knowledge_scope` is set) and never
+errors the request.
+
+### 10.6 — Always-present curated knowledge layer
+
+**Files:** new `app/features/rag_agent/domain/curated_knowledge.py`; modify
+`app/features/rag_agent/application/answer_service.py`, `app/features/rag_agent/domain/prompt.py`
+(only `build_evidence_block`'s caller, not its signature); new
+`apps/automation/scripts/seed_curated_knowledge.py`.
+
+**Implementation.** `fetch_curated_entries(session, allowed_scopes, limit) -> list[CuratedEntry]` —
+active entries where `tags = '{}' OR tags && ARRAY[:allowed_scopes]`, capped at
+`curated_knowledge_max_entries`, ordered stably (e.g. `id`) for deterministic citation numbering in
+tests. `AnswerService.answer` builds `evidence_hits = curated_as_hits + retrieved_hits` **before**
+calling `build_evidence_block`/`enforce_citations` — curated entries become markers `[1..k]`, retrieved
+hits become `[k+1..n]`, exactly the existing numbering scheme, zero changes to `citations.py`. Reuses
+`_EvidenceHit`'s existing structural protocol (`chunk_id`, `title`) — a curated entry's synthetic
+"chunk_id" is its own negative/namespaced id to avoid colliding with real chunk ids in
+`parent_texts`/citation-source lookups (needs a small adapter so citation rendering can distinguish
+"Source: curated knowledge" from a real page link — a UI/contract decision, not just backend; flag
+this explicitly in 10.6's implementation, don't guess the exact citation-display shape without
+checking `packages/contracts`' `Citation` type first).
+
+`scripts/seed_curated_knowledge.py` — one-off idempotent CLI (upsert/deactivate by title or id),
+mirroring `seed_source_scope.py`'s ownership decision (no CRUD API yet).
+
+**Tests:** new `rag_agent/tests/test_curated_knowledge.py` — scope filtering (empty-tags entry always
+included; scoped entry only for matching scope); cap enforcement; citation numbering places curated
+entries first and retrieved hits after, both citable. Extend `test_answer_service.py` for the
+end-to-end composition.
+
+**Acceptance.** A `general`-tagged (empty-tags) curated entry appears in every answer's evidence
+regardless of `knowledge_scope`; a `mews`-tagged entry appears only when `mews` is in
+`allowed_scopes`; a claim sourced from a curated entry survives `enforce_citations` exactly like a
+claim sourced from real retrieval.
+
+### 10.7 — Corpus migration/backfill + flag flip + exit gate
+
+**Task.** The 9 live `base`-tagged pages carry no recognized knowledge-scope label today (confirmed,
+PLAN §0 2026-08-21 sync). Before `enable_knowledge_scope_filtering` is ever set `true` in any
+environment with real content: an operator adds the `general` Confluence label, or one of `mews` /
+`opera-cloud` / `toast`, to each currently-synced page, a reconciliation sweep or webhook picks up the
+label change and re-stamps `tags` via 10.2's new path, and a verification query confirms every
+currently `is_active` chunk has a non-empty knowledge-scope-relevant tag before the flag flips. This is
+a manual, disclosed step — not automated by this phase, since deciding *which* scope each existing page
+belongs to is a content decision, not a mechanical one. **This manual-labeling step is the single
+highest-risk point for the Toast naming collision** (ADR-0011 Context): a human typing the `toast`
+label is the one place nothing in code catches "did you mean the POS platform or this repo?" — the
+operator doing this relabeling should have ADR-0011's Context open, not just this task description.
+
+**No backfill of historical/superseded `document_version`/chunk rows is needed** — retrieval only ever
+reads `is_active` chunks (confirmed, `_base_filters()`), and superseded rows are already GC'd by
+`_gc_superseded`.
+
+**Exit gate.** `make check`/`make boundaries` green; the four new test files pass; `EXPLAIN` confirms
+`ix_chunk_tags_gin` is used once the flag is on in a test/staging environment; a live verification
+query (`SELECT count(*) FROM chunk WHERE is_active AND NOT (tags && ARRAY['general'] OR cardinality(tags) > 0 ...)` — exact form decided at implementation time) confirms zero untagged live chunks before
+flipping the flag in any non-offline environment; ruff/pyright at no worse than the current baseline.
+
+### 10.8 — Live verification: label-driven auto-sync + knowledge-scope switcher (build + self-test)
+
+**Why this exists.** 10.1–10.7 build and unit-test the mechanism; nothing so far proves it against the
+*real* Confluence API and a *real* running app the way this ledger's other phases have (§0 is full of
+"verified live, not just asserted"). The user asked for exactly that: editing a label in real Confluence
+must be shown, empirically, to update the RAG database with no manual step in between — and there must
+be a visible way to prove the four scopes (`general`/`mews`/`opera-cloud`/`toast`) actually return
+different data, not just pass a unit test asserting a SQL predicate.
+
+**Two things to build first, both small — nothing here is a new mechanism:**
+
+1. **Scope switcher (frontend).** A minimal control in the widget (dev/verification-facing first; a
+   polished per-deployment embed config is a later concern, not this step's job) that lets the tester
+   pick among `general` / `mews` / `opera-cloud` / `toast` and wires the selection into 10.5's
+   `knowledgeScope` field on the outgoing chat request — the same plumbing `principal` already uses.
+   Files: `apps/web/src/features/chat/ui/` (new small component) + `chat-session-provider.tsx` (holds
+   the selected scope in state, passes it through). No backend change — 10.5 already accepts the field.
+2. **Webhook activation path.** `label_added`/`label_deleted` already route to `sync_page`
+   (`event_service.py`, confirmed by direct code read — see the table in §1 above); nothing new to
+   build there. What's missing is exercising it for real. **Disclosed limitation, not silently
+   skipped:** no public URL is registered with Confluence for `POST /confluence/events` yet (same gap
+   noted in blocker #3), so this step cannot prove the *network delivery* leg. It proves everything
+   downstream of receipt — the identical code path a real webhook delivery would hit
+   (`ingest_event(EventEnvelope(event_type="label_added", ...))` called directly against the live DB) —
+   which is the part 10.2 actually changed. Proving the network leg itself is deferred to whenever a
+   public URL exists to register (unrelated to this phase).
+
+**Live self-test procedure (run for real, against the live Confluence token — not simulated, not
+mocked).** Written as a reusable script, `apps/automation/scripts/verify_knowledge_scope_live.py` (a
+one-off verification tool, same ownership pattern as `seed_source_scope.py` — not part of `pytest`,
+since it needs real network + real credentials, matching this repo's existing convention that live
+Confluence checks are scripts, not CI tests):
+
+1. Pick one already-synced page. Record its current `page_source.tags` / `chunk.tags` / `labels_hash`
+   / `last_indexed_at`.
+2. **Add** a recognized label (`mews`) to it via the real Confluence API. Drive the same code path a
+   `label_added` webhook delivery would (`ingest_event` → `sync_page` job → `handle_sync_page`).
+   Confirm: `tags` now include `mews`; `labels_hash` changed; **`last_indexed_at` unchanged** (proves
+   this was `_apply_metadata_only`, not a full rebuild — no wasted re-embed for a label-only change).
+3. **Edit** the label (`mews` → `opera-cloud`). Confirm: `mews` is gone, `opera-cloud` present, no
+   stale double-tag (acceptance criterion 13).
+4. **Remove** the label entirely. Confirm the knowledge-scope tag is gone; the page falls back to
+   whatever `source_scope` tags it still carries (or becomes scope-invisible if none — by design,
+   Decision 1).
+5. Restore the page's original label state — a verification run must not leave live Confluence content
+   mutated as a side effect.
+6. With `enable_knowledge_scope_filtering=true` in a local/test environment, use the new switcher to
+   ask the same question under each of `general`/`mews`/`opera-cloud`/`toast` and confirm the evidence
+   differs and stays isolated per scope — the real negative-test proof for acceptance criterion 8, run
+   against a live UI, not only the unit-level SQL test from 10.4.
+
+**Acceptance.** The script's steps 2–6 all pass against the live Confluence instance and a real
+Postgres, output captured (not just eyeballed) so 10.9 can be re-run from the same steps; the switcher
+is visibly wired end-to-end (network tab / SSE stream shows `knowledgeScope` changing per selection);
+no code path outside what 10.1–10.7 already built was needed — this step is verification + a thin UI,
+not new backend mechanism.
+
+### 10.9 — User acceptance pass (hands-on, after 10.8)
+
+**Why this exists.** 10.8 is this agent's own self-test. Given how security/product-sensitive this
+phase is (it's the enforcement boundary between four customers' data), Phase 10 is not considered
+closed until the user independently reproduces it — matching this repo's existing pattern of the user
+personally validating access-control-shaped changes rather than taking the agent's word for it.
+
+**Task.** The user re-runs (or spot-checks) 10.8's procedure themselves: add/edit/remove a label on a
+real Confluence page and watch `tags` update without a manual step; use the switcher in the browser to
+confirm `general`/`mews`/`opera-cloud`/`toast` genuinely return different, correctly isolated answers.
+`scripts/verify_knowledge_scope_live.py` from 10.8 is available to rerun as-is, or the user may test
+by hand — either is acceptable, but it must be the user doing it, not this agent reporting on itself a
+second time.
+
+**Acceptance.** The user explicitly confirms the label→RAG-DB propagation and per-scope isolation
+before `enable_knowledge_scope_filtering` is flipped `true` in any environment with real content
+(10.7), and before Phase 10 is marked closed in this ledger's §0.
+
+### Error / edge-case behavior (this phase)
+
+| Scenario | Behavior | Enforced in |
+|---|---|---|
+| No `knowledge_scope` on request | Resolves to `["general"]` or `["general", default_knowledge_scope]` | `resolve_allowed_scopes` (10.4) |
+| Unrecognized `knowledge_scope` requested | Degrades to default/general, logged, never a 400 | `resolve_allowed_scopes` (10.4) |
+| Scope removed from `knowledge_scopes` config | New syncs stop stamping it; already-tagged chunks keep the stale tag until next sync touches them (eventual consistency via reconciliation, same philosophy as `rollback_to`'s hash self-heal) | 10.1/10.2 |
+| Page has zero recognized labels | Contributes no label-derived tag; if `source_scope` also contributes nothing, the page is invisible to every scoped query (by design, Decision 1) | 10.2/10.4 |
+| Page has 2+ recognized provider labels | Quarantined: zero label-derived tags, `knowledge_scope_conflict` logged, self-heals next sync | 10.2 |
+| Confluence temporarily unavailable | Unchanged from today — existing circuit breaker / retry / fail-closed restriction handling; this phase adds no new Confluence call | n/a (pre-existing) |
+| Embedding/vector-DB write or delete failure | Unchanged — existing ingestion failure handling (`DocumentVersion.state=failed`) applies identically | n/a (pre-existing) |
+| Duplicate/stale sync events | Unchanged — existing event-ledger + job idempotency key dedup covers the new tag computation for free (it is pure/deterministic) | 10.2 |
+| Flag on before corpus is labeled | Untagged live content silently stops appearing in scoped results — this is why 10.7 requires manual verification before flipping the flag in any real environment | 10.7 |
+
+### Observability (new structlog events, this phase)
+
+`knowledge_scope_conflict` (page_id, title, matched_labels) — 10.2. `knowledge_scope_unrecognized_
+requested` (requested value, resolved fallback) — 10.4/10.5. Existing `query_trace` row gains
+`allowed_knowledge_scopes` for per-request audit (10.3/10.4) — no new logging pipeline, reuses the
+scoreboard from Phase 3.5.4.
+
+### Testing summary (this phase)
+
+Tag recognition (10.2): recognized label → tag, including a dedicated `toast` case (tag stamped
+correctly, fixture content asserted to be about the POS platform); unrecognized → ignored; conflict
+(including `mews`+`toast` and `opera-cloud`+`toast`, not only `mews`+`opera-cloud`) → quarantine + log.
+Retrieval (10.4): `general` always accessible; active scope (`mews`, `opera-cloud`, or `toast`)
+accessible; other scopes inaccessible — a `toast`-active request must not see `mews`/`opera-cloud`
+content and vice versa; flag-off is a no-op. Sync lifecycle: label added → becomes tagged + retrievable
+next sync; label removed → chunk drops out of that scope's results next sync; label changed (`mews`→
+`opera-cloud`, and separately `opera-cloud`→`toast`) → unavailable under the old scope, available under
+the new one, no stale double-tag.
+Idempotency: same sync event processed twice → identical tags, no duplicate chunks (inherits the
+existing versioning/idempotency guarantees, not re-tested from scratch). Config: new recognized scope
+added → existing generic pipeline accepts it with zero code change (only a `resolve_knowledge_scope_
+tags` test against the wider recognized set); scope removed from config → no longer resolvable as an
+active scope (`resolve_allowed_scopes` test).
+Live (10.8, script not pytest — needs real network + credentials): add/edit/remove a real Confluence
+label on a real page, each step driven through the actual `ingest_event`→`sync_page`→
+`handle_sync_page` path and confirmed against the real DB, not a fixture; a label-only change confirmed
+metadata-only via unchanged `last_indexed_at`; switcher-driven live query per scope confirms isolation
+end-to-end, not just at the SQL layer. User pass (10.9): the same live procedure independently
+reproduced by the user, not just re-asserted by the agent.
+
+### Acceptance criteria (phase exit)
+
+1. `general` is an explicit, always-recognized knowledge scope (never inferred from "untagged").
+2. Recognized scopes are centrally configured (`Settings.knowledge_scopes`), not hardcoded.
+3. Adding a scope costs a config change + a Confluence label — no new ingestion/retrieval code path.
+4. Removing a scope from config stops new tagging; already-tagged chunks self-heal on next sync.
+5. Unrecognized Confluence labels are ignored everywhere (never become tags/scopes/filters).
+6. With the flag on, a `mews`-active request retrieves `general + mews` only.
+7. With the flag on, an `opera-cloud`-active request retrieves `general + opera-cloud` only.
+7a. With the flag on, a `toast`-active request retrieves `general + toast` only — `toast` here means
+   Toast POS, never this deployment's own codename (ADR-0011 Context); this criterion exists
+   specifically because that collision makes it the highest-risk scope value to get wrong.
+8. Provider-scoped knowledge cannot leak through the retrieval SQL — proven by a negative test, not
+   assumed from the LLM ignoring it.
+9. A newly labeled page becomes retrievable under its scope without a code deploy.
+10. A page edit updates its chunks as today; a label-only change updates tags without a full re-embed.
+11. Deleting a page removes its chunks from every scope, as today (no change needed).
+12. Removing a recognized label from a page removes it from that scope on next sync.
+13. Changing a page's label changes its scope on next sync, no stale double-scope tag.
+14. Duplicate sync events do not duplicate tags or chunks (inherits existing idempotency).
+15. `general`-tagged content remains available to every active scope.
+16. Always-present curated knowledge can be added/edited/deactivated independently via the seed
+    script, without a redeploy.
+17. `source_scope` and ADR-0004's `source_id`/RLS mechanism are reused unchanged, not duplicated.
+18. `principal`-threading pattern is reused for `knowledge_scope`, not a parallel mechanism.
+19. `docs/future-ideas/IDEAS.md` idea #8 (and the retrieval-side half of idea #2) no longer describe
+    unbuilt work once this phase ships; remaining open questions stay explicitly in that file.
+20. Multiple-scope-per-page and explicit cross-scope retrieval remain explicitly deferred (ADR-0011
+    Decision 8) — this phase does not silently half-build either.
+21. A real Confluence label add/edit/removal, driven through the actual event→sync code path against
+    live Confluence + a real DB, is shown to update `page_source.tags`/`chunk.tags` with no manual
+    step in between (10.8) — not just proven at the unit-test level.
+22. The user has independently reproduced 10.8's live verification themselves (10.9) before
+    `enable_knowledge_scope_filtering` is flipped `true` anywhere with real content, and before this
+    phase is marked closed in §0.
+
+---
+
 ## 5. Cross-cutting rules (apply in every phase)
 
 - **Feature boundaries:** when other code needs a new symbol, export it from the feature/capability
@@ -3877,6 +4664,7 @@ explicit go-ahead, same as every other phase (§0 working rules).
 | `docs/adr/0006-Defer-Multi-Product-Extraction.md`, `docs/adr/0007-Frontend-Backend-Repository-Separation.md` (both superseded again), `docs/adr/0010-Redefer-Repository-Separation.md` (new), `docs/future-ideas/IDEAS.md` | deferred → superseded → re-deferred multi-deployment/repo-split decisions + corrected corpus-segmentation idea | 4.7 / 4.8 (removed) |
 | `packages/design-tokens/src/tokens.ts`, `apps/web/src/features/chat/ui/*` (new), `apps/web/src/app/layout.tsx` | brand-token adoption + Obi widget component rebuild | 4.7 |
 | `packages/contracts/package.json`, `packages/design-tokens/package.json`, new standalone repos | **not built** — published versioned packages + frontend/backend repo extraction moved to `docs/future-ideas/IDEAS.md` #5, unscheduled | 4.8 (removed) |
+| `docs/adr/0011-*.md`, `confluence_sync/domain/knowledge_scope.py` (new), `retrieval/domain/knowledge_scope.py` (new), `search_repo.py`, `retriever.py`, `platform/db/models.py` (`CuratedKnowledgeEntry`, `ix_chunk_tags_gin`, `QueryTrace.allowed_knowledge_scopes`), `alembic/versions/0007_knowledge_scope.py` (new), `rag_agent/domain/curated_knowledge.py` (new), `rag_agent/server/router.py`, `packages/contracts`, `apps/web/src/features/chat/*` | knowledge-scope tagging + retrieval filtering + curated knowledge — **scoped, not built** | 10 |
 
 ---
 
