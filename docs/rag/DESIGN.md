@@ -12,43 +12,42 @@
 > [`../adr/0004-Multi-Source-Provider-Tagging-And-RLS.md`](../adr/0004-Multi-Source-Provider-Tagging-And-RLS.md)
 > and [`../adr/0005-Reranking-And-Answer-Pipeline.md`](../adr/0005-Reranking-And-Answer-Pipeline.md).
 >
-> `TODAY` = shipped and verified. As of 2026-08-10 that is **Phases 1–3 + all of Phase 3.5** (reranker,
-> provider tags + RLS + reader role, `query_trace`, rerank-lift eval, Confluence source scoping),
-> **all of Phase 4** — the `rag_agent` DTO contract + domain core, the full `AnswerService` answer
-> workflow (rewrite → retrieve/rerank → CRAG retry → refusal → parent expansion → grounded generation
-> → citation enforcement), real, persisted principal ACL storage (`page_restriction`, replacing the
-> fixture-fed policy), a live, secured `POST /chat` SSE endpoint + `PATCH /chat/{trace_id}/feedback`,
-> and the web chat UI (`apps/web/src/features/chat`, live-verified end to end in a browser) — **and
-> Phase 5.1**, the `CHAT_API_KEY` rotation mechanism (dual-key overlap window, `scripts/
-> rotate_chat_api_key.py`, `docs/runbooks/chat-api-key-rotation.md`) — **and Phase 5.2**, an
-> in-process exact-match answer cache (`CachingAnswerService`, `app.shared.ttl_cache.TTLCache`) —
-> **and Phase 5.3**, a deterministic prompt-injection + permission/isolation red-team pass that
-> found and fixed a real bypass (an unvalidated `principal` could claim numeric space-level trust
-> and skip page-level restrictions; closed with a `ChatRequestBody` validator) —
-> **and Phase 4.6.1 through 4.6.12** (fixes-backlog remediation, gating Phase 5.4 — see
-> `PLAN.md`'s "4.6 progress snapshot" for the full table): a CRITICAL Confluence
-> group-restriction bypass closed fail-closed then resolved via real group-membership expansion; a
-> HIGH cross-principal idempotency-cache leak closed; the rate limiter/idempotency cache hardened
-> (IP-only keying, bounded memory); `rollback_to` now restores `PageSource`'s cached hashes so a
-> post-rollback resync can't be silently masked as "no change"; the domain-layer `scope` string can
-> no longer be reinterpreted as space-vs-principal trust by shape alone
-> (`permission.classify_scope`); the Confluence REST client gained a circuit breaker, real 5xx
-> retry, and audit logging; a duplicate `source_type`/`root_type` CHECK constraint (live on the dev
-> DB's `chunk`/`page_source` tables since the Phase-1 baseline) was found and removed (migration
-> `0006_dedupe_source_type_check`); the pyright baseline was formally reconciled 31→34
-> (ADR-0003 D1); the RLS reader role now fails closed instead of silently running as the
-> RLS-bypassing writer outside local/test/dev/ci; a same-`delivery_id`/different-hash webhook
-> redelivery now dedupes gracefully instead of a 500; and `refusal_reason` now reaches the
-> `chat_request` structured log line (4.6.12) —
-> **274 backend tests green** (plus 39 `apps/web` vitest tests, its first test runner, added at
-> 4.5). `PLANNED` = specified here, gated on the phase named: **4.6.13 through 4.6.16** (the
-> fixes-backlog exit gate) are still open — see `PLAN.md` for exact remaining scope — and Phase 5's
-> remaining scope (a live-LLM adversarial pass + latency/cost proof (5.4), embedder bake-off,
-> semantic caching (deliberately deferred, see `answer_cache.py`), adaptive router) is not built yet
-> and is blocked on 4.6.16 going green. Every code claim is anchored `file:line` so it can be
-> checked against the tree, though the file:line anchors below predate the 4.6.x fixes and have not
-> all been re-verified against the current line numbers (content is still accurate; do not trust
-> exact line numbers without a `grep` first).
+> `TODAY` = shipped and verified. As of 2026-08-21 that is **Phases 0–4** (ingestion/versioning,
+> hybrid retrieval + reranking, source-isolation RLS, the full `rag_agent` answer runtime, real
+> persisted principal ACLs, a live secured `POST /chat` SSE endpoint, and the web chat UI),
+> **all of Phase 3.5** (pgvector/HNSW, cross-encoder reranker, provider tags + RLS + reader role,
+> `query_trace`, rerank-lift eval, Confluence source scoping), **all of Phase 4.6** (16 sub-steps —
+> the fixes-backlog remediation described in the next paragraph — plus its own 4.6.14–4.6.16
+> doc-drift + exit gate), **Phase 4.7** (the Obi widget chat UI rebuild, `apps/web`, independent —
+> does not gate Phase 5), **Phase 7** (vision-grounded image analysis — §12 below), and **Phase 9**
+> (ambiguity clarification + fallback — §11 below). `PLANNED` = specified here, gated on the phase
+> named: **Phase 5.4** (a live-LLM adversarial red-team pass + latency/cost proof, embedder
+> bake-off, adaptive router — blocked on API-spend go-ahead + `VOYAGE_API_KEY`) and **Phase 6**
+> (Supabase vector store migration & deploy — blocked on a connection string) are the only two
+> phases still open; see `PLAN.md` §0 for the live status ledger and exact blockers.
+>
+> **Phase 4.6 in full** (fixes-backlog remediation, gating Phase 5.4 — see `PLAN.md`'s "4.6
+> progress snapshot" for the full table): a CRITICAL Confluence group-restriction bypass closed
+> fail-closed then resolved via real group-membership expansion; a HIGH cross-principal
+> idempotency-cache leak closed; the rate limiter/idempotency cache hardened (IP-only keying,
+> bounded memory); `rollback_to` now restores `PageSource`'s cached hashes so a post-rollback resync
+> can't be silently masked as "no change"; the domain-layer `scope` string can no longer be
+> reinterpreted as space-vs-principal trust by shape alone (`permission.classify_scope`); the
+> Confluence REST client gained a circuit breaker, real 5xx retry, and audit logging (later extended
+> live, 2026-08-21, with a cursor-pagination fix and a switch from the non-functional v2
+> restrictions endpoint to the working v1 one — see `docs/rag/ingestion/phase-4.6.md`); a duplicate
+> `source_type`/`root_type` CHECK constraint was found and removed; the pyright baseline was
+> formally reconciled 31→34 (ADR-0003 D1); the RLS reader role now fails closed instead of silently
+> running as the RLS-bypassing writer outside local/test/dev/ci; a same-`delivery_id`/different-hash
+> webhook redelivery now dedupes gracefully instead of a 500; `refusal_reason` now reaches the
+> `chat_request` structured log line; and attachment content (PDF/DOCX/XLSX/CSV/HTML) went from
+> tracked-but-unsearchable to fully wired into the same chunk/embed pipeline as page body text.
+>
+> **401 backend tests green** (plus 39 `apps/web` vitest tests). Every code claim is anchored
+> `file:line` so it can be checked against the tree, though the file:line anchors below predate the
+> 4.6.x/7/9 work and have not all been re-verified against the current line numbers (content is
+> still accurate; do not trust exact line numbers without a `grep` first) — `docs/rag/ingestion/`
+> and `docs/rag/retrieval/` carry the current, phase-by-phase file map if this doc's anchors drift.
 
 ---
 
@@ -64,8 +63,8 @@
 8. [Research-layer decision table](#8-research-layer-decision-table)
 9. [Phasing & gates](#9-phasing--gates)
 10. [Confluence source scoping — implemented](#10-confluence-source-scoping--implemented-plan-356)
-11. [Ambiguity clarification and fallback — designed, not started](#11-ambiguity-clarification-and-fallback--designed-not-started-plan-phase-9)
-12. [Vision-grounded image analysis — designed, not started](#12-vision-grounded-image-analysis--designed-not-started-plan-phase-7)
+11. [Ambiguity clarification and fallback — implemented](#11-ambiguity-clarification-and-fallback--implemented-plan-phase-9)
+12. [Vision-grounded image analysis — implemented](#12-vision-grounded-image-analysis--implemented-plan-phase-7)
 
 ---
 
@@ -450,14 +449,15 @@ Full schema, resolver contract, reconciliation integration, and test plan are in
 `docs/superpowers/specs/2026-08-10-confluence-source-scoping-design.md`; status/decision history is
 in `docs/rag/PLAN.md` §0.
 
-## 11. Ambiguity clarification and fallback — designed, not started (PLAN Phase 9)
+## 11. Ambiguity clarification and fallback — implemented (PLAN Phase 9)
 
-Scoped 2026-08-11 from an external best-practices brief on unanswerable/vague-query fallback and
-`docs/future-ideas/IDEAS.md` #1. Full decision record is `docs/adr/0008-Ambiguity-Clarification-
-Fallback.md`; this section is the design summary. **Deliberately sequenced after Phase 7 and Phase
-4.8** (by explicit user direction, not a technical dependency — see PLAN.md §0) — this section and
-ADR-0008 are documentation only, written now; no code lands under them until both of those phases
-are done.
+**Status: shipped (2026-08-13), all 9.1–9.9 sub-steps closed, ADR-0008 confirmed matching shipped
+code at the 9.9 exit gate.** See `docs/rag/retrieval/phase-9.md` for the as-built file/folder map;
+`docs/rag/PLAN.md`'s own Phase 9 section for the sub-step-by-sub-step ledger. The design below is
+the original decision record (scoped 2026-08-11 from an external best-practices brief on
+unanswerable/vague-query fallback and `docs/future-ideas/IDEAS.md` #1, full record in
+`docs/adr/0008-Ambiguity-Clarification-Fallback.md`) — kept as written because every decision in it
+shipped as designed; only this status line is new.
 
 **Problem.** The fixed pipeline from §5/ADR-0005 (rewrite → retrieve → rerank → refuse) has no
 concept of "this question is too vague to search well" — an under-specified query (e.g. "What are
@@ -497,20 +497,31 @@ retrieval pipeline for no benefit here); a new vector store or search engine (Po
 Cohere stays the stack, ADR-0001/0002); an agent-loop rewrite of `AnswerService` (stays a fixed
 pipeline per ADR-0005 decision 5 — this is one more short-circuit, not a planner).
 
-**Open implementation question flagged for 9.2/9.3, not yet decided:** the relative ordering of the
-two pre-pipeline branches (small-talk vs. clarification) when a query is arguably both, e.g. "hi,
-what's the approval process?" — needs an explicit tie-break at implementation time.
+**Implementation-time tie-break (resolved at 9.2/9.3):** the relative ordering of the two
+pre-pipeline branches when a query is arguably both small talk and ambiguous, e.g. "hi, what's the
+approval process?" — `is_small_talk`'s whole-message match runs first, so that example still
+reaches the clarification/retrieval path normally; only a message that small-talk's exact-match
+classifier itself considers a full match short-circuits before clarification ever runs.
 
 Sub-step roadmap (9.1 design doc/ADR — this section — through 9.9 exit gate) is in `docs/rag/
 PLAN.md`'s own Phase 9 section, not duplicated here.
 
-## 12. Vision-grounded image analysis — designed, not started (PLAN Phase 7)
+## 12. Vision-grounded image analysis — implemented (PLAN Phase 7)
 
-Scoped 2026-08-11 from `docs/future-ideas/IDEAS.md` #3 ("screenshot-grounded guidance") and Phase
-4.7.8's click-to-zoom preview, which exposed that the analysis half was never built. Full decision
-record is `docs/adr/0009-Vision-Grounded-Image-Analysis.md`; this section is the design summary.
-Sequenced first in the explicit user-set order **Phase 7 → Phase 4.8 → Phase 9** — this section and
-ADR-0009 are documentation only; no code lands under them until picked up as its own phase.
+**Status: shipped (2026-08-12), all 7.1–7.8 sub-steps closed** (including 5 post-closure bugs found
+and fixed at 7.8, the last only surfacing under real browser testing). See
+`docs/rag/retrieval/phase-7.md` for the as-built file/folder map; `docs/rag/PLAN.md`'s own Phase 7
+section for the sub-step-by-sub-step ledger. The design below is the original decision record
+(scoped 2026-08-11 from `docs/future-ideas/IDEAS.md` #3 and Phase 4.7.8's click-to-zoom preview,
+full record in `docs/adr/0009-Vision-Grounded-Image-Analysis.md`) — kept as written because every
+decision in it shipped as designed; only this status line and the two C3/C10 cap values below are
+new.
+
+**C3/C10 image caps, decided during implementation (were undecided at design time):** a per-turn
+image-count cap and a per-image byte-size cap now sit at the same validation point as
+`chat_max_history_turns`/`chat_max_message_chars` — see `docs/rag/retrieval/phase-7.md` for the
+exact values and `settings.py` for the source of truth; this doc doesn't restate a number that can
+drift out of sync with the code.
 
 **Problem.** Phase 4.7 added image attachments and real screenshot capture, but both are dropped
 before `onSend` with a "not analyzed yet" notice — no image ever reaches `apps/automation`. A

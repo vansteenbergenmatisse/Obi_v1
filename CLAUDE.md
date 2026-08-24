@@ -53,6 +53,24 @@ namespaced vocabulary imported by full path, not through a facade (ADR-0003 D5).
 When adding a symbol other code needs, export it from the feature's `__init__.py` — do
 not deep-import. Run `make boundaries` before you commit.
 
+## Phase documentation (`docs/rag/ingestion/`, `docs/rag/retrieval/`)
+
+The write path (`confluence_sync` + `ingestion`) and the read/answer path (`retrieval` +
+`rag_agent`) each have a folder of per-phase docs: one file per project phase that actually
+touched that side (`phase-0.md`, `phase-1.md`, `phase-3.5.md`, …), stating what happens in that
+phase and exactly which files/folders it uses. A phase only gets a file in a folder if it actually
+touched that side — no filler stubs. A phase that touches both sides (e.g. 3.5, 4.6) gets a file in
+both, each scoped to that side only and cross-linking to its counterpart. `docs/rag/
+how_this_works.md` stays the short end-to-end index — the 60-second picture, data model, and one
+worked example — and points into these folders instead of repeating their detail.
+
+**Keep both folders in sync with every future change to ingestion or retrieval code:** when a task
+edits, adds, or removes ingestion/retrieval behavior, update the matching phase file (or add a new
+one for a new phase; delete/merge one if a phase is reverted or superseded) as part of that same
+change — do not let this drift the way `how_this_works.md` did before PLAN 4.6.14. `docs/rag/
+PLAN.md` §0 remains the authoritative status ledger; these folders are the reader-facing map of
+"what runs and where," not a second ledger.
+
 ## Gate
 
 Run from `apps/automation` (everything via `uv run`); `make check` bundles the enforced subset.
@@ -60,7 +78,7 @@ Run from `apps/automation` (everything via `uv run`); `make check` bundles the e
 ```
 make boundaries   # architecture gate — must exit 0
 make check        # boundaries + tests (the enforced gate)
-uv run pytest -q  # 274 passing
+uv run pytest -q  # 401 passing
 uv run ruff check .        uv run ruff format --check .        uv run pyright
 ```
 
