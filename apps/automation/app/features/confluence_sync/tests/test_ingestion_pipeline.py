@@ -123,11 +123,14 @@ def test_label_driven_knowledge_scope_tag_unions_with_source_scope(
     from app.platform.db.engine import session_scope
     from app.platform.db.models import PageSource
 
-    scoped = settings.model_copy(update={"knowledge_scopes": "general,mews,opera-cloud,toast"})
+    # `toast` is recognized via the committed config/knowledge_scopes.json, not an env override —
+    # deterministic regardless of the developer's local .env.
     gateway.set_labels(1001, ["toast"])
     gateway.set_version(1001, 1)
     with session_scope() as s:
-        outcome = handle_sync_page(s, page_id=1001, gateway=gateway, settings=scoped, tags=["base"])
+        outcome = handle_sync_page(
+            s, page_id=1001, gateway=gateway, settings=settings, tags=["base"]
+        )
     assert outcome.action == "indexed"
 
     with read() as s:
@@ -153,12 +156,11 @@ def test_conflicting_provider_labels_contribute_no_tag_and_log_conflict(
         sync_service.log, "warning", lambda event, **kw: captured.update(event=event, **kw)
     )
 
-    scoped = settings.model_copy(update={"knowledge_scopes": "general,mews,opera-cloud,toast"})
     gateway.set_labels(1001, ["mews", "toast"])
     gateway.set_version(1001, 1)
     with session_scope() as s:
         outcome = sync_service.handle_sync_page(
-            s, page_id=1001, gateway=gateway, settings=scoped, tags=["base"]
+            s, page_id=1001, gateway=gateway, settings=settings, tags=["base"]
         )
     assert outcome.action == "indexed"
     assert captured.get("event") == "knowledge_scope_conflict"

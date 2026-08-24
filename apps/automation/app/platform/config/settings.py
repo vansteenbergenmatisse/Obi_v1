@@ -11,6 +11,8 @@ from functools import lru_cache
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.platform.config.knowledge_scopes import load_recognized_knowledge_scopes
+
 # Envs where a missing hosted-provider key or DB role falls back to a safe offline default
 # instead of failing (PLAN 4.6.10) — was duplicated as a local constant in
 # embeddings_client.py/reranker_client.py; both now call Settings.is_offline_env() instead.
@@ -181,11 +183,9 @@ class Settings(BaseSettings):
     contextualization_version: int = 1
     retrieval_schema_version: int = 1
 
-    # knowledge-scope tagging (PLAN 10.1; ADR-0011) — comma-separated recognized scope
-    # identifiers. Always includes "general"; a deployment sets e.g.
-    # "general,mews,opera-cloud,toast". "toast" here is the Toast POS platform, never this
-    # repo's own codename (ADR-0011 Context) — a real, disclosed naming collision.
-    knowledge_scopes: str = "general"
+    # knowledge-scope tagging (PLAN 10.1; ADR-0011) — the recognized set of scope identifiers
+    # itself lives in config/knowledge_scopes.json (see knowledge_scope_set below), not here;
+    # this file only holds the runtime toggles for that feature.
     # deployment-level fallback scope when a chat request omits knowledge_scope (PLAN 10.5).
     # Empty -> general-only.
     default_knowledge_scope: str = ""
@@ -205,14 +205,11 @@ class Settings(BaseSettings):
 
     @property
     def knowledge_scope_set(self) -> frozenset[str]:
-        return frozenset(s.strip().lower() for s in self.knowledge_scopes.split(",") if s.strip())
+        return load_recognized_knowledge_scopes()
 
     @model_validator(mode="after")
     def _require_general_knowledge_scope(self) -> Settings:
-        if "general" not in self.knowledge_scope_set:
-            raise ValueError(
-                f"knowledge_scopes must include 'general' (got {self.knowledge_scopes!r})"
-            )
+        _ = self.knowledge_scope_set  # fail fast at startup if the scopes config file is malformed
         return self
 
 

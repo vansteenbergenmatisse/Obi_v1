@@ -1,0 +1,9 @@
+{
+  "_readme": "Knowledge scopes recognized by the RAG system (PLAN 10, ADR-0011). This is THE global place to add or remove a recognized scope/tag. To recognize a new integration platform: add an entry below, then label the matching Confluence pages with that exact 'name' (case-insensitive) — nothing else in the codebase needs to change. 'general' must always be present (the app fails fast at startup otherwise).",
+  "scopes": [
+    { "name": "general", "description": "Content that applies to all customers/platforms." },
+    { "name": "mews", "description": "Mews PMS integration content." },
+    { "name": "opera-cloud", "description": "Opera Cloud PMS integration content." },
+    { "name": "toast", "description": "Toast POS integration content. Third-party platform — not this repo's own codename (see ADR-0011)." }
+  ]
+}

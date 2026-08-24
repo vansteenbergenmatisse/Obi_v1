@@ -13,10 +13,20 @@ ingestion activation since Phase 3.5.3 and read by nothing at query time. This p
 **automatic, per-page** tag source; retrieval-side reading of `tags` is Phase 10's other half.
 
 **Terminology note:** this phase calls the concept a "knowledge scope," never a "provider" — see
-ADR-0011's Context for why (this repo's own deployment is itself code-named Toast). **Confirmed
+ADR-0011's Context for why (this repo's own deployment is itself code-named Toast). **Currently
 recognized scopes: `general`, `mews`, `opera-cloud`, `toast`** — yes, `toast` is a real recognized
 value (Toast POS, a third-party product unrelated to this repo's codename), a deliberate, disclosed
 choice, not an oversight.
+
+**Operator: adding a new knowledge scope.**
+[`config/knowledge_scopes.json`](../../../config/knowledge_scopes.json) — at the true **repo
+root**, not nested under `apps/automation` or `apps/web` — is the single global place this is
+decided. A dedicated file, not `.env`, not buried in `settings.py`; living at repo root also
+means `apps/web` can read the same file later instead of duplicating the list (e.g. a future
+scope-switcher UI, PLAN 10.8). No scope name is hardcoded anywhere else in the codebase
+(`resolve_knowledge_scope_tags` below and retrieval's filter both just intersect against
+`Settings.knowledge_scope_set`, which loads that JSON file), so recognizing a new provider is one
+edit to that file plus labeling the matching Confluence pages — never a code change.
 
 ## What's new here
 

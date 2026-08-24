@@ -13,9 +13,21 @@ ADR-0011's Context): `app/features/retrieval/infrastructure/search_repo.py::_bas
 `is_active`/`kind`/`page_status`/`space_id`/`source_id` — `tags` is written at every ingestion
 activation ([phase-3.5.md](./phase-3.5.md), ADR-0004) and read by nothing at query time.
 
-**Terminology note:** "knowledge scope," never "provider" — see ADR-0011's Context. **Confirmed
+**Terminology note:** "knowledge scope," never "provider" — see ADR-0011's Context. **Currently
 recognized scopes: `general`, `mews`, `opera-cloud`, `toast`** (the `toast` value means Toast POS, not
 this repo's own codename — disclosed and deliberate, see ADR-0011's Context).
+
+**Operator: adding a new knowledge scope.** The recognized set lives in
+[`config/knowledge_scopes.json`](../../../config/knowledge_scopes.json) — at the true **repo
+root**, not nested under `apps/automation` or `apps/web`, not `.env`, not buried in
+`settings.py`. No code anywhere hardcodes
+`mews`/`opera-cloud`/`toast`; both this file's filtering and the ingestion-side tagging
+(`../ingestion/phase-10.md`) just match against whatever's in that JSON file
+(`Settings.knowledge_scope_set` loads it via
+`platform/config/knowledge_scopes.py::load_recognized_knowledge_scopes`). To recognize a new
+provider: add an entry to that JSON file, then label the matching Confluence pages with that
+exact tag — nothing in `app/` needs to change. `.env`'s `DEFAULT_KNOWLEDGE_SCOPE`/
+`ENABLE_KNOWLEDGE_SCOPE_FILTERING` are separate runtime toggles, not the scope list itself.
 
 ## What's new here
 
