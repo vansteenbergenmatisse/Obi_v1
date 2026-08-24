@@ -9,6 +9,51 @@
 
 ## 0. Status ledger & blockers  *(keep current — update after every phase)*
 
+**Same session (2026-08-24): full commit sweep — 6 commits, everything this session's own work and
+several earlier sessions' already-verified-but-uncommitted work landed, nothing left dangling.**
+After 10.6 shipped (below), the working tree had grown to 73 changed files across several distinct,
+unrelated pieces of work stacked up over multiple sessions. Rather than commit indiscriminately,
+each logical group was independently re-verified against the running code — not any prior session's
+self-report — before being committed on its own, mirroring this session's own pre-phase-verification
+discipline:
+
+- **`a663a95`** — PLAN 10.5 + 10.6 (knowledge_scope chat threading, always-present curated
+  knowledge) bundled with `docs/future-ideas/IDEAS.md` idea #6 (widget access-token auth, a separate
+  already-complete initiative genuinely entangled with 10.5 in the same shared `apps/web` chat-
+  feature files — `route-handlers.ts`, `chat-session-provider.tsx`, their tests — splitting further
+  wasn't worth the risk of a manual TypeScript patch split). `settings.py` and `FEATURES.md` each
+  had one unrelated attachment-wiring hunk mixed in with the intended content; both were split via
+  `git apply --cached` (index gets only the intended hunk, working tree keeps the full content so
+  the still-uncommitted attachment code — which reads those same settings fields — doesn't break
+  mid-verification), confirmed via `git diff --cached` before committing.
+- **`5d10632`** — removed `docs/rag/fixes/` (6 files). All 14 findings from an earlier audit
+  independently re-checked against current code (not trusted from the prior session's "closed"
+  note) — all 14 confirmed still fixed, no dangling references to the folder anywhere in the repo.
+- **`c807e7b`** — split `docs/rag/ingestion/`/`docs/rag/retrieval/` into per-phase docs, trimmed
+  `how_this_works.md` from 796→417 lines to an index, updated `DESIGN.md`'s Phase 7/9 status.
+  Fact-checked several phase files' file:line/behavior claims against real code before committing;
+  caught one real staleness — both new `README.md` status tables still said Phase 10 was "not
+  built" — fixed to reflect 10.1–10.6 (10.1–10.2 ingestion-side) done before committing.
+- **`59cecce`** — the natural-writing answer-prompt guidance (`ANSWER_SYSTEM_PROMPT`), already
+  covered by the existing test suite and previously live-verified against the real Anthropic API.
+- **`d9ab27e`** — Confluence attachment content wired into the chunk/embed pipeline (closes the old
+  PLAN 4.6.13/4.6.15 PARKED disposition). Security-reviewed before committing: auth/timeout/retry/
+  breaker inheritance, both size-cap layers, and the per-page count cap all confirmed by reading the
+  actual code. One real gap found and closed as part of this verification, not just noted: the
+  existing cross-host-redirect test proved the attachment bytes arrived but never asserted the Basic
+  Auth header was actually dropped on the redirected request — independently confirmed httpx really
+  does drop it (a standalone repro script, not an assumption), then strengthened the test itself
+  (`test_download_attachment_follows_cross_host_redirect_without_forwarding_auth`) to assert that
+  directly, so a future httpx behavior change would be caught, not silently trusted.
+- **`724c6cc`** — synced `docs/future-ideas/IDEAS.md` against shipped phases (idea #2 partial
+  promotion to Phase 10, idea #6 removed now that it's committed, idea #7 folder-root gap, idea #8
+  updated with Phase 10's real recognized-scope set).
+
+`make check` → **469 passed**, `make boundaries` clean, `pnpm --filter web test` → **162 passed**,
+throughout and after every commit in the sweep — including a mid-sweep Docker/Postgres restart
+(unrelated environment flake, not a regression) that was caught, resolved, and re-verified rather
+than assumed away. Working tree fully clean at the end of the sweep.
+
 **Same session (2026-08-24): pre-phase verification of 10.1-10.5 — all confirmed DONE PROPERLY,
 independently, before 10.6 began.** Per this repo's own pre-phase gate (`CLAUDE.local.md` §2), three
 parallel read-only agents each re-verified one or two sub-steps' code/tests/security directly
@@ -44,9 +89,10 @@ model already accepted for retrieved Confluence chunk text, and the new cap boun
 growth the same way `rerank_top_k` already does for retrieved evidence. **Deliberately left
 unresolved, per the plan's own explicit flag not to guess it:** a curated citation's `url` is empty
 (the contract already documents empty as "unavailable") — a distinct "Source: curated knowledge"
-visual treatment is a future UI/contract decision. See 10.6's own section for full detail. Nothing
-committed yet — ask before committing, per this repo's own convention. **Next: 10.7 (corpus
-migration/backfill + flag flip + exit gate) — not started, ask before beginning.**
+visual treatment is a future UI/contract decision. See 10.6's own section for full detail.
+**Committed as `a663a95`** (bundled with 10.5 and the widget access-token auth work, idea #6 — see
+the commit-sweep entry below for the full reasoning). **Next: 10.7 (corpus migration/backfill + flag
+flip + exit gate) — not started, ask before beginning.**
 
 **Same session (2026-08-24): 10.5 done — chat request/contract `knowledge_scope` threading.** User
 gave the explicit go-ahead for 10.5 only, per this repo's stop-after-sub-step convention. Shipped as
@@ -69,9 +115,9 @@ files among the 7 touched Python files, 0 new pyright errors. `securing-http-and
 validated optional field (C3) and extends the existing idempotency binding (C7); `router.py`'s
 `security_baseline` docstring updated in place. **Deliberately left unwired to any real value:**
 `apps/web/src/app/layout.tsx`'s `<ChatSessionProvider>` mount is untouched — a visible scope switcher
-is 10.8's job, not this one. See 10.5's own section for full detail. Nothing committed yet — ask
-before committing, per this repo's own convention. **Next: 10.6 (always-present curated knowledge
-layer) — not started, ask before beginning.**
+is 10.8's job, not this one. See 10.5's own section for full detail. **Committed as `a663a95`**
+(bundled with 10.6 and the widget access-token auth work, idea #6 — see the commit-sweep entry below
+for the full reasoning). **Next: 10.6 (always-present curated knowledge layer) — done, see below.**
 
 **Same session (2026-08-24): 10.4 done — retrieval-time knowledge-scope filtering, behind
 `enable_knowledge_scope_filtering` (default off).** User gave the explicit go-ahead for 10.4 only,
@@ -4712,9 +4758,9 @@ file (repo-wide count unchanged at 34). `pnpm --filter web test` → **162 passe
 `securing-http-and-llm-endpoints`: `POST /chat` is a pre-existing HTTP+LLM surface (full control set
 already documented in `router.py`'s own `security_baseline` docstring) — this sub-step only adds one
 more shape-validated optional field (C3) and extends the existing idempotency binding (C7); both
-docstring sections updated in place rather than left stale. Not yet committed — ask before
-committing, per this repo's own convention. **Next: 10.6 (always-present curated knowledge layer) —
-not started, ask before beginning.**
+docstring sections updated in place rather than left stale. **Committed as `a663a95`** (bundled with
+10.6 and the widget access-token auth work, idea #6 — see the ledger entry above for why). **Next:
+10.7 (corpus migration/backfill + flag flip + exit gate) — not started, ask before beginning.**
 
 ### 10.6 — Always-present curated knowledge layer
 
@@ -4848,9 +4894,10 @@ response shape (`router.py`, `ChatRequestBody`, `Citation` schema all untouched)
 consideration is curated body text entering the LLM prompt, which carries the same trust model
 already accepted for retrieved Confluence chunk text (operator-authored via the seed script, not
 user-controlled), and `curated_knowledge_max_entries` bounds prompt-size/cost growth the same way
-`rerank_top_k` already bounds it for retrieved evidence (C10). Not yet committed — ask before
-committing, per this repo's own convention. **Next: 10.7 (corpus migration/backfill + flag flip +
-exit gate) — not started, ask before beginning.**
+`rerank_top_k` already bounds it for retrieved evidence (C10). **Committed as `a663a95`** (bundled
+with 10.5 and the widget access-token auth work, idea #6 — entangled in the same shared chat-feature
+files, splitting further wasn't worth the fragility; see the ledger entry above). **Next: 10.7
+(corpus migration/backfill + flag flip + exit gate) — not started, ask before beginning.**
 
 ### 10.7 — Corpus migration/backfill + flag flip + exit gate
 
