@@ -9,7 +9,39 @@
 
 ## 0. Status ledger & blockers  *(keep current — update after every phase)*
 
-**New session (2026-08-24): 10.2 done — label-driven per-page knowledge-scope tags.** User gave the
+**New session (2026-08-24): 10.3 done — `curated_knowledge_entry` table + `tags` GIN index +
+`query_trace.allowed_knowledge_scopes` column.** User gave the explicit go-ahead for 10.3 only, per
+this repo's stop-after-sub-step convention. Shipped exactly as scoped: `CuratedKnowledgeEntry` ORM
+model (`id`, `tags ARRAY(Text)` default `{}`, `title`, `body`, `is_active`, `created_at`,
+`updated_at`); a partial GIN index `ix_chunk_tags_gin` on `Chunk.tags` (`WHERE is_active`, matching
+this schema's existing partial-index convention); `QueryTrace.allowed_knowledge_scopes ARRAY(Text)`
+nullable. New `alembic/versions/0007_knowledge_scope.py`
+(`down_revision="0006_dedupe_source_type_check"`) — raw idempotent DDL (`IF NOT EXISTS`/
+`IF EXISTS` throughout), matching every migration in this chain since 0003; reversible
+(`downgrade()` drops the column, index, and table in reverse order).
+
+**No existing precedent test actually exercises the Alembic chain** — every DB test in this repo
+builds its schema via `schema.create_all()` against live ORM metadata (`confluence_sync`'s
+conftest), not `alembic upgrade`, despite 10.2's ledger entry describing 0004's pattern as
+precedent; that description was aspirational, not accurate, so a new pattern was built from
+scratch: `app/platform/db/tests/test_migration_0007_knowledge_scope.py` spins up a dedicated
+`omniboost_rag_migration_test` database, runs the real `alembic` chain via `command.upgrade`/
+`command.downgrade` (env.py's `get_settings().database_url` re-read after `DATABASE_URL` is
+monkeypatched, mirroring the confluence_sync harness's env-var-swap technique), and asserts the
+concrete Postgres shape (reflected columns, `pg_indexes.indexdef` for the GIN index) at `head`, at
+`head → -1` (fully reverted, not just "no error"), and `head → -1 → head` again. 2 new tests, both
+passing. `make check` → **418 passed** (was 416, +2), `make boundaries` clean. Ruff/pyright diffed
+against the pre-change baseline: **0 new ruff errors** (2 unchanged, both pre-existing in
+`alembic/env.py`/`0001_core_schema.py`), unformatted-file count **unchanged** at 13 (the 3 new
+files are all clean), **0 new pyright errors** (34 unchanged). No new/modified HTTP endpoint or LLM
+call — `securing-http-and-llm-endpoints` doesn't apply to a schema-only migration, same reasoning
+as 10.1/10.2. `EXPLAIN` confirming the planner actually uses `ix_chunk_tags_gin` is deferred to
+10.4 per the plan's own acceptance criterion — no `tags && ARRAY[...]` predicate exists yet to
+explain. **Not yet committed — ask before committing**, same convention as every other Phase 10
+sub-step. **Next: 10.4 (retrieval-time filtering, behind the flag) — not started, ask before
+beginning.**
+
+**Same session (2026-08-24): 10.2 done — label-driven per-page knowledge-scope tags.** User gave the
 explicit go-ahead for 10.2 only, per this repo's stop-after-sub-step convention. Shipped exactly as
 scoped: new pure `confluence_sync/domain/knowledge_scope.py` (`resolve_knowledge_scope_tags`,
 `KnowledgeScopeResult`), wired into `sync_service.handle_sync_page` right after the existing
@@ -23,8 +55,18 @@ Ruff/pyright diffed against the pre-change baseline: **0 new ruff errors** (2 un
 unformatted-file count **improved** 14 → 13 (the one file this session touched that had a
 pre-existing unformatted block was brought clean), **0 new pyright errors** (34 unchanged). No
 new/modified HTTP endpoint or LLM call — `securing-http-and-llm-endpoints` doesn't apply here, same
-reasoning as 10.1. See 10.2's own section for full detail. **Not yet committed — ask before
-committing.** **Next: 10.3 (migration: `curated_knowledge_entry` table + `tags` GIN index +
+reasoning as 10.1. See 10.2's own section for full detail. **Committed as `9fb134f`** — scoped
+surgically to 10.2's own code (`sync_service.py`/`FEATURES.md` were entangled with an unrelated,
+already-uncommitted attachment-wiring change from an earlier session; extracted via the same
+base-file-reconstruction technique as 10.1's `settings.py` incident, verified byte-exact against
+HEAD before staging) plus the accumulated Phase 10 documentation (`PLAN.md`'s Phase 10 section,
+ADR-0011, `docs/rag/{ingestion,retrieval}/phase-10.md`) that had also been sitting uncommitted
+since earlier sessions — bundled in per the user's explicit choice, since splitting docs about the
+same initiative further wasn't worth the fragility. The rest of the tree's unrelated uncommitted
+work (attachment wiring, widget access-token auth, other docs) was left exactly as it was — `git
+show HEAD --stat` verified to be exactly the intended 10 files, full suite (416 passed) and
+`make boundaries` re-verified live against the fully-restored working tree afterward. **Next: 10.3
+(migration: `curated_knowledge_entry` table + `tags` GIN index +
 `query_trace` column) — not started, ask before beginning**, same stop-after-sub-step rule as every
 other step in this phase.
 
@@ -4213,7 +4255,7 @@ network surface is touched by this sub-step (pure in-process config), so
 `securing-http-and-llm-endpoints`'s controls don't apply here — same reasoning as every other
 config-only sub-step in this plan.
 
-### 10.2 — Label-driven per-page knowledge-scope tags (ingestion) ✅ done (2026-08-24, uncommitted)
+### 10.2 — Label-driven per-page knowledge-scope tags (ingestion) ✅ done (2026-08-24, `9fb134f`)
 
 **Files:** new `app/features/confluence_sync/domain/knowledge_scope.py`; modify
 `app/features/confluence_sync/application/sync_service.py`; export from `confluence_sync/__init__.py`.
@@ -4307,9 +4349,27 @@ session and wasn't otherwise touched), **0 new pyright errors** (34, unchanged).
 `securing-http-and-llm-endpoints`: no new/modified HTTP endpoint or LLM call —
 `resolve_knowledge_scope_tags` is pure, and `handle_sync_page`'s external surface (the existing
 webhook/worker path, already audited in earlier phases) is unchanged; same reasoning as 10.1.
-**Not yet committed — ask before committing, per this repo's own convention.**
 
-### 10.3 — Migration: `curated_knowledge_entry` table + `tags` GIN index + `query_trace` column
+**Committed as `9fb134f`.** `sync_service.py` and `FEATURES.md` mixed 10.2's hunks with an
+unrelated, already-uncommitted attachment-wiring change from an earlier session (same class of
+entanglement as 10.1's `settings.py` incident) — extracted surgically by reconstructing each file
+from its HEAD content plus only the known 10.2 edits (verified `diff` against HEAD showed exactly
+the intended hunks before staging, including the one genuine dependency: `handle_sync_page`'s new
+`log.warning` call needed the module `log`/`get_logger` that the unrelated attachment-wiring
+session had introduced, so those two lines came along as a real functional need, not scope creep).
+Per the user's explicit choice, the commit also bundles the accumulated Phase 10 documentation that
+had been sitting uncommitted since earlier sessions — `PLAN.md`'s full Phase 10 section (10.1's own
+writeup, 10.3-10.9 specs, 10.8/10.9 design notes), `docs/adr/0011-...md`, and
+`docs/rag/{ingestion,retrieval}/phase-10.md` — since none of it is misleading (already-approved,
+already-real work, just overdue on being committed) and splitting it further wasn't worth the
+fragility. Everything else in the tree (attachment wiring itself, widget access-token auth, other
+unrelated docs) was left exactly as it was, still uncommitted. **Verified after commit, not just
+before:** `git show HEAD --stat` confirmed exactly the 10 intended files; the working tree was then
+restored to its full session state (attachment-wiring hunks back in `sync_service.py`/
+`FEATURES.md`) and the full suite (**416 passed**) + `make boundaries` re-run clean against that
+restored state, confirming the split didn't break anything on either side.
+
+### 10.3 — Migration: `curated_knowledge_entry` table + `tags` GIN index + `query_trace` column ✅ done (2026-08-24, not yet committed)
 
 **Files:** new `apps/automation/alembic/versions/0007_knowledge_scope.py`
 (`down_revision="0006_dedupe_source_type_check"`); `app/platform/db/models.py`.

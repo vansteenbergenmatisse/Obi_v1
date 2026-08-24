@@ -1,6 +1,7 @@
 # Phase 10 — Knowledge-scope tagging (retrieval-side half)
 
-**Status:** scoped 2026-08-21, not built. `docs/rag/PLAN.md` Phase 10 §§10.3–10.6. Design doc:
+**Status:** §10.3 done (2026-08-24, not yet committed — migration only, no reads/writes wired yet);
+§§10.4–10.6 not started. `docs/rag/PLAN.md` Phase 10 §§10.3–10.6. Design doc:
 [`docs/adr/0011-Knowledge-Scope-Tagging-And-Retrieval-Filtering.md`](../../adr/0011-Knowledge-Scope-Tagging-And-Retrieval-Filtering.md).
 The writer/tagging half — deriving tags from Confluence labels — is in
 [`../ingestion/phase-10.md`](../ingestion/phase-10.md).
@@ -78,6 +79,7 @@ apps/automation/app/features/rag_agent/
 ├── application/answer_service.py        resolves scopes once; composes curated + retrieved evidence
 apps/automation/app/platform/db/models.py                                      CuratedKnowledgeEntry, ix_chunk_tags_gin, QueryTrace.allowed_knowledge_scopes
 apps/automation/alembic/versions/0007_knowledge_scope.py (new)
+apps/automation/app/platform/db/tests/test_migration_0007_knowledge_scope.py (new)   real alembic head/-1/head round trip
 apps/automation/scripts/seed_curated_knowledge.py (new)
 packages/contracts/src/index.ts                                                ChatRequest.knowledgeScope
 apps/web/src/features/chat/server/route-handlers.ts                            forwards knowledgeScope

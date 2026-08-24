@@ -331,6 +331,13 @@ class Chunk(Base):
             "source_id",
             postgresql_where=text("is_active"),
         ),
+        # knowledge-scope hot path: `tags && ARRAY[...]` membership tests (PLAN 10.4)
+        Index(
+            "ix_chunk_tags_gin",
+            "tags",
+            postgresql_using="gin",
+            postgresql_where=text("is_active"),
+        ),
         CheckConstraint(_SOURCE_TYPE_CHECK, name=conv("ck_chunk_source_type")),
     )
 
@@ -529,10 +536,37 @@ class QueryTrace(Base):
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)
     citations: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     feedback: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)  # +1 / -1
+    # populated by retrieval once knowledge-scope filtering resolves the allowed set (PLAN 10.4);
+    # nullable because rows written before that phase never had a knowledge scope to record
+    allowed_knowledge_scopes: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
 
     created_at: Mapped[datetime] = _ts_created()
 
     __table_args__ = (Index("ix_query_trace_created_at", "created_at"),)
+
+
+class CuratedKnowledgeEntry(Base):
+    """Hand-authored knowledge always eligible for retrieval, independent of any Confluence page.
+
+    ``tags`` mirrors ``chunk``/``page_source``'s knowledge-scope tagging (PLAN 10.2): empty means
+    "applies to every scope" (matching ``general``'s always-included semantics), so an entry never
+    needs editing if ``general`` is ever renamed. Reuses the existing citation machinery at
+    retrieval time (PLAN 10.6) rather than introducing a parallel content model.
+    """
+
+    __tablename__ = "curated_knowledge_entry"
+
+    id: Mapped[int] = _pk()
+    tags: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
+    )
+    title: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(nullable=False, server_default=text("true"))
+    created_at: Mapped[datetime] = _ts_created()
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
 
 
 __all__ = [
@@ -545,6 +579,7 @@ __all__ = [
     "ReconciliationRun",
     "SourceScope",
     "QueryTrace",
+    "CuratedKnowledgeEntry",
     "KIND_PARENT",
     "KIND_CHILD",
     "EMB_DIM",
