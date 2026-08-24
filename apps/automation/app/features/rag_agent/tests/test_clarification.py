@@ -4,6 +4,8 @@ of the clarifying-question generation call's raw text, no network."""
 
 from __future__ import annotations
 
+import pytest
+
 from app.features.rag_agent.domain.clarification import (
     decide_clarification,
     parse_clarification_reply,
@@ -78,44 +80,51 @@ def test_history_is_accepted_but_not_required_to_be_non_empty() -> None:
     assert decision.is_ambiguous is True
 
 
-def test_parse_clarification_reply_extracts_question_and_options() -> None:
-    raw = "Question: Which limits do you mean?\nOptions:\n- Expense limits\n- Approval thresholds"
+_PARSE_CLARIFICATION_REPLY_CASES = {
+    "extracts_question_and_options": (
+        "Question: Which limits do you mean?\nOptions:\n- Expense limits\n- Approval thresholds",
+        "Which limits do you mean?",
+        ["Expense limits", "Approval thresholds"],
+    ),
+    "accepts_question_only_with_no_options": (
+        "Question: What are you asking about?",
+        "What are you asking about?",
+        [],
+    ),
+    "is_case_insensitive_on_the_question_prefix": (
+        "QUESTION: What do you mean?\nOptions:\n- A\n- B",
+        "What do you mean?",
+        ["A", "B"],
+    ),
+    "returns_none_when_no_question_line_is_found": (
+        "I'm not sure what you mean.",
+        None,
+        None,
+    ),
+    "returns_none_on_empty_text": ("", None, None),
+    "ignores_blank_and_stray_lines": (
+        "\n\nQuestion: Which system?\n\nOptions:\n\n- Muse\n\n- Toast\n\n",
+        "Which system?",
+        ["Muse", "Toast"],
+    ),
+}
 
+
+@pytest.mark.parametrize(
+    ("raw", "expected_question", "expected_options"),
+    _PARSE_CLARIFICATION_REPLY_CASES.values(),
+    ids=list(_PARSE_CLARIFICATION_REPLY_CASES.keys()),
+)
+def test_parse_clarification_reply(
+    raw: str,
+    expected_question: str | None,
+    expected_options: list[str] | None,
+) -> None:
     reply = parse_clarification_reply(raw)
 
+    if expected_question is None:
+        assert reply is None
+        return
     assert reply is not None
-    assert reply.question == "Which limits do you mean?"
-    assert reply.options == ["Expense limits", "Approval thresholds"]
-
-
-def test_parse_clarification_reply_accepts_question_only_with_no_options() -> None:
-    reply = parse_clarification_reply("Question: What are you asking about?")
-
-    assert reply is not None
-    assert reply.question == "What are you asking about?"
-    assert reply.options == []
-
-
-def test_parse_clarification_reply_is_case_insensitive_on_the_question_prefix() -> None:
-    reply = parse_clarification_reply("QUESTION: What do you mean?\nOptions:\n- A\n- B")
-
-    assert reply is not None
-    assert reply.question == "What do you mean?"
-
-
-def test_parse_clarification_reply_returns_none_when_no_question_line_is_found() -> None:
-    assert parse_clarification_reply("I'm not sure what you mean.") is None
-
-
-def test_parse_clarification_reply_returns_none_on_empty_text() -> None:
-    assert parse_clarification_reply("") is None
-
-
-def test_parse_clarification_reply_ignores_blank_and_stray_lines() -> None:
-    raw = "\n\nQuestion: Which system?\n\nOptions:\n\n- Muse\n\n- Toast\n\n"
-
-    reply = parse_clarification_reply(raw)
-
-    assert reply is not None
-    assert reply.question == "Which system?"
-    assert reply.options == ["Muse", "Toast"]
+    assert reply.question == expected_question
+    assert reply.options == expected_options

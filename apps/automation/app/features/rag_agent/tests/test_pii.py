@@ -2,31 +2,24 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.features.rag_agent.domain.pii import redact_pii
 
 
-def test_redacts_email() -> None:
-    out = redact_pii("contact alice@example.com for access")
-    assert "alice@example.com" not in out
-    assert "[REDACTED_EMAIL]" in out
-
-
-def test_redacts_ssn() -> None:
-    out = redact_pii("my ssn is 123-45-6789")
-    assert "123-45-6789" not in out
-    assert "[REDACTED_SSN]" in out
-
-
-def test_redacts_credit_card() -> None:
-    out = redact_pii("card number 4111111111111111 expires soon")
-    assert "4111111111111111" not in out
-    assert "[REDACTED_CARD]" in out
-
-
-def test_redacts_phone_number() -> None:
-    out = redact_pii("call me at 415-555-0100 tomorrow")
-    assert "415-555-0100" not in out
-    assert "[REDACTED_PHONE]" in out
+@pytest.mark.parametrize(
+    ("template", "secret", "marker"),
+    [
+        ("contact {} for access", "alice@example.com", "[REDACTED_EMAIL]"),
+        ("my ssn is {}", "123-45-6789", "[REDACTED_SSN]"),
+        ("card number {} expires soon", "4111111111111111", "[REDACTED_CARD]"),
+        ("call me at {} tomorrow", "415-555-0100", "[REDACTED_PHONE]"),
+    ],
+)
+def test_redacts_pii_by_type(template: str, secret: str, marker: str) -> None:
+    out = redact_pii(template.format(secret))
+    assert secret not in out
+    assert marker in out
 
 
 def test_leaves_plain_text_untouched() -> None:

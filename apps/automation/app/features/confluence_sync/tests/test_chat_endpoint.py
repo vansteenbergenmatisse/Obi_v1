@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
@@ -297,26 +298,55 @@ def test_malformed_knowledge_scope_is_rejected(gateway, settings: Settings) -> N
     assert resp.status_code == 422
 
 
-def test_idempotency_key_replay_with_different_knowledge_scope_is_not_the_first_callers_answer(
-    gateway, settings: Settings
+_IDEMPOTENCY_REPLAY_CASES = {
+    "principal": (
+        {
+            "history": [{"role": "user", "content": "How do I request access?"}],
+            "principal": "acct-alice",
+        },
+        {
+            "history": [{"role": "user", "content": "How do I request access?"}],
+            "principal": "acct-bob",
+        },
+    ),
+    "history": (
+        {"history": [{"role": "user", "content": "How do I request access?"}]},
+        {"history": [{"role": "user", "content": "A completely different question?"}]},
+    ),
+    "knowledge_scope": (
+        {"history": [{"role": "user", "content": "How do I request access?"}]},
+        {
+            "history": [{"role": "user", "content": "How do I request access?"}],
+            "knowledge_scope": "mews",
+        },
+    ),
+}
+
+
+@pytest.mark.parametrize(
+    ("request_a", "request_b"),
+    _IDEMPOTENCY_REPLAY_CASES.values(),
+    ids=list(_IDEMPOTENCY_REPLAY_CASES.keys()),
+)
+def test_idempotency_key_replay_with_different_field_is_not_the_first_callers_answer(
+    request_a: dict, request_b: dict, gateway, settings: Settings
 ) -> None:
-    """Same fix class as the principal/history idempotency-binding tests above (PLAN 4.6.3),
-    extended PLAN 10.5: a replay of the same `Idempotency-Key` with a different `knowledge_scope`
-    must not return the first caller's cached Answer."""
+    """PLAN 4.6.3 fix (extended PLAN 10.5 for `knowledge_scope`): the idempotency cache used to key
+    only on the raw `Idempotency-Key` header, so a replay with a different principal/history/
+    knowledge_scope silently returned the first caller's cached Answer — a cross-tenant/cross-scope
+    leak. Binding the key to (principal, history, knowledge_scope) means a mismatch is treated as a
+    fresh request (a distinct trace id), not a replay."""
     _index_corpus(gateway, settings)
     chat_settings = _chat_settings(settings)
     service = _grounded_service(gateway, chat_settings)
     client = _client_with_service(chat_settings, service)
 
     headers = {**_auth(), "idempotency-key": "shared-key"}
-    body = {"history": [{"role": "user", "content": "How do I request access?"}]}
 
-    general = _parse_sse(client.post("/chat", json=body, headers=headers).text)
-    mews = _parse_sse(
-        client.post("/chat", json={**body, "knowledge_scope": "mews"}, headers=headers).text
-    )
+    first = _parse_sse(client.post("/chat", json=request_a, headers=headers).text)
+    second = _parse_sse(client.post("/chat", json=request_b, headers=headers).text)
 
-    assert general[-1]["traceId"] != mews[-1]["traceId"]
+    assert first[-1]["traceId"] != second[-1]["traceId"]
 
 
 def test_numeric_principal_is_rejected_not_treated_as_space_wide_trust(
@@ -602,60 +632,6 @@ def test_idempotency_key_replays_cached_answer_without_rerunning(
     first_trace = first[-1]["traceId"]
     second_trace = second[-1]["traceId"]
     assert first_trace == second_trace  # replayed, not a fresh trace row
-
-
-def test_idempotency_key_replay_with_different_principal_is_not_the_first_callers_answer(
-    gateway, settings: Settings
-) -> None:
-    """PLAN 4.6.3 fix: the idempotency cache used to key only on the raw `Idempotency-Key` header,
-    so a replay with a different `principal` silently returned the first caller's cached Answer —
-    a cross-principal leak. Binding the key to (principal, history) means a mismatched principal
-    is treated as a fresh request (a distinct trace id), not a replay."""
-    _index_corpus(gateway, settings)
-    chat_settings = _chat_settings(settings)
-    service = _grounded_service(gateway, chat_settings)
-    client = _client_with_service(chat_settings, service)
-
-    body = {"history": [{"role": "user", "content": "How do I request access?"}]}
-    headers = {**_auth(), "idempotency-key": "shared-key"}
-
-    alice = _parse_sse(
-        client.post("/chat", json={**body, "principal": "acct-alice"}, headers=headers).text
-    )
-    bob = _parse_sse(
-        client.post("/chat", json={**body, "principal": "acct-bob"}, headers=headers).text
-    )
-
-    assert alice[-1]["traceId"] != bob[-1]["traceId"]
-
-
-def test_idempotency_key_replay_with_different_history_is_not_the_first_callers_answer(
-    gateway, settings: Settings
-) -> None:
-    """Same fix as above, for a mismatched `history` under the same reused idempotency key."""
-    _index_corpus(gateway, settings)
-    chat_settings = _chat_settings(settings)
-    service = _grounded_service(gateway, chat_settings)
-    client = _client_with_service(chat_settings, service)
-
-    headers = {**_auth(), "idempotency-key": "shared-key"}
-
-    first = _parse_sse(
-        client.post(
-            "/chat",
-            json={"history": [{"role": "user", "content": "How do I request access?"}]},
-            headers=headers,
-        ).text
-    )
-    second = _parse_sse(
-        client.post(
-            "/chat",
-            json={"history": [{"role": "user", "content": "A completely different question?"}]},
-            headers=headers,
-        ).text
-    )
-
-    assert first[-1]["traceId"] != second[-1]["traceId"]
 
 
 def test_answer_cache_replays_without_rerunning_retrieval(gateway, settings: Settings) -> None:

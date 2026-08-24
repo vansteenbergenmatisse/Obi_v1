@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.features.ingestion.domain.attachment_extraction import (
     attachment_to_blocks,
     extract_attachment,
@@ -89,8 +91,10 @@ def test_missing_optional_lib_degrades_to_skipped() -> None:
 # -- attachment_to_blocks (fixes/phase-2 wiring) -----------------------------------------
 
 
-def test_attachment_to_blocks_wraps_text_under_title_keyed_heading_path() -> None:
-    blocks = attachment_to_blocks(title="welcome-checklist.txt", text="Sign the code of conduct")
+@pytest.mark.parametrize("raw_text", ["Sign the code of conduct", "  Sign the code of conduct  \n"])
+def test_attachment_to_blocks_wraps_text_under_title_keyed_heading_path(raw_text: str) -> None:
+    """Covers both a plain body and one with surrounding whitespace — the wrapper strips it."""
+    blocks = attachment_to_blocks(title="welcome-checklist.txt", text=raw_text)
     assert [b.kind for b in blocks] == ["heading", "paragraph"]
     assert blocks[0].text == "welcome-checklist.txt"
     assert blocks[0].heading_path == ["Attachments", "welcome-checklist.txt"]
@@ -101,11 +105,6 @@ def test_attachment_to_blocks_wraps_text_under_title_keyed_heading_path() -> Non
 def test_attachment_to_blocks_empty_text_returns_nothing() -> None:
     assert attachment_to_blocks(title="diagram.png", text="") == []
     assert attachment_to_blocks(title="diagram.png", text="   ") == []
-
-
-def test_attachment_to_blocks_strips_surrounding_whitespace() -> None:
-    blocks = attachment_to_blocks(title="notes.txt", text="  hello world  \n")
-    assert blocks[1].text == "hello world"
 
 
 def test_attachment_to_blocks_distinct_attachments_get_distinct_heading_paths() -> None:

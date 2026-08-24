@@ -58,7 +58,44 @@ def test_circuit_breaker_opens_after_consecutive_failures() -> None:
         client.create_message(model="m", user_text="hello")
 
 
-def test_create_message_with_images_puts_image_blocks_before_text() -> None:
+_IMAGE_BLOCK = {
+    "type": "image",
+    "source": {"type": "base64", "media_type": "image/png", "data": "ZmFrZQ=="},
+}
+
+
+@pytest.mark.parametrize(
+    ("user_text", "images", "expected_content"),
+    [
+        (
+            "what is this?",
+            [ImageBlock(media_type="image/png", data="ZmFrZQ==")],
+            [_IMAGE_BLOCK, {"type": "text", "text": "what is this?"}],
+        ),
+        (
+            # PLAN 7.8: a genuinely text-empty, image-only turn must not send an empty text
+            # content block — Anthropic's real Messages API rejects {"type": "text", "text": ""}
+            # outright (400), confirmed live; an image-only content list is accepted and works.
+            "",
+            [ImageBlock(media_type="image/png", data="ZmFrZQ==")],
+            [_IMAGE_BLOCK],
+        ),
+        (
+            # No behavior change for existing text-only call sites — stays a one-item list.
+            "hello",
+            [],
+            [{"type": "text", "text": "hello"}],
+        ),
+    ],
+    ids=[
+        "with_images_puts_image_blocks_before_text",
+        "image_only_omits_text_block",
+        "text_only_unchanged",
+    ],
+)
+def test_create_message_content_shape(
+    user_text: str, images: list[ImageBlock], expected_content: list[dict]
+) -> None:
     seen: list[dict] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -68,65 +105,9 @@ def test_create_message_with_images_puts_image_blocks_before_text() -> None:
     client = AnthropicMessagesClient(
         api_key="k", client=httpx.Client(transport=httpx.MockTransport(handler))
     )
-    out = client.create_message(
-        model="m",
-        user_text="what is this?",
-        images=[ImageBlock(media_type="image/png", data="ZmFrZQ==")],
-    )
+    client.create_message(model="m", user_text=user_text, images=images or None)
 
-    assert out == "hi"
-    content = seen[0]["messages"][0]["content"]
-    assert content == [
-        {
-            "type": "image",
-            "source": {"type": "base64", "media_type": "image/png", "data": "ZmFrZQ=="},
-        },
-        {"type": "text", "text": "what is this?"},
-    ]
-
-
-def test_create_message_with_images_and_empty_text_omits_the_text_block() -> None:
-    """PLAN 7.8: a genuinely text-empty, image-only turn must not send an empty text content
-    block — Anthropic's real Messages API rejects `{"type": "text", "text": ""}` outright (400),
-    confirmed live; an image-only content list (no text block at all) is accepted and works."""
-    seen: list[dict] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(json.loads(request.content))
-        return httpx.Response(200, json={"content": [{"type": "text", "text": "hi"}]})
-
-    client = AnthropicMessagesClient(
-        api_key="k", client=httpx.Client(transport=httpx.MockTransport(handler))
-    )
-    client.create_message(
-        model="m",
-        user_text="",
-        images=[ImageBlock(media_type="image/png", data="ZmFrZQ==")],
-    )
-
-    content = seen[0]["messages"][0]["content"]
-    assert content == [
-        {
-            "type": "image",
-            "source": {"type": "base64", "media_type": "image/png", "data": "ZmFrZQ=="},
-        },
-    ]
-
-
-def test_create_message_without_images_keeps_the_original_single_text_block_shape() -> None:
-    """No behavior change for the existing text-only call sites — content stays a one-item list."""
-    seen: list[dict] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        seen.append(json.loads(request.content))
-        return httpx.Response(200, json={"content": [{"type": "text", "text": "hi"}]})
-
-    client = AnthropicMessagesClient(
-        api_key="k", client=httpx.Client(transport=httpx.MockTransport(handler))
-    )
-    client.create_message(model="m", user_text="hello")
-
-    assert seen[0]["messages"][0]["content"] == [{"type": "text", "text": "hello"}]
+    assert seen[0]["messages"][0]["content"] == expected_content
 
 
 def test_success_resets_the_breaker() -> None:
