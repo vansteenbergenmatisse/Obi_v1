@@ -27,6 +27,7 @@ def write_query_trace(
     latency_ms: int,
     retrieved_chunk_ids: Sequence[int] | None = None,
     rerank_scores: Sequence[float] | None = None,
+    allowed_knowledge_scopes: Sequence[str] | None = None,
 ) -> int:
     """Insert one ``query_trace`` row, commit, and return its id."""
     row = QueryTrace(
@@ -38,6 +39,9 @@ def write_query_trace(
         latency_ms=latency_ms,
         retrieved_chunk_ids=list(retrieved_chunk_ids) if retrieved_chunk_ids is not None else None,
         rerank_scores=list(rerank_scores) if rerank_scores is not None else None,
+        allowed_knowledge_scopes=(
+            list(allowed_knowledge_scopes) if allowed_knowledge_scopes is not None else None
+        ),
     )
     session.add(row)
     session.commit()

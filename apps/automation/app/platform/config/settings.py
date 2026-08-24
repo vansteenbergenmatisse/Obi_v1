@@ -182,6 +182,10 @@ class Settings(BaseSettings):
     # deployment-level fallback scope when a chat request omits knowledge_scope (PLAN 10.5).
     # Empty -> general-only.
     default_knowledge_scope: str = ""
+    # rollout flag (PLAN 10.4). Off -> zero behavior change: HybridRetriever never applies the
+    # `tags && ...` predicate regardless of what a caller passes, mirroring
+    # enable_clarification_branch's dark-by-default posture.
+    enable_knowledge_scope_filtering: bool = False
 
     def is_offline_env(self) -> bool:
         """True in local/test/dev/ci — envs where a missing hosted key or DB role is a safe

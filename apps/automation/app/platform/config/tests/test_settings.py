@@ -43,3 +43,7 @@ def test_empty_knowledge_scopes_fails_at_construction() -> None:
 
 def test_default_knowledge_scope_defaults_to_empty() -> None:
     assert Settings().default_knowledge_scope == ""
+
+
+def test_enable_knowledge_scope_filtering_defaults_to_false() -> None:
+    assert Settings().enable_knowledge_scope_filtering is False

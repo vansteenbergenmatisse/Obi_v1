@@ -9,6 +9,28 @@
 
 ## 0. Status ledger & blockers  *(keep current — update after every phase)*
 
+**Same session (2026-08-24): 10.4 done — retrieval-time knowledge-scope filtering, behind
+`enable_knowledge_scope_filtering` (default off).** User gave the explicit go-ahead for 10.4 only,
+per this repo's stop-after-sub-step convention. Shipped: `retrieval/domain/knowledge_scope.py::
+resolve_allowed_scopes` (pure, exported from the feature root); `search_repo._base_filters`/
+`keyword_search`/`dense_search`/`fetch_rerank_texts` gained a bound `AND tags && :knowledge_scopes`
+predicate (corrected from the plan's own `ARRAY[:knowledge_scopes]` pseudocode, which would have
+bound the whole list as one scalar); `HybridRetriever` gained an `enable_knowledge_scope_filtering`
+constructor flag that gates whether a caller's call-time `knowledge_scopes` argument (on
+`retrieve()`/`retrieve_with_context()`) is ever forwarded to `search_repo` at all — stricter than
+the plan's literal text, so a premature caller can't leak the filter live before the flag is
+deliberately flipped; `trace_repo.write_query_trace` gained `allowed_knowledge_scopes`; `main.py`
+wires `settings.enable_knowledge_scope_filtering` into the retriever it builds. 23 new tests (8
+pure, 7 spy-session SQL-shape, 7 real-DB cross-scope-leakage + one closing 10.3's own deferred
+`EXPLAIN`-uses-`ix_chunk_tags_gin` acceptance criterion). `make check` → **441 passed** (was 418,
++23), `make boundaries` clean, `make eval` clean with the flag off. Ruff/pyright unchanged at
+baseline (2/13/34). No HTTP/LLM surface added or modified — `POST /chat` still doesn't pass a
+`knowledge_scope` value (10.5's job); `securing-http-and-llm-endpoints` doesn't apply to this
+internal-only data-layer change, same reasoning as every prior Phase 10 sub-step. See 10.4's own
+section for full detail, including the file-location correction for 10.5 (CRAG retry lives in
+`answer_service.py`, not `retriever.py`). Nothing committed yet — ask before committing. **Next:
+10.5 (chat request/contract: `knowledge_scope` threading) — not started, ask before beginning.**
+
 **New session (2026-08-24): 10.3 done — `curated_knowledge_entry` table + `tags` GIN index +
 `query_trace.allowed_knowledge_scopes` column.** User gave the explicit go-ahead for 10.3 only, per
 this repo's stop-after-sub-step convention. Shipped exactly as scoped: `CuratedKnowledgeEntry` ORM
@@ -4398,7 +4420,7 @@ pattern already used for `0004_source_scope`.
 `tags && ARRAY[...]` query against an active chunk uses `ix_chunk_tags_gin`, not a sequential scan
 (verified at 10.4, once the predicate exists to explain).
 
-### 10.4 — Retrieval-time filtering (behind the flag)
+### 10.4 — Retrieval-time filtering (behind the flag) ✅ done (2026-08-24)
 
 **Files:** `app/features/retrieval/infrastructure/search_repo.py`;
 `app/features/retrieval/application/retriever.py`; new
@@ -4448,6 +4470,73 @@ mirrors the existing RLS isolation tests exactly:
 **Acceptance.** `make eval`/`make check` green with the flag off (default, no regression); a new
 isolation-style negative test proves cross-scope leakage is impossible with the flag on; `EXPLAIN`
 confirms the GIN index is used.
+
+**Shipped close to scoped, with one deliberate strengthening.** `resolve_allowed_scopes` shipped
+exactly as specified in `retrieval/domain/knowledge_scope.py`, exported from the feature's public
+root (10.5 will need it from `rag_agent`). `_base_filters`/`keyword_search`/`dense_search`/
+`fetch_rerank_texts` all gained `knowledge_scopes: Sequence[str] | None = None`, appending
+`AND tags && :knowledge_scopes` (a **bound** array parameter — psycopg adapts the Python list
+directly, same mechanism already proven by the existing `source_id = ANY(:sources)` predicate; the
+plan's own pseudocode wrote `ARRAY[:knowledge_scopes]`, which is wrong for a list bind — that would
+build a one-element array containing the whole list as a single scalar — caught before it ever
+became running SQL, not live).
+
+**One deliberate strengthening over the literal plan text:** the plan's `_base_filters` pseudocode
+implied `settings.enable_knowledge_scope_filtering` gates the predicate at the query-builder level;
+shipped instead as a `HybridRetriever` **constructor** flag (`enable_knowledge_scope_filtering`,
+default `False`, wired from `settings.enable_knowledge_scope_filtering` in `main.py`) that gates
+whether `_search` ever forwards a caller's `knowledge_scopes` argument down to `search_repo` at all
+— `search_repo` itself stays a pure, unconditional query builder (consistent with every other
+predicate it already has; it has no `Settings` dependency and this doesn't start one). This means
+the flag is enforced *before* any caller-supplied list reaches SQL, not merely by convention that
+nothing calls with the flag off — a caller passing `knowledge_scopes` prematurely (before 10.5
+exists to call it deliberately) cannot accidentally leak the filter live. `retrieve()` and
+`retrieve_with_context()` both gained a call-time `knowledge_scopes: Sequence[str] | None = None`
+parameter (call-time, not constructor-time, since the plan's own 10.5 section requires this to vary
+per request — unlike `allowed_sources`, which is deployment-wide). `trace_repo.write_query_trace`
+gained `allowed_knowledge_scopes`, populated with whatever the retriever actually applied (`None`
+when the flag is off or nothing was requested), mirroring `allowed_sources` exactly, per plan.
+No production caller passes a real value yet — that's 10.5, which also corrects one file-location
+detail from this section's original text: the CRAG retry lives in `answer_service.py::_apply_crag_retry`,
+not in `retriever.py` (verified by direct read before scoping 10.5, not assumed from the plan text).
+
+**Tests:** `retrieval/tests/test_knowledge_scope.py` (8 cases, pure — `resolve_allowed_scopes`, no
+DB). `retrieval/tests/test_search_repo_knowledge_scope.py` (7 cases, spy-session, no DB — mirrors
+`test_search_repo_gucs.py`'s injection-safety style: flag-off/no-arg shape is byte-for-byte
+unchanged for all three query builders; the predicate and bound param appear when a list is passed;
+a malicious value inside the list never reaches the SQL text). `confluence_sync/tests/
+test_retrieval_knowledge_scope.py` (7 cases, real DB, mirrors `test_retrieval_eval.py`'s
+`test_permission_no_leak_and_authorized_access` isolation style — tags stamped directly via SQL
+rather than through the label pipeline, since 10.2's own tests already cover label→tag resolution
+and this stays focused on the retrieval-side predicate alone): flag off ignores a passed
+`knowledge_scopes` argument entirely; flag on excludes a page tagged for a different scope while an
+unfiltered baseline call still resolves it (proving structural exclusion, not just a ranking
+effect); flag on includes a page when its scope is allowed; two differently-scoped pages never
+cross-leak into each other's view; a chunk with **no** knowledge-scope tag at all (empty array, not
+even `general`) never participates under any non-empty filter (ADR-0011 Decision 1, proven against
+real Postgres array-overlap semantics, not just asserted); `query_trace.allowed_knowledge_scopes`
+is populated with the exact list actually applied. One more test closes 10.3's own deferred
+acceptance criterion: `EXPLAIN` against a query with the two competing `is_active`-partial btree
+indexes (`ix_chunk_active_space`/`ix_chunk_active_source`) dropped inside the test's own
+**uncommitted** transaction (rolled back by `Session.close()`, nothing persists) plus
+`enable_seqscan = off`, confirms `ix_chunk_tags_gin` is plan-usable for the real
+`is_active AND tags && ...` query shape — the live fixture corpus (a handful of rows) is far too
+small for the planner to *prefer* the GIN index on cost alone, so this proves usability, not a real-
+cardinality cost win (no invented scale numbers, per this repo's own rule).
+
+**Verified.** `make check` (repo root) → **441 passed** (was 418, +23), `make boundaries` clean (no
+cross-feature deep import — the new `confluence_sync/tests/test_retrieval_knowledge_scope.py`
+imports `retrieval` only at its public root, same as the existing `test_retrieval_eval.py`
+precedent). `make eval` (manifest-order baseline harness) still runs clean with the flag off by
+default — no regression. Ruff/pyright diffed against the pre-change baseline, not just eyeballed:
+**0 new ruff errors** (2, unchanged — both pre-existing in `alembic/env.py`/`0001_core_schema.py`),
+unformatted-file count **unchanged** at 13 (the new files were formatted before commit), **0 new
+pyright errors** (34, unchanged). `securing-http-and-llm-endpoints`: no new/modified HTTP endpoint
+or LLM call — `search_repo`/`retriever`/`trace_repo` are internal data-layer code with no external
+surface of their own; the one HTTP surface downstream (`POST /chat`) is unchanged by this sub-step
+and doesn't yet pass a `knowledge_scope` value (10.5's job) — same reasoning as every other
+retrieval-internals sub-step in this plan. Nothing committed yet — ask before committing, per this
+repo's own convention.
 
 ### 10.5 — Chat request/contract: `knowledge_scope` threading
 

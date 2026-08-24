@@ -83,6 +83,7 @@ def build_answer_service(settings: Settings) -> AnswerService:
         hnsw_ef_search=settings.hnsw_ef_search,
         hnsw_iterative_scan=settings.hnsw_iterative_scan,
         trace_sessionmaker=get_sessionmaker(),
+        enable_knowledge_scope_filtering=settings.enable_knowledge_scope_filtering,
     )
     client = AnthropicMessagesClient(
         api_key=settings.anthropic_api_key,

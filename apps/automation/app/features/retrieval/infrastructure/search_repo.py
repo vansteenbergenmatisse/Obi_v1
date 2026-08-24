@@ -49,7 +49,11 @@ def apply_source_scope(session: Session, allowed_sources: Sequence[str]) -> None
     )
 
 
-def _base_filters(space_id: int | None, sources: Sequence[str] | None) -> str:
+def _base_filters(
+    space_id: int | None,
+    sources: Sequence[str] | None,
+    knowledge_scopes: Sequence[str] | None = None,
+) -> str:
     clause = "is_active AND kind = 1 AND page_status = 'current'"
     if space_id is not None:
         clause += " AND space_id = :space_id"
@@ -57,6 +61,12 @@ def _base_filters(space_id: int | None, sources: Sequence[str] | None) -> str:
         # explicit source filter alongside RLS: correctness + recall, and lets the planner use
         # ix_chunk_active_source. RLS is the security net; this is the query's own predicate.
         clause += " AND source_id = ANY(:sources)"
+    if knowledge_scopes is not None:
+        # PLAN 10.4 / ADR-0011: array-overlap against the tags GIN index (0007_knowledge_scope).
+        # Bound, never interpolated — same discipline as `sources` above. A chunk with no
+        # knowledge-scope tag at all (empty array) overlaps nothing, so it does not participate
+        # (Decision 1: "no recognized tag -> does not participate", not a silent fallback-visible).
+        clause += " AND tags && :knowledge_scopes"
     return clause
 
 
@@ -72,11 +82,12 @@ def keyword_search(
     space_id: int | None,
     limit: int,
     sources: Sequence[str] | None = None,
+    knowledge_scopes: Sequence[str] | None = None,
 ) -> list[tuple[int, float]]:
     sql = text(
         f"SELECT page_id, ts_rank(tsv, {_OR_TSQUERY}) AS score "
         f"FROM chunk "
-        f"WHERE {_base_filters(space_id, sources)} AND tsv @@ {_OR_TSQUERY} "
+        f"WHERE {_base_filters(space_id, sources, knowledge_scopes)} AND tsv @@ {_OR_TSQUERY} "
         f"ORDER BY score DESC, page_id ASC LIMIT :limit"
     )
     params: dict[str, object] = {"q": query, "limit": limit}
@@ -84,6 +95,8 @@ def keyword_search(
         params["space_id"] = space_id
     if sources is not None:
         params["sources"] = list(sources)
+    if knowledge_scopes is not None:
+        params["knowledge_scopes"] = list(knowledge_scopes)
     return [(int(pid), float(score)) for pid, score in session.execute(sql, params)]
 
 
@@ -98,6 +111,7 @@ def dense_search(
     limit: int,
     dim: int,
     sources: Sequence[str] | None = None,
+    knowledge_scopes: Sequence[str] | None = None,
 ) -> list[tuple[int, float]]:
     # >2000-dim models are indexed as halfvec; cast both sides so the ANN index is used.
     if dim >= _HALFVEC_MIN_DIM:
@@ -109,7 +123,7 @@ def dense_search(
     sql = text(
         f"SELECT page_id, ({lhs} <=> {rhs}) AS dist "
         f"FROM chunk "
-        f"WHERE {_base_filters(space_id, sources)} AND embedding IS NOT NULL "
+        f"WHERE {_base_filters(space_id, sources, knowledge_scopes)} AND embedding IS NOT NULL "
         f"ORDER BY dist ASC, page_id ASC LIMIT :limit"
     )
     params: dict[str, object] = {"qvec": _vector_literal(query_vec), "limit": limit}
@@ -117,6 +131,8 @@ def dense_search(
         params["space_id"] = space_id
     if sources is not None:
         params["sources"] = list(sources)
+    if knowledge_scopes is not None:
+        params["knowledge_scopes"] = list(knowledge_scopes)
     return [(int(pid), float(dist)) for pid, dist in session.execute(sql, params)]
 
 
@@ -135,6 +151,7 @@ def fetch_rerank_texts(
     page_ids: Sequence[int],
     space_id: int | None,
     sources: Sequence[str] | None = None,
+    knowledge_scopes: Sequence[str] | None = None,
 ) -> dict[int, RerankCandidate]:
     """One representative child chunk per page for the cross-encoder, keyed by page id.
 
@@ -149,7 +166,7 @@ def fetch_rerank_texts(
         f"SELECT DISTINCT ON (page_id) page_id, id AS chunk_id, title, source_url, "
         f"left(title || ' ' || retrieval_content, 4000) AS txt "
         f"FROM chunk "
-        f"WHERE {_base_filters(space_id, sources)} AND page_id = ANY(:page_ids) "
+        f"WHERE {_base_filters(space_id, sources, knowledge_scopes)} AND page_id = ANY(:page_ids) "
         f"ORDER BY page_id, seq"
     )
     params: dict[str, object] = {"page_ids": list(page_ids)}
@@ -157,6 +174,8 @@ def fetch_rerank_texts(
         params["space_id"] = space_id
     if sources is not None:
         params["sources"] = list(sources)
+    if knowledge_scopes is not None:
+        params["knowledge_scopes"] = list(knowledge_scopes)
     return {
         int(pid): RerankCandidate(
             chunk_id=int(cid), title=str(title), source_url=str(url), text=str(txt)

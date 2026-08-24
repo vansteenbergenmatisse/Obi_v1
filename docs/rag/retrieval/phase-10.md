@@ -1,7 +1,8 @@
 # Phase 10 — Knowledge-scope tagging (retrieval-side half)
 
-**Status:** §10.3 done (2026-08-24, `daecb58` — migration only, no reads/writes wired yet);
-§§10.4–10.6 not started. `docs/rag/PLAN.md` Phase 10 §§10.3–10.6. Design doc:
+**Status:** §§10.3–10.4 done (2026-08-24 — 10.3 `daecb58` migration; 10.4 retrieval-time filtering,
+behind `enable_knowledge_scope_filtering`, default off); §§10.5–10.6 not started. `docs/rag/PLAN.md`
+Phase 10 §§10.3–10.6. Design doc:
 [`docs/adr/0011-Knowledge-Scope-Tagging-And-Retrieval-Filtering.md`](../../adr/0011-Knowledge-Scope-Tagging-And-Retrieval-Filtering.md).
 The writer/tagging half — deriving tags from Confluence labels — is in
 [`../ingestion/phase-10.md`](../ingestion/phase-10.md).
@@ -18,17 +19,39 @@ this repo's own codename — disclosed and deliberate, see ADR-0011's Context).
 
 ## What's new here
 
-- **`retrieval/domain/knowledge_scope.py::resolve_allowed_scopes`** (§10.4/10.5) — co-located with
-  `permission.py::classify_scope`, which already plays the same "interpret an incoming request-shaped
-  value" role for `principal`. Resolves the final scope allow-list (always includes `general`) from a
-  request's `knowledge_scope`, falling back to a deployment-level default, then to `general` alone.
-  An unrecognized requested value degrades silently (logged) rather than erroring the request.
-- **`_base_filters()`'s new `AND tags && ARRAY[:knowledge_scopes]` predicate** (§10.4) — a Postgres
-  array-overlap filter, backed by a new partial GIN index `ix_chunk_tags_gin`. **Gated behind
-  `Settings.enable_knowledge_scope_filtering` (default `false`)** — ships dark, exactly like
-  `enable_clarification_branch`; the query is byte-for-byte unchanged from today until an operator
-  deliberately flips it on, and only after the ingestion-side corpus migration
-  ([`../ingestion/phase-10.md`](../ingestion/phase-10.md)'s §10.7) is done.
+- **`retrieval/domain/knowledge_scope.py::resolve_allowed_scopes`** (§10.4, consumed by §10.5) —
+  co-located with `permission.py::classify_scope`, which already plays the same "interpret an
+  incoming request-shaped value" role for `principal`. Resolves the final scope allow-list (always
+  includes `general`) from a request's `knowledge_scope`, falling back to a deployment-level
+  default, then to `general` alone. An unrecognized requested value degrades silently rather than
+  erroring the request; the caller (§10.5) is responsible for logging the degradation, since this
+  function is pure and takes no logger. Exported from `retrieval/__init__.py`'s public root.
+- **`_base_filters()`'s new `AND tags && :knowledge_scopes` predicate** (§10.4, shipped) — a bound
+  Postgres array-overlap filter (never interpolated, same discipline as the existing `sources`
+  predicate), backed by the partial GIN index `ix_chunk_tags_gin` (§10.3). Threaded through
+  `keyword_search`/`dense_search`/`fetch_rerank_texts`. **Double-gated, not just flag-gated:**
+  `HybridRetriever` takes `enable_knowledge_scope_filtering` at construction (wired from
+  `Settings.enable_knowledge_scope_filtering`, default `false` — ships dark, exactly like
+  `enable_clarification_branch`) and only forwards a caller's `knowledge_scopes` argument to the
+  search layer when that flag is `True`; with the flag off the predicate is never added regardless
+  of what any caller passes, so a premature/mistaken caller can't accidentally leak the filter live
+  before an operator deliberately flips it on. A chunk with an empty `tags` array (the live
+  `base`-only pages, pre-relabel) matches no non-empty scope filter — proven live against the real
+  DB, not just asserted (ADR-0011 Decision 1). `QueryTrace.allowed_knowledge_scopes` (§10.3's
+  column) is populated with whatever the retriever actually applied (`None` when the flag is off or
+  no scopes were requested), mirroring `allowed_sources`. `EXPLAIN` against a forced plan (competing
+  `is_active`-partial indexes dropped inside an uncommitted test transaction, `enable_seqscan` off)
+  confirms `ix_chunk_tags_gin` is plan-usable for the real query shape — closes 10.3's own deferred
+  acceptance criterion; the live fixture corpus is far too small for the planner to prefer it on
+  cost alone, so this proves usability, not real-cardinality cost-preference. Only after the
+  ingestion-side corpus migration ([`../ingestion/phase-10.md`](../ingestion/phase-10.md)'s §10.7)
+  is done should an operator flip the flag on.
+- **Not yet wired (§10.5):** no production caller passes a real per-request `knowledge_scopes` value
+  yet — `HybridRetriever.retrieve()`/`retrieve_with_context()` accept it as an optional call-time
+  argument, but `AnswerService`/`ChatRequestBody` don't have a `knowledge_scope` field to resolve one
+  from. §10.5 threads that end to end, including through the CRAG retry path in
+  `answer_service.py::_apply_crag_retry` (not `retriever.py` — corrected from this doc's earlier,
+  pre-implementation file-location guess).
 - **`ChatRequestBody.knowledge_scope`** (§10.5) — new field on `POST /chat`, threaded through
   `AnswerService.answer()` → `HybridRetriever.retrieve_with_context()` → every retrieval attempt in
   the request (initial search **and** the CRAG retry) exactly the way `principal` already threads
@@ -69,17 +92,28 @@ must be a deliberate, verified operator action, not an accidental regression.
 
 ```
 apps/automation/app/features/retrieval/
-├── domain/knowledge_scope.py (new)      resolve_allowed_scopes
-├── infrastructure/search_repo.py        AND tags && ARRAY[:knowledge_scopes], ix_chunk_tags_gin
-├── infrastructure/trace_repo.py         allowed_knowledge_scopes column
-├── application/retriever.py             threads knowledge_scopes through _search / CRAG retry
+├── domain/knowledge_scope.py (new, §10.4)         resolve_allowed_scopes
+├── infrastructure/search_repo.py (§10.4)          AND tags && :knowledge_scopes, ix_chunk_tags_gin
+├── infrastructure/trace_repo.py (§10.4)           allowed_knowledge_scopes param
+├── application/retriever.py (§10.4)               enable_knowledge_scope_filtering ctor flag;
+│                                                   knowledge_scopes call-time param on
+│                                                   retrieve()/retrieve_with_context()
+├── __init__.py (§10.4)                            exports resolve_allowed_scopes
+├── tests/test_knowledge_scope.py (new, §10.4)
+├── tests/test_search_repo_knowledge_scope.py (new, §10.4)   SQL-shape/binding spy-session tests
+apps/automation/app/features/confluence_sync/tests/test_retrieval_knowledge_scope.py (new, §10.4)
+│                                                   real-DB cross-scope leakage + GIN EXPLAIN proof
+apps/automation/app/main.py (§10.4)                wires settings.enable_knowledge_scope_filtering
+apps/automation/app/platform/config/settings.py (§10.4)     enable_knowledge_scope_filtering flag
+
+-- not yet built (§10.5/§10.6) --
 apps/automation/app/features/rag_agent/
 ├── domain/curated_knowledge.py (new)    fetch_curated_entries, scope filtering, entry cap
 ├── server/router.py                     ChatRequestBody.knowledge_scope
 ├── application/answer_service.py        resolves scopes once; composes curated + retrieved evidence
-apps/automation/app/platform/db/models.py                                      CuratedKnowledgeEntry, ix_chunk_tags_gin, QueryTrace.allowed_knowledge_scopes
-apps/automation/alembic/versions/0007_knowledge_scope.py (new)
-apps/automation/app/platform/db/tests/test_migration_0007_knowledge_scope.py (new)   real alembic head/-1/head round trip
+apps/automation/app/platform/db/models.py                                      CuratedKnowledgeEntry, ix_chunk_tags_gin, QueryTrace.allowed_knowledge_scopes column (§10.3, done)
+apps/automation/alembic/versions/0007_knowledge_scope.py (§10.3, done)
+apps/automation/app/platform/db/tests/test_migration_0007_knowledge_scope.py (§10.3, done)   real alembic head/-1/head round trip
 apps/automation/scripts/seed_curated_knowledge.py (new)
 packages/contracts/src/index.ts                                                ChatRequest.knowledgeScope
 apps/web/src/features/chat/server/route-handlers.ts                            forwards knowledgeScope

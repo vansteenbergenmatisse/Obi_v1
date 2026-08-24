@@ -98,6 +98,7 @@ class HybridRetriever:
         hnsw_ef_search: int = 100,
         hnsw_iterative_scan: str = "relaxed_order",
         trace_sessionmaker: Callable[[], Session] | None = None,
+        enable_knowledge_scope_filtering: bool = False,
     ) -> None:
         self._session_factory = session_factory
         self._embedder = embedder
@@ -110,11 +111,25 @@ class HybridRetriever:
         self._hnsw_iterative_scan = hnsw_iterative_scan
         # optional WRITER sessionmaker: when set, each retrieve writes one query_trace row (3.5.4)
         self._trace_sessionmaker = trace_sessionmaker
+        # PLAN 10.4 rollout flag: off -> a caller's `knowledge_scopes` argument is never applied,
+        # regardless of what it passes, so the query stays byte-for-byte unchanged from pre-10.4.
+        self._enable_knowledge_scope_filtering = enable_knowledge_scope_filtering
 
-    def _search(self, query: str, scope: str | None, k: int) -> list[RetrievedHit]:
+    def _search(
+        self,
+        query: str,
+        scope: str | None,
+        k: int,
+        knowledge_scopes: Sequence[str] | None = None,
+    ) -> tuple[list[RetrievedHit], list[str] | None]:
         space_id, principal = classify_scope(scope)
         query_vec = self._embedder.embed([query])[0]
         sources = self._allowed_sources
+        effective_scopes = (
+            list(knowledge_scopes)
+            if self._enable_knowledge_scope_filtering and knowledge_scopes is not None
+            else None
+        )
         with self._session_factory() as session:
             # Per-txn knobs, same transaction as the searches below:
             #  - HNSW iterative_scan keeps recall honest once a narrow scope prunes rows (3.5.1)
@@ -125,9 +140,17 @@ class HybridRetriever:
                 iterative_scan=self._hnsw_iterative_scan,
             )
             apply_source_scope(session, sources)
-            kw = keyword_search(session, query, space_id, self._candidate_k, sources)
+            kw = keyword_search(
+                session, query, space_id, self._candidate_k, sources, effective_scopes
+            )
             dense = dense_search(
-                session, query_vec, space_id, self._candidate_k, self._embedder.dim, sources
+                session,
+                query_vec,
+                space_id,
+                self._candidate_k,
+                self._embedder.dim,
+                sources,
+                effective_scopes,
             )
 
             kw_pages = _dedupe(kw)
@@ -150,11 +173,11 @@ class HybridRetriever:
             # Cross-encoder rerank the permitted candidates (never a doc the scope can't see).
             # FakeReranker is order-preserving, so offline this is exactly the pre-rerank ranking.
             to_rerank = allowed[: self._rerank_depth]
-            candidates = fetch_rerank_texts(session, to_rerank, space_id, sources)
+            candidates = fetch_rerank_texts(session, to_rerank, space_id, sources, effective_scopes)
             docs = [(pid, candidates[pid].text) for pid in to_rerank if pid in candidates]
 
         reranked = self._reranker.rerank(query, docs, top_k=k)
-        return [
+        hits = [
             RetrievedHit(
                 page_id=str(pid),
                 chunk_id=candidates[pid].chunk_id,
@@ -165,8 +188,15 @@ class HybridRetriever:
             for pid, score in reranked
             if pid in candidates
         ]
+        return hits, effective_scopes
 
-    def _trace(self, query: str, hits: Sequence[RetrievedHit], started: float) -> int | None:
+    def _trace(
+        self,
+        query: str,
+        hits: Sequence[RetrievedHit],
+        started: float,
+        allowed_knowledge_scopes: Sequence[str] | None,
+    ) -> int | None:
         if self._trace_sessionmaker is None:
             return None
         latency_ms = int((time.perf_counter() - started) * 1000)
@@ -181,19 +211,32 @@ class HybridRetriever:
                 embedding_model=self._embedder.model,
                 reranker_model=self._reranker.model,
                 latency_ms=latency_ms,
+                allowed_knowledge_scopes=allowed_knowledge_scopes,
             )
 
-    def retrieve(self, query: str, scope: str | None, k: int = 5) -> list[str]:
+    def retrieve(
+        self,
+        query: str,
+        scope: str | None,
+        k: int = 5,
+        knowledge_scopes: Sequence[str] | None = None,
+    ) -> list[str]:
         started = time.perf_counter()
-        hits = self._search(query, scope, k)
-        self._trace(query, hits, started)
+        hits, effective_scopes = self._search(query, scope, k, knowledge_scopes)
+        self._trace(query, hits, started, effective_scopes)
         return [h.page_id for h in hits]
 
-    def retrieve_with_context(self, query: str, scope: str | None, k: int = 5) -> RetrievalResult:
+    def retrieve_with_context(
+        self,
+        query: str,
+        scope: str | None,
+        k: int = 5,
+        knowledge_scopes: Sequence[str] | None = None,
+    ) -> RetrievalResult:
         """Phase 4.2 entry point: hits carry chunk id + score + title/url, plus the trace row id."""
         started = time.perf_counter()
-        hits = self._search(query, scope, k)
-        trace_id = self._trace(query, hits, started)
+        hits, effective_scopes = self._search(query, scope, k, knowledge_scopes)
+        trace_id = self._trace(query, hits, started, effective_scopes)
         return RetrievalResult(hits=hits, trace_id=trace_id)
 
     def fetch_parent_texts(self, chunk_ids: Sequence[int]) -> dict[int, str]:
