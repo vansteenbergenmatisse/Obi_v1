@@ -75,12 +75,19 @@ from sqlalchemy.orm import Session
 
 from app.features.rag_agent.domain.citations import enforce_citations
 from app.features.rag_agent.domain.clarification import AmbiguityClassifier, decide_clarification
+from app.features.rag_agent.domain.curated_knowledge import CuratedEntry, curated_entry_to_hit
 from app.features.rag_agent.domain.prompt import build_evidence_block
 from app.features.rag_agent.domain.refusal import RefusalReason, decide_refusal
 from app.features.rag_agent.domain.small_talk import is_small_talk
+from app.features.rag_agent.infrastructure.curated_knowledge_repo import fetch_curated_entries
 from app.features.rag_agent.infrastructure.llm_client import AnswerGenerator, QueryRewriter
 from app.features.rag_agent.schemas import Answer, ChatMessage, Citation
-from app.features.retrieval import HybridRetriever, RetrievalResult, update_query_trace_answer
+from app.features.retrieval import (
+    HybridRetriever,
+    RetrievalResult,
+    resolve_allowed_scopes,
+    update_query_trace_answer,
+)
 from app.platform.logging import get_logger
 
 log = get_logger("rag_agent.answer_service")
@@ -113,7 +120,9 @@ class AnswerProvider(Protocol):
     """The shape `POST /chat` depends on — satisfied by `AnswerService` itself and by
     `answer_cache.CachingAnswerService`, which wraps one `AnswerProvider` around another."""
 
-    def answer(self, history: Sequence[ChatMessage], scope: str | None) -> Answer: ...
+    def answer(
+        self, history: Sequence[ChatMessage], scope: str | None, knowledge_scope: str | None = None
+    ) -> Answer: ...
 
 
 class AnswerService:
@@ -130,6 +139,10 @@ class AnswerService:
         retrieve_k: int = 5,
         clarification_classifier: AmbiguityClassifier | None = None,
         enable_clarification_branch: bool = False,
+        recognized_knowledge_scopes: frozenset[str] = frozenset({"general"}),
+        default_knowledge_scope: str | None = None,
+        reader_sessionmaker: Callable[[], Session] | None = None,
+        curated_knowledge_max_entries: int = 5,
     ) -> None:
         self._retriever = retriever
         self._rewriter = rewriter
@@ -141,8 +154,20 @@ class AnswerService:
         self._retrieve_k = retrieve_k
         self._clarification_classifier = clarification_classifier
         self._enable_clarification_branch = enable_clarification_branch
+        self._recognized_knowledge_scopes = recognized_knowledge_scopes
+        self._default_knowledge_scope = default_knowledge_scope
+        # PLAN 10.6: `None` in any test/deployment that never wires a reader (mirrors
+        # `writer_sessionmaker`'s own no-op-when-unset posture at `_persist`, below) — curated
+        # entries are then simply never composed into evidence, not an error.
+        self._reader_sessionmaker = reader_sessionmaker
+        self._curated_knowledge_max_entries = curated_knowledge_max_entries
 
-    def answer(self, history: Sequence[ChatMessage], scope: str | None) -> Answer:
+    def answer(
+        self,
+        history: Sequence[ChatMessage],
+        scope: str | None,
+        knowledge_scope: str | None = None,
+    ) -> Answer:
         if not history or history[-1].role != "user":
             raise ValueError("history must be non-empty and end with a user turn")
         original_query = history[-1].content
@@ -175,10 +200,33 @@ class AnswerService:
                     clarification_options=reply.options,
                 )
 
+        # PLAN 10.5, ADR-0011 decision 6: resolved once per request, not per-retrieval-attempt — the
+        # CRAG retry below reuses the same allow-list, it never re-resolves it. Hoisted above the
+        # query/no-query split (PLAN 10.6): the always-present curated layer needs it on the
+        # text-empty/image-only path too, which never retrieves but still composes curated evidence.
+        allowed_scopes = resolve_allowed_scopes(
+            knowledge_scope, self._recognized_knowledge_scopes, self._default_knowledge_scope
+        )
+        requested_scope_unrecognized = (
+            knowledge_scope is not None
+            and knowledge_scope.lower() not in self._recognized_knowledge_scopes
+        )
+        if requested_scope_unrecognized:
+            # `resolve_allowed_scopes`'s own docstring: "The caller logs the degradation."
+            log.info(
+                "knowledge_scope_unrecognized",
+                requested=knowledge_scope,
+                resolved_scopes=allowed_scopes,
+            )
+
         if original_query.strip():
             rewritten = self._rewriter.rewrite(history) if self._rewrite_enabled else original_query
-            result = self._retriever.retrieve_with_context(rewritten, scope, k=self._retrieve_k)
-            result = self._apply_crag_retry(result, original_query, rewritten, scope)
+            result = self._retriever.retrieve_with_context(
+                rewritten, scope, k=self._retrieve_k, knowledge_scopes=allowed_scopes
+            )
+            result = self._apply_crag_retry(
+                result, original_query, rewritten, scope, allowed_scopes
+            )
         else:
             # A genuinely text-empty, image-only turn (PLAN 7.8) — there is no query to rewrite or
             # embed; the embedding provider rejects an empty string outright (OpenAI: 400 "input
@@ -219,11 +267,27 @@ class AnswerService:
                 image_analysis=image_analysis,
             )
 
+        # PLAN 10.6, ADR-0011: curated entries are always-present, scope-filtered evidence that
+        # rides through the exact same numbered evidence/citation machinery a real retrieved hit
+        # already uses — curated markers [1..k], retrieved markers [k+1..n] (build_evidence_block
+        # numbers `evidence_hits` in order, unchanged itself). Fetched fresh per request (tags can
+        # change between requests) and capped so curated content can never crowd out all retrieval
+        # evidence.
+        curated_entries = self._fetch_curated_entries(allowed_scopes)
+        curated_hits = [curated_entry_to_hit(e) for e in curated_entries]
+        evidence_hits = [*curated_hits, *result.hits]
         parent_texts = self._retriever.fetch_parent_texts([h.chunk_id for h in result.hits])
-        evidence = build_evidence_block(result.hits, parent_texts)
+        parent_texts = {
+            **parent_texts,
+            **{
+                hit.chunk_id: entry.body
+                for hit, entry in zip(curated_hits, curated_entries, strict=True)
+            },
+        }
+        evidence = build_evidence_block(evidence_hits, parent_texts)
         raw_answer = self._generator.generate(rewritten, evidence)
         cleaned, used_markers = enforce_citations(
-            raw_answer, valid_markers=range(1, len(result.hits) + 1)
+            raw_answer, valid_markers=range(1, len(evidence_hits) + 1)
         )
 
         if not used_markers:
@@ -252,9 +316,9 @@ class AnswerService:
         citations = [
             Citation(
                 marker=m,
-                page_id=result.hits[m - 1].page_id,
-                title=result.hits[m - 1].title,
-                url=result.hits[m - 1].url,
+                page_id=evidence_hits[m - 1].page_id,
+                title=evidence_hits[m - 1].title,
+                url=evidence_hits[m - 1].url,
             )
             for m in used_markers
         ]
@@ -273,20 +337,36 @@ class AnswerService:
         original_query: str,
         rewritten_query: str,
         scope: str | None,
+        knowledge_scopes: Sequence[str],
     ) -> RetrievalResult:
         """One corrective retry (PLAN 4.2 stage 6): if the rewrite may have hurt retrieval, retry
         with the user's verbatim query and keep whichever result scored higher. A no-op when
-        rewrite is disabled/unchanged — retrying an identical query would return the same result."""
+        rewrite is disabled/unchanged — retrying an identical query would return the same result.
+        `knowledge_scopes` is the same allow-list `answer()` already resolved once (PLAN 10.5) —
+        the retry must stay inside it too, never a second, unscoped search."""
         if self._crag_max_retries <= 0 or rewritten_query == original_query:
             return result
         if result.top_score is not None and result.top_score >= self._refusal_min_rerank_score:
             return result
-        retry = self._retriever.retrieve_with_context(original_query, scope, k=self._retrieve_k)
+        retry = self._retriever.retrieve_with_context(
+            original_query, scope, k=self._retrieve_k, knowledge_scopes=knowledge_scopes
+        )
         if retry.top_score is not None and (
             result.top_score is None or retry.top_score > result.top_score
         ):
             return retry
         return result
+
+    def _fetch_curated_entries(self, allowed_scopes: Sequence[str]) -> list[CuratedEntry]:
+        """PLAN 10.6: `[]` when no reader is wired — same no-op posture as `_persist` below when
+        `writer_sessionmaker` is unset, so a test/deployment that never configures curated
+        knowledge sees zero behavior change."""
+        if self._reader_sessionmaker is None:
+            return []
+        with self._reader_sessionmaker() as session:
+            return fetch_curated_entries(
+                session, allowed_scopes, self._curated_knowledge_max_entries
+            )
 
     def _persist(
         self,

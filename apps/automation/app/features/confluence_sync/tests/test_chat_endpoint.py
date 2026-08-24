@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import text
 
 from app.features.rag_agent import (
+    Answer,
     AnswerProvider,
     AnswerService,
     CachingAnswerService,
@@ -236,6 +237,86 @@ def test_image_within_caps_is_accepted_and_analysis_reaches_the_done_event(
     done = next(e for e in events if e["type"] == "done")
     assert done["imageAnalysis"] == "I see a diagram of the access-request flow."
     assert "I see a diagram" not in done["answer"]  # kept separate, not merged (decision 5)
+
+
+class _SpyAnswerService:
+    """PLAN 10.5: records exactly what `POST /chat` forwards into `AnswerService.answer` — used to
+    prove `knowledge_scope` reaches the service call without needing a real scoped corpus."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[object, str | None, str | None]] = []
+
+    def answer(self, history, scope, knowledge_scope=None):
+        self.calls.append((history, scope, knowledge_scope))
+        return Answer(text="ok", refused=False, trace_id="1")
+
+
+def test_knowledge_scope_is_forwarded_to_the_answer_service(gateway, settings: Settings) -> None:
+    chat_settings = _chat_settings(settings)
+    spy = _SpyAnswerService()
+    client = _client_with_service(chat_settings, spy)
+
+    resp = client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": "hi"}], "knowledge_scope": "mews"},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 200
+    assert spy.calls[0][2] == "mews"
+
+
+def test_omitted_knowledge_scope_forwards_none(gateway, settings: Settings) -> None:
+    chat_settings = _chat_settings(settings)
+    spy = _SpyAnswerService()
+    client = _client_with_service(chat_settings, spy)
+
+    resp = client.post(
+        "/chat", json={"history": [{"role": "user", "content": "hi"}]}, headers=_auth()
+    )
+
+    assert resp.status_code == 200
+    assert spy.calls[0][2] is None
+
+
+def test_malformed_knowledge_scope_is_rejected(gateway, settings: Settings) -> None:
+    """PLAN 10.5, ADR-0011 decision 6: shape-validated, not whitelisted — a value that could
+    never be a real scope (spaces, punctuation) is a 422, but an unrecognized-yet-well-shaped
+    value is still accepted (degrades gracefully inside `AnswerService`, see
+    `test_answer_service.py`)."""
+    chat_settings = _chat_settings(settings)
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+    resp = client.post(
+        "/chat",
+        json={
+            "history": [{"role": "user", "content": "hi"}],
+            "knowledge_scope": "not a real scope!",
+        },
+        headers=_auth(),
+    )
+    assert resp.status_code == 422
+
+
+def test_idempotency_key_replay_with_different_knowledge_scope_is_not_the_first_callers_answer(
+    gateway, settings: Settings
+) -> None:
+    """Same fix class as the principal/history idempotency-binding tests above (PLAN 4.6.3),
+    extended PLAN 10.5: a replay of the same `Idempotency-Key` with a different `knowledge_scope`
+    must not return the first caller's cached Answer."""
+    _index_corpus(gateway, settings)
+    chat_settings = _chat_settings(settings)
+    service = _grounded_service(gateway, chat_settings)
+    client = _client_with_service(chat_settings, service)
+
+    headers = {**_auth(), "idempotency-key": "shared-key"}
+    body = {"history": [{"role": "user", "content": "How do I request access?"}]}
+
+    general = _parse_sse(client.post("/chat", json=body, headers=headers).text)
+    mews = _parse_sse(
+        client.post("/chat", json={**body, "knowledge_scope": "mews"}, headers=headers).text
+    )
+
+    assert general[-1]["traceId"] != mews[-1]["traceId"]
 
 
 def test_numeric_principal_is_rejected_not_treated_as_space_wide_trust(

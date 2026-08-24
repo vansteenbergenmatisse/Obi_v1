@@ -9,16 +9,23 @@
  * not the backend's (union of both applies end to end):
  *
  * security_baseline (surface: POST /api/chat, tier STATE-MUTATING + LLM-CALL):
- *   C1_auth:        covered   - CHAT_API_KEY is read server-side only and injected as
- *                               `Authorization: Bearer` on the outbound call; never sent to
- *                               or readable by the browser. The browser->proxy leg has no
- *                               additional auth (documented gap, same posture as the backend's
- *                               own principal-trust model — no end-user login system exists yet).
- *   C2_rate_limit:  opted_out - the backend enforces C2 authoritatively on the exact same
- *                               request; a second, weaker in-memory limiter here (no shared
+ *   C1_auth:        covered   - two independent secrets, one per leg. `WIDGET_ACCESS_TOKEN`
+ *                               (`server/auth.ts`) gates browser->proxy: a shared invite token,
+ *                               constant-time compared, fails closed (503) if unconfigured
+ *                               (`docs/future-ideas/IDEAS.md` idea #6 — closes the
+ *                               previously-documented gap on this leg). `CHAT_API_KEY` is read
+ *                               server-side only and injected as `Authorization: Bearer` on the
+ *                               outbound call; never sent to or readable by the browser.
+ *   C2_rate_limit:  opted_out - the backend enforces C2 authoritatively on every request that
+ *                               reaches it; a second, weaker in-memory limiter here (no shared
  *                               store across serverless instances) would be redundant and could
  *                               drift from the backend's config. The backend's 429 is forwarded
- *                               verbatim.
+ *                               verbatim. Note: a request rejected by the new C1 token check
+ *                               never reaches the backend, so it's invisible to that counter —
+ *                               accepted because the rejection itself is cheap (no LLM call, no
+ *                               backend round trip, no corpus access) and the token is meant to
+ *                               be high-entropy, making brute-forcing it impractical regardless
+ *                               of request volume.
  *   C3_input:       covered   - `validation.ts` rejects malformed shape/JSON and a hard
  *                               resource-exhaustion body-size ceiling before any network call.
  *   C4_timeout:     covered   - `AbortSignal.timeout` on the outbound fetch (platform/
@@ -43,6 +50,7 @@ import {
   callAutomationApi,
   readAutomationApiConfig,
 } from "@/platform/automation-api";
+import { verifyWidgetAccessToken } from "./auth";
 import { parseChatRequestBody, parseFeedbackBody } from "./validation";
 
 const IDEMPOTENCY_HEADER = "idempotency-key";
@@ -58,6 +66,16 @@ const FEEDBACK_TIMEOUT_MS = 15_000;
 
 function errorResponse(status: number, error: string): Response {
   return Response.json({ error }, { status });
+}
+
+/** Runs first in both handlers, before any body parsing (C1) — an unauthenticated request never
+ * pays for JSON parsing or reaches the backend. Never logs the attempted token value. */
+function rejectUnauthorized(request: Request, logPrefix: string): Response | null {
+  const auth = verifyWidgetAccessToken(request);
+  if (auth.ok) return null;
+  const status = auth.reason === "unconfigured" ? 503 : 401;
+  console.warn(`${logPrefix}_unauthorized`, { status });
+  return errorResponse(status, status === 503 ? "chat is not configured" : "unauthorized");
 }
 
 async function readJsonBody(request: Request): Promise<ParsedBody> {
@@ -89,6 +107,7 @@ function toBackendChatBody(request: ChatRequest): Record<string, unknown> {
     conversation_id: request.conversationId,
     history: request.history,
     principal: request.principal,
+    knowledge_scope: request.knowledgeScope,
   };
 }
 
@@ -102,6 +121,9 @@ async function forwardBackendJson(backendResponse: Response): Promise<Response> 
 }
 
 export async function handlePostChat(request: Request): Promise<Response> {
+  const unauthorized = rejectUnauthorized(request, "chat_proxy");
+  if (unauthorized) return unauthorized;
+
   const parsedBody = await readJsonBody(request);
   if (!parsedBody.ok) {
     return errorResponse(parsedBody.status ?? 400, parsedBody.error);
@@ -160,6 +182,9 @@ export async function handlePostChat(request: Request): Promise<Response> {
 }
 
 export async function handlePatchFeedback(request: Request, traceId: string): Promise<Response> {
+  const unauthorized = rejectUnauthorized(request, "chat_feedback_proxy");
+  if (unauthorized) return unauthorized;
+
   const parsedBody = await readJsonBody(request);
   if (!parsedBody.ok) {
     return errorResponse(parsedBody.status ?? 400, parsedBody.error);

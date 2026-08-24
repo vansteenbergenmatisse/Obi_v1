@@ -103,6 +103,10 @@ def build_answer_service(settings: Settings) -> AnswerService:
         retrieve_k=settings.rerank_top_k,
         clarification_classifier=AnthropicAmbiguityClassifier(client, settings.routing_model),
         enable_clarification_branch=settings.enable_clarification_branch,
+        recognized_knowledge_scopes=settings.knowledge_scope_set,
+        default_knowledge_scope=settings.default_knowledge_scope or None,
+        reader_sessionmaker=get_reader_sessionmaker(),
+        curated_knowledge_max_entries=settings.curated_knowledge_max_entries,
     )
 
 

@@ -41,6 +41,9 @@ export function parseChatRequestBody(json: unknown): ParseResult<ChatRequest> {
   if (body.principal !== undefined && typeof body.principal !== "string") {
     return { ok: false, error: "principal must be a string" };
   }
+  if (body.knowledgeScope !== undefined && typeof body.knowledgeScope !== "string") {
+    return { ok: false, error: "knowledgeScope must be a string" };
+  }
   if (!Array.isArray(body.history) || body.history.length === 0) {
     return { ok: false, error: "history must be a non-empty array" };
   }
@@ -64,6 +67,7 @@ export function parseChatRequestBody(json: unknown): ParseResult<ChatRequest> {
       conversationId: body.conversationId as string | undefined,
       history,
       principal: body.principal as string | undefined,
+      knowledgeScope: body.knowledgeScope as string | undefined,
     },
   };
 }

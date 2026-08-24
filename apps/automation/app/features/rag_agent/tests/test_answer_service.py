@@ -18,6 +18,7 @@ from app.features.rag_agent.application.answer_service import (
     AnswerService,
 )
 from app.features.rag_agent.domain.clarification import ClarificationReply
+from app.features.rag_agent.domain.curated_knowledge import CuratedEntry
 from app.features.rag_agent.schemas import ChatMessage, ImageAttachment
 from app.features.retrieval import RetrievalResult, RetrievedHit
 
@@ -32,9 +33,16 @@ class _FakeRetriever:
         self._results = results_by_query
         self._parents = parent_texts
         self.retrieve_calls: list[tuple[str, str | None, int]] = []
+        # Tracked separately from `retrieve_calls` (PLAN 10.5) so the dozens of pre-existing
+        # 3-tuple assertions on `retrieve_calls` stay untouched — only tests that care about
+        # knowledge-scope threading need to look here.
+        self.knowledge_scopes_calls: list[object] = []
 
-    def retrieve_with_context(self, query: str, scope: str | None, k: int = 5) -> RetrievalResult:
+    def retrieve_with_context(
+        self, query: str, scope: str | None, k: int = 5, knowledge_scopes=None
+    ) -> RetrievalResult:
         self.retrieve_calls.append((query, scope, k))
+        self.knowledge_scopes_calls.append(knowledge_scopes)
         return self._results[query]
 
     def fetch_parent_texts(self, chunk_ids):
@@ -158,6 +166,18 @@ class _FakeSession:
         self.committed = True
 
     def __enter__(self) -> _FakeSession:
+        return self
+
+    def __exit__(self, *exc) -> None:
+        return None
+
+
+class _DummyReaderSession:
+    """A reader-session stand-in for curated-knowledge tests: `_fetch_curated_entries` only ever
+    uses it as a context manager and hands it straight to a monkeypatched `fetch_curated_entries`,
+    so it never needs to behave like a real `Session`."""
+
+    def __enter__(self) -> _DummyReaderSession:
         return self
 
     def __exit__(self, *exc) -> None:
@@ -722,3 +742,209 @@ def test_image_analysis_is_never_passed_through_citation_enforcement() -> None:
     assert result.image_analysis == "A screenshot with no markers."
     assert [c.marker for c in result.citations] == [1]
     assert result.text == "Answer [1]."  # unchanged — image analysis is not appended into it
+
+
+# -- PLAN 10.5, ADR-0011 decision 6: knowledge_scope threading -----------------------------
+
+
+def test_recognized_knowledge_scope_reaches_retriever_as_general_plus_scope() -> None:
+    retriever = _FakeRetriever({"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, {501: "text"})
+    generator = _FakeGenerator("Answer [1].")
+    service, _ = _service(
+        retriever,
+        _FakeRewriter("q"),
+        generator,
+        recognized_knowledge_scopes=frozenset({"general", "mews", "toast"}),
+    )
+
+    service.answer([ChatMessage(role="user", content="q")], scope=None, knowledge_scope="mews")
+
+    assert retriever.knowledge_scopes_calls == [["general", "mews"]]
+
+
+def test_unrecognized_knowledge_scope_degrades_to_general_without_raising(monkeypatch) -> None:
+    fake_log = _FakeLog()
+    monkeypatch.setattr(answer_service_module, "log", fake_log)
+    retriever = _FakeRetriever({"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, {501: "text"})
+    generator = _FakeGenerator("Answer [1].")
+    service, _ = _service(
+        retriever,
+        _FakeRewriter("q"),
+        generator,
+        recognized_knowledge_scopes=frozenset({"general", "mews"}),
+    )
+
+    result = service.answer(
+        [ChatMessage(role="user", content="q")], scope=None, knowledge_scope="not-a-real-scope"
+    )
+
+    assert not result.refused  # never a hard failure over a stale/misconfigured embed
+    assert retriever.knowledge_scopes_calls == [["general"]]
+    degraded = [
+        fields for event, fields in fake_log.calls if event == "knowledge_scope_unrecognized"
+    ]
+    assert degraded == [{"requested": "not-a-real-scope", "resolved_scopes": ["general"]}]
+
+
+def test_omitted_knowledge_scope_falls_back_to_deployment_default() -> None:
+    retriever = _FakeRetriever({"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, {501: "text"})
+    generator = _FakeGenerator("Answer [1].")
+    service, _ = _service(
+        retriever,
+        _FakeRewriter("q"),
+        generator,
+        recognized_knowledge_scopes=frozenset({"general", "opera-cloud"}),
+        default_knowledge_scope="opera-cloud",
+    )
+
+    service.answer([ChatMessage(role="user", content="q")], scope=None)
+
+    assert retriever.knowledge_scopes_calls == [["general", "opera-cloud"]]
+
+
+def test_omitted_knowledge_scope_with_no_default_is_general_alone() -> None:
+    retriever = _FakeRetriever({"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, {501: "text"})
+    generator = _FakeGenerator("Answer [1].")
+    service, _ = _service(retriever, _FakeRewriter("q"), generator)
+
+    service.answer([ChatMessage(role="user", content="q")], scope=None)
+
+    assert retriever.knowledge_scopes_calls == [["general"]]
+
+
+def test_crag_retry_reuses_the_same_resolved_allowed_scopes() -> None:
+    """PLAN 10.5: `allowed_scopes` is resolved once per request, not per retrieval attempt — the
+    CRAG retry must be filtered by the exact same allow-list as the first attempt."""
+    weak = RetrievalResult(hits=[RetrievedHit("101", 501, 0.05, "Weak", "u")], trace_id=1)
+    strong = RetrievalResult(hits=[_HIT_A], trace_id=1)
+    retriever = _FakeRetriever(
+        {"rewritten q": weak, "original q": strong}, parent_texts={501: "text"}
+    )
+    generator = _FakeGenerator("Grounded [1].")
+    service, _ = _service(
+        retriever,
+        _FakeRewriter("rewritten q"),
+        generator,
+        refusal_min_rerank_score=0.10,
+        recognized_knowledge_scopes=frozenset({"general", "mews"}),
+    )
+
+    service.answer(
+        [ChatMessage(role="user", content="original q")], scope=None, knowledge_scope="mews"
+    )
+
+    assert retriever.knowledge_scopes_calls == [["general", "mews"], ["general", "mews"]]
+
+
+def test_no_reader_sessionmaker_configured_composes_zero_curated_entries() -> None:
+    """PLAN 10.6: no behavior change for any deployment/test that never wires curated knowledge —
+    mirrors `_persist`'s own no-op-when-unset posture for `writer_sessionmaker`. Every other test in
+    this file relies on this default."""
+    retriever = _FakeRetriever({"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, {501: "text"})
+    generator = _FakeGenerator("Answer [1].")
+    service, _ = _service(retriever, _FakeRewriter("q"), generator)
+
+    result = service.answer([ChatMessage(role="user", content="q")], scope=None)
+
+    assert not result.refused
+    assert result.citations[0].page_id == "101"  # marker 1 is still the real retrieved hit
+
+
+def test_curated_entries_are_prepended_as_markers_1_through_k(monkeypatch) -> None:
+    """PLAN 10.6, ADR-0011: curated markers `[1..k]`, retrieved hits `[k+1..n]` — the plan's own
+    numbering scheme, reusing `build_evidence_block`/`enforce_citations` unchanged."""
+    curated = [CuratedEntry(id=9, tags=(), title="General FAQ", body="Curated body.")]
+    monkeypatch.setattr(
+        answer_service_module, "fetch_curated_entries", lambda session, scopes, limit: curated
+    )
+    retriever = _FakeRetriever(
+        {"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, parent_texts={501: "Retrieved body."}
+    )
+    generator = _FakeGenerator("Curated fact [1]. Retrieved fact [2].")
+    service, _ = _service(
+        retriever, _FakeRewriter("q"), generator, reader_sessionmaker=_DummyReaderSession
+    )
+
+    result = service.answer([ChatMessage(role="user", content="q")], scope=None)
+
+    assert not result.refused
+    assert generator.called_with[0][1] == (
+        "[1] General FAQ\nCurated body.\n\n[2] Onboarding Guide\nRetrieved body."
+    )
+    assert [c.marker for c in result.citations] == [1, 2]
+    assert (result.citations[0].page_id, result.citations[0].title, result.citations[0].url) == (
+        "curated:9",
+        "General FAQ",
+        "",
+    )
+    assert result.citations[1].page_id == "101"
+
+
+def test_curated_entry_citation_survives_enforce_citations_exactly_like_a_retrieved_one(
+    monkeypatch,
+) -> None:
+    """PLAN 10.6 acceptance: a claim sourced only from a curated entry must not be stripped, even
+    when a real retrieved hit also sits in the evidence and refusal has already been decided on
+    that hit's score (refusal never looks at curated entries — see the plan's own scope: it only
+    touches evidence/citation composition, not `decide_refusal`)."""
+    curated = [CuratedEntry(id=1, tags=(), title="General FAQ", body="Curated body.")]
+    monkeypatch.setattr(
+        answer_service_module, "fetch_curated_entries", lambda session, scopes, limit: curated
+    )
+    retriever = _FakeRetriever(
+        {"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, parent_texts={501: "text"}
+    )
+    generator = _FakeGenerator("Only the curated fact [1].")
+    service, _ = _service(
+        retriever, _FakeRewriter("q"), generator, reader_sessionmaker=_DummyReaderSession
+    )
+
+    result = service.answer([ChatMessage(role="user", content="q")], scope=None)
+
+    assert not result.refused
+    assert result.text == "Only the curated fact [1]."
+    assert len(result.citations) == 1
+    assert result.citations[0].page_id == "curated:1"
+
+
+def test_curated_entries_fetched_with_the_same_resolved_allowed_scopes(monkeypatch) -> None:
+    seen_scopes: list[object] = []
+
+    def _fake_fetch(session, scopes, limit):
+        seen_scopes.append(scopes)
+        return []
+
+    monkeypatch.setattr(answer_service_module, "fetch_curated_entries", _fake_fetch)
+    retriever = _FakeRetriever({"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, {501: "text"})
+    generator = _FakeGenerator("Answer [1].")
+    service, _ = _service(
+        retriever,
+        _FakeRewriter("q"),
+        generator,
+        reader_sessionmaker=_DummyReaderSession,
+        recognized_knowledge_scopes=frozenset({"general", "mews"}),
+    )
+
+    service.answer([ChatMessage(role="user", content="q")], scope=None, knowledge_scope="mews")
+
+    assert seen_scopes == [["general", "mews"]]
+
+
+def test_curated_entries_still_compose_on_the_text_empty_image_only_path(monkeypatch) -> None:
+    """PLAN 10.6: the always-present layer must reach the image-only path too, which never
+    retrieves — this is why `allowed_scopes` resolution moved above the query/no-query split."""
+    curated = [CuratedEntry(id=1, tags=(), title="General FAQ", body="Curated body.")]
+    monkeypatch.setattr(
+        answer_service_module, "fetch_curated_entries", lambda session, scopes, limit: curated
+    )
+    retriever = _FakeRetriever({}, {})  # never called -- the image-only path skips retrieval
+    generator = _FakeGenerator("Curated fact [1].")
+    service, _ = _service(
+        retriever, _RaisingRewriter(), generator, reader_sessionmaker=_DummyReaderSession
+    )
+
+    history = [ChatMessage(role="user", content="", images=[_IMAGE])]
+    result = service.answer(history, scope=None)
+
+    assert not result.refused
+    assert result.citations[0].page_id == "curated:1"

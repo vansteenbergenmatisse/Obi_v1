@@ -59,6 +59,14 @@ export interface ChatRequest {
    * (ADR-0004) — absent/unverified never widens access.
    */
   principal?: string;
+  /**
+   * Which third-party platform's documentation this deployment/embed is
+   * scoped to (ADR-0011 decision 6), e.g. `"mews"`, `"opera-cloud"`,
+   * `"toast"`. Resolved once per request, not inferred from message
+   * content. Omitted or unrecognized falls back to the deployment default
+   * (or `general` alone) server-side — never a hard error.
+   */
+  knowledgeScope?: string;
 }
 
 // ---- Chat: streamed response ------------------------------------------------

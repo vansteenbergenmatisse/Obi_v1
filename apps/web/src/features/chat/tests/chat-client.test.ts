@@ -1,5 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatStreamEvent } from "@omniboost/contracts";
+
+const { getWidgetAccessTokenMock } = vi.hoisted(() => ({
+  getWidgetAccessTokenMock: vi.fn(),
+}));
+
+vi.mock("../api/access-token", () => ({
+  getWidgetAccessToken: getWidgetAccessTokenMock,
+}));
+
 import { sendFeedback, streamChat } from "../api/chat-client";
 
 function sse(event: ChatStreamEvent): string {
@@ -34,10 +43,32 @@ describe("streamChat", () => {
   beforeEach(() => {
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
+    getWidgetAccessTokenMock.mockReset();
+    getWidgetAccessTokenMock.mockReturnValue(null);
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  it("attaches the access token header when one is present", async () => {
+    getWidgetAccessTokenMock.mockReturnValue("invite-abc123");
+    fetchMock.mockResolvedValue(okStreamResponse([sse({ type: "start", conversationId: "c" })]));
+
+    await streamChat({ history: [{ role: "user", content: "hi" }] }, {});
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init.headers as Record<string, string>)["x-widget-access-token"]).toBe("invite-abc123");
+  });
+
+  it("omits the access token header when none is present", async () => {
+    getWidgetAccessTokenMock.mockReturnValue(null);
+    fetchMock.mockResolvedValue(okStreamResponse([sse({ type: "start", conversationId: "c" })]));
+
+    await streamChat({ history: [{ role: "user", content: "hi" }] }, {});
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init.headers as Record<string, string>)["x-widget-access-token"]).toBeUndefined();
   });
 
   it("dispatches start/token/citations/done in order from a single chunk", async () => {
@@ -127,6 +158,8 @@ describe("sendFeedback", () => {
   beforeEach(() => {
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
+    getWidgetAccessTokenMock.mockReset();
+    getWidgetAccessTokenMock.mockReturnValue(null);
   });
 
   afterEach(() => {
@@ -143,6 +176,26 @@ describe("sendFeedback", () => {
       "/api/chat/trace-1/feedback",
       expect.objectContaining({ method: "PATCH" }),
     );
+  });
+
+  it("attaches the access token header when one is present", async () => {
+    getWidgetAccessTokenMock.mockReturnValue("invite-abc123");
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    await sendFeedback("trace-1", 1);
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init.headers as Record<string, string>)["x-widget-access-token"]).toBe("invite-abc123");
+  });
+
+  it("omits the access token header when none is present", async () => {
+    getWidgetAccessTokenMock.mockReturnValue(null);
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    await sendFeedback("trace-1", 1);
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect((init.headers as Record<string, string>)["x-widget-access-token"]).toBeUndefined();
   });
 
   it("throws ChatRequestError on a non-ok response", async () => {

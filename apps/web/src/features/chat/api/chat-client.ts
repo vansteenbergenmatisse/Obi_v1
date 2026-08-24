@@ -13,8 +13,17 @@ import type {
   FeedbackRequest,
   FeedbackResponse,
 } from "@omniboost/contracts";
+import { getWidgetAccessToken } from "./access-token";
 
 const CHAT_ENDPOINT = "/api/chat";
+const ACCESS_TOKEN_HEADER = "x-widget-access-token";
+
+/** Attaches the widget's shared invite token (idea #6) when one has been captured; omitted
+ * entirely when absent so the server sees a plain missing header, not an empty one. */
+function accessTokenHeaders(): Record<string, string> {
+  const token = getWidgetAccessToken();
+  return token ? { [ACCESS_TOKEN_HEADER]: token } : {};
+}
 
 /** Thrown when the fetch itself fails, or the server rejects the request before any
  * streaming starts (auth/validation/rate-limit/config failures — never a mid-stream event). */
@@ -47,7 +56,7 @@ export async function streamChat(
   try {
     response = await fetch(CHAT_ENDPOINT, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...accessTokenHeaders() },
       body: JSON.stringify(request),
       signal,
     });
@@ -119,7 +128,7 @@ export async function sendFeedback(
 ): Promise<FeedbackResponse> {
   const response = await fetch(`${CHAT_ENDPOINT}/${encodeURIComponent(traceId)}/feedback`, {
     method: "PATCH",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...accessTokenHeaders() },
     body: JSON.stringify({ feedback } satisfies FeedbackRequest),
   });
   const body = (await response.json().catch(() => null)) as (FeedbackResponse & { error?: string }) | null;

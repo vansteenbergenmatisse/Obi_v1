@@ -13,7 +13,11 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import type { ChatTurn, ImageAttachment } from "@omniboost/contracts";
+import { captureWidgetAccessToken } from "../api/access-token";
 import { ChatRequestError, sendFeedback, streamChat } from "../api/chat-client";
+
+const ACCESS_TOKEN_EXPIRED_MESSAGE =
+  "Your access link has expired — open the chat from your invite link again.";
 import type { ChatMessage, SentImage } from "../model/messages";
 import type { Locale } from "../model/i18n";
 
@@ -52,7 +56,20 @@ export interface ChatSession {
 
 const ChatSessionContext = createContext<ChatSession | null>(null);
 
-export function ChatSessionProvider({ children }: { children: ReactNode }) {
+export interface ChatSessionProviderProps {
+  children: ReactNode;
+  /**
+   * Which third-party platform this deployment/embed is scoped to
+   * (ADR-0011 decision 6) — set once at widget initialization (the
+   * embedding page/deployment declares which platform it is), not
+   * re-derived per message. Omitted means the backend's default/general
+   * scope applies. A visible switcher for this value is PLAN 10.8, not
+   * this plumbing.
+   */
+  knowledgeScope?: string;
+}
+
+export function ChatSessionProvider({ children, knowledgeScope }: ChatSessionProviderProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState(false);
   const [locale, setLocale] = useState<Locale>("en");
@@ -62,6 +79,13 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     return () => abortRef.current?.abort();
+  }, []);
+
+  // Runs once per full page load (this provider is mounted once at the app root) — picks up an
+  // invite link's `?access_token=` if present (idea #6), otherwise reuses whatever was already
+  // captured this session.
+  useEffect(() => {
+    captureWidgetAccessToken();
   }, []);
 
   function makeId(prefix: string) {
@@ -110,7 +134,7 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
 
     try {
       await streamChat(
-        { conversationId: conversationId.current, history },
+        { conversationId: conversationId.current, history, knowledgeScope },
         {
           onStart: (id) => {
             conversationId.current = id;
@@ -136,7 +160,12 @@ export function ChatSessionProvider({ children }: { children: ReactNode }) {
         controller.signal,
       );
     } catch (error) {
-      const message = error instanceof ChatRequestError ? error.message : "request failed";
+      const message =
+        error instanceof ChatRequestError
+          ? error.status === 401
+            ? ACCESS_TOKEN_EXPIRED_MESSAGE
+            : error.message
+          : "request failed";
       updateAssistant({ text: message, status: "error" });
     } finally {
       setPending(false);

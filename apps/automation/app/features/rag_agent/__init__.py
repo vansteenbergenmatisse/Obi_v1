@@ -35,6 +35,8 @@ from __future__ import annotations
 from .application.answer_cache import CachingAnswerService
 from .application.answer_service import AnswerProvider, AnswerService
 from .domain.clarification import ClarificationReply
+from .domain.curated_knowledge import CuratedEntry
+from .infrastructure.curated_knowledge_repo import fetch_curated_entries
 from .infrastructure.llm_client import (
     AnswerGenerator,
     AnthropicAmbiguityClassifier,
@@ -50,6 +52,7 @@ __all__ = [
     "ChatMessage",
     "Citation",
     "ClarificationReply",
+    "CuratedEntry",
     "ImageAttachment",
     "AnswerService",
     "AnswerProvider",
@@ -59,6 +62,7 @@ __all__ = [
     "AnthropicQueryRewriter",
     "AnthropicAnswerGenerator",
     "AnthropicAmbiguityClassifier",
+    "fetch_curated_entries",
     "router",
     "chat_router_module",
 ]

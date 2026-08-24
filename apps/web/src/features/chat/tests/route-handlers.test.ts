@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { callAutomationApiMock, readAutomationApiConfigMock } = vi.hoisted(() => ({
   callAutomationApiMock: vi.fn(),
@@ -12,22 +12,33 @@ vi.mock("@/platform/automation-api", () => ({
 }));
 
 import { AutomationApiConfigError } from "@/platform/automation-api";
+import { ACCESS_TOKEN_HEADER } from "../server/auth";
 import { handlePatchFeedback, handlePostChat } from "../server/route-handlers";
 
 const FAKE_CONFIG = { baseUrl: "http://backend.internal", apiKey: "secret", timeoutMs: 1000 };
+const VALID_ACCESS_TOKEN = "test-widget-token";
+const ORIGINAL_WIDGET_TOKEN = process.env.WIDGET_ACCESS_TOKEN;
 
 function jsonRequest(body: unknown, headers: Record<string, string> = {}): Request {
   return new Request("http://localhost/api/chat", {
     method: "POST",
-    headers: { "content-type": "application/json", ...headers },
+    headers: {
+      "content-type": "application/json",
+      [ACCESS_TOKEN_HEADER]: VALID_ACCESS_TOKEN,
+      ...headers,
+    },
     body: JSON.stringify(body),
   });
 }
 
-function feedbackRequest(body: unknown): Request {
+function feedbackRequest(body: unknown, headers: Record<string, string> = {}): Request {
   return new Request("http://localhost/api/chat/trace-1/feedback", {
     method: "PATCH",
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json",
+      [ACCESS_TOKEN_HEADER]: VALID_ACCESS_TOKEN,
+      ...headers,
+    },
     body: JSON.stringify(body),
   });
 }
@@ -36,11 +47,50 @@ beforeEach(() => {
   callAutomationApiMock.mockReset();
   readAutomationApiConfigMock.mockReset();
   readAutomationApiConfigMock.mockReturnValue(FAKE_CONFIG);
+  process.env.WIDGET_ACCESS_TOKEN = VALID_ACCESS_TOKEN;
+});
+
+afterEach(() => {
+  if (ORIGINAL_WIDGET_TOKEN === undefined) {
+    delete process.env.WIDGET_ACCESS_TOKEN;
+  } else {
+    process.env.WIDGET_ACCESS_TOKEN = ORIGINAL_WIDGET_TOKEN;
+  }
 });
 
 describe("handlePostChat", () => {
+  it("rejects a request with no access token before calling the backend", async () => {
+    const request = new Request("http://localhost/api/chat", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ history: [{ role: "user", content: "hi" }] }),
+    });
+    const response = await handlePostChat(request);
+    expect(response.status).toBe(401);
+    expect(callAutomationApiMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a request with a wrong access token before calling the backend", async () => {
+    const response = await handlePostChat(
+      jsonRequest({ history: [{ role: "user", content: "hi" }] }, { [ACCESS_TOKEN_HEADER]: "wrong-token" }),
+    );
+    expect(response.status).toBe(401);
+    expect(callAutomationApiMock).not.toHaveBeenCalled();
+  });
+
+  it("fails closed with 503 when WIDGET_ACCESS_TOKEN itself is unconfigured", async () => {
+    delete process.env.WIDGET_ACCESS_TOKEN;
+    const response = await handlePostChat(jsonRequest({ history: [{ role: "user", content: "hi" }] }));
+    expect(response.status).toBe(503);
+    expect(callAutomationApiMock).not.toHaveBeenCalled();
+  });
+
   it("rejects malformed JSON before calling the backend", async () => {
-    const request = new Request("http://localhost/api/chat", { method: "POST", body: "{not json" });
+    const request = new Request("http://localhost/api/chat", {
+      method: "POST",
+      headers: { [ACCESS_TOKEN_HEADER]: VALID_ACCESS_TOKEN },
+      body: "{not json",
+    });
     const response = await handlePostChat(request);
     expect(response.status).toBe(400);
     expect(callAutomationApiMock).not.toHaveBeenCalled();
@@ -94,6 +144,21 @@ describe("handlePostChat", () => {
     });
   });
 
+  it("forwards knowledgeScope unmodified as knowledge_scope", async () => {
+    callAutomationApiMock.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+
+    const request = jsonRequest({
+      knowledgeScope: "mews",
+      history: [{ role: "user", content: "hi" }],
+    });
+    await handlePostChat(request);
+
+    expect(callAutomationApiMock).toHaveBeenCalledWith(
+      FAKE_CONFIG,
+      expect.objectContaining({ body: expect.objectContaining({ knowledge_scope: "mews" }) }),
+    );
+  });
+
   it("forwards the backend's error status and body verbatim", async () => {
     callAutomationApiMock.mockResolvedValue(
       new Response(JSON.stringify({ error: "rate limited" }), { status: 429 }),
@@ -143,6 +208,33 @@ describe("handlePostChat", () => {
 });
 
 describe("handlePatchFeedback", () => {
+  it("rejects a request with no access token before calling the backend", async () => {
+    const request = new Request("http://localhost/api/chat/trace-1/feedback", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ feedback: 1 }),
+    });
+    const response = await handlePatchFeedback(request, "trace-1");
+    expect(response.status).toBe(401);
+    expect(callAutomationApiMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a request with a wrong access token before calling the backend", async () => {
+    const response = await handlePatchFeedback(
+      feedbackRequest({ feedback: 1 }, { [ACCESS_TOKEN_HEADER]: "wrong-token" }),
+      "trace-1",
+    );
+    expect(response.status).toBe(401);
+    expect(callAutomationApiMock).not.toHaveBeenCalled();
+  });
+
+  it("fails closed with 503 when WIDGET_ACCESS_TOKEN itself is unconfigured", async () => {
+    delete process.env.WIDGET_ACCESS_TOKEN;
+    const response = await handlePatchFeedback(feedbackRequest({ feedback: 1 }), "trace-1");
+    expect(response.status).toBe(503);
+    expect(callAutomationApiMock).not.toHaveBeenCalled();
+  });
+
   it("rejects an invalid feedback value before calling the backend", async () => {
     const response = await handlePatchFeedback(feedbackRequest({ feedback: 0 }), "trace-1");
     expect(response.status).toBe(400);

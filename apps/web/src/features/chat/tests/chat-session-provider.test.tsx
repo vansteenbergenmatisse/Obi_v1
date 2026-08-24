@@ -9,8 +9,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ChatStreamEvent } from "@omniboost/contracts";
-import { ChatSessionProvider, useChatSession } from "../ui/chat-session-provider";
 import type { SentImage } from "../model/messages";
+
+const { captureWidgetAccessTokenMock } = vi.hoisted(() => ({
+  captureWidgetAccessTokenMock: vi.fn(),
+}));
+
+// `chat-client.ts` (exercised for real, not mocked, by these tests) also imports this module
+// for `getWidgetAccessToken` — both exports must stay present or its fetch calls will throw.
+vi.mock("../api/access-token", () => ({
+  captureWidgetAccessToken: captureWidgetAccessTokenMock,
+  getWidgetAccessToken: () => null,
+}));
+
+import { ChatSessionProvider, useChatSession } from "../ui/chat-session-provider";
 
 function sse(event: ChatStreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
@@ -56,11 +68,52 @@ describe("ChatSessionProvider", () => {
   beforeEach(() => {
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
+    captureWidgetAccessTokenMock.mockReset();
   });
 
   afterEach(() => {
     cleanup();
     vi.unstubAllGlobals();
+  });
+
+  it("captures the widget access token once on mount", () => {
+    render(
+      <ChatSessionProvider>
+        <Harness />
+      </ChatSessionProvider>,
+    );
+
+    expect(captureWidgetAccessTokenMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows an actionable message when the access token is rejected (401)", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 }),
+    );
+
+    function ErrorHarness() {
+      const { messages, sendMessage } = useChatSession();
+      const assistant = messages.find((m) => m.role === "assistant");
+      return (
+        <div>
+          <button onClick={() => sendMessage("hi")}>send</button>
+          <div data-testid="error-text">{assistant?.text ?? ""}</div>
+        </div>
+      );
+    }
+
+    render(
+      <ChatSessionProvider>
+        <ErrorHarness />
+      </ChatSessionProvider>,
+    );
+
+    await userEvent.click(screen.getByText("send"));
+    await waitFor(() =>
+      expect(screen.getByTestId("error-text").textContent).toBe(
+        "Your access link has expired — open the chat from your invite link again.",
+      ),
+    );
   });
 
   it("clears messages and pending state", async () => {
@@ -108,6 +161,54 @@ describe("ChatSessionProvider", () => {
 
     expect(capturedSignal?.aborted).toBe(true);
     expect(screen.getByTestId("count").textContent).toBe("0");
+  });
+
+  it("sends the configured knowledgeScope on the outgoing request", async () => {
+    let requestBody: unknown;
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+      requestBody = init?.body ? JSON.parse(init.body as string) : undefined;
+      return Promise.resolve(
+        okStreamResponse([
+          sse({ type: "start", conversationId: "conv-1" }),
+          sse({ type: "done", answer: "hi", citations: [], traceId: "trace-1", refused: false }),
+        ]),
+      );
+    });
+
+    render(
+      <ChatSessionProvider knowledgeScope="mews">
+        <Harness />
+      </ChatSessionProvider>,
+    );
+
+    await userEvent.click(screen.getByText("send"));
+    await waitFor(() => expect(requestBody).toBeDefined());
+
+    expect((requestBody as { knowledgeScope?: string }).knowledgeScope).toBe("mews");
+  });
+
+  it("omits knowledgeScope from the outgoing request when not configured", async () => {
+    let requestBody: unknown;
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+      requestBody = init?.body ? JSON.parse(init.body as string) : undefined;
+      return Promise.resolve(
+        okStreamResponse([
+          sse({ type: "start", conversationId: "conv-1" }),
+          sse({ type: "done", answer: "hi", citations: [], traceId: "trace-1", refused: false }),
+        ]),
+      );
+    });
+
+    render(
+      <ChatSessionProvider>
+        <Harness />
+      </ChatSessionProvider>,
+    );
+
+    await userEvent.click(screen.getByText("send"));
+    await waitFor(() => expect(requestBody).toBeDefined());
+
+    expect((requestBody as { knowledgeScope?: string }).knowledgeScope).toBeUndefined();
   });
 
   it("attaches images to the newest history turn only, and reads imageAnalysis back off done", async () => {

@@ -14,6 +14,10 @@ export default defineConfig({
     // Pure-logic tests (*.test.ts) stay on the fast node environment; component tests
     // (*.test.tsx) need a DOM, so they alone pay the jsdom cost.
     environmentMatchGlobs: [["src/**/*.test.tsx", "jsdom"]],
+    // jsdom's own default document URL ("about:blank") has no real origin, so
+    // `history.replaceState`/`pushState` throw a same-origin SecurityError — needed by
+    // access-token.test.tsx, which exercises real URL/history behavior, not a mock.
+    environmentOptions: { jsdom: { url: "http://localhost/" } },
     setupFiles: ["./src/test-setup.ts"],
     include: ["src/**/*.test.{ts,tsx}"],
     server: {

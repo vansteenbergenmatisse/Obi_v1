@@ -23,7 +23,13 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
                               per-turn image count cap (chat_max_images_per_turn) + per-image byte
                               cap (chat_max_image_bytes), checked on every turn's `images`, not
                               just the newest — a caller could otherwise stuff an oversized image
-                              on an older turn to dodge a newest-turn-only check.
+                              on an older turn to dodge a newest-turn-only check. PLAN 10.5
+                              (ADR-0011 decision 6): `knowledge_scope` is shape-validated (short
+                              lowercase slug) but not whitelisted here — `resolve_allowed_scopes`
+                              (retrieval/domain/knowledge_scope.py) already degrades an
+                              unrecognized value to `general`/the deployment default rather than
+                              erroring, so this only rejects a value that could not possibly be a
+                              real scope, the same posture as the `principal` validator below.
   C4_timeout:     covered   - retrieval's embedder/reranker already carry timeout/retry/breaker
                               (3.5.2/3); the answer-runtime AnthropicMessagesClient now does too
                               (answer_timeout_seconds/max_retries/breaker_threshold, PLAN 4.4).
@@ -44,10 +50,12 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
                               adversarial pass for this new path is PLAN 9.8, not this sub-step.
   C7_idempotency: covered   - optional `Idempotency-Key` header; a replay within the TTL window
                               returns the cached Answer without re-running retrieval/generation.
-                              The cache key binds the header to a hash of (principal, history) —
-                              not the raw header alone (PLAN 4.6.3 fix) — so a replayed key sent
-                              with a different principal or history can never return another
-                              caller's cached Answer; it is treated as a fresh request instead.
+                              The cache key binds the header to a hash of
+                              (principal, history, knowledge_scope) — not the raw header alone
+                              (PLAN 4.6.3 fix, extended PLAN 10.5) — so a replayed key sent with a
+                              different principal, history, or knowledge_scope can never return
+                              another caller's/scope's cached Answer; it is treated as a fresh
+                              request instead.
   C8_concurrency: opted_out - each request creates its own query_trace row; no shared-resource
                               read-modify-write.
   C9_audit:       covered   - one structured `chat_request` log line per call (conversation id,
@@ -121,6 +129,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import re
 import time
 import uuid
 from collections.abc import AsyncIterator, Iterator
@@ -148,6 +157,12 @@ _AUTH_HEADER = "authorization"
 _BEARER_PREFIX = "Bearer "
 _IDEMPOTENCY_HEADER = "idempotency-key"
 
+# PLAN 10.5 (ADR-0011 decision 6): a short lowercase slug shape — not a whitelist.
+# `resolve_allowed_scopes` already degrades an unrecognized-but-well-shaped value to
+# `general`/the deployment default without erroring, so this only blocks a value that could
+# never be a real recognized scope from riding all the way down to the retrieval layer.
+_KNOWLEDGE_SCOPE_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+
 
 class ChatRequestBody(BaseModel):
     """`POST /chat` body. The caller owns conversation state and resends full turn history —
@@ -158,6 +173,7 @@ class ChatRequestBody(BaseModel):
     conversation_id: str | None = None
     history: list[ChatMessage] = Field(min_length=1)
     principal: str | None = None
+    knowledge_scope: str | None = None
 
     @field_validator("principal")
     @classmethod
@@ -169,6 +185,17 @@ class ChatRequestBody(BaseModel):
         domain policy the eval harness's legitimate numeric space-scoping still depends on."""
         if value is not None and value.isdigit():
             raise ValueError("principal must not be a bare digit string")
+        return value
+
+    @field_validator("knowledge_scope")
+    @classmethod
+    def _reject_malformed_knowledge_scope(cls, value: str | None) -> str | None:
+        """PLAN 10.5, ADR-0011 decision 6: reject an obviously-malformed shape only — not a
+        whitelist (see this module's `_KNOWLEDGE_SCOPE_PATTERN` docstring above)."""
+        if value is not None and not _KNOWLEDGE_SCOPE_PATTERN.match(value.lower()):
+            raise ValueError(
+                "knowledge_scope must be a short lowercase slug (letters, digits, hyphens)"
+            )
         return value
 
 
@@ -281,15 +308,25 @@ def _validate_history(body: ChatRequestBody, settings: Settings) -> None:
 
 
 def _idempotency_cache_key(
-    idempotency_key: str, principal: str | None, history: list[ChatMessage]
+    idempotency_key: str,
+    principal: str | None,
+    history: list[ChatMessage],
+    knowledge_scope: str | None = None,
 ) -> str:
-    """Binds the caller-supplied `Idempotency-Key` header to a hash of `(principal, history)` so a
-    replay of the same header value with a *different* principal or history is never served the
-    first caller's cached `Answer` (PLAN 4.6.3 fix — mirrors `answer_cache._cache_key`'s same
+    """Binds the caller-supplied `Idempotency-Key` header to a hash of
+    `(principal, history, knowledge_scope)` so a replay of the same header value with a
+    *different* principal, history, or knowledge_scope is never served the first caller's cached
+    `Answer` (PLAN 4.6.3 fix, extended PLAN 10.5 — mirrors `answer_cache._cache_key`'s same
     binding, without which the raw header alone was the whole cache key)."""
     turns = [(m.role, m.content) for m in history]
     payload = (
-        idempotency_key + "|" + json.dumps(turns, separators=(",", ":")) + "|" + (principal or "")
+        idempotency_key
+        + "|"
+        + json.dumps(turns, separators=(",", ":"))
+        + "|"
+        + (principal or "")
+        + "|"
+        + (knowledge_scope or "")
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -316,7 +353,7 @@ async def _stream_answer(
     yield _sse({"type": "start", "conversationId": conversation_id})
 
     cache_key = (
-        _idempotency_cache_key(idempotency_key, body.principal, body.history)
+        _idempotency_cache_key(idempotency_key, body.principal, body.history, body.knowledge_scope)
         if idempotency_key
         else None
     )
@@ -332,7 +369,7 @@ async def _stream_answer(
     else:
         started = time.perf_counter()
         try:
-            answer = service.answer(body.history, body.principal)
+            answer = service.answer(body.history, body.principal, body.knowledge_scope)
         except Exception as exc:  # generation failure surfaces as an SSE error, not a 5xx —
             # the stream already committed to a 200 response by the time this runs.
             log.error("chat_answer_failed", conversation_id=conversation_id, error=str(exc))

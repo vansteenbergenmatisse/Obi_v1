@@ -9,6 +9,70 @@
 
 ## 0. Status ledger & blockers  *(keep current — update after every phase)*
 
+**Same session (2026-08-24): pre-phase verification of 10.1-10.5 — all confirmed DONE PROPERLY,
+independently, before 10.6 began.** Per this repo's own pre-phase gate (`CLAUDE.local.md` §2), three
+parallel read-only agents each re-verified one or two sub-steps' code/tests/security directly
+against the running repo — not the ledger's self-report — before any 10.6 work started: 10.1/10.2
+(config + label-driven tagging), 10.3/10.4 (migration + retrieval-time filtering, including a live
+real-Postgres alembic round-trip and a real `'; DROP TABLE chunk; --` injection-safety test against
+the bound `tags && :knowledge_scopes` parameter), and 10.5 (chat threading, run through
+`securing-http-and-llm-endpoints` since it touches `POST /chat`'s C3/C7 controls). All five verdicts:
+DONE PROPERLY, zero code changes needed — the only finding was a harmless test-count wording
+mismatch in 10.1's own prose (says "6 cases," the file has 7).
+
+**Same session (2026-08-24): 10.6 done — always-present curated knowledge layer.** User gave the
+explicit go-ahead for 10.6 only, per this repo's stop-after-sub-step convention. Shipped close to
+scoped, with one disclosed file-location correction (the query moved to a new `infrastructure/
+curated_knowledge_repo.py` rather than living in `domain/curated_knowledge.py` alongside the pure
+shapes, since every other `domain/` module in this repo — and `retrieval`'s own PLAN 10.4 solution to
+the identical problem — is I/O-free) and one deviation beyond the plan's own file list required for
+correctness (`allowed_scopes` resolution hoisted above the query/no-query split so the text-empty/
+image-only path also gets curated entries, not just retrieval-bearing turns). `AnswerService` now
+composes `evidence_hits = curated_hits + result.hits` before `build_evidence_block`/
+`enforce_citations` — curated markers `[1..k]`, retrieved markers `[k+1..n]` — and builds citations by
+indexing `evidence_hits`, not `result.hits`. New `settings.curated_knowledge_max_entries` (default 5)
+bounds curated content from crowding out retrieval evidence; new `scripts/seed_curated_knowledge.py`
+(one-off CLI, upsert-by-title since the table has no unique constraint to `ON CONFLICT` against,
+unlike `source_scope`). 16 new tests (5 pure/spy-session, 6 real-DB, 5 `test_answer_service.py`
+end-to-end). `make check` → **469 passed** (was 453, +16), `make boundaries` clean (required
+exporting `CuratedEntry`/`fetch_curated_entries` from `rag_agent/__init__.py`'s public root so
+`confluence_sync`'s real-DB test doesn't deep-import across the feature boundary). Ruff/pyright
+diffed against the pre-change baseline on exactly the touched files: 0 new errors on all three
+(repo-wide baseline confirmed unchanged: ruff 2/13, pyright 34). `securing-http-and-llm-endpoints`:
+no new/modified HTTP endpoint — curated body text entering the LLM prompt carries the same trust
+model already accepted for retrieved Confluence chunk text, and the new cap bounds prompt-size/cost
+growth the same way `rerank_top_k` already does for retrieved evidence. **Deliberately left
+unresolved, per the plan's own explicit flag not to guess it:** a curated citation's `url` is empty
+(the contract already documents empty as "unavailable") — a distinct "Source: curated knowledge"
+visual treatment is a future UI/contract decision. See 10.6's own section for full detail. Nothing
+committed yet — ask before committing, per this repo's own convention. **Next: 10.7 (corpus
+migration/backfill + flag flip + exit gate) — not started, ask before beginning.**
+
+**Same session (2026-08-24): 10.5 done — chat request/contract `knowledge_scope` threading.** User
+gave the explicit go-ahead for 10.5 only, per this repo's stop-after-sub-step convention. Shipped as
+scoped: `ChatRequestBody.knowledge_scope` (shape-validated, not whitelisted) →
+`AnswerService.answer()` (resolves `allowed_scopes` once per request via `resolve_allowed_scopes`,
+reused by the CRAG retry, not re-resolved) → `HybridRetriever.retrieve_with_context()`, end to end;
+`packages/contracts`' `ChatRequest.knowledgeScope` → `route-handlers.ts` → `ChatSessionProvider`'s
+new prop, forwarded unmodified throughout. **Two corrections beyond the plan's own file list, both
+required for correctness:** `CachingAnswerService`'s exact-match cache key and the `Idempotency-Key`
+replay cache's binding both now include `knowledge_scope` — without either, a request differing only
+in `knowledge_scope` could replay another scope's cached Answer, a cross-scope leak of the same shape
+ADR-0011 exists to prevent. 20 new tests (7 `test_answer_service.py`, 3 `test_answer_cache.py`, 5
+`test_chat_endpoint.py`, 1 `route-handlers.test.ts`, 2 `chat-session-provider.test.tsx`, plus the
+`validation.ts`/`chat.yaml` passthrough exercised by the same). `make check` → **453 passed** (was
+441, +12 backend), `make boundaries` clean, `pnpm --filter web test` → **162 passed** (was 159, +3),
+`tsc --noEmit` clean. Ruff/pyright diffed on the touched files specifically (repo-wide counts carry
+unrelated pre-existing dirt from other uncommitted sessions): 0 new ruff errors, 0 new unformatted
+files among the 7 touched Python files, 0 new pyright errors. `securing-http-and-llm-endpoints`:
+`POST /chat`'s existing full control set is unchanged in kind — this sub-step adds one shape-
+validated optional field (C3) and extends the existing idempotency binding (C7); `router.py`'s
+`security_baseline` docstring updated in place. **Deliberately left unwired to any real value:**
+`apps/web/src/app/layout.tsx`'s `<ChatSessionProvider>` mount is untouched — a visible scope switcher
+is 10.8's job, not this one. See 10.5's own section for full detail. Nothing committed yet — ask
+before committing, per this repo's own convention. **Next: 10.6 (always-present curated knowledge
+layer) — not started, ask before beginning.**
+
 **Same session (2026-08-24): 10.4 done — retrieval-time knowledge-scope filtering, behind
 `enable_knowledge_scope_filtering` (default off).** User gave the explicit go-ahead for 10.4 only,
 per this repo's stop-after-sub-step convention. Shipped: `retrieval/domain/knowledge_scope.py::
@@ -4216,7 +4280,7 @@ disambiguation.
 | Confluence labels | `HttpConfluenceClient.get_labels()` already fetches every page's labels, every sync — used only for `labels_hash` change detection. | Labels intersected with the recognized set become knowledge-scope tags. | New pure resolver + sync_service wiring (10.2). |
 | `tags` column (`page_source`/`chunk`) | Populated only from `source_scope` (operator-run seed script, per space/page-root, unrelated to Confluence's own labels). Never read at query time. | Populated by **union** of `source_scope` tags (unchanged) + label-derived tags (new). Read at query time behind a flag. | New tag source unioned in at the existing seam (10.2); new filter (10.4). |
 | Retrieval filtering | `_base_filters()` filters `is_active`/`kind`/`page_status`/`space_id`/`source_id`. `tags` never referenced. | Optional `AND tags && ARRAY[:scopes]`, gated by `enable_knowledge_scope_filtering` (default off). | New predicate + partial GIN index + flag (10.3, 10.4). |
-| Chat request context | `ChatRequestBody` has `principal` only; nothing carries "which platform is this embedded on." Confirmed nowhere in `chat-session-provider.tsx`, `router.py`, or `OBI-WIDGET-DESIGN.md`. | New `knowledge_scope` field, threaded the same way `principal` already is, resolved once per session. | New field + resolver + contract + frontend plumbing (10.5). |
+| Chat request context | ✅ done (10.5). `ChatRequestBody.knowledge_scope` threaded through `AnswerService`/`HybridRetriever`, `ChatRequest.knowledgeScope` through the contract/proxy/`ChatSessionProvider`, resolved once per request. No UI sets a real value yet (10.8). | New `knowledge_scope` field, threaded the same way `principal` already is, resolved once per session. | Closed. |
 | Always-present knowledge | Does not exist. `rag_agent/domain/prompt.py` has exactly one evidence source: retrieved hits. | A small, admin-maintained set of curated entries, tagged by scope, always injected as leading cited evidence. | New table + seed script + evidence-block composition (10.6). |
 | Live corpus | 9 pages, `source_scope`-tagged `base` only, zero knowledge-scope tag. | Same 9 pages carry a recognized scope (at minimum `general`) before the filter flag is ever flipped on. | Manual relabel + verification step (10.7). |
 | Label→sync activation | `label_added`/`label_deleted` are already in `SYNC_EVENTS` (`schemas/events.py`) and already route to a `sync_page` job (`event_service.py`) — the *mechanism* pre-dates this phase. Never exercised live: no public URL is registered with Confluence for the webhook, so today a label change is only picked up on the next reconciliation sweep, not instantly. | The existing webhook code path (or an equivalent direct call, given no public deploy yet) proven live: add/edit/remove a real Confluence label → `page_source.tags`/`chunk.tags` update without a full re-embed. | Live self-verification, no new mechanism (10.8). |
@@ -4544,7 +4608,7 @@ restored to the working tree unstaged, confirmed via `git diff` before and after
 --stat` verified exactly the 13 intended files; `make check` (441 passed) and `make boundaries`
 re-run clean against the fully-restored working tree afterward.
 
-### 10.5 — Chat request/contract: `knowledge_scope` threading
+### 10.5 — Chat request/contract: `knowledge_scope` threading ✅ done (2026-08-24, uncommitted)
 
 **Files:** `app/features/rag_agent/server/router.py` (`ChatRequestBody`);
 `app/features/rag_agent/application/answer_service.py` (`AnswerService.answer`);
@@ -4574,6 +4638,83 @@ Frontend: extend `route-handlers.test.ts` to assert `knowledgeScope` forwards un
 `allowed_scopes=["general","mews"]`; an omitted or unrecognized value reaches it with
 `allowed_scopes=["general"]` (or `["general", default]` if `default_knowledge_scope` is set) and never
 errors the request.
+
+**Shipped exactly as scoped, plus two corrections required for correctness, neither named in the
+plan's own file list.** `ChatRequestBody.knowledge_scope: str | None = None` shipped with a shape
+validator (`_KNOWLEDGE_SCOPE_PATTERN`, a bounded 1–64-char lowercase slug regex) — not a whitelist,
+matching the plan's own instruction; `resolve_allowed_scopes` still owns all recognition/degradation
+logic. `AnswerService.__init__` gained `recognized_knowledge_scopes: frozenset[str] =
+frozenset({"general"})` and `default_knowledge_scope: str | None = None` (wired from
+`settings.knowledge_scope_set`/`settings.default_knowledge_scope or None` in
+`main.py::build_answer_service`) rather than reading `Settings` directly, matching every other
+config-derived constructor parameter this class already has (`refusal_min_rerank_score`, etc.) —
+`AnswerService` has no `Settings` dependency and this doesn't start one. `answer()` resolves
+`allowed_scopes` once, right before the retrieval block (small-talk/clarification short-circuits
+never need it), and `_apply_crag_retry` now takes the resolved list as an explicit parameter instead
+of re-resolving — proven by a dedicated test that the retry reuses the exact same list. An
+unrecognized-but-well-shaped requested value is logged (`knowledge_scope_unrecognized`) per
+`resolve_allowed_scopes`'s own docstring contract ("the caller logs the degradation") — this repo's
+convention of implementing the callee's documented caller obligation, not skipping it because it
+wasn't repeated in the plan text.
+
+**Correction 1 — `CachingAnswerService`'s cache key (`answer_cache.py`, not in the plan's file
+list).** The exact-match answer cache already binds `(history, scope)` so a hit can never cross a
+*principal* boundary (PLAN 5). Without also binding `knowledge_scope`, two requests with identical
+history/principal but different `knowledge_scope` would collide on the same cache entry and replay
+an answer grounded in the wrong provider's evidence — a real cross-scope leak of the same shape
+ADR-0011 exists to prevent, just via the cache instead of the SQL filter. Fixed the same way the
+principal binding already works: `_cache_key` now hashes `(history, scope, knowledge_scope)`,
+`CachingAnswerService.answer()` takes and forwards `knowledge_scope`. Two new tests
+(`test_different_knowledge_scope_is_not_served_from_cache`,
+`test_omitted_knowledge_scope_is_not_conflated_with_a_named_one`) prove the boundary the same way
+the pre-existing principal tests do.
+
+**Correction 2 — the `Idempotency-Key` replay cache's binding (`router.py`, extends PLAN 4.6.3's
+existing fix, not a new file in the plan's list).** Same argument as Correction 1, one layer up:
+`_idempotency_cache_key` bound `(principal, history)`; a replay of the same header with a different
+`knowledge_scope` would have returned the first caller's scoped Answer. Extended to
+`(principal, history, knowledge_scope)`. New regression test mirrors the existing
+principal/history idempotency-binding tests exactly
+(`test_idempotency_key_replay_with_different_knowledge_scope_is_not_the_first_callers_answer`).
+
+**Frontend, shipped as scoped.** `ChatRequest.knowledgeScope?: string` added to
+`packages/contracts/src/index.ts` **and** to `src/openapi/chat.yaml` (the file's own docstring names
+it the source of truth). `apps/web/src/features/chat/server/validation.ts::parseChatRequestBody`
+gained a `knowledgeScope` shape check + passthrough — not in the plan's file list, but required:
+without it the field would have been silently dropped before ever reaching `toBackendChatBody`, the
+same class of gap as the two backend corrections above. `toBackendChatBody()` forwards it unmodified
+as `knowledge_scope`. `ChatSessionProvider` gained a typed `ChatSessionProviderProps` with an
+optional `knowledgeScope` prop, threaded into every `streamChat()` call — `chat-client.ts` needed no
+code change at all (it already `JSON.stringify`s the whole `ChatRequest` object verbatim, so the new
+field rides along for free once the type gained it). **Deliberately not wired to a real value
+anywhere** — `layout.tsx`'s `<ChatSessionProvider>` mount is untouched; a visible switcher is §10.8,
+not this sub-step, matching ADR-0011 Decision 6 ("genuinely new plumbing") and the plan's own file
+list (which does not include `layout.tsx` or `chat-client.ts`'s body).
+
+**Tests:** `rag_agent/tests/test_answer_service.py` (+7: recognized-scope forwarding, unrecognized
+degrades + logs, omitted falls back to deployment default, omitted-with-no-default is general alone,
+CRAG retry reuses the same resolved list). `rag_agent/tests/test_answer_cache.py` (+3: exact-match
+cache key cases above). `confluence_sync/tests/test_chat_endpoint.py` (+5: knowledge_scope forwarded
+to the answer service via a spy provider, omitted forwards `None`, malformed shape → 422, idempotency
+cross-scope regression, plus the existing suite re-verified green). Frontend:
+`route-handlers.test.ts` (+1: `knowledgeScope` forwards unmodified as `knowledge_scope`);
+`chat-session-provider.test.tsx` (+2: configured scope reaches the outgoing request body; omitted
+scope is absent from it, not sent as `undefined`/`null` on the wire — `JSON.stringify` drops
+`undefined` keys, verified rather than assumed).
+
+**Verified.** `make check` (repo root) → **453 passed** (was 441, +12), `make boundaries` clean.
+Ruff/pyright diffed against the pre-change baseline on exactly the files this sub-step touched (not
+the whole repo, which already carries unrelated pre-existing dirt from other uncommitted sessions):
+**0 new ruff errors**, **0 new unformatted files** among the 7 touched Python files (2 needed a
+`ruff format` pass, both fixed before commit-readiness), **0 new pyright errors** in any touched
+file (repo-wide count unchanged at 34). `pnpm --filter web test` → **162 passed** (was 159, +3),
+`tsc --noEmit` clean (no `next build` run — this repo's own known `next dev`/`.next` collision).
+`securing-http-and-llm-endpoints`: `POST /chat` is a pre-existing HTTP+LLM surface (full control set
+already documented in `router.py`'s own `security_baseline` docstring) — this sub-step only adds one
+more shape-validated optional field (C3) and extends the existing idempotency binding (C7); both
+docstring sections updated in place rather than left stale. Not yet committed — ask before
+committing, per this repo's own convention. **Next: 10.6 (always-present curated knowledge layer) —
+not started, ask before beginning.**
 
 ### 10.6 — Always-present curated knowledge layer
 
@@ -4607,6 +4748,109 @@ end-to-end composition.
 regardless of `knowledge_scope`; a `mews`-tagged entry appears only when `mews` is in
 `allowed_scopes`; a claim sourced from a curated entry survives `enforce_citations` exactly like a
 claim sourced from real retrieval.
+
+### 10.6 — Shipped/Verified (2026-08-24, uncommitted)
+
+**Shipped close to scoped, with one file-location correction, disclosed.** The plan's own text named
+a single `domain/curated_knowledge.py` housing both the pure shapes and the session-taking
+`fetch_curated_entries` query. Every other `domain/` module in this feature (and in `retrieval`,
+which solved the identical problem at PLAN 10.4) is I/O-free — so the query moved to a new
+`infrastructure/curated_knowledge_repo.py`, mirroring `retrieval`'s own `domain/knowledge_scope.py`
+vs. `infrastructure/search_repo.py` split exactly, rather than making this the one domain exception
+in the whole repo. `domain/curated_knowledge.py` ships `CuratedEntry` (a plain dataclass, decoupled
+from the ORM, mirroring `RetrievedHit`'s role) and `CuratedHit`/`curated_entry_to_hit` — the adapter
+that lets a curated entry ride the exact same `_EvidenceHit` protocol (`prompt.py`, unchanged) and
+`Citation` construction (`answer_service.py`) a real retrieved hit already uses. `chunk_id` is
+negative and `page_id` is namespaced `curated:<id>`, so neither can ever collide with a real
+retrieved chunk/page id (real chunk ids are positive serial PKs) — exactly the plan's own "own
+negative/namespaced id" instruction. `url` stays empty; `packages/contracts`' `Citation.url` already
+documents empty as "unavailable," and the plan's own text explicitly flagged not to guess a distinct
+"Source: curated knowledge" display treatment without checking the contract first — that stays a
+future UI/contract decision, not built here.
+
+`infrastructure/curated_knowledge_repo.py::fetch_curated_entries(session, allowed_scopes, limit)`
+mirrors `search_repo.py`'s exact proven pattern for the identical `tags && :scopes` predicate (PLAN
+10.4): raw SQL text, the scope list always bound as a parameter, never string-interpolated. Active
+entries where `tags = '{}'` (always included) or `tags && :allowed_scopes`, capped at `limit`,
+ordered by `id` for deterministic citation numbering. `curated_knowledge_entry` carries no RLS
+(10.3's migration added only the table/index/column, not a policy) — tag filtering is the only
+access control this query needs.
+
+`AnswerService` gained `reader_sessionmaker`/`curated_knowledge_max_entries` constructor params
+(`settings.curated_knowledge_max_entries`, new, default 5 — bounds curated content from ever
+crowding out all retrieval evidence, wired in `main.py::build_answer_service` alongside
+`get_reader_sessionmaker()`). `None` reader in any deployment/test that never wires one is a no-op —
+zero curated entries composed, mirroring `_persist`'s own no-op-when-`writer_sessionmaker`-unset
+posture; every pre-10.6 test relies on exactly this default and needed no changes. **One deviation
+beyond the plan's own file list, required for correctness:** `allowed_scopes` resolution (PLAN
+10.5) moved from inside the `if original_query.strip():` branch to unconditionally above the
+query/no-query split — the always-present curated layer must reach the text-empty/image-only turn
+too (PLAN 7.8), which never retrieves but still needs a resolved scope list to fetch curated
+entries; before this move, that path had no `allowed_scopes` variable at all. `answer()` composes
+`evidence_hits = [*curated_hits, *result.hits]` immediately before `build_evidence_block` (curated
+markers `[1..k]`, retrieved markers `[k+1..n]`, `build_evidence_block`/`prompt.py` itself
+unchanged), merges curated bodies into `parent_texts` keyed by their synthetic negative `chunk_id`,
+passes `evidence_hits` (not `result.hits`) to `enforce_citations`'s `valid_markers` range, and
+builds final `Citation`s by indexing `evidence_hits`, not `result.hits` — the pre-10.6 code indexed
+`result.hits[m-1]` directly, which would have IndexError'd or mis-attributed a citation the moment a
+curated marker was used. Refusal (`decide_refusal`) is unchanged and still looks only at
+`result.top_score` from real retrieval — curated entries enrich evidence once the pipeline has
+already decided to answer, they never rescue a `no_candidates`/`weak_score` refusal, matching the
+plan's own scope (it names `answer_service.py`'s evidence/citation composition, never
+`refusal.py`).
+
+`scripts/seed_curated_knowledge.py` mirrors `seed_source_scope.py`'s one-off-CLI ownership decision
+(no CRUD API yet). **One necessary deviation from `seed_source_scope.py`'s exact shape, disclosed:**
+unlike `source_scope`, `curated_knowledge_entry` has no DB-level unique constraint (title is free
+text per the 0007 migration, not a natural key) — `on_conflict_do_update` isn't available. "Upsert by
+title" is instead an explicit look-up-then-update-or-insert against the active row with that exact
+title; deactivation always targets `--id`, never `--title`, since title isn't a stable identifier.
+
+**Tests:** `rag_agent/tests/test_curated_knowledge.py` (new, 5 cases, no DB — mirrors
+`test_search_repo_knowledge_scope.py`'s spy-session style): the adapter's namespaced/never-colliding
+ids; the query binds `allowed_scopes` as a parameter (never interpolated), including a dedicated
+adversarial-payload case (`'; DROP TABLE curated_knowledge_entry; --`) proving it never reaches raw
+SQL text; the empty-tags-always-included clause is present. `confluence_sync/tests/
+test_curated_knowledge_repo.py` (new, 6 cases, real DB — placed here rather than in `rag_agent/
+tests/`, deliberately "no network, no DB" per its own docstring, to reuse this package's DB harness,
+the same placement PLAN 10.4 chose for its own real-DB retrieval test): empty-tags entry always
+included regardless of `allowed_scopes`; a scoped entry excluded when its scope isn't allowed,
+included when it is; an inactive entry never returned; the cap enforced; stable id ordering; two
+differently-scoped entries never cross-leaking. `curated_knowledge_entry` added to `confluence_sync/
+tests/conftest.py`'s truncate-between-tests table list for isolation. `rag_agent/tests/
+test_answer_service.py` (+5): zero curated entries when no reader is configured (the default every
+other test in the file relies on); curated markers `[1..k]` precede retrieved markers `[k+1..n]` in
+both the rendered evidence block and the final citations; a claim citing only a curated marker
+survives `enforce_citations` exactly like a retrieved one, even with a real hit also present in
+evidence; curated entries are fetched with the exact same resolved `allowed_scopes` the request's
+retrieval already used; curated composition reaches the text-empty/image-only path. `CuratedEntry`/
+`fetch_curated_entries` exported from `rag_agent/__init__.py`'s public root — required by the
+boundary checker for `confluence_sync`'s real-DB test to reach the query without a cross-feature
+deep import (rule 1); the pure `CuratedHit`/`curated_entry_to_hit` adapter stays internal.
+
+**Verified.** `make check` (repo root) → **469 passed** (was 453, +16: 5 pure + 6 real-DB + 5
+`test_answer_service.py`), `make boundaries` clean (the export above is what makes it clean — an
+earlier attempt without it correctly failed the checker on `confluence_sync`'s deep import, caught
+before ever being called done). Ruff/pyright diffed against the pre-change baseline on exactly the
+files this sub-step touched: **0 new ruff errors** (one `B905 zip() without strict=` and one line-
+length violation were introduced and fixed before commit-readiness — `zip(curated_hits,
+curated_entries, strict=True)`, since the two lists are always built in lockstep and a silent
+truncation would misattribute a citation), **0 new unformatted files**, **0 new pyright errors**
+(the new `scripts/seed_curated_knowledge.py` deliberately guards `(__doc__ or "").splitlines()[0]`
+rather than replicating `seed_source_scope.py`'s existing `__doc__.splitlines()[0]` baseline error —
+a *new* file repeating a *known* anti-pattern would still raise the repo-wide count by one, which
+the no-regression rule doesn't permit just because the pattern already exists elsewhere). Repo-wide
+baseline confirmed unchanged: ruff 2 errors / 13 unformatted, pyright 34 errors. `make eval` not
+re-run — this sub-step touches only `rag_agent` (answer composition), never `retrieval`'s ranking,
+matching every prior sub-step's own reasoning for when `make eval` does/doesn't apply.
+`securing-http-and-llm-endpoints`: no new HTTP endpoint and no change to `POST /chat`'s request/
+response shape (`router.py`, `ChatRequestBody`, `Citation` schema all untouched) — the one new
+consideration is curated body text entering the LLM prompt, which carries the same trust model
+already accepted for retrieved Confluence chunk text (operator-authored via the seed script, not
+user-controlled), and `curated_knowledge_max_entries` bounds prompt-size/cost growth the same way
+`rerank_top_k` already bounds it for retrieved evidence (C10). Not yet committed — ask before
+committing, per this repo's own convention. **Next: 10.7 (corpus migration/backfill + flag flip +
+exit gate) — not started, ask before beginning.**
 
 ### 10.7 — Corpus migration/backfill + flag flip + exit gate
 

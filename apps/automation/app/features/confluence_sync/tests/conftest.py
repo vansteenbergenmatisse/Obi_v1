@@ -31,6 +31,7 @@ _TABLES = [
     "reconciliation_run",
     "source_scope",
     "query_trace",
+    "curated_knowledge_entry",
 ]
 
 # Non-owner role the retriever reads as, so RLS is actually exercised (ADR-0004). The writer

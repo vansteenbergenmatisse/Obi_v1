@@ -186,6 +186,10 @@ class Settings(BaseSettings):
     # `tags && ...` predicate regardless of what a caller passes, mirroring
     # enable_clarification_branch's dark-by-default posture.
     enable_knowledge_scope_filtering: bool = False
+    # cap on always-present curated entries composed into evidence per answer (PLAN 10.6). Matches
+    # rerank_top_k's order of magnitude — curated entries sit ahead of retrieved hits in the
+    # numbered evidence block, so an unbounded cap could crowd out real retrieval evidence entirely.
+    curated_knowledge_max_entries: int = 5
 
     def is_offline_env(self) -> bool:
         """True in local/test/dev/ci — envs where a missing hosted key or DB role is a safe
