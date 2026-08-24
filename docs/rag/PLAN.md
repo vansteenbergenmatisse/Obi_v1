@@ -37,8 +37,11 @@ files are all clean), **0 new pyright errors** (34 unchanged). No new/modified H
 call — `securing-http-and-llm-endpoints` doesn't apply to a schema-only migration, same reasoning
 as 10.1/10.2. `EXPLAIN` confirming the planner actually uses `ix_chunk_tags_gin` is deferred to
 10.4 per the plan's own acceptance criterion — no `tags && ARRAY[...]` predicate exists yet to
-explain. **Not yet committed — ask before committing**, same convention as every other Phase 10
-sub-step. **Next: 10.4 (retrieval-time filtering, behind the flag) — not started, ask before
+explain. **Committed as `daecb58`** — scoped to exactly the 5 intended files (`models.py`, the new
+migration, the new test, `PLAN.md`, `docs/rag/retrieval/phase-10.md`); this session's edits to
+those files were already isolated (no entanglement with the tree's other unrelated uncommitted
+work, unlike 10.1/10.2's `settings.py`/`sync_service.py` incidents), confirmed via `git diff`
+before staging. **Next: 10.4 (retrieval-time filtering, behind the flag) — not started, ask before
 beginning.**
 
 **Same session (2026-08-24): 10.2 done — label-driven per-page knowledge-scope tags.** User gave the
@@ -4369,7 +4372,7 @@ restored to its full session state (attachment-wiring hunks back in `sync_servic
 `FEATURES.md`) and the full suite (**416 passed**) + `make boundaries` re-run clean against that
 restored state, confirming the split didn't break anything on either side.
 
-### 10.3 — Migration: `curated_knowledge_entry` table + `tags` GIN index + `query_trace` column ✅ done (2026-08-24, not yet committed)
+### 10.3 — Migration: `curated_knowledge_entry` table + `tags` GIN index + `query_trace` column ✅ done (2026-08-24, `daecb58`)
 
 **Files:** new `apps/automation/alembic/versions/0007_knowledge_scope.py`
 (`down_revision="0006_dedupe_source_type_check"`); `app/platform/db/models.py`.

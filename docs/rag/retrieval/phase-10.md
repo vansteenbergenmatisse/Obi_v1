@@ -1,6 +1,6 @@
 # Phase 10 — Knowledge-scope tagging (retrieval-side half)
 
-**Status:** §10.3 done (2026-08-24, not yet committed — migration only, no reads/writes wired yet);
+**Status:** §10.3 done (2026-08-24, `daecb58` — migration only, no reads/writes wired yet);
 §§10.4–10.6 not started. `docs/rag/PLAN.md` Phase 10 §§10.3–10.6. Design doc:
 [`docs/adr/0011-Knowledge-Scope-Tagging-And-Retrieval-Filtering.md`](../../adr/0011-Knowledge-Scope-Tagging-And-Retrieval-Filtering.md).
 The writer/tagging half — deriving tags from Confluence labels — is in
