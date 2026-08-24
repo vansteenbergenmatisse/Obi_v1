@@ -1,8 +1,8 @@
 # Phase 10 — Knowledge-scope tagging (retrieval-side half)
 
-**Status:** §§10.3–10.4 done (2026-08-24 — 10.3 `daecb58` migration; 10.4 retrieval-time filtering,
-behind `enable_knowledge_scope_filtering`, default off); §§10.5–10.6 not started. `docs/rag/PLAN.md`
-Phase 10 §§10.3–10.6. Design doc:
+**Status:** §§10.3–10.4 done (2026-08-24 — 10.3 `daecb58` migration; 10.4 `d347dc8` retrieval-time
+filtering, behind `enable_knowledge_scope_filtering`, default off); §§10.5–10.6 not started.
+`docs/rag/PLAN.md` Phase 10 §§10.3–10.6. Design doc:
 [`docs/adr/0011-Knowledge-Scope-Tagging-And-Retrieval-Filtering.md`](../../adr/0011-Knowledge-Scope-Tagging-And-Retrieval-Filtering.md).
 The writer/tagging half — deriving tags from Confluence labels — is in
 [`../ingestion/phase-10.md`](../ingestion/phase-10.md).

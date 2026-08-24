@@ -28,7 +28,7 @@ baseline (2/13/34). No HTTP/LLM surface added or modified — `POST /chat` still
 `knowledge_scope` value (10.5's job); `securing-http-and-llm-endpoints` doesn't apply to this
 internal-only data-layer change, same reasoning as every prior Phase 10 sub-step. See 10.4's own
 section for full detail, including the file-location correction for 10.5 (CRAG retry lives in
-`answer_service.py`, not `retriever.py`). Nothing committed yet — ask before committing. **Next:
+`answer_service.py`, not `retriever.py`). **Committed as `d347dc8`.** **Next:
 10.5 (chat request/contract: `knowledge_scope` threading) — not started, ask before beginning.**
 
 **New session (2026-08-24): 10.3 done — `curated_knowledge_entry` table + `tags` GIN index +
@@ -4535,8 +4535,14 @@ pyright errors** (34, unchanged). `securing-http-and-llm-endpoints`: no new/modi
 or LLM call — `search_repo`/`retriever`/`trace_repo` are internal data-layer code with no external
 surface of their own; the one HTTP surface downstream (`POST /chat`) is unchanged by this sub-step
 and doesn't yet pass a `knowledge_scope` value (10.5's job) — same reasoning as every other
-retrieval-internals sub-step in this plan. Nothing committed yet — ask before committing, per this
-repo's own convention.
+retrieval-internals sub-step in this plan. **Committed as `d347dc8`** — scoped to exactly the 13
+intended files (7 modified retrieval/config/main.py files, 4 new test/domain files, `PLAN.md`,
+`docs/rag/retrieval/phase-10.md`); `settings.py` carried an unrelated, already-uncommitted
+attachment-cap change from an earlier session (same entanglement class as 10.1's `settings.py`
+incident), extracted surgically the same way — temporarily removed, staged, committed, then
+restored to the working tree unstaged, confirmed via `git diff` before and after. `git show HEAD
+--stat` verified exactly the 13 intended files; `make check` (441 passed) and `make boundaries`
+re-run clean against the fully-restored working tree afterward.
 
 ### 10.5 — Chat request/contract: `knowledge_scope` threading
 
