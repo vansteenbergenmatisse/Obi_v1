@@ -17,6 +17,8 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from app.features.ingestion.domain.normalization import Block
+
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"[ \t]+")
 _MIN_NATIVE_PDF_CHARS = 20  # below this, treat a PDF page layer as scanned → needs OCR
@@ -121,3 +123,28 @@ def _xlsx_native(data: bytes) -> str:  # pragma: no cover - exercised only when 
         return "\n".join(lines)
     except Exception:
         return ""
+
+
+def attachment_to_blocks(*, title: str, text: str) -> list[Block]:
+    """Wrap one attachment's extracted text as normalized blocks under a synthetic heading.
+
+    Reuses `normalize_body`'s own `Block` shape so attachment text flows through the exact same
+    section/chunk/diff/embedding-reuse pipeline as page body text (fixes/phase-2 wiring) — no new
+    table, no new `Chunk` column. `heading_path` is keyed by the attachment's own title, matching
+    `normalize_body`'s "a heading's own path includes itself" convention, so a section's identity
+    is content-addressed (stable across re-syncs regardless of attachment ordering/insertion) and
+    distinct from every other attachment and from the page's own sections — deliberately not a
+    separate literal "Attachments"-only heading block, which would spawn one near-empty
+    heading-only chunk per attachment (`_section_units`' title-fallback) for no benefit; the
+    `["Attachments", title]` path alone already carries that grouping in the section key.
+    Returns `[]` for blank text (an image, a skipped/unsupported format, or a parser that came
+    back empty) — nothing to index.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return []
+    path = ["Attachments", title]
+    return [
+        Block(kind="heading", level=1, text=title, heading_path=path),
+        Block(kind="paragraph", level=0, text=stripped, heading_path=path),
+    ]

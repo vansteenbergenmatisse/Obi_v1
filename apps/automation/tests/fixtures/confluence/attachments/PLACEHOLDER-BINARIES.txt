@@ -1,20 +1,25 @@
 Placeholder for binary attachments
 ===================================
 
-This corpus intentionally ships only tiny text-based attachments (.txt, .csv, .md)
-that Phase 3 can parse without external binary libraries.
+This corpus intentionally ships only tiny text-based real attachments (.txt, .csv, .md).
 
-The attachment manifests reference these binary formats as placeholders so the
-ingestion pipeline can be tested for "attachment present, parser required" cases
-without committing real binaries:
+The attachment manifests reference PDF/XLSX as placeholders pointing at this file so the
+ingestion pipeline (fixes/phase-2 wiring: attachment content is downloaded, extracted, chunked,
+and searchable — see the repo README's "Attachments" section) can be tested for the
+"attachment present, parser invoked, gracefully degrades to no chunk" path without committing real
+binaries:
 
-  - application/pdf  (architecture-diagram.pdf)   -> Phase 3 PDF text extraction
-  - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet (capacity-plan.xlsx) -> Phase 3 XLSX parsing
+  - application/pdf  (architecture-diagram.pdf)
+  - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet (capacity-plan.xlsx)
 
-Phase 3 parser targets to implement/verify:
-  txt   -> plain read (covered by real fixture)
-  csv   -> tabular parse (covered by real fixture)
-  md    -> markdown parse (covered by real fixture)
-  pdf   -> text extraction (placeholder only)
-  docx  -> document parse (placeholder only)
-  xlsx  -> spreadsheet parse (placeholder only)
+`extract_attachment` (pypdf/python-docx/openpyxl — real, installed, wired in) is handed THIS
+file's plain text under a `.pdf`/`.xlsx` name; native parsing fails on the non-binary content and
+falls closed to empty text (never raises), so `attachment_to_blocks` contributes nothing for
+these two — proving the no-crash path, not real PDF/XLSX text extraction, which this fixture
+corpus does not exercise:
+  txt   -> plain read (real fixture)
+  csv   -> tabular parse (real fixture)
+  md    -> markdown parse (real fixture)
+  pdf   -> text extraction (implemented; not exercised against a real binary here)
+  docx  -> document parse (implemented; not exercised against a real binary here)
+  xlsx  -> spreadsheet parse (implemented; not exercised against a real binary here)

@@ -42,6 +42,13 @@ class Settings(BaseSettings):
     confluence_webhook_secret: str = ""
     confluence_service_account_id: str = ""
     confluence_breaker_threshold: int = 5  # consecutive failed calls -> open the fuse (PLAN 4.6.7)
+    # attachment download caps (fixes/phase-2 wiring): bound memory/CPU against an oversized or
+    # pathological attachment set. fileSize is checked (cheap, from metadata) before any bytes are
+    # fetched; the streaming download also self-aborts past this cap regardless of what fileSize
+    # claimed (defense in depth). No prior cap existed in this codebase to inherit — these are
+    # deliberately generous safety ceilings, not a performance/scale claim.
+    confluence_attachment_max_bytes: int = 20 * 1024 * 1024  # 20 MB per attachment
+    confluence_attachment_max_per_page: int = 200  # attachments processed per page, per sync
 
     # models
     anthropic_api_key: str = ""

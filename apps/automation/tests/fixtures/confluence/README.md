@@ -19,7 +19,7 @@ confluence/
   attachments/
     page-<id>.json          per-page attachment manifest
     *.txt / *.csv / *.md    tiny real attachment files
-    PLACEHOLDER-BINARIES.txt formats Phase 3 must parse but not shipped as binaries
+    PLACEHOLDER-BINARIES.txt binary formats the parser must degrade gracefully on, not shipped as real binaries
   manifest.json             machine-readable index of the whole corpus
   loader.py                 pure filesystem + json access
   README.md                 this file
@@ -64,10 +64,16 @@ hashes per version.
 ## Attachments
 
 Real, parseable files: `welcome-checklist.txt`, `team-roster.csv`,
-`rollback-notes.md`. Binary formats (PDF, XLSX) appear in the manifests as
-placeholders pointing at `PLACEHOLDER-BINARIES.txt`, which lists the parser
-targets Phase 3 must implement. This lets ingestion be tested for the
-"attachment present, parser required" path without committing binaries.
+`rollback-notes.md` — these are indexed end-to-end (downloaded, extracted, chunked, embedded,
+searchable; `test_attachment_wiring.py`) via `FixtureConfluenceGateway.download_attachment`
+resolving the manifest's `file` field to a real on-disk fixture. Binary formats (PDF, XLSX) appear
+in the manifests as placeholders pointing at `PLACEHOLDER-BINARIES.txt` instead of a real binary —
+this exercises the "attachment present, parser invoked, gracefully degrades to no chunk" path
+(`extract_attachment` fails closed to empty text on non-PDF bytes under a `.pdf` name, never
+raises), not real PDF/XLSX text extraction. `pypdf`/`python-docx`/`openpyxl` (the `attachments`
+optional-dependency group) are real, installed, and wired into the live sync path
+(`ingestion/domain/attachment_extraction.py`) — they are just not exercised against a genuine
+binary anywhere in this fixture corpus, a disclosed gap, not an unimplemented one.
 
 ## Programmatic access
 

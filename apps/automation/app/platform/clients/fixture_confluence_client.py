@@ -74,6 +74,9 @@ class FixtureConfluenceGateway:
         self._group_members: dict[str, list[str]] = {}
         # pages that behave as gone/inaccessible (get_page_meta/get_page return None)
         self._hidden: set[int] = set()
+        # download_link -> raw bytes override (None = resolve via the attachment manifest's
+        # `file` field on disk, the default path every corpus attachment already takes)
+        self._attachment_content: dict[str, bytes | None] = {}
 
     # -- mutators (test/offline control surface) --------------------------------------
 
@@ -99,6 +102,15 @@ class FixtureConfluenceGateway:
 
     def unhide(self, page_id: int) -> None:
         self._hidden.discard(int(page_id))
+
+    def set_attachment_content(self, download_link: str, data: bytes | None) -> None:
+        """Override one attachment's binary content, keyed by its manifest `downloadLink`.
+
+        `None` simulates a failed/unreachable download (matches the live client's fail-soft
+        return). Bypasses the on-disk `file` resolution entirely — e.g. to simulate an oversized
+        attachment without committing a large fixture file.
+        """
+        self._attachment_content[download_link] = data
 
     # -- internal ---------------------------------------------------------------------
 
@@ -212,9 +224,35 @@ class FixtureConfluenceGateway:
                     "mediaType": r.get("mediaType"),
                     "fileSize": r.get("fileSize"),
                     "version": (r.get("version", {}) or {}).get("number"),
+                    "downloadLink": (r.get("_links", {}) or {}).get("download"),
                 }
             )
         return out
+
+    def download_attachment(self, download_link: str, *, max_bytes: int) -> bytes | None:
+        if download_link in self._attachment_content:
+            data = self._attachment_content[download_link]
+        else:
+            data = self._read_fixture_attachment(download_link)
+        if data is None:
+            return None
+        return data if len(data) <= max_bytes else None
+
+    def _read_fixture_attachment(self, download_link: str) -> bytes | None:
+        """Resolve a manifest `downloadLink` to its on-disk fixture file's bytes."""
+        for entry in _loader().list_pages():
+            manifest = _loader().load_attachments(entry["id"])
+            if not manifest:
+                continue
+            for r in manifest.get("results", []):
+                if (r.get("_links", {}) or {}).get("download") != download_link:
+                    continue
+                file_name = r.get("file")
+                if not file_name:
+                    return None
+                path = _loader().attachment_path(file_name)
+                return path.read_bytes() if path.exists() else None
+        return None
 
 
 # static assertion that the fixture gateway satisfies the Protocol

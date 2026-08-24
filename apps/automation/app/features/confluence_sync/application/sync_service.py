@@ -13,10 +13,12 @@ from app.features.ingestion import (
     ChangeClass,
     PageHashes,
     TargetVersions,
+    attachment_to_blocks,
     build_ingestion_services,
     classify,
     deactivate_page,
     decide_body_fetch,
+    extract_attachment,
     get_local_state,
     map_page_status,
     stage_and_activate,
@@ -39,6 +41,18 @@ _REBUILD_CLASSES = {
     ChangeClass.section_moved,
     ChangeClass.index_config_change,
 }
+# ChangeClass.attachment_changed is deliberately NOT in _REBUILD_CLASSES (fixes/phase-2 wiring,
+# tried and reverted): DocumentVersion's uq_document_version_idem constraint is unique on
+# (document_id, cf_version, retrieval_schema_version, embedding_model) — one build per real
+# Confluence page revision. Confluence attachments carry their own version numbers independent of
+# the page's cf_version, so an attachment-only edit never bumps it; triggering a rebuild from
+# attachment_changed alone would attempt a second DocumentVersion row at the SAME cf_version and
+# raise IntegrityError (confirmed live via a failing test before this comment was written, not
+# theorized). Extending the versioning model to also key on attachment identity is a real,
+# migration-sized change, out of scope for this fix. Net effect (disclosed, not silent): an
+# attachment added/replaced/removed with no other page change waits for the next rebuild-
+# triggering event (a body edit or a pipeline/config-version bump) to be picked up — attachment
+# content changed alongside anything else is indexed immediately, same as body content.
 
 
 @dataclass
@@ -133,6 +147,15 @@ def handle_sync_page(
         if blocks is None:  # safety: rebuild requires the body
             page = gateway.get_page(page_id)
             blocks = norm.normalize_body(page.body_storage) if page else []
+        # Hashes stay body-only (unchanged semantics) — attachment text is deliberately NOT
+        # folded into content_hash/structure_hash. Change detection for attachments already has
+        # its own cheap, metadata-only signal (attachment_manifest_hash / ChangeClass.
+        # attachment_changed — see the _REBUILD_CLASSES comment above for why that class does NOT
+        # itself trigger a rebuild); baking attachment content into these hashes too would make
+        # classify()'s next-sync comparison (computed from body-only blocks, since attachments are
+        # only fetched inside this `if rebuild` branch) permanently disagree with what's persisted
+        # here — spuriously reclassifying every subsequent sync as body_changed even when nothing
+        # changed.
         hashes = PageHashes(
             content_hash=norm.content_hash(blocks),
             structure_hash=norm.structure_hash(blocks),
@@ -140,10 +163,16 @@ def handle_sync_page(
             access_scope_hash=decision.access_scope_hash,
             attachment_manifest_hash=decision.attachment_manifest_hash,
         )
+        # Always (re)fetch attachment content on any rebuild, not only when attachment_changed
+        # fired — an unrelated body edit still fully replaces the page's chunk set (build_chunks
+        # has no notion of "carry forward the previous attachment chunks unseen"), so skipping
+        # this here would silently drop previously-indexed attachment content on the next
+        # unrelated edit.
+        attachment_blocks = _attachment_blocks(gateway, page_id, attachments, settings)
         stage_and_activate(
             session,
             meta=meta,
-            blocks=blocks,
+            blocks=blocks + attachment_blocks,
             hashes=hashes,
             target=target,
             page_status=page_status,
@@ -168,6 +197,55 @@ def handle_sync_page(
 
     _touch_reconciled(session, page_id)
     return SyncOutcome(action="no_change", classes=["no_change"], page_id=page_id)
+
+
+def _attachment_blocks(
+    gateway: ConfluenceGateway, page_id: int, attachments: list[dict], settings: Settings
+) -> list[norm.Block]:
+    """Download + extract every attachment's text, wrapped as blocks (fixes/phase-2 wiring).
+
+    Fails soft per attachment, never per page: an oversized/unreachable/unparseable attachment is
+    skipped (logged) rather than failing the whole sync — matches `download_attachment`'s and
+    `extract_attachment`'s own never-raise contracts. Deterministic order (sorted by attachment
+    id) keeps section identity stable across syncs regardless of the API's own result ordering.
+    Bounded by `confluence_attachment_max_per_page` — a safety ceiling against a pathological
+    attachment count, not a real-world expectation (this Confluence instance's largest page has
+    dozens, not hundreds).
+    """
+    blocks: list[norm.Block] = []
+    ordered = sorted(attachments, key=lambda a: str(a.get("id") or ""))
+    max_per_page = settings.confluence_attachment_max_per_page
+    if len(ordered) > max_per_page:
+        log.warning(
+            "confluence_attachment_count_capped",
+            page_id=page_id,
+            found=len(ordered),
+            max_per_page=max_per_page,
+        )
+        ordered = ordered[:max_per_page]
+    for att in ordered:
+        title = att.get("title") or ""
+        download_link = att.get("downloadLink")
+        file_size = att.get("fileSize")
+        if not download_link or not title:
+            continue
+        max_bytes = settings.confluence_attachment_max_bytes
+        if isinstance(file_size, int) and file_size > max_bytes:
+            log.warning(
+                "confluence_attachment_skipped_oversized_metadata",
+                page_id=page_id,
+                title=title,
+                file_size=file_size,
+                max_bytes=max_bytes,
+            )
+            continue
+        data = gateway.download_attachment(download_link, max_bytes=max_bytes)
+        if data is None:
+            log.warning("confluence_attachment_skipped_unfetchable", page_id=page_id, title=title)
+            continue
+        result = extract_attachment(filename=title, media_type=att.get("mediaType"), data=data)
+        blocks.extend(attachment_to_blocks(title=title, text=result.text))
+    return blocks
 
 
 def _replace_restrictions(session: Session, *, page_id: int, principals: list[str]) -> None:

@@ -235,6 +235,74 @@ def test_http_client_group_member_lookup_failure_stays_fail_closed() -> None:
     assert client.get_restrictions(9001) == [GROUP_RESTRICTED_SENTINEL]
 
 
+# -- HttpConfluenceClient pagination (`_links.next` cursor join) -------------------------
+#
+# Confluence Cloud's `_links.next` is site-root-relative (e.g. "/wiki/api/v2/pages?cursor=...")
+# and already includes the "/wiki" context path `self._base` also carries — naively
+# concatenating the two doubled it ("/wiki/wiki/api/v2/pages?..."), a 404 that only surfaces
+# once a space/group has more than one page of results. Found live 2026-08-21 syncing a real
+# >100-page space; every test above this point mocks a single-page response, so it never
+# exercised the `next`-link join at all. Fixed via `httpx.URL(base).join(next_link)`.
+
+
+def test_http_client_list_space_pages_paginates_without_doubling_wiki_prefix() -> None:
+    seen_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_paths.append(request.url.path)
+        if len(seen_paths) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "results": [{"id": "1", "spaceId": "100", "title": "One", "status": "current"}],
+                    "_links": {"next": "/wiki/api/v2/pages?cursor=abc"},
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "results": [{"id": "2", "spaceId": "100", "title": "Two", "status": "current"}],
+                "_links": {},
+            },
+        )
+
+    client = HttpConfluenceClient(
+        _settings(), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    pages = client.list_space_pages(100)
+    assert [p.page_id for p in pages] == [1, 2]
+    assert seen_paths == ["/wiki/api/v2/pages", "/wiki/api/v2/pages"]
+
+
+def test_http_client_group_member_lookup_paginates_without_doubling_wiki_prefix() -> None:
+    seen_member_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/restriction"):
+            return httpx.Response(
+                200, json=_restrictions_response(page_id=9001, group_id="grp-finance")
+            )
+        seen_member_paths.append(request.url.path)
+        if len(seen_member_paths) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "results": [{"accountId": "acct-erin"}],
+                    "_links": {"next": "/wiki/rest/api/group/by-id/grp-finance/member?cursor=x"},
+                },
+            )
+        return httpx.Response(200, json={"results": [{"accountId": "acct-dave"}], "_links": {}})
+
+    client = HttpConfluenceClient(
+        _settings(), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    assert client.get_restrictions(9001) == ["acct-erin", "acct-dave"]
+    assert seen_member_paths == [
+        "/wiki/rest/api/group/by-id/grp-finance/member",
+        "/wiki/rest/api/group/by-id/grp-finance/member",
+    ]
+
+
 # -- HttpConfluenceClient retry/breaker/logging (PLAN 4.6.7) -----------------------------
 
 
@@ -386,6 +454,162 @@ def test_fixture_gateway_set_group_members_override(monkeypatch) -> None:
     monkeypatch.setattr("app.platform.clients.fixture_confluence_client._loader", lambda: stub)
     gateway.set_group_members("grp-finance", ["acct-overridden-member"])
     assert gateway.get_restrictions(9001) == ["acct-overridden-member"]
+
+
+# -- HttpConfluenceClient.download_attachment (fixes/phase-2 wiring) --------------------
+
+
+def test_get_attachments_includes_download_link() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "id": "att1",
+                        "title": "notes.pdf",
+                        "mediaType": "application/pdf",
+                        "fileSize": 100,
+                        "version": {"number": 1},
+                        "downloadLink": "/rest/api/content/9001/child/attachment/att1/download",
+                    }
+                ]
+            },
+        )
+
+    client = HttpConfluenceClient(
+        _settings(), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    out = client.get_attachments(9001)
+    assert out[0]["downloadLink"] == "/rest/api/content/9001/child/attachment/att1/download"
+
+
+def test_download_attachment_returns_bytes_on_success() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, content=b"hello attachment", headers={"content-type": "text/plain"}
+        )
+
+    client = HttpConfluenceClient(
+        _settings(), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    data = client.download_attachment(
+        "/rest/api/content/9001/child/attachment/att1/download", max_bytes=1_000
+    )
+    assert data == b"hello attachment"
+
+
+def test_download_attachment_follows_cross_host_redirect_without_forwarding_auth() -> None:
+    # Confirmed live (fixes/phase-2 research): Confluence 302s the download URL to a signed
+    # media.atlassian.com URL. httpx must be told to follow it — and must NOT forward the Basic
+    # Auth header to that third-party host (a credential leak otherwise). The injected client
+    # carries real auth here (unlike other tests in this file) specifically so this negative
+    # assertion has something to check — an unauthenticated MockTransport client could never prove
+    # a header was dropped, since it was never sent in the first place.
+    seen_auth_headers: list[str | None] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_auth_headers.append(request.headers.get("authorization"))
+        if request.url.host == "example.atlassian.net":
+            return httpx.Response(
+                302, headers={"location": "https://media.example.com/binary?token=abc"}
+            )
+        assert request.url.host == "media.example.com"
+        return httpx.Response(200, content=b"the real bytes")
+
+    authed_client = httpx.Client(
+        transport=httpx.MockTransport(handler), auth=httpx.BasicAuth("user@example.com", "token")
+    )
+    client = HttpConfluenceClient(_settings(), client=authed_client)
+    data = client.download_attachment("/rest/api/content/9001/attachment/download", max_bytes=1_000)
+    assert data == b"the real bytes"
+    assert len(seen_auth_headers) == 2
+    assert seen_auth_headers[0] is not None and seen_auth_headers[0].startswith("Basic ")
+    assert seen_auth_headers[1] is None
+
+
+def test_download_attachment_aborts_past_cap_even_if_content_length_lied() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        # 10 bytes advertised, but the real stream is much larger — the cap must still bind.
+        return httpx.Response(200, content=b"x" * 500, headers={"content-length": "10"})
+
+    client = HttpConfluenceClient(
+        _settings(), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    assert client.download_attachment("/download/x", max_bytes=100) is None
+
+
+def test_download_attachment_returns_none_on_4xx() -> None:
+    client = HttpConfluenceClient(
+        _settings(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(404))),
+    )
+    assert client.download_attachment("/download/gone", max_bytes=1_000) is None
+
+
+def test_download_attachment_retries_5xx_then_succeeds() -> None:
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] < 2:
+            return httpx.Response(503)
+        return httpx.Response(200, content=b"ok")
+
+    client = HttpConfluenceClient(
+        _settings(), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    assert client.download_attachment("/download/x", max_bytes=1_000) == b"ok"
+    assert calls["n"] == 2
+
+
+def test_download_attachment_empty_link_returns_none() -> None:
+    client = HttpConfluenceClient(
+        _settings(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200))),
+    )
+    assert client.download_attachment("", max_bytes=1_000) is None
+
+
+# -- FixtureConfluenceGateway.download_attachment (fixes/phase-2 wiring) ----------------
+
+
+def test_fixture_gateway_download_attachment_resolves_real_fixture_file() -> None:
+    gateway = FixtureConfluenceGateway()
+    attachments = gateway.get_attachments(1001)
+    checklist = next(a for a in attachments if a["title"] == "welcome-checklist.txt")
+    data = gateway.download_attachment(checklist["downloadLink"], max_bytes=10_000)
+    assert data is not None
+    assert b"Sign the code of conduct" in data
+
+
+def test_fixture_gateway_download_attachment_unknown_link_returns_none() -> None:
+    gateway = FixtureConfluenceGateway()
+    assert gateway.download_attachment("/download/does-not-exist", max_bytes=10_000) is None
+
+
+def test_fixture_gateway_download_attachment_oversized_returns_none() -> None:
+    gateway = FixtureConfluenceGateway()
+    attachments = gateway.get_attachments(1001)
+    checklist = next(a for a in attachments if a["title"] == "welcome-checklist.txt")
+    assert gateway.download_attachment(checklist["downloadLink"], max_bytes=1) is None
+
+
+def test_fixture_gateway_set_attachment_content_overrides_bytes() -> None:
+    gateway = FixtureConfluenceGateway()
+    attachments = gateway.get_attachments(1001)
+    checklist = next(a for a in attachments if a["title"] == "welcome-checklist.txt")
+    gateway.set_attachment_content(checklist["downloadLink"], b"overridden content")
+    data = gateway.download_attachment(checklist["downloadLink"], max_bytes=10_000)
+    assert data == b"overridden content"
+
+
+def test_fixture_gateway_set_attachment_content_none_simulates_failure() -> None:
+    gateway = FixtureConfluenceGateway()
+    attachments = gateway.get_attachments(1001)
+    checklist = next(a for a in attachments if a["title"] == "welcome-checklist.txt")
+    gateway.set_attachment_content(checklist["downloadLink"], None)
+    assert gateway.download_attachment(checklist["downloadLink"], max_bytes=10_000) is None
 
 
 def test_fixture_gateway_set_restrictions_override_bypasses_resolution(monkeypatch) -> None:

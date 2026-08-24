@@ -24,6 +24,7 @@ from .application.versioning import (
     stage_and_activate,
 )
 from .domain import normalization
+from .domain.attachment_extraction import ExtractionResult, attachment_to_blocks, extract_attachment
 from .domain.change_detection import (
     ChangeClass,
     TargetVersions,
@@ -35,12 +36,15 @@ from .infrastructure.page_source_repo import get_local_state
 
 __all__ = [
     "ChangeClass",
+    "ExtractionResult",
     "PageHashes",
     "TargetVersions",
+    "attachment_to_blocks",
     "build_ingestion_services",
     "classify",
     "deactivate_page",
     "decide_body_fetch",
+    "extract_attachment",
     "get_local_state",
     "map_page_status",
     "normalization",

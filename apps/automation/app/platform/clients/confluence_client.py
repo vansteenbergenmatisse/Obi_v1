@@ -72,6 +72,7 @@ class ConfluenceGateway(Protocol):
     def get_labels(self, page_id: int) -> list[str]: ...
     def get_restrictions(self, page_id: int) -> list[str]: ...
     def get_attachments(self, page_id: int) -> list[dict]: ...
+    def download_attachment(self, download_link: str, *, max_bytes: int) -> bytes | None: ...
 
 
 # Returned in place of a group-only restriction's principals when group membership could not be
@@ -223,7 +224,13 @@ class HttpConfluenceClient:
             next_link = (data.get("_links", {}) or {}).get("next")
             if not next_link:
                 break
-            url = next_link if next_link.startswith("http") else f"{self._base}{next_link}"
+            # `next_link` is a site-root-relative path (e.g. "/wiki/api/v2/pages?cursor=...")
+            # that already includes the "/wiki" context path also present in `self._base` —
+            # naively concatenating the two double-prefixed every page past the first (only
+            # surfaces once a space has >100 pages; confirmed live 2026-08-21). `URL.join`
+            # resolves a root-relative ref against the origin, not the base's own path, and
+            # passes an already-absolute `next_link` through unchanged either way.
+            url = str(httpx.URL(self._base).join(next_link))
             params = None  # cursor is embedded in next_link
         return pages
 
@@ -239,6 +246,7 @@ class HttpConfluenceClient:
             return []
         out = []
         for r in resp.json().get("results", []):
+            links = r.get("_links", {}) or {}
             out.append(
                 {
                     "id": r.get("id"),
@@ -246,9 +254,73 @@ class HttpConfluenceClient:
                     "mediaType": r.get("mediaType"),
                     "fileSize": r.get("fileSize"),
                     "version": (r.get("version", {}) or {}).get("number"),
+                    # relative REST v1 path; confirmed live (fixes/phase-2 wiring, 2026-08-21) as
+                    # `/rest/api/content/{pageId}/child/attachment/{id}/download`, which itself
+                    # 302-redirects cross-host to a signed, time-limited media.atlassian.com URL —
+                    # `download_attachment` follows that redirect, this field is never used as-is.
+                    "downloadLink": r.get("downloadLink") or links.get("download"),
                 }
             )
         return out
+
+    def download_attachment(self, download_link: str, *, max_bytes: int) -> bytes | None:
+        """Fetch one attachment's binary content, capped at ``max_bytes``.
+
+        Streams the response and aborts once the cumulative size exceeds the cap, bounding memory
+        regardless of what the attachment's own reported ``fileSize`` claims (defense in depth
+        against a mismatched or lied Content-Length) — callers should still skip a download
+        upfront using the cheap, already-known ``fileSize`` from ``get_attachments`` when it alone
+        exceeds the cap. Follows the cross-host redirect to Confluence's signed media URL
+        (confirmed live, fixes/phase-2 wiring) — httpx does not forward the Basic Auth header
+        across that redirect, so no credential is ever sent to the third-party media host.
+
+        Fails **soft** (returns ``None``, logs a warning) rather than raising: unlike
+        ``get_restrictions``'s fail-closed security requirement, a single unreachable/oversized
+        attachment must not fail the whole page sync — the attachment's visibility is already
+        governed by its parent page's own restriction, not by this call succeeding.
+        """
+        if not download_link:
+            return None
+        url = download_link if download_link.startswith("http") else f"{self._base}{download_link}"
+        if self._consecutive_failures >= self._breaker_threshold:
+            raise ConfluenceCircuitBreakerOpenError(
+                "confluence circuit breaker open after "
+                f"{self._consecutive_failures} consecutive request failures"
+            )
+        try:
+            data = self._download_with_retry(url, max_bytes)
+        except Exception:
+            self._consecutive_failures += 1
+            raise
+        self._consecutive_failures = 0
+        return data
+
+    @retry(
+        retry=retry_if_exception_type(_RETRYABLE),
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=0.3, max=4),
+        before_sleep=_log_before_retry,
+        reraise=True,
+    )
+    def _download_with_retry(self, url: str, max_bytes: int) -> bytes | None:
+        with self._client.stream("GET", url, follow_redirects=True) as resp:
+            if resp.status_code >= 500:
+                log.warning("confluence_client_5xx", url=url, status=resp.status_code)
+                resp.raise_for_status()
+            if resp.status_code >= 400:
+                log.warning(
+                    "confluence_attachment_download_failed", url=url, status=resp.status_code
+                )
+                return None
+            chunks: list[bytes] = []
+            total = 0
+            for chunk in resp.iter_bytes():
+                total += len(chunk)
+                if total > max_bytes:
+                    log.warning("confluence_attachment_oversized", url=url, max_bytes=max_bytes)
+                    return None
+                chunks.append(chunk)
+            return b"".join(chunks)
 
     def get_restrictions(self, page_id: int) -> list[str]:
         """Read-restriction principals for a page.
@@ -334,6 +406,6 @@ class HttpConfluenceClient:
             next_link = (data.get("_links", {}) or {}).get("next")
             if not next_link:
                 break
-            url = next_link if next_link.startswith("http") else f"{self._base}{next_link}"
+            url = str(httpx.URL(self._base).join(next_link))  # see list_space_pages's comment
             params = None  # cursor is embedded in next_link, matching list_space_pages
         return members
