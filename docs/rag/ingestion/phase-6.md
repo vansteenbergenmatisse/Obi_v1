@@ -1,8 +1,17 @@
 # Phase 6 — Supabase vector store migration & deploy (ingestion-side impact)
 
-**Status:** ⬜ **todo, deliberately deferred.** No code has been written for this phase. Everything
-below is what `PLAN.md` (lines 3153–3216) specifies will happen, not what exists today — nothing
-here should be treated as shipped.
+**Status:** 🟩 **live cutover done + verified against Supabase (2026-09-09); production traffic NOT
+switched, work UNCOMMITTED — operator decides commit + go-live.** The prerequisite RLS fix
+(**ADR-0013** + migration `0008_drop_force_rls` + `apply_chunk_rls`, TDD-gated by
+`app/features/confluence_sync/tests/test_force_rls_managed_postgres.py`) landed first, then the full
+cutover ran green on Supabase (project `vtpbwkbbkfukfmytlqns`, `eu-west-1`, session pooler `:5432`):
+preflight (pgvector 0.8.2, owner `is_superuser=off`) → `alembic upgrade head` (`0008`, `chunk`
+`rowsecurity=t forcerowsecurity=f`) → `provision-reader` (`rag_reader.<ref>`, `DATABASE_READER_URL`
+written to `.env`) → corpus load (9/9/9/85/9, single source `confluence:default`) → parity
+(`verify-isolation` owner 85 / reader-no-GUC 0 / scoped 85 / bogus 0; `make eval` retrieval_smoke
+recall@5 1.000). Full procedure + recorded results: **`docs/runbooks/supabase-vector-store-cutover.md`**.
+See `PLAN.md` §0 (2026-09-09) for the ledger entry and the remaining operator decisions (commit;
+Phase 11.1a before any public deploy; one-line DSN rollback to local).
 
 ## Files & folders that will be touched
 
@@ -32,10 +41,13 @@ gate reasoning, root `CLAUDE.md`'s gate).
   Postgres directly via `psycopg`, not Supabase's REST/JS SDK, so `ANON_KEY`/`SERVICE_ROLE_KEY` are
   never needed — only the Postgres connection string.
 - **Role recreation.** Supabase manages roles differently (`authenticated`/`service_role`/`anon`,
-  JWT-claim RLS, no plain superuser) — the docker init SQL that creates `rag_writer`
-  (`BYPASSRLS`)/`rag_reader` locally won't run there; it has to be reapplied via a one-off script or
-  a Supabase migration. The writer must retain a `BYPASSRLS`-equivalent path so ingestion's write
-  behavior is unchanged.
+  JWT-claim RLS, **no plain superuser and no reliable `BYPASSRLS` for the tenant role**) — the docker
+  init SQL that creates `rag_reader` locally won't run there; it has to be reapplied via a one-off
+  script or a Supabase migration. **How the writer bypasses RLS changed (ADR-0013):** it is no
+  longer via superuser/`BYPASSRLS` but via **table ownership with `FORCE` dropped** — the writer
+  role must *own* `chunk` (i.e. create the tables through `alembic upgrade` as that role), after
+  which `ENABLE`d-but-not-`FORCE`d RLS exempts the owner while `rag_reader` stays policy-bound. This
+  is what makes ingestion writes work on a host with no superuser; the reader isolation is unchanged.
 - **pgvector ≥0.8 confirmation** — required for `hnsw.iterative_scan` (the RLS-scope recall safety
   valve from Phase 3.5.1); Supabase may pin an older version, which would need a mitigation decided
   before shipping.

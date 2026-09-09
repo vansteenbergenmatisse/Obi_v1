@@ -50,14 +50,22 @@ _RLS_POLICY = "chunk_source_read"
 
 
 def apply_chunk_rls(conn: Connection) -> None:
-    """Enable + FORCE source-keyed RLS on ``chunk`` with a default-deny policy. Idempotent.
+    """Enable (not FORCE) source-keyed RLS on ``chunk`` with a default-deny policy. Idempotent.
 
     An unset ``app.allowed_sources`` GUC -> ``string_to_array(NULL, ',')`` -> ``= ANY(NULL)`` is
-    never true -> zero rows. The table owner/superuser (the writer) bypasses RLS; the non-owner
-    ``rag_reader`` role is subject to it, which is why retrieval must run as that role.
+    never true -> zero rows. RLS is ``ENABLE``d but deliberately **not** ``FORCE``d (ADR-0013): the
+    table owner (the writer) is exempt by virtue of ownership alone, while the non-owner
+    ``rag_reader`` role stays subject to the policy — which is why retrieval must run as that role.
+
+    ``FORCE`` was dropped so the writer no longer needs SUPERUSER to bypass the default-deny policy:
+    managed Postgres (Supabase, RDS) grants no true superuser, so under ``FORCE`` the writer/owner
+    would itself be filtered to zero rows and ingestion reads would break. Read-path isolation is
+    unchanged — it never depended on ``FORCE``, only on ``rag_reader`` being a non-owner.
     """
     conn.execute(text("ALTER TABLE chunk ENABLE ROW LEVEL SECURITY"))
-    conn.execute(text("ALTER TABLE chunk FORCE ROW LEVEL SECURITY"))
+    # No FORCE: the owner (writer) must read its own rows without SUPERUSER (ADR-0013). Assert
+    # NO FORCE so a DB migrated before ADR-0013 is corrected when this idempotent helper reruns.
+    conn.execute(text("ALTER TABLE chunk NO FORCE ROW LEVEL SECURITY"))
     conn.execute(text(f"DROP POLICY IF EXISTS {_RLS_POLICY} ON chunk"))
     conn.execute(
         text(
