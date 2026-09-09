@@ -9,6 +9,517 @@
 
 ## 0. Status ledger & blockers  *(keep current — update after every phase)*
 
+---
+
+## ⭐ SESSION LOG 2026-09-09 (pm) — Supabase completeness audit + Phase 13.1 built. What's DONE / what's NEXT
+
+> Consolidated record of this session so nothing is scattered. Details below in the TOP STATUS block,
+> the Phase 13 section, and `docs/runbooks/phase-13.1-apply-reader-rls-supabase.md`.
+
+### ✅ DONE this session (all UNCOMMITTED, in the working tree)
+1. **Live Supabase read-only introspection** (no MCP exists → used a scratchpad `psycopg` script on the
+   `.env` DSN). Ground truth: **schema is COMPLETE** — all 12 tables, pgvector 0.8.2, HNSW + both GIN
+   indexes, alembic head `0008`, `chunk_source_read` policy, `rag_reader` role. **No missing schema
+   object.** The real gaps are RLS *posture* + doc drift, not absent tables.
+2. **6-agent audit of every file in `docs/`** vs that ground truth → scoped **Phase 13** (Supabase
+   completeness & tag-behavior verification) into PLAN.md: §0 TOP STATUS block, a full Phase 13 section,
+   and the phase table.
+3. **Confluence tag-behavior verdict** (put at the top per operator ask): tag-differentiated answering
+   is **implemented + tested end-to-end but NOT live-demonstrable** (live corpus is 100 % `general`;
+   curated table empty). → Phase 13.5 = label a page mews/opera/toast to prove it live.
+4. **Phase 13.1 — migration `0009` BUILT via TDD** (reader RLS on non-`chunk` tables). Helpers in
+   `platform/db/schema.py` (`enable_non_chunk_rls`, `apply_reader_rls`, `drop_reader_rls`,
+   `disable_non_chunk_rls`), migration `alembic/versions/0009_reconcile_non_chunk_rls.py`, tests
+   `confluence_sync/tests/test_reader_rls_reconcile.py` + `platform/db/tests/
+   test_migration_0009_reader_rls_reconcile.py`. `make check` **488 passed**; boundaries +
+   ruff/format/pyright clean.
+5. **⚠️ SECURITY PIVOT inside 13.1 (Option A → Option B).** A live grant check found `anon` **and**
+   `authenticated` (Supabase's public REST-API roles) hold `GRANT SELECT` on **all 12 tables** → RLS is
+   the *only* thing keeping the corpus private. The first cut (disable RLS) would have exposed every row
+   to the public `anon` REST endpoint. Corrected to: **keep RLS enabled + add a `TO rag_reader` policy**
+   on the reader's read set (`page_source`, `page_restriction`, `curated_knowledge_entry`); `chunk`
+   untouched. Proven safe by an anon-stays-denied test + a mutation check.
+6. **Wrote the apply runbook** `docs/runbooks/phase-13.1-apply-reader-rls-supabase.md` (exact steps +
+   verification + rollback) and the retrieval-side doc `docs/rag/retrieval/phase-13.md`.
+
+### 🔜 NEXT (Phase 13 remaining — in order)
+- **✅ Apply 0009 to live Supabase — DONE (2026-09-09)**: `uv run alembic upgrade head` ran against
+  Supabase; live head is now `0009_reconcile_non_chunk_rls`. Verified: the 3 `*_reader_read` policies
+  exist scoped to `{rag_reader}` (SELECT) on `page_source`/`page_restriction`/`curated_knowledge_entry`,
+  and RLS stays ON for all 12 public tables (`anon`/`authenticated` still default-denied — nothing new
+  exposed to the public REST role). NEVER disable RLS / never run 0009 downgrade on Supabase.
+  - **Reader-level smoke (2026-09-09) — PASS (catalog + RLS semantics, deterministic).** Verified
+    read-only on live: `rag_reader` is `NOBYPASSRLS` with `SELECT` granted on all 3 reader tables +
+    `chunk`; the 3 `*_reader_read` policies are permissive `SELECT` with `USING (true)` scoped to
+    `{rag_reader}`; `anon`/`authenticated` are `NOBYPASSRLS` with 0 matching policies. `page_source`
+    holds 9 rows → `rag_reader` now reads all 9 (was 0 pre-0009). `page_restriction`/`curated` empty
+    (0 for everyone — not yet demonstrable; policies present). NOT exercised: a live `rag_reader`
+    *login* round-trip — blocked (no reader password on hand; a reset is denied because Supabase's
+    `postgres` is non-superuser and not a member of `rag_reader`).
+  - **⚠️ Finding for 13.2 (re-provision path is broken on Supabase):** `ensure_reader_role`'s CREATE
+    path worked at the Phase-6 cutover (role absent → `CREATE ROLE … NOSUPERUSER … NOBYPASSRLS` is
+    allowed for the CREATEROLE `postgres`), but the **re-provision path fails**: with the role already
+    present it runs `ALTER ROLE rag_reader … NOSUPERUSER … NOBYPASSRLS`, which Supabase's non-superuser
+    `postgres` rejects ("only SUPERUSER may alter roles with the SUPERUSER attribute"). `SET ROLE
+    rag_reader` is also denied (no admin membership), so the owner session cannot impersonate the
+    reader either. 13.2 must split the *bare* password reset (`ALTER ROLE … PASSWORD` only, no
+    attribute clauses) from the attribute assertion so a reader DSN can be re-issued on the managed
+    store without superuser.
+
+### 🗄️ Postgres / Supabase — remaining manual ops
+- **For 0009 / Phase 13.1 itself: NOTHING more is required in Postgres.** It is applied (head `0009`),
+  the reader policies + RLS posture are verified, and `anon`/`authenticated` stay fenced. Done.
+- **Only outstanding Postgres op (optional now):** re-issue a working `rag_reader` password into
+  `DATABASE_READER_URL` (root `.env` currently empty). Needed **only** to (a) run the empirical reader
+  *login* smoke, or (b) point a real deployed backend at Supabase as the reader. **Not needed for
+  local dev** (`ENV=local` → the reader engine falls back to the writer). Because the script's
+  re-provision path is broken (finding above), do it as a **bare** statement — preferably in the
+  **Supabase Studio SQL editor** (broader role-management rights than the pooler `postgres`):
+  `ALTER ROLE rag_reader PASSWORD '<new-pw>';` then set `DATABASE_READER_URL` to the `rag_reader` DSN.
+- **NEVER in Postgres on Supabase:** `DISABLE ROW LEVEL SECURITY` on any table, or the 0009 downgrade
+  — either re-exposes the corpus to the public `anon` REST role.
+- **13.2** — extend `scripts/setup_supabase.py`: `provision-reader` calls `apply_reader_rls` after role
+  creation (fresh-deploy path); `verify_isolation` exercises the reader against
+  `page_source`/`page_restriction`/`curated_knowledge_entry` **and** confirms an `anon`-like role is
+  denied (not just `chunk`).
+- **13.3** — doc reconciliation sweep (several docs still say curated/non-`chunk` tables "have no RLS",
+  now false on Supabase; FORCE-RLS-resolved; "Phase 6 executed not planned"; `rag_writer`→owner label;
+  10→11 table count; alembic 0007→0008 range).
+- **13.4** — runbook backups + monitoring section; transplant note; `0008` docstring + `.env` path fix.
+- **13.5** — prove tag-differentiation on live data (label ≥1 Confluence page mews/opera-cloud/toast).
+- **Commit** the Phase-6 + Phase-13 working trees when the operator says so (both currently uncommitted).
+- **Separate axis, still outstanding before any public deploy:** Phase **11.1a** customer-scope
+  (mews/opera/toast) fail-closed backstop — NOT the same as 13.1.
+
+### 📌 Operator decisions needed
+- (a) ✅ RESOLVED — 0009 applied to Supabase (live head `0009`, verified).
+- (b) Commit the Phase-6 and/or Phase-13 trees, or keep uncommitted?
+- (c) Optional: run `/codex:adversarial-review --background` on the RLS change before applying/committing.
+
+---
+
+## ⭐ TOP STATUS (2026-09-09 pm) — Supabase completeness audit + Confluence-tag behavior verdict → new **Phase 13**
+
+A read-only introspection of the **live** Supabase project (`vtpbwkbbkfukfmytlqns`, `eu-west-1`,
+pgvector 0.8.2, alembic head **0008**) plus a 6-agent doc sweep across **every file in `docs/`** was run
+this session. Headline: the **schema itself is complete** — all 11 mapped tables + `alembic_version`
+exist, with the HNSW vector index, both GIN indexes, and the `chunk_source_read` RLS policy all present.
+What is *not* done is **RLS posture** and **doc accuracy**. This became **Phase 13** (full section below,
+after Phase 12).
+
+### ❓ "Does it do everything with Confluence — based on tags, does it respond differently?" — the verdict
+- **Mechanism: IMPLEMENTED + TESTED end-to-end.** The whole chain is wired and covered by unit + real-DB
+  tests (incl. a GIN `EXPLAIN`): Confluence label → scope tag (`resolve_knowledge_scope_tags`, repo-root
+  `config/knowledge_scopes.json` = general/mews/opera-cloud/toast) → 2+-label **conflict quarantine**
+  (fail-closed, zero tags) → `chunk.tags` stamped at the versioning seam → in-SQL `AND tags &&
+  :knowledge_scopes` filter on the partial GIN `ix_chunk_tags_gin` → request threading
+  (`ChatRequestBody.knowledge_scope` → `resolve_allowed_scopes`, always includes `general`, binds
+  cache/idempotency) → double-gated behind `enable_knowledge_scope_filtering` (flag is **TRUE** in the
+  live `.env`).
+- **BUT it is NOT demonstrable on live data.** The live corpus is **100 % `{base, general}`** across all
+  9 pages / 85 chunks, and `curated_knowledge_entry` is **empty**. So provider-specific answering
+  (mews vs opera vs toast) is proven **only by synthetic/real-DB tests**. The only thing provable on the
+  live store is the *negative* (a mews request returns the general corpus; a mews-**only** filter returns
+  zero). **To prove it live: label ≥1 Confluence page `mews`/`opera-cloud`/`toast` (or seed a scoped
+  curated entry) so a scoped query returns content a `general` query does not.** → Phase 13.5.
+- **This is a "future ideas" concern surfaced to the top per operator request** — it does not change the
+  Phase 11 → 12 order; it is a *verification* task (Phase 13), not a re-build.
+
+### ✅ The one genuinely new, live finding — NOW RESOLVED (migration 0009 applied 2026-09-09)
+> Resolved: 0009 is live (head `0009`); `rag_reader` now has permissive `SELECT USING(true)` policies on
+> all three tables (verified). The description below is the *pre-fix* state, kept for the record.
+> (Note: `DATABASE_READER_URL` is currently **empty** in `.env`; the reader engine only fails *closed*
+> once that DSN is set for a real deploy — see "Postgres / Supabase — remaining manual ops" above.)
+
+**Non-`chunk` tables are RLS-enabled with NO policy on live → the `rag_reader` role is default-denied.**
+Retrieval runs as `rag_reader` (NOBYPASSRLS; `DATABASE_READER_URL` is set, and `get_reader_engine()`
+fails *closed* outside offline envs), and that reader reads `page_source` + `page_restriction` (page ACL,
+`fetch_page_scopes`) and `curated_knowledge_entry` (curated layer) on the reader session. All three have
+RLS **enabled + zero policies** live, so the reader gets **0 rows** → the **page-level ACL silently fails
+OPEN** (no restrictions seen ⇒ everything treated as unrestricted) and the **curated answer layer returns
+nothing once seeded**. Masked *today only* because those tables are empty and the corpus is single-space
+all-`general`. Migrations only ever `ENABLE` RLS on `chunk`, so this is **out-of-band drift a fresh
+`alembic upgrade head` would not reproduce**. Fix = **migration 0009** (Phase 13.1). This is a *different*
+axis from Phase 11.1a (reader-access correctness, not customer-scope isolation) — do not conflate them.
+
+### Where we stand (one line)
+Schema ✅ complete · pgvector/HNSW/GIN ✅ · source-axis RLS ✅ · **reader RLS → migration 0009 ✅
+built+tested, Option B/secure (13.1, UNCOMMITTED; NOT yet applied to Supabase — run `alembic upgrade
+head`, see `docs/runbooks/phase-13.1-apply-reader-rls-supabase.md`)** · **⚠️ `anon`/`authenticated`
+hold SELECT on all tables → RLS is the only privacy fence; must NOT disable it** ·
+**tag-differentiation ✅ built/tested but not live-provable (Phase 13.5)** · **docs drifted 🟡 (Phase 13.3)**
+· Phase-6 + Phase-13 trees still **uncommitted**.
+
+---
+
+## ⭐ CURRENT DIRECTION (2026-09-09 pm) — clean FE/BE separation INSIDE the monorepo; AWS deploy later; NO repo split
+
+**Operator's call this session:**
+- **Keep one monorepo. Do NOT split into separate repos** — the physical git split is **de-scheduled
+  back to a future idea** (`docs/future-ideas/IDEAS.md` #5); operator leans towards never doing it.
+- **Still separate frontend and backend *properly*** — as a clean **separation of concerns inside the
+  monorepo** (logical boundaries, config/secrets partitioned per layer). That is Phase 11's **11.1 +
+  11.2** — kept. The repo-split prereqs (11.3) + git extraction (11.4) are what moved to future ideas.
+- **Deploy target = AWS, committed but deferred.** Not now; **not Vercel or any other platform** —
+  AWS specifically, when the time comes. **For now the app runs locally (backend local is fine).**
+- Supabase (managed vector store) is done and stays as-is regardless of where the app runs.
+
+### Is it already "separated"? — short answer
+- **Module-level: YES.** Inside the monorepo the concerns are already machine-enforced import
+  boundaries (`tools/check_feature_boundaries.py`): `apps/web` (frontend) vs `apps/automation`
+  backend, and within the backend `confluence_sync`+`ingestion` (write path), `retrieval` (RAG read
+  core), `rag_agent` (API). Zero deep cross-feature imports — every edge goes through a facade. 11.2
+  hardens the last soft spots (shared config object, a mis-filed repo, secret partitioning).
+- **Into separate repos: NO — and that's now intentional.** Stays one monorepo (pnpm + `uv`).
+- **The knowledge/vector layer as its own *service*: it CANNOT be, by design** (ADR-0004) — its
+  isolation *is* Postgres RLS on one shared DB. "Own source of truth" = the retrieval core as a
+  package + managed Postgres by DSN (Supabase, live). Never a bespoke data microservice.
+
+### 📋 Main things still to do — big-bullet summary (phases → sub-phases)
+
+- **Phase 11 — separation of concerns (in-monorepo) + security. ← the "next batch", do now, in order:**
+  - **11.1a** — customer-isolation **DB backstop** (security, FIRST): fix the *fail-open* leak
+    (mews/opera/toast is an app-layer `tags && :scopes` gated by a flag that fails open;
+    `curated_knowledge_entry` has no RLS). Add default-deny DB enforcement + RLS. TDD.
+  - **11.1b** — get the **owner DSN out of the read core** (retrieval holds only `DATABASE_READER_URL`).
+  - **11.2** — **module-boundary hardening** = the "proper FE/BE separation": finish config injection,
+    refile `curated_knowledge_repo` into the RAG core, pick one `query_trace` write-owner, **partition
+    secrets per layer**. `make boundaries` stays green. *(No ADR, no repo split.)*
+  - **11.1c** — public-exposure hardening → **deferred with the AWS deploy**.
+- **Phase 12 — remaining product work (after 11):**
+  - **12.1** (old 10.8) — live label-sync + scope-switcher self-test *(build half uncommitted)*.
+  - **12.2** (old 10.10) — label-gated ingestion (TDD, behind `enable_label_gated_ingestion`).
+  - **12.3** (old 10.9) — your user-acceptance pass.
+  - **12.4** (Phase 5 remainder) — live-LLM red-team + latency/cost proof + embedder bake-off
+    *(blocked on API-spend go-ahead + `VOYAGE_API_KEY`)*.
+- **Phase 13 — Supabase completeness & tag-behavior verification (NEW 2026-09-09, from the doc-audit):**
+  - **13.1** — **migration 0009**: let `rag_reader` read `page_source`/`page_restriction`/
+    `curated_knowledge_entry` (fixes the page-ACL fail-open + curated lockout). **HIGH — before any
+    public deploy.** Distinct axis from 11.1a. ✅ **BUILT (Option B/secure, TDD, UNCOMMITTED; +5 tests,
+    `make check` 488).** ⚠️ **Corrected from Option A after finding `anon`/`authenticated` hold SELECT
+    on all tables → disabling RLS = public leak; the fix keeps RLS on + adds `rag_reader`-scoped
+    policies.** ✅ **APPLIED to Supabase 2026-09-09** (live head `0009`; 3 reader policies + RLS posture
+    verified; reader-level smoke PASS via catalog + RLS semantics). Runbook:
+    `docs/runbooks/phase-13.1-apply-reader-rls-supabase.md`. Still UNCOMMITTED in git.
+  - **13.2** — extend `setup_supabase.py verify_isolation` to exercise the reader against its *full*
+    read set (not just `chunk`), so this drift can never go latent again.
+  - **13.3** — doc reconciliation sweep (curated "no RLS" correction, FORCE-RLS-resolved, "Phase-6
+    executed not-planned", `rag_writer`→owner label, 10→11 table count, alembic 0007→0008 range).
+  - **13.4** — runbook backups + monitoring section; `page_restriction`/curated transplant note;
+    0008 docstring + `.env` path-comment fixes. *(low)*
+  - **13.5** — prove tag-differentiation on **live** data: label ≥1 Confluence page mews/opera/toast
+    (or seed a scoped curated entry) so a scoped query returns what a `general` query does not.
+- **Deploy — DEFERRED (AWS only, later):** containerize + AWS host (ECS/Fargate-class; the
+  FastAPI + APScheduler backend needs a persistent host, not serverless) against Supabase; carries
+  **11.1c**; then public HTTPS URL → register the Confluence webhook. **Run local until then.**
+- **Loose end:** **commit the Phase-6 work** (ADR-0013, migration 0008, `setup_supabase.py`, runbook,
+  docs) — still uncommitted. `.env` stays gitignored / never committed.
+- **Future ideas (NOT scheduled):** the **repo split** (IDEAS #5) — its 3 open decisions (package
+  registry, two repo names, monorepo fate) + ADR-0012 only matter *if* we ever revisit it.
+
+### What I'll do once you say go (recommend `/compact-ultra` first)
+Commit Phase 6 → build & TDD **11.1a** → **11.1b** → **11.2**. No repo split, no deploy, no new repos.
+I will **not** invent connection values or deploy anything.
+
+---
+
+**2026-09-09 (Phase 6 LIVE CUTOVER DONE — the full 6-step checklist ran green against Supabase.
+STOPPED before switching production traffic and before committing, as designed. ⭐ RESUME by
+deciding the two operator items at the bottom of this entry.)** Runbook:
+`docs/runbooks/supabase-vector-store-cutover.md`. Working tree left mixed + UNCOMMITTED for operator
+review (one new code change this run: a preflight bugfix, below).
+
+**What ran (project `vtpbwkbbkfukfmytlqns`, `eu-west-1`, session pooler `:5432`, db `postgres`):**
+1. **preflight** ✓ — `role='postgres' is_superuser=off`, **pgvector 0.8.2** (gate passed). *Caught +
+   fixed a real bug in `scripts/setup_supabase.py`: the `alembic_version` existence guard read
+   `… FROM alembic_version WHERE to_regclass(...) IS NOT NULL`, but a `WHERE` can't shield the `FROM`
+   from name resolution, so a **pre-migration** DB raised `UndefinedTable` instead of reporting "no
+   table yet". Fixed to check `to_regclass` first. The local dry-run missed it because local was
+   already migrated. Script stays ruff/format/pyright clean; app+tests don't import it.*
+2. **alembic upgrade head** ✓ → `0008_drop_force_rls`; `chunk` confirmed `rowsecurity=t
+   forcerowsecurity=f`, policy `chunk_source_read` present (ADR-0013 state).
+3. **provision-reader** ✓ — `rag_reader.<ref>` created; `DATABASE_READER_URL` written to `.env`
+   (password generated, never printed).
+4. **corpus load** ✓ — `pg_dump --data-only` of the 5 **content** tables (page_source/document/
+   document_version/source_scope/chunk) → single-transaction restore. Loaded **9/9/9/85/9**, source
+   `confluence:default`. FK handling: circular `page_source⇄document_version` are `INITIALLY
+   DEFERRED` (so the whole restore is one `BEGIN…COMMIT`); the **non-deferrable** `chunk.parent_chunk_id`
+   self-FK was temporarily made deferrable for the load then reverted to `NOT DEFERRABLE` → schema ==
+   migrations. Operational logs (job/query_trace/reconciliation_run) deliberately NOT transplanted.
+5. **prove parity** ✓ — `verify-isolation` on live Supabase: owner **85**, reader no-GUC **0**,
+   reader scoped **85**, reader bogus **0** (ADR-0004 default-deny holds; also proves `rag_reader`
+   authenticates through the pooler). `make eval` on the live store: retrieval_smoke recall@5
+   **1.000**/mrr 0.750, ambiguity 1.000, permission 0.667, out_of_corpus 0.000. Local isolation
+   suite **24 passed**; full suite **483 passed**, boundaries clean, ruff/format/pyright clean on the
+   touched file. Cross-provider (mews vs toast) exclusion stays proven by
+   `test_retrieval_knowledge_scope.py` only — the live corpus is all `general`.
+6. **runbook + ledger** ✓ — this entry + `docs/runbooks/supabase-vector-store-cutover.md`. **STOPPED.**
+
+**⚠️ Test-suite coupling (recorded so it's not mistaken for a regression):** the pytest fixture
+derives its `<db>_test` DB from `.env`'s `DATABASE_URL` and provisions roles as a superuser, so while
+`.env` points at Supabase, `make check`/`make test` fail role setup. Run the suite with
+`DATABASE_URL` overridden to the local docker DSN (see the runbook's step 5 / gotcha).
+
+**⭐ NEXT — operator decisions (nothing auto-runs):**
+- (a) **Commit or discard** the Phase-6 working tree (ADR-0013 + migration 0008 + `setup_supabase.py`
+  incl. the preflight fix + this runbook + docs). `.env` is gitignored and must NOT be committed.
+- (b) **Phase 11.1a** (customer-axis fail-open backstop) MUST land **before any PUBLIC deploy** — the
+  source-axis RLS proven here does NOT cover the mews/opera/toast scope axis.
+- (c) To revert to local dev: point `.env` `DATABASE_URL` back to
+  `postgresql+psycopg://rag:rag@localhost:5434/omniboost_rag` (rollback is a one-line DSN swap; the
+  Supabase store is left intact).
+
+---
+
+- **`.env` wired.** Root `.env` `DATABASE_URL` repointed to the Supabase **session-pooler** DSN
+  (`postgresql+psycopg://postgres.<ref>:<placeholder>@…pooler.supabase.com:5432/postgres?sslmode=require`).
+  All 37 other keys preserved; `.env` confirmed gitignored + untracked. **No credential printed.**
+  (Previous local DSN was the public default `postgresql+psycopg://rag:rag@localhost:5434/omniboost_rag`
+  — revert to that for local dev.)
+- **Provisioning script written + VALIDATED against local real data** (`apps/automation/scripts/
+  setup_supabase.py`, ruff/format/pyright clean): `preflight` (identity + pgvector ≥ 0.8 gate, exits
+  2 if below), `provision-reader` (generates `rag_reader` password, `ensure_reader_role` + re-asserts
+  `apply_chunk_rls`, derives the pooler reader DSN `rag_reader.<ref>`, writes `DATABASE_READER_URL`
+  into `.env` — password never printed), `verify-isolation` (owner sees rows; reader no-GUC → 0,
+  scoped → only its source, bogus → 0). Drives Phase 6 steps 1/3/5. **Dry-run against local docker
+  (DSNs overridden inline, `.env` untouched):** `preflight` → pgvector 0.8.5, alembic head `0008`,
+  identity ok; reader-DSN derivation → `rag_reader.vtpbwkbbkfukfmytlqns` (sslmode preserved);
+  `verify-isolation` on the real 85-chunk corpus → owner 85 / reader-no-GUC **0** / scoped **85** /
+  bogus **0** = ADR-0004 default-deny holds. The dry-run **caught + fixed a real bug** (`SET LOCAL`
+  can't bind params → switched to `set_config(name, value, true)`), so the live run won't hit it.
+- **Corpus-load path chosen = `pg_dump --data-only` from local → restore into Supabase** (no LLM
+  spend). Local dev corpus verified intact: 9 page_source / 9 document / 9 document_version / **85
+  active chunks**, single `source_id='confluence:default'`, tags `{base, general}`; 0 curated
+  entries. Alembic builds the schema+RLS as owner first, then data-only restore.
+- **Known limitation, recorded honestly:** the whole corpus is `general` — there is **no Mews-only
+  or Toast-only document**, so "Mews-scoped can't retrieve Toast-only" is **not demonstrable on real
+  data**. It is proven by the automated `test_retrieval_knowledge_scope.py` (stamps synthetic
+  mews/toast tags, asserts structural exclusion) — that stays the acceptance evidence; a live
+  synthetic check can be added on Supabase if wanted. The ADR-0004 **source-axis RLS** default-deny
+  IS demonstrable live (`verify-isolation`).
+- **Blocker status:** the "replace the placeholder DB password" blocker is now **CLEARED** (operator
+  confirmed the real password is in `.env`). The remaining sequence is the ⭐ NEXT STEPS checklist at
+  the top of this entry. Nothing below this entry is changed by this prep.
+
+**2026-09-09 (DONE, code-only — Phase 6 step 1): ADR-0013 written + the `FORCE`-RLS fix landed via
+TDD. Not committed (left in the working tree for the operator to review/commit).** This is exactly
+"step 1 above" from the 2026-09-08 entry — the one piece startable with no infra/secrets. What
+shipped:
+- **ADR-0013** (`docs/adr/0013-Managed-Postgres-Vector-Store-And-Force-RLS-Drop.md`, Accepted):
+  production vector store = **Supabase Cloud on AWS**, RDS/Aurora = reversible DSN-swap fallback;
+  connect via session-pooler/direct **:5432** (never `:6543`); confirm **pgvector ≥ 0.8**; and the
+  decision to **drop `FORCE`** on `chunk` RLS. ADR-0004 preserved, not replaced.
+- **`FORCE`-RLS fix.** `apply_chunk_rls` (`platform/db/schema.py`) now issues `ENABLE` + explicit
+  `NO FORCE` (was `ENABLE` + `FORCE`); new migration **`0008_drop_force_rls`** (`ALTER TABLE chunk
+  NO FORCE ROW LEVEL SECURITY`; downgrade re-`FORCE`s). Verified reversible on a real DB
+  (`relforcerowsecurity` f→t→f across down/up). Now a non-superuser **owner** (the managed-Postgres
+  writer) reads its own rows; `rag_reader` (non-owner) stays fully isolated — ADR-0004 read-path
+  guarantee unchanged.
+- **TDD, red→green.** New `confluence_sync/tests/test_force_rls_managed_postgres.py` reproduces the
+  managed-Postgres condition by making a **non-superuser role own `chunk`** and asserting it can read
+  (failed under the old `FORCE` code: `assert 0 > 0`; passes now), plus a companion assertion that
+  the non-owner reader stays scoped by `app.allowed_sources`. Also fixed a brittle relative
+  `downgrade("-1")` in `test_migration_0007_knowledge_scope.py` (now targets the explicit revision
+  below 0007) that adding 0008 exposed.
+- **Gate green:** `make check` → **483 passed** (was 481, +2), `make boundaries` clean, migration
+  reversible, ruff/format/pyright clean on every touched file (baseline unchanged). Phase docs
+  updated: `ingestion/phase-6.md` (step-1 landed + corrected role-recreation mechanism) and
+  `ingestion/phase-3.5.md` (superseded-mechanism forward-ref to ADR-0013).
+- **Next = operator step 2** (infra — ask/act by the user): create the Supabase project in an AWS
+  region, confirm pgvector ≥ 0.8, hand back the **writer/owner** `DATABASE_URL` (session-pooler/
+  direct :5432, `postgresql+psycopg://…`). Then the agent does step 3 (migrate as owner, derive
+  `rag_reader` DSN, load corpus, isolation + `make eval` parity, write the runbook). Do **not** run
+  any infra/migration step without the DSNs (blocker #8).
+
+**2026-09-08 (VERIFIED + AGREED): the vector-store decision was cross-checked against every doc in
+`docs/rag`, every ADR in `docs/adr`, and the code — it holds. This is the plan of record; the operator
++ agent will set up Phase 6 together next.** A five-reader audit ran (ingestion+retrieval phase docs;
+DESIGN + widget + reference; the full 5.7k-line PLAN.md; all 11 ADRs; plus a direct read of
+`models.py`/`schema.py`/`retriever.py`/`settings.py`). Conclusion, split by claim:
+
+- **Engine = Postgres + pgvector — ratified, ~100% confirmed.** Not an inference: **ADR-0001** declares
+  the stack (Postgres 16 + pgvector + tsvector), **ADR-0002** builds the retrieval core on pgvector
+  HNSW + tsvector GIN + RRF, **ADR-0004** makes Postgres **RLS** the isolation spine, and the docs
+  *explicitly rule out switching* — `DESIGN.md:498` / `PLAN.md:4317`: *"No new vector store or search
+  engine. Postgres+pgvector+Cohere stays the stack (ADR-0001/0002)."* All three requirement-sweeps
+  found **zero** requirements pgvector can't meet; everything (dense, keyword, RLS, ACL, versioning,
+  tags, job queue, query_trace, curated knowledge) lives in one Postgres store.
+- **Host = Supabase Cloud on AWS — FINAL** (RDS/Aurora = reversible, DSN-swap fallback). Confirmed
+  verbatim across §0's 2026-09-07 entry, Phase 6, and blocker #8.
+
+**Two honest caveats (recorded so they're not papered over):**
+1. The docs affirm pgvector **positively** but **never benchmarked it head-to-head** against
+   Pinecone/Weaviate/Qdrant/etc. — those names appear nowhere. "The docs commit to pgvector and rule
+   out switching" is accurate; "the docs prove it beats the alternatives" would be overclaiming.
+2. **No scale/latency/QPS/SLA target exists anywhere** (corpus today = 9 pages / 85 chunks; latency
+   unmeasured until Phase 5.4). The choice isn't validated against a future scale requirement because
+   no such requirement has been written down. If one lands, it's a new decision, not a silent one.
+
+**Operational must-dos before cutover (all Postgres-internal; apply to Supabase AND the RDS fallback):**
+(a) the **`FORCE`-RLS fix** — drop `FORCE`, keep `ENABLE`, writer owns tables (`schema.py:60`), because
+managed Postgres has no `SUPERUSER`; (b) **confirm pgvector ≥ 0.8** on the instance; (c) connect via
+the **session-pooler/direct :5432**, never the `:6543` transaction pooler; (d) orthogonal but
+**critical** — the customer-axis **fail-open isolation gap (Phase 11.1a)** must be closed **before the
+backend goes public**.
+
+**Agreed setup order (operator + agent, "you + me"):**
+1. **Agent, code-only (no infra/secrets):** write **ADR-0013** (Supabase-on-AWS + RDS fallback + the
+   drop-`FORCE` RLS design) and land the **`FORCE`-RLS fix** with TDD isolation tests. `make check` green.
+2. **Operator:** create the Supabase project in an AWS region; confirm pgvector ≥ 0.8; hand back **just
+   the writer/owner `DATABASE_URL`** (session-pooler/direct :5432, `postgresql+psycopg://…`) — the reader
+   DSN is derived by the agent, not handed over. Never invent these (blocker #8).
+3. **Agent:** `alembic upgrade head` (0001→0007) as the table-owner; create `rag_reader` + derive
+   `DATABASE_READER_URL`; recreate RLS; load the corpus (`pg_dump`→restore); run isolation tests +
+   `make eval` for parity; write the `docs/runbooks/` runbook.
+4. **Before any PUBLIC deploy:** land **Phase 11.1a** (the fail-open customer-isolation backstop).
+5. **Then the rest, in order:** finish 10.8 live run → 10.10 (label-gated ingestion) → 10.9 (user
+   acceptance) → Phase 11 (separation-of-concerns) → Phase 12 remainder → Phase 5.4 (latency/cost proof).
+
+**Doc-integrity fix (2026-09-08):** the PLAN.md sweep caught two stale lines left over from the brief
+AWS-direct re-pivot (line ~2203 "Supabase dropped, now RDS/Aurora"; blocker #1) — **both corrected** to
+the final Supabase-primary state. The doc is now internally consistent.
+
+**Next:** step 1 above (ADR-0013 + `FORCE`-RLS fix) — code-only, startable now on go-ahead. Ask before
+any infra/migration step (step 2+).
+
+**2026-09-07 (user decision, FINAL for now): production vector store = Supabase Cloud (managed Postgres
++ pgvector, provisioned in an AWS region). AWS RDS/Aurora kept as a documented fallback, not the
+primary. Phase 6 is the chosen next work; not started — decision-on-paper first, no infra/secrets.**
+Decision path this session (two `AskUserQuestion`s): (1) the AWS move is *decided/near-term* → initial
+lean was "skip Supabase, go straight to RDS to avoid migrating twice"; (2) but "part of our Amazon
+ecosystem" was then clarified to mean **only "hosted on AWS infra and reachable," NOT "inside our own
+AWS account/VPC/IAM."** That clarification flips the recommendation back to **Supabase**, because:
+- **Supabase Cloud already runs on AWS** (you choose an AWS region at project creation) and is reachable
+  by connection string — so it *satisfies* the stated requirement with the **least** work. Being in
+  Supabase's AWS account rather than ours is fine under this requirement (in-VPC would need Supabase's
+  paid Enterprise private networking — not needed here).
+- **Zero lock-in.** The app is plain-Postgres-over-`psycopg` (no Supabase REST/JS SDK, no
+  `ANON_KEY`/`SERVICE_ROLE_KEY` — only a DSN). If an *in-our-VPC* requirement ever hardens, Supabase →
+  AWS RDS/Aurora is a **connection-string swap + role/RLS re-apply**, not a rewrite. That path stays
+  fully specced in Phase 6's "Fallback: AWS RDS/Aurora" subsection.
+- **`FORCE RLS` / no-superuser fix is still required (verified in code — applies to Supabase too):**
+  `chunk` is under **`FORCE ROW LEVEL SECURITY`** (`schema.py:60`); today the writer escapes the
+  default-deny policy *only by being a `SUPERUSER`* (`rag` is one — `FORCE` makes even the table owner
+  subject, so ownership alone isn't enough). **Supabase's `postgres` role is not a true superuser** (no
+  managed Postgres gives one), so the writer would be filtered to zero rows and ingestion would break.
+  **Fix:** writer OWNS the tables; leave RLS **`ENABLE`d but drop `FORCE`** — the non-owner `rag_reader`
+  stays policy-bound (isolation unchanged) while the owner writer is exempt without SUPERUSER/BYPASSRLS.
+  Small, security-sensitive change to `apply_chunk_rls` (+ migration + isolation tests), TDD-gated.
+  Preserves ADR-0004's read-path isolation. This is the one non-trivial bit and it's needed on either
+  host.
+- **Durable decision → ADR-0013** (*"Production vector store = Supabase Cloud on AWS; RDS/Aurora as a
+  reversible fallback"*), the first task of Phase 6. ADR-0004 (RLS model) is preserved, not replaced.
+- **Interaction flagged:** the CRITICAL fail-open customer-isolation finding (`retriever.py`, Phase
+  11.1a) is *must-fix before the backend goes public* — if this deploy makes the backend public, land
+  **11.1a before/with it**. 10.8's build-half is still uncommitted; this rescope is a doc edit only.
+- **Blocker #8 (below):** operator creates the Supabase project (AWS region), then hands back the
+  **session-pooler/direct** connection string (port 5432, `postgresql+psycopg://…` — NOT the `:6543`
+  transaction pooler) for writer + a `rag_reader` reader DSN, plus a **pgvector ≥ 0.8** confirmation.
+- **Next:** write ADR-0013 + the `FORCE`-RLS fix (TDD), then operator stands up Supabase per Phase 6's
+  setup plan and hands back the DSNs + pgvector version. Ask before any infra/migration step.
+
+**Same session (2026-08-24): Phase 11 (separation of concerns) + Phase 12 (renumber) SCOPED and written
+into this plan — no code yet.** At the user's request, a four-agent read-only investigation ran (FE↔BE
+contract/coupling; backend module decomposition; security/data-leak audit; constraints & ADR sweep) to
+decide where and how to separate concerns toward the stated end-state: **one frontend deployable
+everywhere, one backend, and the RAG/vector-DB layer as its own source of truth.** Findings + three user
+decisions (via `AskUserQuestion`) are now Phase 11/12 above. Key results:
+- **The three concerns already exist as machine-enforced module boundaries** (`retrieval` = RAG core,
+  `confluence_sync`+`ingestion` = write path, `rag_agent` = API/orchestration; zero deep cross-feature
+  imports). FE↔BE is already HTTP-only and loosely coupled (browser never holds `CHAT_API_KEY`).
+- **The vector DB can't be its own *service*** — isolation is Postgres RLS + `rag_reader` role + a
+  per-txn GUC on one shared DB (ADR-0004). "Its own source of truth" = **package-level retrieval-core
+  extraction + a managed Postgres by DSN** (the Phase 6 Supabase/managed-Postgres seam), not a data microservice.
+- **CRITICAL security finding — customer isolation fails OPEN.** mews/opera/toast/general is enforced
+  *only* by an app-layer `tags && :scopes` predicate (all four under one `source_id`, no RLS on the
+  customer axis, `curated_knowledge_entry` no RLS at all), gated by `enable_knowledge_scope_filtering`
+  which fails open (`retriever.py:128-132`) → flag off / one dropped predicate = **all four customers
+  leak**. Source RLS fails closed; customer scope does not. → **Phase 11.1a** adds a DB backstop, to be
+  done **before** the backend goes public on Railway (user decision).
+- **Repo split is ADR-0010-blocked** → 11.4 needs a superseding **ADR-0012** + three user decisions
+  (below). Full 7-item split design already in `docs/future-ideas/IDEAS.md` #5.
+- **User decisions this session:** (1) *full repo split* (do 11.1–11.4); (2) *fix the fail-open leak
+  before public deploy*; (3) *renumber remaining Phase 10 → Phase 12* (10.8→12.1, 10.10→12.2, 10.9→12.3).
+- **Next:** Phase 11.1a (the isolation backstop) is the recommended first build — but **ask before
+  starting**; also awaiting the three repo-split decisions (blocker #7 below) before 11.4. Nothing in
+  Phase 11/12 is built yet; `git status` working-tree changes are still the uncommitted 10.8 build.
+
+**Same session (2026-08-24): 10.8 BUILD half done (switcher + live-test script), tests green;
+the live-run half awaits go-ahead. Not committed.** Pre-phase gate for 10.7 first: `make check` →
+**481 passed**, `make boundaries` clean. Then built 10.8's two buildable outputs via TDD, leaving the
+live-mutation run (which writes to real Confluence + needs the app/browser, and overlaps 10.9) for an
+explicit go-ahead:
+- **Widget scope switcher (frontend), shipped + tested.** New `apps/web/.../model/knowledge-scopes.ts`
+  (a hand-mirror of the repo-root `config/knowledge_scopes.json`, guarded against drift by a new
+  `tests/knowledge-scopes.test.ts` that reads the canonical file — so the canonical file stays the one
+  source of truth), new `ui/scope-menu.tsx` (mirrors `LanguageMenu` → inherits the brand for free),
+  `ui/chat-session-provider.tsx` (now holds `knowledgeScope` as session state seeded from the embed's
+  prop, exposed as `knowledgeScope`/`setKnowledgeScope`), and `ui/panel-header.tsx` (a header trigger +
+  menu **gated behind `NEXT_PUBLIC_SHOW_SCOPE_SWITCHER === "true"`** so real embeds never render it,
+  documented in `apps/web/.env.example`). Web suite **171 passed** (+9 new), `tsc --noEmit` clean.
+  (`next lint` is deprecated/interactive with no ESLint config in this repo — a pre-existing tooling
+  gap, unrelated to this change; tsc + vitest are the real web gates and both pass.)
+- **Live self-test script, shipped + static-checked.** New
+  `apps/automation/scripts/verify_knowledge_scope_live.py` (one-off, not pytest — needs real network +
+  credentials + mutates live Confluence, same ownership as `run_reconciliation_once.py`). It
+  add/edit/removes a recognized label on a `--page-id` via the v1 Confluence label REST API (the read
+  client is read-only, so the script carries its own BasicAuth write helper — same path prior sessions
+  used by hand), drives the `sync_page` job a webhook enqueues, and asserts `tags` update **with no
+  re-embed** — the corrected signal being unchanged `active_doc_version_id` + `action == "metadata_only"`,
+  **not** `last_indexed_at` (the pre-phase gate caught that the prior §10.8 draft's `last_indexed_at`
+  claim was wrong against the code — `_apply_metadata_only` bumps it; both the §10.8 spec and the phase
+  docs are now corrected). Restores original labels in a `finally`. To let a script outside the feature
+  drive the receipt path, `ingest_event`/`EventEnvelope`/`IngestResult` are now exported from
+  `confluence_sync`'s root; `make boundaries` clean, `make check` still **481 passed**, ruff/format/
+  pyright clean on every touched backend file (baseline unchanged).
+- **Verified imports/loads, NOT run live.** The script's `--help` loads (all imports incl. the new
+  facade exports resolve). Its actual add/edit/remove cycle mutates live Confluence and needs a chosen
+  page + the running app/browser for the per-scope UI comparison (§10.8 step 6) — an outward-facing
+  action, held for go-ahead. This is the natural lead-in to 10.9 (user acceptance).
+- **Still blocked (unchanged):** the webhook network leg (Confluence Cloud → public
+  `POST /confluence/events`) needs the operator's deployed URL. Until then a label change is picked up
+  on the next reconciliation sweep; the script drives the job in-process.
+- **Next:** with go-ahead, run `verify_knowledge_scope_live.py --page-id <one of the 9>` against live
+  Confluence + browse the widget with the switcher (`NEXT_PUBLIC_SHOW_SCOPE_SWITCHER=true`) to see the
+  four scopes return isolated evidence; capture output for 10.9. Then **§10.10** (label-gated
+  ingestion), then 10.9 close-out. Ask before beginning.
+
+**Same session (2026-08-24): end-state clarified + three design decisions locked; §10.10 rewritten;
+implementation of 10.10 pending (not started — code work interrupted to bring PLAN.md fully current at
+the user's request).** The user restated the target in plain terms: define recognized tags in one file
+→ apply them as Confluence labels → a change (add/remove label, edit/add/delete wording, delete a page)
+auto-updates the vector DB → and per-scope isolation ("on the Muse page, only see/search Muse-tagged
+content"). Mapped to the system and three decisions taken via `AskUserQuestion`:
+- **Ingestion model → LABEL-GATED (pure tags).** A page is in the vector DB **iff** it carries ≥1
+  recognized label; no folder/`source_scope` enrollment. This is new capability **§10.10** (below,
+  rewritten this session). Design **simplified** from the earlier "additive union with source_scope" to
+  "**a recognized label is the sole coverage**": with the flag on, an unlabeled page is deactivated
+  regardless of any folder root (a 2+-provider-label *conflict* stays quarantined, not deactivated).
+  `source_scope` stays only for RLS source scoping, not as an ingestion input. New gateway
+  `search_pages_by_labels(labels) -> list[int]` (v1 CQL), new `run_label_reconciliation`/`KIND_LABEL`
+  sweep, a deactivate-on-unlabeled branch in `handle_sync_page`, all behind a new
+  `enable_label_gated_ingestion` flag (default off).
+- **Webhook delivery → "Deploy / operator provides a public URL".** The handler + event subscriptions
+  already exist; the missing piece is the network leg (Confluence → public HTTPS `POST
+  /confluence/events`; localhost is unreachable). **Blocked on the operator's deployed URL** — once
+  given, this agent registers the webhook + verifies live. Until then, auto-update rides the
+  reconciliation sweep (scheduled/manual), not real time. (Folded into §10.8.)
+- **Scope strictness → "selected tag + general" (NO code change).** On the Muse (`mews`) scope you see
+  `mews` + shared `general` docs — exactly ADR-0011 Decision 1, already built and live (10.4/10.7). The
+  strict "only the selected tag" alternative was declined.
+- **Clarified for the user, recorded so it isn't relitigated:** update granularity is **per-page, not
+  per-word** — a content change re-embeds that page's chunks; a label-only change is metadata-only (no
+  re-embed). And "Muse" = the `mews` scope (Mews PMS, ADR-0011), not a new tag, unless the user later
+  adds a literal `muse` to `config/knowledge_scopes.json`.
+
+**Order (user, 2026-08-24): 10.8 first, then 10.10.** Build the **widget scope switcher (§10.8)** first
+— it's unblocked (no deploy needed, backend threading already shipped in 10.5) and directly delivers
+the "on the Muse page, only see/search Muse content" UX, plus the self-test for what already works
+(add-label → tag stamped; content edit → re-embed). Then **§10.10 (label-gated ingestion)** via TDD
+behind its flag, which adds the offboarding half (remove last recognized label → page deactivated) that
+§10.8's self-test can't fully show until it exists. The deploy + live webhook registration happens
+whenever the operator's public URL is provided (any time); 10.9 (user acceptance) closes the phase.
+
 **Same session (2026-08-24): 10.7 DONE — corpus migrated, flag flipped ON, live scoped retrieval
 proven end-to-end.** This completes Phase 10's ingestion+retrieval spine: every live page now carries
 a recognized knowledge-scope tag and retrieval filters by it. Sequence (operator go-ahead given for
@@ -50,13 +561,23 @@ a recognized knowledge-scope tag and retrieval filters by it. Sequence (operator
   which is what "defaults to X" is supposed to mean (matches this repo's stated "tests independent of
   `.env` contents" principle). `make check` → **481 passed** with the flag on; ruff/format/pyright
   clean on every touched file, baseline unchanged.
-- **Still uncommitted (repo convention — ask before committing).** Pending commit: new
-  `knowledge_scope_backfill.py`, `run_reconciliation_once.py`, `verify_knowledge_scope_backfill.py`,
-  `test_knowledge_scope_backfill.py`; modified `.env.example`, `FEATURES.md`,
-  `confluence_sync/__init__.py`, `platform/config/tests/test_settings.py`, and the three phase docs.
-  **Next: 10.8** (live label-propagation self-test — add/edit/remove a label against the real API +
-  DB — plus a minimal widget scope switcher), then 10.9 (user-run acceptance pass). Ask before
-  beginning.
+- **Committed as `59997e8`.** The 4 new files (`knowledge_scope_backfill.py`,
+  `run_reconciliation_once.py`, `verify_knowledge_scope_backfill.py`,
+  `test_knowledge_scope_backfill.py`) + 7 modified (`.env.example`, `FEATURES.md`,
+  `confluence_sync/__init__.py`, `platform/config/tests/test_settings.py`, the three phase docs) —
+  one coherent 10.7 changeset, verified `make check` → 481 passed before commit.
+- **New scope decision (2026-08-24, user): move to LABEL-GATED ingestion — see new §10.10 below.**
+  On reviewing 10.7 the user confirmed they want to work **only with tags**: no per-page/per-folder
+  enrollment. Today ingestion (what's embedded into the vector DB) is gated by `source_scope` folder
+  roots (PLAN 3.5), while knowledge-scope *labels* only drive retrieval scoping on top. To make
+  labeling the single control surface — "a page is in the system iff it carries a recognized label"
+  — a new sub-step **10.10 (label-gated ingestion)** was added: instance-wide CQL label discovery
+  replaces folder enrollment, and dropping a page's last recognized label deactivates it. Chosen via
+  `AskUserQuestion` over "keep folders" and "unrestricted space". **Not started — ask before
+  beginning.**
+- **Next: 10.8** (widget scope switcher + live self-test for what already works), then **10.10**
+  (label-gated ingestion — adds the remove-label→offboard half), then 10.9 (user-run acceptance). Order
+  set by the user 2026-08-24: 10.8 first. Ask before beginning any of them.
 
 **Same session (2026-08-24): 10.7 half (a) done — all 9 live pages labeled `general` in Confluence.**
 User instructed "label all 9 as general for me, make sure we can delabel them later." Before touching
@@ -1060,11 +1581,23 @@ per this repo's own no-auto-start rule. No code changed this pass — docs only 
 
 ### ▶ Resume here (after `/compact-ultra`) — first things first
 
+**NEXT (VERIFIED 2026-09-08 — see §0's newest entry for the full audit): Phase 6 — migrate the
+production vector store to Supabase Cloud (managed Postgres + pgvector, in an AWS region; RDS/Aurora =
+reversible fallback). Engine ratified by ADR-0001/0002/0004; host FINAL. Agreed operator+agent setup
+order is in §0. Step 1 is code-only and startable now: write ADR-0013 + land the `FORCE`-RLS fix
+(needed on any managed Postgres — no superuser) with TDD. No infra/secrets until the operator creates
+the Supabase project and hands back the writer/owner DSN (session-pooler/direct :5432, not :6543; the
+reader DSN is agent-derived) and a pgvector ≥ 0.8 confirmation (blocker #8). Before any PUBLIC deploy, land Phase 11.1a (fail-open
+isolation backstop). Ask before any infra step.**
+
 **Phase 10 is IN PROGRESS: 10.1–10.7 done. 10.1–10.6 committed (10.5/10.6 in `a663a95`); 10.7
 (corpus migration + flag flip) done 2026-08-24 — corpus relabeled to `['base','general']`, gate READY,
-`ENABLE_KNOWLEDGE_SCOPE_FILTERING` flipped `true`, scoped retrieval proven live — but 10.7's tooling
-is STILL UNCOMMITTED (ask before committing). Next: 10.8 (live label-propagation self-test + widget
-scope switcher), then 10.9 — not started, ask before beginning.** See §0's newest entry above for full
+`ENABLE_KNOWLEDGE_SCOPE_FILTERING` flipped `true`, scoped retrieval proven live, committed `59997e8`.
+Remaining, in the order the user set (2026-08-24): **10.8** (widget scope switcher + live
+self-test) — **build half done 2026-08-24** (switcher + `verify_knowledge_scope_live.py` shipped +
+tested, web 171 / backend 481 green, not committed; the live-Confluence run awaits go-ahead), then
+**10.10** (label-gated ingestion — tags as the sole corpus-membership control), then 10.9 (user
+acceptance). Ask before the live run / before beginning 10.10.** See §0's newest entry above for full
 detail.
 
 **Phase 3.5 is COMPLETE. Phase 4 is COMPLETE: 4.1 + 4.2 + 4.3 + 4.4 + 4.5 all done.**
@@ -2039,9 +2572,10 @@ run captured a live Cohere lift of **ndcg@10 −0.123 / precision@5 +0.000** on 
 provisional. Keys confirmed present in `.env`: `RERANKER_PROVIDER=cohere` + `RERANKER_API_KEY`,
 `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`. `CONFLUENCE_API_TOKEN` still dead (live ingestion only).
 
-**Supabase decision: its own dedicated Phase 6** (prod/deploy only; keep local Docker pgvector for
-dev). See "Phase 6 — Supabase vector store migration & deploy" below; it's blocked on the user for the
-connection string, a pgvector ≥ 0.8 confirmation, and the `rag_reader`/RLS→Supabase-roles mapping.
+**Prod vector store decision (FINAL 2026-09-07): its own dedicated Phase 6 = Supabase Cloud (managed
+Postgres + pgvector, in an AWS region)** (RDS/Aurora = reversible fallback; prod/deploy only; keep local
+Docker pgvector for dev). See "Phase 6 — Supabase Cloud (on AWS) vector store migration & deploy" below;
+blocked on the user for the writer+reader DSNs and a pgvector ≥ 0.8 confirmation (blocker #8).
 
 **Independent re-verification — 2026-08-10, PASS.** Re-checked Phase 0 + all of 3.5 + 4.1 against code
 and live command output, not the ledger's self-report: `make boundaries` clean; all 3 Alembic migrations
@@ -2129,11 +2663,15 @@ OCR/image reading untouched.
 | **5.3** — prompt-injection + permission/isolation red-team | ✅ done | `92bbb7f` | 6 tests → 219 total; found + fixed a real numeric-principal space-trust bypass; no live LLM spend |
 | **4.6** — fixes-backlog remediation (16 sub-steps + exit gate) | ✅ done | see "4.6 progress snapshot" (§0) for all 16 commit refs | independent same-day audit (`docs/rag/fixes/`) found a CRITICAL ACL bypass + a HIGH cross-principal leak + 12 more findings in already-"done" phases 0-4; all fixed, exit gate 4.6.16 green, 274 tests, no ruff/pyright regression; 4.6.2 live-verification still outstanding — Confluence token now works (blocker #3, fixed 2026-08-19) but no space is seeded and no live sync has actually run yet, does not gate anything |
 | **5** (remaining) — 5.4 live-LLM red-team + latency/cost proof, embedder bake-off, adaptive routing | ⬜ todo (unblocked by 4.6; Confluence token fixed 2026-08-19, still blocked on API spend go-ahead + `VOYAGE_API_KEY`) | — | 5.4 needs real API calls/spend (go-ahead not yet given); bake-off still blocked on `VOYAGE_API_KEY` (not in `.env`) |
-| **6** — Supabase vector store migration & deploy | ⬜ todo (deferred) | — | prod target; needs connection string + pgvector ≥ 0.8 + role/RLS mapping |
+| **6** — Supabase Cloud (on AWS) vector store migration & deploy | ⬜ **todo — NEXT (user, 2026-09-07)** | — | prod target = **Supabase Cloud in an AWS region** (RDS/Aurora = documented fallback); needs writer+reader DSNs (session-pooler/direct :5432) + pgvector ≥ 0.8 (blocker #8); first tasks ADR-0013 + the FORCE-RLS fix (`schema.py:60`, needed on Supabase too — no superuser) |
 | **4.7** — Obi widget: chat UI rebuild, brand tokens, screenshot capture, real i18n, `/chat` route removed, image lightbox (4.7.8) | ✅ done, **committed** | `206baab` (first sub-step), `aae90e5` (4.7.2-4.7.6), `bf99635` (rest, incl. 4.7.8 + the test-gap closure) | frontend-only, `apps/web`; does not gate Phase 5; source of truth `docs/rag/reference/obi-mockup/` + `docs/rag/OBI-WIDGET-DESIGN.md` |
 | **4.8** — Frontend/backend repository separation | **moved to `docs/future-ideas/IDEAS.md` #5 (2026-08-12)** | — | re-deferred per `docs/adr/0010-Redefer-Repository-Separation.md`; no longer part of this plan |
 | **7** — Vision-grounded image analysis (attachments + screenshot capture) | ✅ **done (2026-08-12), all 8 sub-steps closed** | `eb30837` (7.1), `7ffd916` (7.2), `12db45a` (7.3+7.4), `1398e64` (7.5); 7.6 is a verification pass, no commit (no code changed); 7.7/7.8 docs+fixes, no commit yet | supersedes `docs/future-ideas/IDEAS.md` #3; ADR-0009 + DESIGN.md §12 lock the contract shape (`ChatTurn.images`, `Answer.imageAnalysis`, no new SSE event), the `has_image` refusal gate, and the independent (never citation-enforced) vision call; 7.6's live adversarial red-team found zero injection compliance, caps enforced live; 7.7 re-ran the full gate with zero regressions and closed ADR-0009; **7.8 found and fixed 5 stacked, user-reported bugs** in a "triple-check the feature" pass — a pre-image-era proxy body-size ceiling (413), a proxy content-length check that rejected genuine image-only turns (400), a backend crash embedding an empty query (uncaught `EmbeddingError`), Anthropic itself rejecting an empty text content block (400), and — found only once real browser testing replaced curl repros — the same content-length check breaking again on any *later* turn once an earlier image-only turn aged out and lost both its content and its image; all five found by fixing one, re-testing, and hitting the next one underneath |
 | **9** — Unanswerable/vague-query fallback (9.1 → 9.9) | ✅ **done (2026-08-13), all 9 sub-steps closed** (9.1 `771cfce`; 9.2-9.7 across `ba5416a`/`d20257c`/`f9ed445`/`10947d8`/`8e1450a`; 9.8 `34706e1`; 9.9 docs-only, not yet committed) — dead last, no phase follows | — | supersedes `docs/future-ideas/IDEAS.md` #1; ADR-0008 + DESIGN.md §11 lock the contract shape (extend `Answer`, no new SSE event), the 3-value refusal-reason taxonomy, and eval-kind reuse — **all 9 decisions confirmed matching shipped code at 9.9, ADR-0008 closed as-is**; ambiguity/vagueness classifier + clarification response, differentiated refusal reasons, human-hand-off stub (Salesforce noted as eventual target), fallback-quality eval metrics, live+deterministic red-team (9.8, zero findings); MMR/diversity filtering and any new vector store explicitly out of scope |
+| **10** — Knowledge-scope tagging & retrieval filtering (ADR-0011) | 🔶 in progress (10.1–10.7 done, `59997e8`) | see §0 | 10.8 build half done + uncommitted; **remaining 10.8/10.9/10.10 renumbered → Phase 12.1/12.3/12.2 (2026-08-24)** |
+| **11** — Separation of concerns (FE / backend-API / RAG-vector-DB core) + fail-open isolation backstop | ⬜ **todo — NEW, scoped 2026-08-24** | — | user chose *full repo split*; 11.1 security backstop **first, before public deploy**; 11.4 ADR-gated (needs ADR-0012 + 3 decisions). Full design in `IDEAS.md` #5 |
+| **12** — Remaining forward work (renumbered) | ⬜ todo | — | 12.1/12.2/12.3 = old 10.8/10.10/10.9; 12.4 = Phase 5 remainder. **12.5 (deploy) superseded 2026-09-07: Phase 6 = Supabase-Cloud-on-AWS migration pulled forward to NEXT, no longer deferred behind Phase 11.** Runs after Phase 11 otherwise |
+| **13** — Supabase completeness & tag-behavior verification | 🔶 in progress (13.1 built, uncommitted, not applied to Supabase) | see §0 top block + Phase 13 | NEW 2026-09-09 from live introspection + 6-agent doc audit. Schema ✅ complete. **13.1 (migration 0009 — reader RLS) ✅ built+tested, Option B/secure (TDD, +5 tests, `make check` 488; UNCOMMITTED).** ⚠️ Corrected from Option A after finding `anon`/`authenticated` hold SELECT on all tables → keep RLS on + `rag_reader`-scoped policies; runbook `docs/runbooks/phase-13.1-apply-reader-rls-supabase.md`. Remaining: apply 0009 to Supabase, verify-isolation blind spot (13.2), doc sweep (13.3), runbook/ops (13.4), live tag-proof (13.5). Distinct axis from 11.1a |
 
 Gate at each ✅: `make check` green (**219 backend tests** as of 5.3 — 4.5 touched no backend code;
 was 213 at 5.1/5.2, 197 at 5.1, 194 at 4.4, 167 at 4.3, 164 at 4.2, 144 at 3.5.6, 130 at 4.1, 120 at
@@ -2164,11 +2702,9 @@ re-tune in Phase 5. **→ Phase 3.5 closed; Phase 4.1 shipped (`e4490aa`); next 
 
 ### Blockers / need from you  *(ask before doing dependent work)*
 
-1. **Supabase vector store** — **DECIDED: its own Phase 6 (prod/deploy only)**; keep local Docker
-   pgvector for dev now. When Phase 6 starts, I'll need: (a) the connection string (session-pooler or
-   direct, port 5432, `postgresql+psycopg://…`); (b) confirmation the instance runs **pgvector ≥ 0.8**
-   (needed for `hnsw.iterative_scan`; Supabase may pin older); (c) how **`rag_reader` + RLS** maps onto
-   Supabase roles (`authenticated`/`service_role`/`anon` + JWT-claim RLS). **Never invent a DSN.**
+1. **Production vector store** — **RESOLVED 2026-09-07: Supabase Cloud (managed Postgres + pgvector, in
+   an AWS region); RDS/Aurora = reversible fallback — see blocker #8 below and the rescoped Phase 6.**
+   Keep local Docker pgvector for dev.
 2. **Reranker API key (Cohere)** — ✅ **PROVIDED & USED (2026-08-07).** `.env` carries
    `RERANKER_PROVIDER=cohere` + a live `RERANKER_API_KEY`; 3.5.5 measured a real lift with it (see the
    exit-gate note above). CI still forces `FakeReranker` via `conftest.py`, so the suite stays
@@ -2207,6 +2743,31 @@ re-tune in Phase 5. **→ Phase 3.5 closed; Phase 4.1 shipped (`e4490aa`); next 
    `docker compose -f infra/foundation/docker-compose.yml ps` shows `omniboost_rag_pg` as
    `healthy` again, 4.6.12's two new tests can run and everything from 4.6.12 onward can resume —
    see the "4.6 progress snapshot" section above for the exact next steps.
+6. **Public backend URL for the Confluence webhook (Phase 12 / Railway).** The webhook *handler*
+   (`POST /confluence/events`) + HMAC verify + event subscriptions already exist; the only missing
+   piece is the network-delivery leg — Confluence Cloud must POST to a **public HTTPS URL**, and the
+   backend runs on localhost. Needs: the operator to **deploy the backend publicly** (Railway, root
+   dir `apps/automation`, start `uv run uvicorn app.main:app --host 0.0.0.0 --port $PORT`, pre-deploy
+   `uv run alembic upgrade head`) and hand over the deployed base URL; this agent then registers the
+   webhook (events subset + `CONFLUENCE_WEBHOOK_SECRET`, which the agent generates) and verifies a real
+   delivery. Until then, auto-update rides the reconciliation sweep. **Not `.env`:** the URL is a
+   Confluence-side setting, not a server var — only `CONFLUENCE_WEBHOOK_SECRET` is a new `.env` value.
+7. **Three repo-split decisions (gate Phase 11.4).** The user chose the full repo split (2026-08-24),
+   but ADR-0010 blocks it until decided + a superseding **ADR-0012** is written: **(a)** which package
+   registry (npm public / GitHub Packages / private) for publishing `packages/contracts` +
+   `packages/design-tokens`; **(b)** the two new repo names (frontend, backend); **(c)** the
+   origin-monorepo's fate (archive vs thin umbrella). 11.1–11.3 (security backstop, module hardening,
+   publish groundwork) can proceed *without* these; 11.4 (the git extraction) cannot. **Ask before 11.4.**
+8. **Vector-store migration (Phase 6, next).** Decided 2026-09-07: prod vector store = **Supabase Cloud
+   in an AWS region** (managed Postgres + pgvector); RDS/Aurora kept as a reversible fallback (see Phase
+   6). No pre-infra engine/host decision needed — Supabase is the pick. Code prep (mine, on go-ahead):
+   ADR-0013 + the FORCE-RLS fix (`schema.py:60` — needed on Supabase too, no superuser). Then, once the
+   operator creates the Supabase project, I need handed back just **one** DSN: the **writer/owner
+   `DATABASE_URL`** (`postgresql+psycopg://…`, port 5432, **session-pooler/direct — NOT the :6543
+   transaction pooler**), plus **confirmation pgvector ≥ 0.8** (`SELECT extversion FROM pg_extension
+   WHERE extname='vector';`). The reader `DATABASE_READER_URL` is **not** handed over — I create
+   `rag_reader` (`ensure_reader_role`) and derive it. `ANON_KEY`/`SERVICE_ROLE_KEY` not needed.
+   **Never invent a DSN or key.** If the backend goes public as part of the deploy, land **11.1a** first.
 
 ---
 
@@ -3631,68 +4192,124 @@ is retired from the active plan; nothing here executes without a fresh decision 
 
 ---
 
-## Phase 6 — Supabase vector store migration & deploy  *(prod target; its own phase)*
+## Phase 6 — Supabase Cloud (on AWS) vector store migration & deploy  *(prod target; its own phase)* — **RESCOPED 2026-09-07: Supabase Cloud primary, AWS RDS/Aurora as documented fallback (see §0's newest entry)**
 
-**Goal.** Move the corpus + retrieval from local Docker pgvector to **Supabase** (managed Postgres +
-pgvector) as the production vector store, preserving the ADR-0004 source-isolation model. Dev stays on
-local pgvector until this phase. This is deploy/infra work, deliberately separated from the Phase 5
-accuracy/optimization work so neither blocks the other.
+**Goal.** Move the corpus + retrieval from local Docker pgvector to **Supabase Cloud** (managed
+Postgres + `pgvector`, provisioned in an **AWS region**) as the production vector store, preserving the
+ADR-0004 source-isolation model. Dev stays on local pgvector. Deploy/infra work, separated from the
+Phase 5 accuracy/optimization work so neither blocks the other.
 
-**Why not sooner (revisited 2026-08-10 at the user's request).** Moving *dev* onto Supabase before
-Phase 4/5 land would trade a working, hermetic, zero-network test DB (`omniboost_rag_test`, spun up by
-`make up`) for a networked dependency in every dev/test loop, and risks the exact pgvector-version trap
-3.5.1 was built to avoid (Supabase may pin `< 0.8`, breaking `hnsw.iterative_scan`) — with no concrete
-deploy date forcing the move. Root `CLAUDE.md`'s proportionality gate says add infra when a concrete
-requirement exists, not ahead of one. **Recommendation: keep Phase 6 deploy-only, as already decided.**
-Also worth noting: the app talks to Postgres directly via `psycopg`, not Supabase's REST/JS SDK, so a
-Supabase project's `ANON_KEY`/`SERVICE_ROLE_KEY` are never needed here — only the Postgres connection
-string. If there's now a concrete ship date, say so and the Phase 6 blockers (connection string,
-pgvector≥0.8 confirmation, role mapping) can be pulled forward — that's information-gathering, not a
-dev-infra switch.
+**Why Supabase (decided 2026-09-07, two `AskUserQuestion`s).** The user's "part of our Amazon
+ecosystem" requirement was clarified to mean **"hosted on AWS + reachable," not "inside our own
+AWS account/VPC."** Supabase Cloud runs on AWS (region chosen at project creation) and is reachable by
+DSN → it satisfies that with the **least** work. The app is plain-Postgres-over-`psycopg` (no Supabase
+REST/JS SDK, no `ANON_KEY`/`SERVICE_ROLE_KEY` — only a connection string), so there is **zero lock-in**:
+if an *in-our-VPC* requirement ever hardens, Supabase → AWS RDS/Aurora is a DSN swap + role/RLS
+re-apply (fully specced in the fallback subsection below), not a rewrite.
 
 **Blocked on the user (ask at phase start — never invent a DSN or key):**
 
-- **Connection string** → `DATABASE_URL` (writer) and `DATABASE_READER_URL` (reader). Use the
-  **session pooler or direct** connection (port 5432), **not** the `:6543` transaction pooler, so
-  Alembic migrations + prepared statements work. Keep the `postgresql+psycopg://` prefix.
+- **Connection string** → the operator provides ONE: the **writer/owner** `DATABASE_URL`
+  (Supabase's default `postgres` role), `postgresql+psycopg://…` on port **5432** via the **session
+  pooler or direct** connection — **NOT** the `:6543` transaction pooler (breaks Alembic migrations +
+  prepared statements). `ANON_KEY`/`SERVICE_ROLE_KEY` are **not** needed (we talk to Postgres directly).
+  The reader `DATABASE_READER_URL` is **NOT** handed over — `rag_reader` doesn't exist yet; the agent
+  creates it (`ensure_reader_role`, Step 3) and derives its DSN from the same host/db with the password
+  the agent generates. Secrets live only in the gitignored root `.env`, never the repo or logs.
 - **pgvector ≥ 0.8 confirmation.** Needed for `hnsw.iterative_scan` (the RLS-scope recall safety valve,
-  3.5.1). Supabase may pin an older pgvector — if `< 0.8`, decide a mitigation before shipping RLS.
-- **Role / RLS mapping.** Supabase manages roles differently (`authenticated` / `service_role` /
-  `anon`, JWT-claim RLS, no plain superuser). Decide how `rag_reader` maps — since the app talks to
-  Postgres directly (not PostgREST/JWT), a dedicated low-privilege Postgres role is the likely fit;
-  the writer must retain a `BYPASSRLS`-equivalent path.
+  3.5.1). Confirm via `SELECT extversion FROM pg_extension WHERE extname='vector';`; if `< 0.8`, decide
+  a mitigation before shipping RLS.
+- **Role / RLS — the one non-trivial bit (verified blocker, see §0's `FORCE RLS` note; applies to
+  Supabase too).** Supabase's `postgres` role is **not a true `SUPERUSER`**, so the current
+  writer-bypasses-via-superuser mechanism breaks (`chunk` is `FORCE`d → the owner is itself filtered).
+  **Required change:** writer OWNS the tables; RLS stays `ENABLE`d but drop `FORCE` (`schema.py:60`) so
+  the non-owner `rag_reader` remains policy-bound while the owner writer is exempt — no
+  SUPERUSER/BYPASSRLS. Small security-sensitive change (`apply_chunk_rls` + migration + isolation
+  tests), TDD-gated. `rag_reader` stays `NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`
+  (`schema.py:95`, unchanged). Preserves ADR-0004's read-path isolation.
 
-**Tasks.**
+**Tasks (operator + agent split — "you + me"; do in order).**
 
-1. Enable pgvector on Supabase (`create extension if not exists vector;`); confirm version ≥ 0.8.
-2. Repoint `DATABASE_URL` + `DATABASE_READER_URL` at Supabase; run `alembic upgrade head` there
-   (0001 → 0003), confirming the halfvec/HNSW index and `query_trace` build.
-3. Recreate roles + RLS on Supabase — the docker init SQL won't run there, so apply
-   `schema.ensure_reader_role` + `schema.apply_chunk_rls` via a one-off script or a Supabase migration.
-4. Load the corpus (re-embed via the version-stamp gate, or migrate rows).
-5. Re-run the isolation tests + `make eval` against Supabase to confirm parity — RLS default-deny,
+**Step 1 — AGENT, code-only (no infra, no secrets; startable now on go-ahead):**
+0. **Write ADR-0013** (*"Production vector store = Supabase Cloud on AWS; RDS/Aurora as a reversible
+   fallback"*) — decision-on-paper. Record the drop-`FORCE`/table-owner RLS design and the two §0
+   caveats (no head-to-head benchmark; no scale target yet).
+1. **Land the FORCE-RLS fix** (drop `FORCE` in `apply_chunk_rls`, keep `ENABLE`; writer owns tables →
+   exempt as non-forced owner). Full TDD: writer reads/writes all rows; `rag_reader` with no
+   `app.allowed_sources` GUC → **zero** rows (default-deny); with the GUC → only its `source_id`.
+   `make check` green locally (local dev unaffected — a superuser writer was already exempt).
+
+**Step 2 — OPERATOR (do-it-today checklist; never invent these — blocker #8):**
+2. In the Supabase dashboard:
+   a. **Create project** → choose an **AWS region** (note the region + set a strong DB password).
+   b. **SQL Editor** → run `create extension if not exists vector;` then
+      `SELECT extversion FROM pg_extension WHERE extname='vector';` → **must be ≥ 0.8**. If `< 0.8`,
+      stop and tell the agent (mitigation needed before RLS).
+   c. **Project Settings → Database → Connection string** → copy the **Session pooler** (or **Direct**)
+      URI on **port 5432** — **NOT** the Transaction pooler (`:6543`, breaks Alembic + prepared
+      statements). This is the **writer/owner** DSN (the `postgres` role).
+   d. Hand the agent: the **writer DSN** (as `postgresql+psycopg://…`) + the confirmed pgvector version.
+      That's it — **no reader DSN** (the agent creates `rag_reader` in Step 3 and derives it). The agent
+      writes both DSNs into the gitignored root `.env`; nothing is committed.
+
+**Step 3 — AGENT (migrate + prove parity):**
+3. Repoint `DATABASE_URL` + `DATABASE_READER_URL` at Supabase; run `alembic upgrade head` (0001 → 0007,
+   all seven migrations) as the **table-owner**, confirming the **halfvec(3072)** HNSW index (prod
+   `.env` = OpenAI `text-embedding-3-large` @ 3072 dims → the halfvec path, not full vector) and
+   `query_trace` build.
+4. Recreate roles + RLS on Supabase — no docker init SQL runs there, so apply
+   `schema.ensure_reader_role` (creates `rag_reader` with an agent-generated password → the agent writes
+   `DATABASE_READER_URL` into `.env`) + the fixed `schema.apply_chunk_rls` via a one-off script.
+5. Load the corpus. **Default (fastest, no LLM spend): `pg_dump` the local dev DB → `pg_restore` into
+   Supabase** — the corpus is tiny (9 pages / 85 chunks) and the schema is identical, so this is a
+   minutes-long exact copy. *Alternative:* re-run reconciliation against live Confluence (`scripts/
+   run_reconciliation_once.py`) to rebuild from source — costs OpenAI embedding spend but guarantees
+   freshness. Pick `pg_dump` unless the dev corpus is known stale.
+6. Re-run the isolation tests + `make eval` against Supabase to confirm parity — RLS default-deny,
    rerank lift, and one `query_trace` row per retrieval all still hold.
-6. Runbook in `docs/runbooks/`: pooler caveats, backup/restore, rollback, secret handling.
+7. Runbook in `docs/runbooks/`: session-pooler vs `:6543` caveat, backup/restore, rollback,
+   secret handling (DSNs never in the repo/logs).
+
+**Step 4 — BEFORE any PUBLIC deploy:** land **Phase 11.1a** (the customer-axis fail-open isolation
+backstop). Source RLS fails closed; the mews/opera/toast/general scope axis currently does not.
 
 **Acceptance.** Isolation + eval pass against Supabase; `hnsw.iterative_scan` confirmed available (or a
 documented mitigation); connection uses the psycopg driver; no secret in logs. `make check` still green
 locally (dev unchanged).
 
-### Future direction (not yet a phase) — AWS Bedrock
+**Known limits, not papered over (§0 caveats):** pgvector was chosen and switching is ruled out
+(ADR-0001/0002), but the docs never benchmarked it against Pinecone/Weaviate/Qdrant/etc.; and no
+scale/latency/QPS/SLA target exists yet (corpus = 9 pages / 85 chunks). If a real scale target lands,
+that reopens the choice as a *new* ADR — it does not silently change here.
 
-Noted per the user (2026-08-10): eventual integration with AWS Bedrock-hosted models (Claude via Bedrock
-instead of/alongside the direct Anthropic API; possibly Bedrock's Titan embeddings or its hosted Cohere
-Rerank) is a real future direction, **not built now** — no concrete AWS deployment decision exists yet,
-and building a second inference path today (IAM auth, region/model-ID config, a `FakeBedrock*` test
-double) for zero present benefit fails the same proportionality gate as an early Supabase move.
+### Fallback (documented, not the current plan) — AWS RDS/Aurora in your own VPC
+
+If an *in-our-own-AWS-account/VPC* requirement ever hardens (e.g. private networking, same-VPC/IAM as
+other services), migrate Supabase → **AWS RDS for PostgreSQL** (default) or **Aurora PostgreSQL**
+(Serverless v2 if traffic is spiky). Because the app is DSN-only, this is a **connection-string swap +
+role/RLS re-apply**, not a rewrite. Deltas vs the Supabase runbook above: provision in a VPC with a
+security group allowing 5432 only from the backend's SG (never public); pick an engine version shipping
+pgvector ≥ 0.8 (RDS PG 16.4+/15.8+/17.x, Aurora equivalents); store DSNs in **AWS Secrets Manager**;
+Aurora uses separate writer/reader endpoints; optional **RDS Proxy** (confirm Alembic/prepared
+statements still work through it). The **same FORCE-RLS fix** applies (RDS/Aurora also give no
+superuser). If the backend also moves into AWS, that's the Phase 11 backend-host decision.
+
+### Future direction (not yet a phase) — AWS Bedrock (inference)
+
+The DB is now AWS-hosted via Supabase Cloud (this phase); **inference** (Claude via Bedrock instead of/alongside the direct
+Anthropic API; possibly Bedrock's Titan embeddings or its hosted Cohere Rerank) is a separate,
+orthogonal future direction — **not built now**. No concrete Bedrock decision exists yet, and building a
+second inference path today (IAM auth, region/model-ID config, a `FakeBedrock*` test double) for zero
+present benefit fails the proportionality gate. Where vectors live (RDS/Aurora) and where inference runs
+(direct APIs vs Bedrock) are independent — either pairs with either.
 
 The existing architecture already de-risks this for later: `embeddings_client.py`'s `EmbeddingProvider`
 Protocol and `reranker_client.py`'s `Reranker` Protocol + `build_reranker` factory are exactly the seam a
 `BedrockReranker` / Bedrock embedding provider would implement — adding one later is a contained,
-low-blast-radius change, not a rewrite. Supabase (where vectors live) and Bedrock (where inference runs)
-are orthogonal — either can pair with either. **When there's a concrete AWS deployment decision, this
-becomes its own ADR-gated phase** (mirroring how Supabase got Phase 6), not something folded into
-4.2/5/6 ad hoc.
+low-blast-radius change, not a rewrite. The managed Postgres (where vectors live) and Bedrock (where inference
+runs) are orthogonal — either can pair with either. **When there's a concrete Bedrock decision, this
+becomes its own ADR-gated phase** (mirroring how the vector-store host got Phase 6), not something
+folded into 4.2/5/6 ad hoc.
 
 ---
 
@@ -4471,16 +5088,18 @@ explicit go-ahead, same as every other phase (§0 working rules).
 
 ---
 
-## Phase 10 — Knowledge-scope tagging (Confluence-label-driven retrieval scoping) — **IN PROGRESS: 10.1–10.7 done, 10.8–10.9 remain**
+## Phase 10 — Knowledge-scope tagging (Confluence-label-driven retrieval scoping) — **IN PROGRESS: 10.1–10.7 done; 10.8 build half done (live run pending); 10.9–10.10 remain**
 
 **Scoped 2026-08-21.** Promotes `docs/future-ideas/IDEAS.md` idea #8 ("Multi-provider platform
 architecture: reusable core, provider-scoped knowledge"), folding in the retrieval-side gap idea #2
 already identified by direct code read. **Status (2026-08-24):** 10.1–10.6 done and committed
 (10.5/10.6 in `a663a95`); 10.7 (corpus migration + flag flip) done — corpus relabeled, gate READY,
 `ENABLE_KNOWLEDGE_SCOPE_FILTERING=true`, scoped retrieval proven live — with its tooling still
-uncommitted. 10.8 (live label-propagation self-test + widget scope switcher) and 10.9 (user
-acceptance pass) not started. Do not start the next sub-step without an explicit go-ahead, same as
-every other phase.
+uncommitted. **10.8 build half done 2026-08-24** — the widget scope switcher and the
+`verify_knowledge_scope_live.py` self-test script are shipped and tested (web 171 / backend 481
+green, not committed); its live-Confluence run (which mutates real labels, then restores) awaits an
+explicit go-ahead and overlaps 10.9 (user acceptance pass). Do not start the live run or the next
+sub-step without an explicit go-ahead, same as every other phase.
 
 **Goal.** The same chat widget and backend can be deployed against multiple third-party hospitality
 platforms (**Mews, Opera Cloud, Toast POS** — the confirmed initial set, not illustrative
@@ -4511,7 +5130,7 @@ disambiguation.
 | Always-present knowledge | Does not exist. `rag_agent/domain/prompt.py` has exactly one evidence source: retrieved hits. | A small, admin-maintained set of curated entries, tagged by scope, always injected as leading cited evidence. | New table + seed script + evidence-block composition (10.6). |
 | Live corpus | 9 pages, `source_scope`-tagged `base` only, zero knowledge-scope tag. | Same 9 pages carry a recognized scope (at minimum `general`) before the filter flag is ever flipped on. | Manual relabel + verification step (10.7). |
 | Label→sync activation | `label_added`/`label_deleted` are already in `SYNC_EVENTS` (`schemas/events.py`) and already route to a `sync_page` job (`event_service.py`) — the *mechanism* pre-dates this phase. Never exercised live: no public URL is registered with Confluence for the webhook, so today a label change is only picked up on the next reconciliation sweep, not instantly. | The existing webhook code path (or an equivalent direct call, given no public deploy yet) proven live: add/edit/remove a real Confluence label → `page_source.tags`/`chunk.tags` update without a full re-embed. | Live self-verification, no new mechanism (10.8). |
-| Scope-switching UI | Does not exist. `knowledge_scope` (10.5) is a backend/contract field with no frontend control to set it. | A minimal switcher (`general`/`mews`/`opera-cloud`/`toast`) in the widget, wired to 10.5's field, so each scope visibly returns different evidence. | New UI control (10.8). |
+| Scope-switching UI | ✅ built (10.8, uncommitted). `ui/scope-menu.tsx` + `model/knowledge-scopes.ts`, wired to 10.5's `knowledgeScope` via the session context, gated behind `NEXT_PUBLIC_SHOW_SCOPE_SWITCHER` (dev/verification only). Was: a backend/contract field with no frontend control. | A minimal switcher (`general`/`mews`/`opera-cloud`/`toast`) in the widget, wired to 10.5's field, so each scope visibly returns different evidence. | New UI control (10.8). |
 
 ### 2. Config & flags reference (additions to §4's table)
 
@@ -5130,7 +5749,15 @@ completes by flipping `enable_knowledge_scope_filtering=true`** (the operator `.
 gate is green, then confirming a live scoped query returns correctly isolated evidence; ruff/pyright at
 no worse than the current baseline.
 
-### 10.8 — Live verification: label-driven auto-sync + knowledge-scope switcher (build + self-test)
+### 10.8 — Live verification: label-driven auto-sync + knowledge-scope switcher (build + self-test) — **build half done (2026-08-24, uncommitted); live run pending go-ahead**
+
+> **Status.** The two build outputs are shipped and tested (see §0's newest entry): the widget scope
+> switcher (`apps/web/.../model/knowledge-scopes.ts` + `ui/scope-menu.tsx` + provider/header wiring,
+> gated on `NEXT_PUBLIC_SHOW_SCOPE_SWITCHER`) and the live self-test script
+> (`apps/automation/scripts/verify_knowledge_scope_live.py`). Web 171 / backend 481 green,
+> boundaries/ruff/pyright clean. **Not yet run live** (it mutates real Confluence + needs the app +
+> browser) and **not committed** — awaits go-ahead. The `last_indexed_at` note in step 2 below was
+> corrected during implementation (see the inline correction).
 
 **Why this exists.** 10.1–10.7 build and unit-test the mechanism; nothing so far proves it against the
 *real* Confluence API and a *real* running app the way this ledger's other phases have (§0 is full of
@@ -5147,15 +5774,18 @@ different data, not just pass a unit test asserting a SQL predicate.
    `knowledgeScope` field on the outgoing chat request — the same plumbing `principal` already uses.
    Files: `apps/web/src/features/chat/ui/` (new small component) + `chat-session-provider.tsx` (holds
    the selected scope in state, passes it through). No backend change — 10.5 already accepts the field.
-2. **Webhook activation path.** `label_added`/`label_deleted` already route to `sync_page`
-   (`event_service.py`, confirmed by direct code read — see the table in §1 above); nothing new to
-   build there. What's missing is exercising it for real. **Disclosed limitation, not silently
-   skipped:** no public URL is registered with Confluence for `POST /confluence/events` yet (same gap
-   noted in blocker #3), so this step cannot prove the *network delivery* leg. It proves everything
-   downstream of receipt — the identical code path a real webhook delivery would hit
-   (`ingest_event(EventEnvelope(event_type="label_added", ...))` called directly against the live DB) —
-   which is the part 10.2 actually changed. Proving the network leg itself is deferred to whenever a
-   public URL exists to register (unrelated to this phase).
+2. **Webhook activation path.** `label_added`/`label_deleted` (and page edits/moves/deletes) already
+   route to `sync_page`/`delete_page` (`event_service.py`, confirmed by direct code read — see the
+   table in §1 above); nothing new to build in the handler. What's missing is the *network delivery*
+   leg: Confluence Cloud must POST to a public HTTPS URL at `POST /confluence/events`, and the backend
+   currently runs on localhost. **User decision (2026-08-24, via `AskUserQuestion`): "Deploy / I give a
+   URL"** — the operator will run the backend on a public host and hand over the deployed URL; this
+   agent then registers the webhook in Confluence (events subset = the `SYNC_EVENTS`/`DELETE_EVENTS`
+   this feature subscribes to, plus the HMAC `CONFLUENCE_WEBHOOK_SECRET`) and verifies a real delivery
+   propagates end-to-end. **Blocking on that URL** — until it's provided, the network leg stays
+   unproven and updates ride the reconciliation sweep. Everything downstream of receipt is still
+   provable now by driving `ingest_event(EventEnvelope(event_type="label_added", ...))` directly against
+   the live DB.
 
 **Live self-test procedure (run for real, against the live Confluence token — not simulated, not
 mocked).** Written as a reusable script, `apps/automation/scripts/verify_knowledge_scope_live.py` (a
@@ -5167,8 +5797,14 @@ Confluence checks are scripts, not CI tests):
    / `last_indexed_at`.
 2. **Add** a recognized label (`mews`) to it via the real Confluence API. Drive the same code path a
    `label_added` webhook delivery would (`ingest_event` → `sync_page` job → `handle_sync_page`).
-   Confirm: `tags` now include `mews`; `labels_hash` changed; **`last_indexed_at` unchanged** (proves
-   this was `_apply_metadata_only`, not a full rebuild — no wasted re-embed for a label-only change).
+   Confirm: `tags` now include `mews`; `labels_hash` changed; the sync's `action == "metadata_only"`
+   with the **`active_doc_version_id` unchanged** (proves `_apply_metadata_only`, not a full rebuild —
+   no wasted re-embed for a label-only change). **Correction (implementation, 2026-08-24):** the
+   original draft here said "`last_indexed_at` unchanged" — that is **wrong** against the code.
+   `_apply_metadata_only` stamps `ps.last_indexed_at = now` on every metadata write (`sync_service.py`
+   line ~287), so it changes even on a label-only update. The real no-re-embed signal is the unchanged
+   `active_doc_version_id` (a rebuild mints a new doc version) plus `action == "metadata_only"`; the
+   shipped `verify_knowledge_scope_live.py` asserts those.
 3. **Edit** the label (`mews` → `opera-cloud`). Confirm: `mews` is gone, `opera-cloud` present, no
    stale double-tag (acceptance criterion 13).
 4. **Remove** the label entirely. Confirm the knowledge-scope tag is gone; the page falls back to
@@ -5205,6 +5841,78 @@ second time.
 before `enable_knowledge_scope_filtering` is flipped `true` in any environment with real content
 (10.7), and before Phase 10 is marked closed in this ledger's §0.
 
+### 10.10 — Label-gated ingestion (tags as the sole corpus-membership control) — **not started**
+
+**Why this exists (user decision, 2026-08-24).** Two independent systems currently gate the pipeline:
+`source_scope` folder roots (PLAN 3.5) decide **what is embedded** (ingestion), and knowledge-scope
+labels (PLAN 10.2) decide **retrieval scoping** on top of already-embedded chunks. Onboarding new
+content therefore still needs a one-off `scripts/seed_source_scope.py` folder enrollment — the "add
+pages somewhere" step the user explicitly rejected ("we only wanna work with tags"). This sub-step
+makes a recognized **label** the single control surface: a page is in the vector DB **iff** it carries
+≥1 recognized knowledge-scope label. Add a label → onboarded; remove the last recognized label →
+deactivated. No folder enrollment. Chosen via `AskUserQuestion` over "keep folders (current)" and
+"unrestricted space".
+
+**Design (revised 2026-08-24 to "labels are the SOLE coverage" — simpler than the earlier
+"additive-union-with-source_scope" sketch, which over-complicated it; the user wants pure tags, so in
+label-gated mode a recognized label is the *only* thing that keeps a page in the corpus).**
+1. **Discovery by label, not by folder.** New gateway method
+   `ConfluenceGateway.search_pages_by_labels(labels) -> list[int]` — returns the page ids carrying any
+   of the given labels. Live `HttpConfluenceClient` via CQL (`label in ("general","mews","opera-cloud",
+   "toast") and type=page` against v1 `GET /rest/api/content/search`, paginated + capped, inheriting the
+   client's existing auth/timeout/retry/breaker); fixture impl iterates its label map. **Returns ids,
+   not `ConfluencePageMeta`** (deviation from the earlier sketch): the sweep calls the already-tested v2
+   `get_page_meta(id)` per page, avoiding a fragile v1-CQL→meta parser. Instance-wide, so it finds
+   labeled pages in *any* space — also closing the existing "brand-new space is never swept unless it
+   has a source_scope root or registry row" gap (`run_reconciliation`'s "known spaces" limitation)
+   without any folder enrollment.
+2. **New `run_label_reconciliation` (mode `KIND_LABEL`).** Builds two id sets: `labeled_ids =
+   search_pages_by_labels(recognized)` (pages that SHOULD be in the corpus) and `tracked_ids` = active
+   `page_source` rows whose `tags && recognized` (pages currently in the corpus *because of* a label,
+   via the same bound-overlap predicate as 10.4/10.7 — never a literal `ARRAY[...]`). It enqueues a
+   `sync_page` for `labeled_ids ∪ tracked_ids`: new labeled pages onboard; still-labeled pages refresh;
+   a `tracked` page no longer in `labeled` (its label was removed) gets re-checked and deactivated by
+   the handler below. A page whose `get_page_meta` returns `None` (gone upstream) is deactivated
+   directly. Recorded as a `ReconciliationRun`; schedulable alongside the existing crons.
+3. **Deactivate-on-unlabeled (`handle_sync_page`).** When `enable_label_gated_ingestion` is on and a
+   page resolves to **zero recognized labels** (`resolve_knowledge_scope_tags(...).matched_labels`
+   empty — so a 2+-provider *conflict* stays quarantined+indexed, NOT deactivated), `deactivate_page`
+   it and return early (no body fetch/embed for a page being removed). This one branch makes BOTH the
+   webhook `label_deleted` path and the `KIND_LABEL` sweep offboard correctly. Flag off → this branch is
+   never entered, so behavior is byte-for-byte unchanged.
+4. **`source_scope` is orthogonal, not unioned.** In label-gated mode a recognized label is the sole
+   corpus-membership control — an unlabeled page is deactivated regardless of any folder root (this is
+   the point: pure tags). `source_scope` still exists and still drives RLS *source scoping* (ADR-0004)
+   and the `base` folder tag, but it is **not** consulted as an ingestion-coverage input here. (Existing
+   `['base','general']` pages keep both tags and stay active via their `general` label — no migration.)
+5. **Rollout flag.** New `Settings.enable_label_gated_ingestion` (default `false`, ships dark, mirrors
+   `enable_knowledge_scope_filtering`); wired in `main.py` to add the `KIND_LABEL` sweep to the scheduler
+   and to arm the deactivate-on-unlabeled branch. Off → byte-for-byte current behavior, so this ships
+   without disturbing the live corpus until deliberately enabled.
+
+**Files.** `platform/clients/confluence_client.py` (`search_pages_by_labels` on the Protocol +
+`HttpConfluenceClient` CQL), `platform/clients/fixture_confluence_client.py` (fixture impl),
+`confluence_sync/application/reconciliation.py` (`run_label_reconciliation` + `KIND_LABEL`),
+`confluence_sync/application/sync_service.py` (deactivate-on-unlabeled branch, gated on the flag +
+`settings`), `platform/config/settings.py` (`enable_label_gated_ingestion`), `main.py` (scheduler +
+wiring), feature `__init__.py`/`FEATURES.md` for any new public symbol.
+
+**Acceptance.** Real-DB tests: a newly-labeled page (in a space with no source_scope root) is ingested
+by the `KIND_LABEL` sweep; removing its last recognized label deactivates it (both via the sweep and via
+a direct `handle_sync_page` with the flag on); a 2-provider-label conflict is NOT deactivated (stays
+quarantined); `search_pages_by_labels` is paginated + capped; **flag off → zero behavior change** (the
+current 481 pass unchanged). `make check`/`make boundaries` green; ruff/pyright at no worse than
+baseline. `securing-http-and-llm-endpoints`: `search_pages_by_labels` is an outbound Confluence GET
+inheriting `HttpConfluenceClient`'s existing controls (auth/timeout/retry/breaker + a page-count cap);
+no new inbound HTTP surface, so the required-subset is unchanged.
+
+**Interaction with 10.8/10.9 (order set by the user 2026-08-24: 10.8 first, then 10.10).** 10.8 ships
+the scope switcher and a self-test of what already works (add-label → tag stamped; content edit →
+re-embed) — the *unlabel → it's gone* offboarding half can't be shown until 10.10 exists. So 10.10
+carries its own live proof of onboarding/offboarding, and 10.9's user pass (after both) exercises the
+full tags-only model end-to-end. Either way, Phase 10 is not closed in §0 until that model is proven
+live.
+
 ### Error / edge-case behavior (this phase)
 
 | Scenario | Behavior | Enforced in |
@@ -5213,6 +5921,7 @@ before `enable_knowledge_scope_filtering` is flipped `true` in any environment w
 | Unrecognized `knowledge_scope` requested | Degrades to default/general, logged, never a 400 | `resolve_allowed_scopes` (10.4) |
 | Scope removed from `knowledge_scopes` config | New syncs stop stamping it; already-tagged chunks keep the stale tag until next sync touches them (eventual consistency via reconciliation, same philosophy as `rollback_to`'s hash self-heal) | 10.1/10.2 |
 | Page has zero recognized labels | Contributes no label-derived tag; if `source_scope` also contributes nothing, the page is invisible to every scoped query (by design, Decision 1) | 10.2/10.4 |
+| Page drops its last recognized label (label-gated mode on) | Deactivated from the index — in this mode a recognized label is the sole corpus-membership control (source_scope is not consulted for coverage). A 2+-provider-label conflict is NOT deactivated (stays quarantined+indexed). | 10.10 (behind `enable_label_gated_ingestion`) |
 | Page has 2+ recognized provider labels | Quarantined: zero label-derived tags, `knowledge_scope_conflict` logged, self-heals next sync | 10.2 |
 | Confluence temporarily unavailable | Unchanged from today — existing circuit breaker / retry / fail-closed restriction handling; this phase adds no new Confluence call | n/a (pre-existing) |
 | Embedding/vector-DB write or delete failure | Unchanged — existing ingestion failure handling (`DocumentVersion.state=failed`) applies identically | n/a (pre-existing) |
@@ -5284,6 +5993,243 @@ reproduced by the user, not just re-asserted by the agent.
 22. The user has independently reproduced 10.8's live verification themselves (10.9) before
     `enable_knowledge_scope_filtering` is flipped `true` anywhere with real content, and before this
     phase is marked closed in §0.
+
+---
+
+## Phase 11 — Separation of concerns (IN-MONOREPO) + the customer-isolation security backstop — **scoped 2026-08-24; RE-SCOPED 2026-09-09 to 11.1+11.2 only; not started**
+
+> **Provenance.** Scoped from a four-agent read-only investigation (2026-08-24): (1) frontend↔backend
+> contract & coupling, (2) backend module decomposition, (3) a security/data-leak audit, (4) constraints
+> & ADR sweep. **RE-SCOPED 2026-09-09:** the operator decided to **keep one monorepo** — the physical
+> repo split (**11.3 prereqs + 11.4 extraction**) is **de-scheduled to `docs/future-ideas/IDEAS.md`
+> #5** and may never happen. What stays active is the **in-monorepo** work: **11.1** (fix the fail-open
+> customer-isolation leak — still required before any real customer content / the deferred AWS public
+> deploy) and **11.2** (clean FE/BE separation of concerns *within* the monorepo: config injection,
+> module refiling, per-layer secret partitioning). The remaining Phase 10 work stays renumbered as
+> Phase 12.
+
+**Framing facts the investigation established (do not relitigate — grounded in a direct code read):**
+- **The three concerns already exist as machine-enforced module boundaries** (`tools/check_feature_boundaries.py`, ADR-0003): `retrieval` = the RAG read core, `confluence_sync`+`ingestion` = the write path, `rag_agent` = the API/orchestration surface. There are **zero** deep cross-feature imports today; every edge goes through a facade `__init__.py`. The seams are already drawn.
+- **The vector DB cannot become its own *service* today.** Its four-customer + source isolation is Postgres RLS + a `rag_reader` non-`BYPASSRLS` role + a per-transaction `set_config('app.allowed_sources', …, true)` GUC on **one shared Postgres** (ADR-0004; `engine.py:37-64`, `search_repo.py:38-49`). A separate RAG service would mean **replacing the RLS security model**, not moving a component. Target for "its own source of truth" is therefore **package-level extraction of the retrieval core + a managed Postgres reached only by DSN** (the Phase 6 Supabase/managed-Postgres seam) — never a bespoke internal data microservice.
+- **The repo split is currently blocked by ADR-0010** (Accepted 2026-08-12), which re-deferred it to `docs/future-ideas/IDEAS.md` #5. Executing 11.4 requires a **superseding ADR (ADR-0012)** plus three decisions only the user can make (registry, two repo names, origin-monorepo fate). The full 7-item split design already exists in IDEAS #5 — 11.4 executes it, it does not re-design it.
+- **CRITICAL — customer isolation currently fails OPEN.** The mews/opera-cloud/toast/general boundary is enforced *only* by an app-layer `tags && :scopes` predicate at ~4 SQL call sites (`search_repo.py:64-69`, `curated_knowledge_repo.py:19-23`), all four scopes share one `source_id`, and the whole thing is gated behind `enable_knowledge_scope_filtering` — which **fails open** (`retriever.py:128-132`: flag off → predicate never added → **every customer's content returned to everyone**). Source RLS fails *closed*; customer scope does not. `curated_knowledge_entry` has **no RLS at all**. The eventual (deferred) **AWS** public exposure makes this urgent, because the only per-request auth is one shared `CHAT_API_KEY` with no per-user→customer binding — and independent of deploy, doing it *before* the split means the refactor can only make isolation stronger.
+
+### 11.1 — Security backstop (do FIRST, before any public deploy — valuable independent of the split)
+
+**Why first.** A split adds another boundary where the scope list can be dropped/defaulted; hardening the fail-open gap first means the refactor can only make isolation *stronger*, never weaker. This is also the gate the user set: fix before public.
+
+- **11.1a — DB-level customer-isolation backstop.** Give the four-customer boundary the same default-deny DB enforcement the source boundary already has, so a dropped predicate or a flag flip can no longer leak. **Design decision to record in ADR-0012/0013:** either **(i) per-customer `source_id`** — stamp each customer's pages with their own `source_id` so ADR-0004 RLS separates them (reuses existing machinery; cost = data migration + ingestion stamping `source_id` from the resolved label), or **(ii) scope-GUC RLS** — add an RLS policy on `chunk` keyed on a new `app.allowed_knowledge_scopes` GUC that mirrors `app.allowed_sources` (`search_repo.py:38-49`), set per-transaction. Apply the same to `curated_knowledge_entry` (`curated_knowledge_repo.py:5-7`, no RLS today). **Acceptance:** with the app-layer filter deliberately bypassed, a cross-customer query still returns **zero rows** — isolation no longer depends solely on the feature flag.
+- **11.1b — Owner DSN out of the read core.** `main.py:66-113` wires the owner (`BYPASSRLS`) sessionmaker into the answer runtime for `query_trace` writes, so the read path's process holds a connection that silently no-ops RLS if a read is ever routed through it. Narrow it: the retrieval core holds **only** `DATABASE_READER_URL`; route trace/feedback writes through a dedicated write-only capability or the API-orchestration layer. Preserve the `ReaderRoleMisconfiguredError` fail-closed guard (`engine.py:37-57`).
+- **11.1c — Public-exposure hardening (DEFERRED — couples to the later AWS deploy).** Add trusted-proxy `X-Forwarded-For` parsing so per-IP rate limits (`router.py:270-276`, `webhook.py`) don't collapse to the load-balancer/edge IP; keep the chat backend **network-private to the proxy** (document that scope isolation depends on the backend not being directly reachable by arbitrary callers holding `CHAT_API_KEY`); move the rate-limiter + idempotency + answer caches to a shared store (Redis) **only if** >1 instance runs — proportionality-gated, not automatic.
+
+### 11.2 — Module-boundary hardening (within monorepo; no ADR needed; makes extraction mechanical)
+
+- **Finish config injection.** `retrieval` is already fully constructor-injected (`main.py:76-110`) — the model. Make `ingestion`/`rag_agent`/`confluence_sync` stop calling `get_settings()` directly, or split the 218-line `Settings` god-object per-layer (ADR-0006 D2), so a future package boundary has a clean config seam.
+- **Refile `curated_knowledge_repo`.** It is a retrieval-shaped DB read (adapts a table onto the evidence-hit protocol) currently parked in `rag_agent` — move it toward the RAG-core boundary so "RAG core" is where the code actually sits.
+- **Resolve `query_trace` write-ownership** (ties to 11.1b) — the table is read-owned by `retrieval` but written by the retriever *and* updated by `rag_agent`; pick one owner for persistence.
+- **Optionally facet `platform/db/models.py`** (11 tables, 586 lines) into per-owner modules or a shared `db-contracts` module, honoring ADR-0003 D5's deliberate "imported by full path, no facade" exception.
+- **Partition secrets in config** so each layer only reads what it owns (matrix below).
+- **Gate:** `make boundaries` stays exit-0 throughout; no ruff/pyright regression vs the ADR-0003 D1 baseline.
+
+### 11.3 — Repo-split prerequisites — **DE-SCHEDULED 2026-09-09 → future idea (IDEAS #5)**
+
+> Operator decided to **keep the monorepo** (no separate repos), so the prerequisites that exist *only*
+> to enable extraction are no longer scheduled. Parked in `docs/future-ideas/IDEAS.md` #5. **One item
+> is worth keeping regardless of the split** and may be pulled into 11.2 if wanted: a
+> **contracts↔Pydantic drift test** (guards the FE/BE contract even in a monorepo). Publishing
+> `contracts`/`design-tokens` as versioned packages and the `knowledge_scopes.json` mirror only matter
+> if the apps ever leave the monorepo. *(Original content retained below for when/if we revisit.)*
+
+- **Publish `packages/contracts` + `packages/design-tokens` as versioned, built packages** instead of `workspace:*` (contracts today ships raw unbuilt TS: `main → ./src/index.ts`). This is the mechanical blocker to moving `apps/web` out of the pnpm workspace.
+- **Add a contract-drift test** asserting `packages/contracts` (TS `ChatRequest`/`ChatStreamEvent`) ≡ `ChatRequestBody` + SSE events (Pydantic, `router.py:167-190`) — separate repos lose the current same-PR safety net, and the camelCase↔snake_case remap lives only in `route-handlers.ts:105-112`.
+- **Solve the cross-app `config/knowledge_scopes.json` mirror** — read by both apps today (the web drift test `apps/web/.../tests/knowledge-scopes.test.ts` reads the repo-root file directly). Post-split it becomes a published package or a fetched artifact.
+- **Plan per-repo secrets + CI** per the ownership matrix.
+
+### 11.4 — Execute the repo split — **DE-SCHEDULED 2026-09-09 → future idea (IDEAS #5); operator leans towards NEVER splitting**
+
+> The physical git split is no longer planned. It stays fully specced in `docs/future-ideas/IDEAS.md`
+> #5 (registry / two repo names / monorepo fate + a superseding ADR-0012) **only** for a possible
+> future revisit. Nothing here is active work. *(Original spec retained below.)*
+
+- **Blocked on 3 decisions (recorded in §0 "Blockers"):** (1) which package registry (npm public / GitHub Packages / private) for `contracts`+`design-tokens`; (2) the two new repo names; (3) the origin-monorepo's fate (archive vs thin umbrella).
+- **Write ADR-0012 (supersedes ADR-0010)** authorizing the split — ADR-0010 is the current authority re-deferring it, so the split cannot proceed without reversing it on the record.
+- **Then, per IDEAS #5:** history-preserving `git filter-repo`/`subtree split` of `apps/web` and `apps/automation` into their own repos (automation is already self-contained — Makefile/`uv`/`alembic` move unchanged, ADR-0003); update ADR-0001 + root `CLAUDE.md` "Layout"; **exit gate** = both apps build independently *and* a deliberately breaking contract change is caught by CI.
+- **Follow-on called out, not silently in scope:** the two-secret model (`WIDGET_ACCESS_TOKEN` browser-held, `CHAT_API_KEY` proxy-held) assumes browser+proxy **same origin**. True embedding on third-party customer domains ("one widget deployable everywhere") needs CORS + cross-origin token handling the proxy does not implement today (`access-token.ts` is explicitly "trusted pilot, not multi-tenant"). That is a distinct piece of work, flagged here so it isn't assumed done by 11.4.
+
+### Secret ownership matrix (target end-state — enforced by 11.2/11.3/11.4)
+
+| Layer | Holds | Must NEVER hold |
+|---|---|---|
+| **Frontend (server/proxy)** | `CHAT_API_KEY`(+`_PREVIOUS`), `WIDGET_ACCESS_TOKEN`, `AUTOMATION_API_BASE_URL` | any provider key, either DSN, any `CONFLUENCE_*` |
+| **Backend API / answer core** | `ANTHROPIC_API_KEY`, embedding key, `RERANKER_API_KEY`, `DATABASE_READER_URL`, `CHAT_API_KEY` (verify) | `DATABASE_URL` (owner), `CONFLUENCE_*` |
+| **Ingestion / write path** | `CONFLUENCE_BASE_URL/EMAIL/API_TOKEN`, `CONFLUENCE_WEBHOOK_SECRET`, `DATABASE_URL` (owner), embedding key | `CHAT_API_KEY`, `ANTHROPIC`/reranker answer keys |
+
+*Shared coupling to design around:* the embedding provider key is needed by **both** retrieval (query-time embed) and ingestion (index-time embed) — a split makes it a shared secret, not a single-owner one.
+
+### Phase 11 acceptance (exit gate) — **scoped to the kept work (11.1 + 11.2); 11.3/11.4 de-scheduled → IDEAS #5**
+
+- **11.1 proven:** a cross-customer query returns zero rows even with the app-layer scope filter bypassed (DB backstop holds); the retrieval core process holds only `DATABASE_READER_URL`. (11.1c public-exposure hardening is deferred with the AWS deploy, not part of this gate.)
+- **11.2:** `make boundaries` + `make check` green, no ruff/pyright regression; config injection complete; `curated_knowledge_repo` refiled; `query_trace` write-ownership resolved; secrets partitioned per layer. *(Optional, if pulled in: a contracts↔Pydantic drift test — the one 11.3 item worth keeping in a monorepo.)*
+- **~~11.3 / 11.4~~ — not in scope** (monorepo kept). See `docs/future-ideas/IDEAS.md` #5 if ever revisited.
+
+---
+
+## Phase 12 — Remaining forward work (renumbered per user, 2026-08-24) — **not started**
+
+> Per the user's instruction this session, the remaining Phase 10 sub-steps and all other still-open
+> forward work are gathered here as **Phase 12**, to run *after* the Phase 11 separation. This section is
+> a **pointer, not a rewrite**: the full execution-ready task detail still lives in the original §10.8 /
+> §10.9 / §10.10 and Phase 5/6 sections above — renumbering here avoids duplicating (and drifting) that
+> detail. Order within Phase 12 is the user's to set; ask before beginning any sub-step.
+
+| New # | Was | Task | Status / blocker |
+|---|---|---|---|
+| **12.1** | §10.8 | Live verification: label-driven auto-sync + knowledge-scope switcher (build + self-test) | build half done + **uncommitted**; live-mutation run pending go-ahead |
+| **12.2** | §10.10 | Label-gated ingestion (recognized label = sole corpus-membership control) | not started; behind `enable_label_gated_ingestion` |
+| **12.3** | §10.9 | User acceptance pass — closes the knowledge-scope work | not started; user-run |
+| **12.4** | Phase 5 remainder | 5.4 live-LLM red-team + latency/cost proof; embedder bake-off; adaptive routing | blocked on API-spend go-ahead + `VOYAGE_API_KEY` |
+| **12.5** | Phase 6 | **Supabase Cloud (on AWS)** vector store migration & deploy — the **vector-DB-as-source-of-truth** prod seam (RDS/Aurora = fallback). **Superseded 2026-09-07: pulled forward to NEXT (see Phase 6), no longer a Phase-12 tail item** | blocked on writer+reader DSNs + pgvector ≥ 0.8 (blocker #8) |
+
+**Cross-cutting note (updated 2026-09-09 pm):** the public **deploy is now targeted at AWS and is deferred** — Railway is no longer the plan. When it happens (backend needs a persistent host — ECS/Fargate or similar, not serverless, for FastAPI + APScheduler) it must carry **11.1c**'s public-exposure hardening and unblocks the real-time Confluence webhook (a public HTTPS URL for `POST /confluence/events`). Until then, auto-update rides the reconciliation sweep. ADR-0011 still governs 12.1–12.3.
+
+---
+
+## Phase 13 — Supabase completeness & tag-behavior verification — **scoped 2026-09-09 from a live introspection + 6-agent doc audit; not started**
+
+> **Why this exists.** The operator asked whether the Supabase store is "actually done" and whether the
+> tag-driven Confluence behavior works. A read-only introspection of the live project + a 6-agent sweep
+> of every `docs/` file answered both. The **schema is complete** (see the "already done" list below —
+> do **not** re-do it). The gaps are **RLS posture drift**, **doc accuracy**, and **live proof of the tag
+> behavior**. This phase is **verification + reconciliation**, not a rebuild.
+>
+> **Boundary with Phase 11 — keep these separate, do not duplicate:**
+> - **Phase 11.1a** = the *customer-scope* (mews/opera/toast) DB backstop that fails **closed** on a
+>   per-txn GUC. That axis has **no** RLS policy live and fails **open** by design. Phase 13 only
+>   *verifies 11.1a is still outstanding and gates on it* — it does not design that policy.
+> - **Phase 11.1b** = getting the owner DSN out of the read core. Not a Phase 13 concern.
+> - **Phase 13's own DB work (13.1)** = a *different* axis: the **reader-access** correctness bug where
+>   `rag_reader` is default-denied on non-`chunk` tables it legitimately reads. Problem A (13.1, reader
+>   lockout) and Problem B (11.1a, customer isolation) are independent.
+
+### ✅ Already verified DONE on live — do NOT re-do in Phase 13
+All 11 mapped tables + `alembic_version` exist (12 public tables); every documented column/index/extension
+is present; **pgvector 0.8.2**; **HNSW** `ix_chunk_embedding_hnsw` on `chunk.embedding` (halfvec(3072)
+path matches `EMBEDDING_DIM=3072`); GIN `ix_chunk_tsv_gin` + partial GIN `ix_chunk_tags_gin`; **alembic
+head 0008** applied (`chunk` `force=false`, ADR-0013); `chunk_source_read` source-axis policy correct;
+`rag_reader` provisioned NOSUPERUSER/NOBYPASSRLS with complete `GRANT SELECT` + default privileges. **The
+pure "missing schema object" set is EMPTY** — the live gaps are RLS *posture*, not absent objects.
+
+### 13.1 — Migration 0009: reader-RLS on non-`chunk` tables *(HIGH — before any public deploy)* — ✅ **BUILT 2026-09-09 (Option B / secure, TDD, UNCOMMITTED); not yet applied to Supabase**
+
+**⚠️ SECURITY PIVOT (2026-09-09) — Option A was WRONG for Supabase; corrected to Option B.** A live
+grant check found that `anon` **and** `authenticated` (Supabase's public PostgREST/REST-API roles)
+hold `GRANT SELECT` on **all 12 tables**. So on Supabase, **RLS-enabled-everywhere is the only thing
+keeping the corpus private** — the naive "disable RLS on non-`chunk` tables" (Option A) would have
+exposed every row (`chunk`, `document`, `page_source`, …) to the **public, unauthenticated `anon`
+REST endpoint**. Corrected design (**Option B**): keep RLS **enabled** (anon stays default-denied) and
+add a `FOR SELECT TO rag_reader USING (true)` policy to exactly the reader's read set
+(`page_source`, `page_restriction`, `curated_knowledge_entry`; `chunk` keeps its source policy).
+
+**Shipped (uncommitted, in working tree):** migration `0009_reconcile_non_chunk_rls` + schema helpers
+`enable_non_chunk_rls` / `apply_reader_rls` (policy scoped `TO rag_reader`, skipped if the role is
+absent so a fresh deploy is safe) / `drop_reader_rls` / `disable_non_chunk_rls` (downgrade only, warned
+never to run against Supabase). TDD red→green incl. a **mutation check** (making the policy public →
+the anon-leak assertion fails `assert 1 == 0`): `confluence_sync/tests/test_reader_rls_reconcile.py`
+(3 tests — reader freed + **anon stays denied after the fix** [the critical no-leak assertion] + chunk
+isolation intact + role-absent skip) and `platform/db/tests/test_migration_0009_reader_rls_reconcile.py`
+(2 tests — real alembic up/down/up, asserting the reader policy appears/reverts and `chunk` keeps RLS).
+`make check` **488 passed** (was 483); boundaries clean; ruff/format/pyright clean on all touched files.
+
+**Still to apply on live Supabase (operator step):** run `uv run alembic upgrade head` against the
+store (`.env` already points at it as owner) — `rag_reader` already exists, so 0009 creates the three
+reader policies immediately. **Full step-by-step + verification + rollback:**
+`docs/runbooks/phase-13.1-apply-reader-rls-supabase.md`.
+
+**Original scope (for reference — superseded by the Option B design above):**
+
+**Problem (live, verified):** Supabase has RLS **enabled on all 12 public tables** but only `chunk` has a
+policy. `rag_reader` (NOBYPASSRLS) reads `page_source` + `page_restriction` (`fetch_page_scopes`,
+`search_repo.py:198-208`) and `curated_knowledge_entry` (`curated_knowledge_repo.py` via
+`answer_service.py:366`, wired to the reader sessionmaker in `main.py:108`) on the reader session → those
+three tables are **RLS-enabled/no-policy ⇒ default-deny ⇒ 0 rows** → **page ACL silently fails OPEN** and
+the **curated layer is dead**. Masked only because both tables are empty and the corpus is all-`general`.
+Migrations only `ENABLE` RLS on `chunk`, so this posture is **unmanaged drift** not reproducible from the
+tree.
+
+**Fix (TDD, one alembic migration `0009`, decide the posture):**
+- **Option A (preferred — matches the documented model "reader relies on `GRANT SELECT`, not RLS, for
+  non-`chunk` tables"):** `ALTER TABLE … DISABLE ROW LEVEL SECURITY` on `page_source`, `page_restriction`,
+  `curated_knowledge_entry`, `document`, `document_version`, `source_scope`, and the operational tables.
+- **Option B (if the Supabase "RLS-disabled-in-public" advisory must be satisfied):** keep RLS **enabled**
+  and add explicit permissive reader policies, e.g. `CREATE POLICY reader_select ON page_source FOR SELECT
+  TO rag_reader USING (true);` (repeat for `page_restriction`, `curated_knowledge_entry`).
+- Pick **one**, encode it in `0009`, re-assert in `scripts/setup_supabase.py provision-reader`, keep the
+  migration reversible, and **note in ADR-0013/0004** that non-`chunk` RLS posture is now migration-owned.
+- *(The stronger scope-GUC policy on `curated_knowledge_entry` belongs to **11.1a**, not here — 13.1 only
+  restores reader read-access.)*
+
+### 13.2 — Close the verification blind spot
+Extend `setup_supabase.py verify_isolation` (currently only exercises `chunk`) to assert `rag_reader` can
+read `page_source`/`page_restriction`/`curated_knowledge_entry` (and still cannot cross the source policy
+on `chunk`). Add a real-DB test that would have caught the reader lockout — the existing
+`test_curated_knowledge_repo.py` uses the **owner** sessionmaker (BYPASSRLS) so it structurally cannot.
+`make check` green.
+
+### 13.3 — Doc reconciliation sweep *(the "edit the docs" work the operator asked for)*
+De-duplicated across the 6-agent audit; fix all occurrences together:
+- **Curated "no RLS" is now false on live** — `curated_knowledge_entry` (and other non-`chunk` tables)
+  carry no RLS *in migrations*, but the live store has RLS enabled/no-policy (default-deny the reader).
+  Correct: `05-security-isolation.md:131,150`, `04-data-model.md:193,233-234`, `03-retrieval.md:219-220`,
+  `06-system-visualization.md:274`, `PLAN.md:5472,5856` (pre-shift refs), and the `curated_knowledge_repo.py`
+  docstring. Do not call tag-filtering the "only" access control on the live deployment.
+- **Stale FORCE-RLS content** — `05-security-isolation.md:37-43,105-118` (Issue 1) + `06:284,331` still
+  show `FORCE ROW LEVEL SECURITY` / `schema.py:60` as an open pre-Phase-6 item. It's **resolved** (ADR-0013
+  + migration 0008, `force=false` live; `schema.py:65-76` is `ENABLE`+`NO FORCE`). Move Issue 1 → DONE.
+- **"Phase 6 not built"** — `01-system-overview.md:118-120`, `06:312,328-332`, `final_design/README.md:46-47`
+  say Phase 6 is "decided on paper, not built." It **was executed** (provisioned/migrated/corpus-loaded,
+  uncommitted); only the traffic switch remains. Reword.
+- **`rag_writer` role does not exist** — `ADR-0004`, `DESIGN.md:196-201,198,241`, `ingestion/phase-0.md:43`
+  call the writer `rag_writer`. The writer is the table-owner superuser (local `rag`; live `postgres`,
+  BYPASSRLS). Label-only fix; RLS behavior described is correct.
+- **Counts/ranges** — `DESIGN.md:101` "10 tables"→11 (add `curated_knowledge_entry`);
+  `04-data-model.md:6` fix the `models.py:572-586` citation (that's `__all__`, 10 classes; PageRestriction
+  is mapped but not re-exported); `06:323` migration range `0001..0007`→`0001..0008`.
+- **ADR-0013:84** — soften the "managed Postgres does not reliably grant BYPASSRLS" line: live `postgres`
+  **does** carry BYPASSRLS; FORCE is dropped for portability (RDS fallback) + narrowness, not necessity.
+
+### 13.4 — Runbook / operational gaps *(low)*
+- Add a **Backups** section to `supabase-vector-store-cutover.md` (Supabase PITR/snapshot expectation +
+  a `pg_dump` cadence for the corpus tables) — `ingestion/phase-6.md:23` promises "backup/restore" the
+  runbook doesn't deliver — **or** drop the promise. Add a post-cutover **monitoring** note (connection
+  health, RLS-policy drift, HNSW index health, pooler saturation). **Do not invent RTO/RPO/SLA numbers.**
+- Note in step 4 that `page_restriction` + `curated_knowledge_entry` are empty in the all-`general` corpus
+  (hence not transplanted) and that a future **scoped/restricted** corpus **must** include them in the
+  dump or ACLs/curated entries are lost on cutover.
+- Fix migration `0008`'s docstring (claims 0001 runs `create_all + apply_chunk_rls`; 0001 is
+  `create_all` only, 0002 applies RLS) and the root `.env` comment path
+  (`apps/automation/config/knowledge_scopes.json` → repo-root `config/knowledge_scopes.json`).
+
+### 13.5 — Prove tag-differentiation on LIVE data *(the operator's "does it respond differently by tag" check)*
+The mechanism is built + tested but the live corpus is 100 % `general`, so it has never *demonstrated*
+provider-differentiated answering. To close: label ≥1 Confluence page `mews`/`opera-cloud`/`toast` (or seed
+a scoped `curated_knowledge_entry`), re-sync, then show a scoped query returns content a `general` query
+does not — and the reverse exclusion. Depends on 13.1 (curated path) if using a curated entry. **Operator
+step** (needs a real Confluence label change or a seed).
+
+### Phase 13 acceptance (exit gate)
+1. `alembic upgrade head` on a fresh DB reproduces the **exact** live RLS posture (13.1); migration
+   reversible; `make boundaries` clean; no ruff/pyright regression.
+2. `verify_isolation` exercises the reader's full read set and a new real-DB test proves the reader can
+   read `page_source`/`page_restriction`/curated while still blocked cross-source on `chunk` (13.2).
+3. Every doc-drift item in 13.3 corrected; `docs/` internally consistent with live ground truth.
+4. Runbook backups + monitoring + transplant note added; 0008 docstring + `.env` comment fixed (13.4).
+5. Tag-differentiation demonstrated on live data, or 13.5 explicitly recorded as an operator-pending step.
+6. Phase 13 does **not** touch Phase 11.1a's customer-scope backstop or 11.1b's DSN move — those stay
+   independently tracked.
+
+**No live isolation LEAK exists today** (corpus all-`general`, restricted/operational tables empty); 13.1
+and 11.1a are both **latent** gates that activate the moment restricted, multi-space, or provider-scoped
+data lands — hence "before public deploy," not emergencies.
 
 ---
 

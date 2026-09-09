@@ -83,6 +83,87 @@ def drop_chunk_rls(conn: Connection) -> None:
     conn.execute(text("ALTER TABLE chunk DISABLE ROW LEVEL SECURITY"))
 
 
+# Phase 13.1 — the reader's non-chunk read set. On Supabase the PostgREST roles anon/authenticated
+# hold blanket GRANT SELECT on every public table, so RLS (not its absence) is what keeps the corpus
+# private: an RLS-enabled table with no matching policy default-denies those roles. So we keep RLS
+# ENABLED on the non-chunk tables (anon stays out) and add a policy scoped to rag_reader for the
+# tables retrieval reads. Disabling RLS instead would expose every row to the public anon REST
+# endpoint — the exact failure this guards against.
+_READER_READ_TABLES = ("page_source", "page_restriction", "curated_knowledge_entry")
+
+
+def _non_chunk_tables() -> list[str]:
+    """Every mapped table except ``chunk``.
+
+    Derived from ORM metadata so a new table is covered automatically. ``alembic_version`` is
+    Alembic's own table (not in ``Base.metadata``), so it is out of scope. Uses ``.tables``
+    (unordered) not ``.sorted_tables``: an ``ALTER TABLE`` needs no order, and the metadata has
+    intentional circular FKs (page_source <-> document_version) that make ``sorted_tables`` warn.
+    """
+    return sorted(name for name in Base.metadata.tables if name != "chunk")
+
+
+def enable_non_chunk_rls(conn: Connection) -> None:
+    """Enable RLS on every non-chunk table so anon/authenticated are default-denied.
+
+    Idempotent, and safe-by-default on a fresh managed deploy: with no policy an RLS-enabled table
+    yields zero rows to any non-owner, non-BYPASSRLS role (the Supabase PostgREST roles). The owner
+    (writer) bypasses RLS by ownership (ADR-0013); rag_reader is let back in only where needed, by
+    ``apply_reader_rls``.
+    """
+    for table in _non_chunk_tables():
+        conn.execute(text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
+
+
+def disable_non_chunk_rls(conn: Connection) -> None:
+    """Reverse ``enable_non_chunk_rls`` (migration 0009 downgrade). Idempotent.
+
+    WARNING: on Supabase this re-exposes every non-chunk table to the public anon REST role (which
+    holds GRANT SELECT), because RLS is the only thing fencing those roles out. Only downgrade a
+    store with no PostgREST/anon exposure (local docker, RDS fallback).
+    """
+    for table in _non_chunk_tables():
+        conn.execute(text(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY"))
+
+
+def apply_reader_rls(conn: Connection, *, role: str = "rag_reader") -> None:
+    """Let rag_reader read its non-chunk tables while anon/authenticated stay denied.
+
+    Adds a ``FOR SELECT TO <role> USING (true)`` policy to each ``_READER_READ_TABLES`` entry (the
+    exact set retrieval reads via the reader session: page ACL + curated layer). Because the policy
+    names rag_reader, no other role matches it, so anon/authenticated stay default-denied despite a
+    GRANT SELECT. App-layer scope/ACL filtering is unchanged — these tables are read in full and
+    filtered in code, so ``USING (true)`` is correct here (chunk keeps its stricter source-keyed
+    policy).
+
+    Skips policy creation when ``role`` does not exist yet (a fresh ``alembic upgrade`` runs before
+    the role is provisioned); ``setup_supabase.py provision-reader`` re-runs this once it exists.
+    Idempotent. ``role`` is a trusted deployment constant, validated as a plain identifier because
+    ``CREATE POLICY`` cannot bind an identifier.
+    """
+    if not role.replace("_", "").isalnum():
+        raise ValueError(f"unsafe reader role name: {role!r}")
+    role_exists = conn.execute(
+        text("SELECT 1 FROM pg_roles WHERE rolname = :r"), {"r": role}
+    ).scalar()
+    for table in _READER_READ_TABLES:
+        conn.execute(text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
+        conn.execute(text(f"DROP POLICY IF EXISTS {table}_reader_read ON {table}"))
+        if role_exists:
+            conn.execute(
+                text(
+                    f"CREATE POLICY {table}_reader_read ON {table} "
+                    f"FOR SELECT TO {role} USING (true)"
+                )
+            )
+
+
+def drop_reader_rls(conn: Connection) -> None:
+    """Reverse ``apply_reader_rls``: drop the reader read policies (leaves the RLS enable state)."""
+    for table in _READER_READ_TABLES:
+        conn.execute(text(f"DROP POLICY IF EXISTS {table}_reader_read ON {table}"))
+
+
 def ensure_reader_role(conn: Connection, *, role: str, password: str) -> None:
     """Create a non-owner, non-superuser login role granted read-only access. Idempotent.
 
