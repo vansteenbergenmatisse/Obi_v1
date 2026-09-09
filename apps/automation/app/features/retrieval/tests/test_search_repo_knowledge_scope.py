@@ -44,10 +44,12 @@ def test_keyword_search_omits_predicate_when_knowledge_scopes_is_none() -> None:
 
 def test_keyword_search_adds_predicate_when_knowledge_scopes_given() -> None:
     s = _SpySession()
-    keyword_search(s.as_session(), "q", None, 10, knowledge_scopes=["general", "mews"])
+    keyword_search(
+        s.as_session(), "q", None, 10, knowledge_scopes=["obi-general-test", "obi-mews-test"]
+    )
     sql, params = s.calls[0]
     assert "tags && :knowledge_scopes" in sql
-    assert params["knowledge_scopes"] == ["general", "mews"]
+    assert params["knowledge_scopes"] == ["obi-general-test", "obi-mews-test"]
 
 
 def test_dense_search_omits_predicate_when_knowledge_scopes_is_none() -> None:
@@ -60,18 +62,18 @@ def test_dense_search_omits_predicate_when_knowledge_scopes_is_none() -> None:
 
 def test_dense_search_adds_predicate_when_knowledge_scopes_given() -> None:
     s = _SpySession()
-    dense_search(s.as_session(), [0.1, 0.2], None, 10, dim=2, knowledge_scopes=["general"])
+    dense_search(s.as_session(), [0.1, 0.2], None, 10, dim=2, knowledge_scopes=["obi-general-test"])
     sql, params = s.calls[0]
     assert "tags && :knowledge_scopes" in sql
-    assert params["knowledge_scopes"] == ["general"]
+    assert params["knowledge_scopes"] == ["obi-general-test"]
 
 
 def test_fetch_rerank_texts_adds_predicate_when_knowledge_scopes_given() -> None:
     s = _SpySession()
-    fetch_rerank_texts(s.as_session(), [1, 2], None, knowledge_scopes=["toast"])
+    fetch_rerank_texts(s.as_session(), [1, 2], None, knowledge_scopes=["obi-toast-test"])
     sql, params = s.calls[0]
     assert "tags && :knowledge_scopes" in sql
-    assert params["knowledge_scopes"] == ["toast"]
+    assert params["knowledge_scopes"] == ["obi-toast-test"]
 
 
 def test_fetch_rerank_texts_omits_predicate_when_knowledge_scopes_is_none() -> None:

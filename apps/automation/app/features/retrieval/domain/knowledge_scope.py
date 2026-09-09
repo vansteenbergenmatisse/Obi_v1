@@ -9,12 +9,13 @@ from __future__ import annotations
 def resolve_allowed_scopes(
     requested: str | None, recognized: frozenset[str], default: str | None
 ) -> list[str]:
-    """``general`` is always allowed (ADR-0011 Decision 1 — always-included, never inferred from
-    an untagged chunk). A recognized ``requested`` scope is added; an unrecognized one degrades
-    silently to the deployment ``default`` (if that is itself recognized), never a hard failure —
-    a stale/misconfigured embed should not break chat entirely. The caller logs the degradation.
+    """``obi-general-test`` is always allowed (ADR-0011 Decision 1 — always-included, never
+    inferred from an untagged chunk). A recognized ``requested`` scope is added; an unrecognized
+    one degrades silently to the deployment ``default`` (if that is itself recognized), never a
+    hard failure — a stale/misconfigured embed should not break chat entirely. The caller logs
+    the degradation.
     """
-    scopes = {"general"}
+    scopes = {"obi-general-test"}
     if requested and requested.lower() in recognized:
         scopes.add(requested.lower())
     elif default and default.lower() in recognized:

@@ -48,10 +48,10 @@ def _retriever(*, enable_knowledge_scope_filtering: bool = False) -> HybridRetri
 
 def test_flag_off_ignores_knowledge_scopes_argument(gateway, settings: Settings) -> None:
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
-    _set_chunk_tags(_ONBOARDING_PAGE, ["mews"])
+    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-mews-test"])
     retr = _retriever(enable_knowledge_scope_filtering=False)
 
-    hits = retr.retrieve("Onboarding Guide", "100", k=5, knowledge_scopes=["toast"])
+    hits = retr.retrieve("Onboarding Guide", "100", k=5, knowledge_scopes=["obi-toast-test"])
 
     # flag off -> the caller's knowledge_scopes is never applied, query unchanged from pre-10.4.
     assert str(_ONBOARDING_PAGE) in hits
@@ -59,7 +59,7 @@ def test_flag_off_ignores_knowledge_scopes_argument(gateway, settings: Settings)
 
 def test_flag_on_excludes_page_tagged_for_a_different_scope(gateway, settings: Settings) -> None:
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
-    _set_chunk_tags(_ONBOARDING_PAGE, ["mews"])
+    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-mews-test"])
     retr = _retriever(enable_knowledge_scope_filtering=True)
 
     # baseline: no filter at all -> the page resolves normally.
@@ -67,16 +67,20 @@ def test_flag_on_excludes_page_tagged_for_a_different_scope(gateway, settings: S
     assert str(_ONBOARDING_PAGE) in baseline
 
     # requested scopes don't include "mews" -> structurally excluded, not just unranked.
-    filtered = retr.retrieve("Onboarding Guide", "100", k=5, knowledge_scopes=["general", "toast"])
+    filtered = retr.retrieve(
+        "Onboarding Guide", "100", k=5, knowledge_scopes=["obi-general-test", "obi-toast-test"]
+    )
     assert str(_ONBOARDING_PAGE) not in filtered
 
 
 def test_flag_on_includes_page_when_its_scope_is_allowed(gateway, settings: Settings) -> None:
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
-    _set_chunk_tags(_ONBOARDING_PAGE, ["mews"])
+    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-mews-test"])
     retr = _retriever(enable_knowledge_scope_filtering=True)
 
-    hits = retr.retrieve("Onboarding Guide", "100", k=5, knowledge_scopes=["general", "mews"])
+    hits = retr.retrieve(
+        "Onboarding Guide", "100", k=5, knowledge_scopes=["obi-general-test", "obi-mews-test"]
+    )
 
     assert str(_ONBOARDING_PAGE) in hits
 
@@ -84,15 +88,17 @@ def test_flag_on_includes_page_when_its_scope_is_allowed(gateway, settings: Sett
 def test_flag_on_two_scopes_never_cross_leak(gateway, settings: Settings) -> None:
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
     index_page(gateway, settings, _EXPENSE_PAGE, 4)
-    _set_chunk_tags(_ONBOARDING_PAGE, ["mews"])
-    _set_chunk_tags(_EXPENSE_PAGE, ["toast"])
+    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-mews-test"])
+    _set_chunk_tags(_EXPENSE_PAGE, ["obi-toast-test"])
     retr = _retriever(enable_knowledge_scope_filtering=True)
 
-    mews_view = retr.retrieve("Onboarding Guide", "100", k=5, knowledge_scopes=["general", "mews"])
+    mews_view = retr.retrieve(
+        "Onboarding Guide", "100", k=5, knowledge_scopes=["obi-general-test", "obi-mews-test"]
+    )
     assert str(_ONBOARDING_PAGE) in mews_view
 
     toast_view = retr.retrieve(
-        "Onboarding Guide", "100", k=5, knowledge_scopes=["general", "toast"]
+        "Onboarding Guide", "100", k=5, knowledge_scopes=["obi-general-test", "obi-toast-test"]
     )
     assert str(_ONBOARDING_PAGE) not in toast_view
 
@@ -107,24 +113,24 @@ def test_flag_on_chunk_with_no_knowledge_scope_tag_never_participates(
     baseline = retr.retrieve("Onboarding Guide", "100", k=5)
     assert str(_ONBOARDING_PAGE) in baseline  # sanity: it's really indexed and findable
 
-    filtered = retr.retrieve("Onboarding Guide", "100", k=5, knowledge_scopes=["general"])
+    filtered = retr.retrieve("Onboarding Guide", "100", k=5, knowledge_scopes=["obi-general-test"])
     assert str(_ONBOARDING_PAGE) not in filtered  # ADR-0011 Decision 1: no tag -> no participation
 
 
 def test_query_trace_records_allowed_knowledge_scopes(gateway, settings: Settings) -> None:
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
-    _set_chunk_tags(_ONBOARDING_PAGE, ["general", "mews"])
+    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-general-test", "obi-mews-test"])
     retr = _retriever(enable_knowledge_scope_filtering=True)
 
     result = retr.retrieve_with_context(
-        "Onboarding Guide", "100", k=5, knowledge_scopes=["general", "mews"]
+        "Onboarding Guide", "100", k=5, knowledge_scopes=["obi-general-test", "obi-mews-test"]
     )
 
     assert result.trace_id is not None
     with get_sessionmaker()() as s:
         row = s.get(QueryTrace, result.trace_id)
         assert row is not None
-        assert row.allowed_knowledge_scopes == ["general", "mews"]
+        assert row.allowed_knowledge_scopes == ["obi-general-test", "obi-mews-test"]
 
 
 def test_gin_index_is_plan_usable_for_tags_overlap(gateway, settings: Settings) -> None:
@@ -136,14 +142,17 @@ def test_gin_index_is_plan_usable_for_tags_overlap(gateway, settings: Settings) 
     only: `Session.close()` below rolls them back without a `commit()`, so nothing persists.
     """
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
-    _set_chunk_tags(_ONBOARDING_PAGE, ["mews"])
+    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-mews-test"])
 
     with get_sessionmaker()() as s:
         s.execute(text("SET LOCAL enable_seqscan = off"))
         s.execute(text("DROP INDEX ix_chunk_active_space"))
         s.execute(text("DROP INDEX ix_chunk_active_source"))
         rows = s.execute(
-            text("EXPLAIN SELECT id FROM chunk WHERE is_active AND tags && ARRAY['mews']::text[]")
+            text(
+                "EXPLAIN SELECT id FROM chunk "
+                "WHERE is_active AND tags && ARRAY['obi-mews-test']::text[]"
+            )
         ).fetchall()
         plan = "\n".join(str(row[0]) for row in rows)
 

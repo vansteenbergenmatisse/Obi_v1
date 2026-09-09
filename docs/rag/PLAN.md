@@ -11,12 +11,72 @@
 
 ---
 
+## ⭐ CURRENT STATE (2026-09-09, latest) — authoritative snapshot
+
+> Newest-first. The dated SESSION LOG below keeps the fuller build-session detail; this block is the
+> single source of "where things actually stand right now."
+
+### ✅ Committed to `feat/rag-phase-3.5`
+- **Phase 6** — `db4d0af`: Supabase managed-Postgres cutover + drop `chunk` FORCE-RLS (ADR-0013,
+  migration `0008`, `setup_supabase.py`, cutover runbook, phase-6 docs, `schema.apply_chunk_rls`
+  FORCE→NO-FORCE).
+- **Phase 13.1** — `f52d24a`: reader RLS on non-`chunk` tables (migration `0009` + schema reader
+  helpers, tests, apply runbook, `retrieval/phase-13.md`, PLAN ledger). `schema.py` was split by hunk
+  across the two commits.
+
+### ✅ Applied to LIVE Supabase (verified read-only) — not a code change
+- `0009` applied: **live alembic head = `0009_reconcile_non_chunk_rls`**. The 3 `*_reader_read`
+  policies exist (permissive `SELECT … USING(true)` scoped to `{rag_reader}`) on
+  `page_source`/`page_restriction`/`curated_knowledge_entry`; RLS stays ON for all 12 tables;
+  `anon`/`authenticated` (`NOBYPASSRLS`) have no matching policy. `page_source` (9 rows) now readable
+  by `rag_reader` (was 0 pre-0009). Reader-level smoke = **PASS** (catalog + deterministic RLS
+  semantics; a live `rag_reader` *login* was not run — reader password not on hand, reset blocked
+  because Supabase `postgres` is non-superuser / not a member of `rag_reader`).
+
+### 🟡 Uncommitted in the working tree (two independent axes)
+- **Scope rename → `obi-…-test` namespace (backend, done + green, UNCOMMITTED).** Recognized set is now
+  **exactly four** scopes: **`obi-general-test`** (always-present base), **`obi-mews-test`**,
+  **`obi-operacloud-test`** (internal hyphen dropped), **`obi-toast-test`**. Changed:
+  `config/knowledge_scopes.json`; loader required-name (`general`→`obi-general-test`) + message; both
+  domain constants (`retrieval/domain/knowledge_scope.py` base allow-set, `confluence_sync/domain/
+  knowledge_scope.py` provider-tag filter); `answer_service` default; `verify_knowledge_scope_live.py`
+  `--scope-a/--scope-b` defaults; config loader/settings docstrings; and ~13 test files (guards left
+  intact: `Muse/Toast` clarification options, SQL-injection payloads, the `base` source tag,
+  case-insensitivity inputs fixed by hand). ADR-0011 amended. **Gate: 488 pass** (local DSN override),
+  `make boundaries` clean, ruff check+format clean on every touched file. Confluence labels are matched
+  case-insensitively against those exact names.
+- **Phase 10/12 switcher work (separate axis, still WIP).** `apps/web/*` scope-menu + knowledge-scopes
+  (+ 5 tests), `confluence_sync/__init__.py` event exports, `test_migration_0007`, phase-10 docs,
+  `phase-3.5.md`, `IDEAS.md`, `docs/final_design/`.
+
+### 🔴 Follow-ups this session created (do before they bite)
+1. **Re-tag/re-ingest the live corpus** `general` → `obi-general-test` (85 chunks). Filtering is ON,
+   so existing `general`-tagged content drops out of scoped retrieval until re-tagged. (Happens
+   naturally when you re-ingest for the 13.5 live-proof.)
+2. **Reconcile the frontend switcher** (`apps/web/.../knowledge-scopes.ts` + its tests) to the four
+   `obi-…-test` names, or the UI sends wire values the backend no longer recognizes. (Uncommitted
+   Phase 12 work — left to that axis on purpose.)
+3. **Re-issue the `rag_reader` password** into `DATABASE_READER_URL` for the empirical reader login /
+   any real Supabase-backed run — see "Postgres / Supabase — remaining manual ops" below.
+
+### 📌 Operator decisions — resolved this session
+- (a) ✅ Apply `0009` to Supabase — DONE (live head `0009`, verified).
+- (b) ✅ Commit Phase 6 + Phase 13.1 — DONE (`db4d0af`, `f52d24a`).
+- Scope naming ✅ decided: four `-test` scopes only, `obi-general-test` as the base (startup rule
+  changed to require it).
+
+### ⛔ Never do on Supabase
+`DISABLE ROW LEVEL SECURITY` on any table, or the `0009` downgrade — either re-exposes the whole
+corpus to the public `anon` REST role.
+
+---
+
 ## ⭐ SESSION LOG 2026-09-09 (pm) — Supabase completeness audit + Phase 13.1 built. What's DONE / what's NEXT
 
 > Consolidated record of this session so nothing is scattered. Details below in the TOP STATUS block,
 > the Phase 13 section, and `docs/runbooks/phase-13.1-apply-reader-rls-supabase.md`.
 
-### ✅ DONE this session (all UNCOMMITTED, in the working tree)
+### ✅ DONE — build session (Phase 13.1 authored; since committed — see CURRENT STATE above)
 1. **Live Supabase read-only introspection** (no MCP exists → used a scratchpad `psycopg` script on the
    `.env` DSN). Ground truth: **schema is COMPLETE** — all 12 tables, pgvector 0.8.2, HNSW + both GIN
    indexes, alembic head `0008`, `chunk_source_read` policy, `rag_reader` role. **No missing schema
@@ -86,14 +146,31 @@
   now false on Supabase; FORCE-RLS-resolved; "Phase 6 executed not planned"; `rag_writer`→owner label;
   10→11 table count; alembic 0007→0008 range).
 - **13.4** — runbook backups + monitoring section; transplant note; `0008` docstring + `.env` path fix.
-- **13.5** — prove tag-differentiation on live data (label ≥1 Confluence page mews/opera-cloud/toast).
-- **Commit** the Phase-6 + Phase-13 working trees when the operator says so (both currently uncommitted).
+- **13.5** — prove tag-differentiation on live data (label ≥1 Confluence page `obi-mews-test`/`obi-operacloud-test`/`obi-toast-test`).
+- **✅ Scope rename to `obi-…-test` namespace (2026-09-09, UNCOMMITTED):** operator set the recognized
+  set to **exactly four** scopes — `obi-general-test` (always-present base), `obi-mews-test`,
+  `obi-operacloud-test` (internal hyphen dropped), `obi-toast-test`. Changed: `config/knowledge_scopes.json`,
+  the loader required-name check (`general`→`obi-general-test`), both domain constants
+  (`retrieval/domain/knowledge_scope.py`, `confluence_sync/domain/knowledge_scope.py`),
+  `answer_service` default, `verify_knowledge_scope_live.py` defaults, and ~13 test files (guarded
+  against coincidental words: `Muse/Toast` clarification options, SQL-injection payloads, the `base`
+  tag). **488 tests green** (local DSN override), boundaries + ruff clean. **Follow-ups NOT yet done:**
+  (1) 🔴 **re-tag/re-ingest the live corpus** `general`→`obi-general-test` (85 chunks) or scoped retrieval
+  drops existing content — filtering is ON; (2) the **frontend switcher** (`apps/web/.../knowledge-scopes.ts`
+  + its 5 tests, uncommitted Phase 12) still sends the OLD wire names (`mews`/`toast`/`general`/`opera-cloud`)
+  — must be reconciled to the `obi-…-test` names or the UI sends unrecognized scopes; (3) ADR-0011 amended.
+- **✅ Committed (2026-09-09):** Phase 6 = `db4d0af` (Supabase cutover + FORCE-RLS drop, ADR-0013,
+  migration 0008, setup_supabase.py, runbook, phase-6 docs). Phase 13.1 = `f52d24a` (reader RLS,
+  migration 0009 + schema helpers, tests, runbook, phase-13 doc, PLAN ledger). schema.py was split by
+  hunk across the two. **Still uncommitted (separate axis, Phase 10/12 switcher work):** `apps/web/*`
+  scope-menu + knowledge-scopes, `confluence_sync/__init__.py` event exports, `verify_knowledge_scope_live.py`,
+  `test_migration_0007`, phase-10 docs, phase-3.5 doc, `IDEAS.md`, `docs/final_design/`.
 - **Separate axis, still outstanding before any public deploy:** Phase **11.1a** customer-scope
   (mews/opera/toast) fail-closed backstop — NOT the same as 13.1.
 
 ### 📌 Operator decisions needed
 - (a) ✅ RESOLVED — 0009 applied to Supabase (live head `0009`, verified).
-- (b) Commit the Phase-6 and/or Phase-13 trees, or keep uncommitted?
+- (b) ✅ RESOLVED — Phase 6 (`db4d0af`) + Phase 13.1 (`f52d24a`) committed on `feat/rag-phase-3.5`.
 - (c) Optional: run `/codex:adversarial-review --background` on the RLS change before applying/committing.
 
 ---
@@ -110,18 +187,20 @@ after Phase 12).
 ### ❓ "Does it do everything with Confluence — based on tags, does it respond differently?" — the verdict
 - **Mechanism: IMPLEMENTED + TESTED end-to-end.** The whole chain is wired and covered by unit + real-DB
   tests (incl. a GIN `EXPLAIN`): Confluence label → scope tag (`resolve_knowledge_scope_tags`, repo-root
-  `config/knowledge_scopes.json` = general/mews/opera-cloud/toast) → 2+-label **conflict quarantine**
+  `config/knowledge_scopes.json` = **`obi-general-test`/`obi-mews-test`/`obi-operacloud-test`/`obi-toast-test`**
+  as of the 2026-09-09 rename) → 2+-label **conflict quarantine**
   (fail-closed, zero tags) → `chunk.tags` stamped at the versioning seam → in-SQL `AND tags &&
   :knowledge_scopes` filter on the partial GIN `ix_chunk_tags_gin` → request threading
-  (`ChatRequestBody.knowledge_scope` → `resolve_allowed_scopes`, always includes `general`, binds
+  (`ChatRequestBody.knowledge_scope` → `resolve_allowed_scopes`, always includes `obi-general-test`, binds
   cache/idempotency) → double-gated behind `enable_knowledge_scope_filtering` (flag is **TRUE** in the
   live `.env`).
 - **BUT it is NOT demonstrable on live data.** The live corpus is **100 % `{base, general}`** across all
-  9 pages / 85 chunks, and `curated_knowledge_entry` is **empty**. So provider-specific answering
-  (mews vs opera vs toast) is proven **only by synthetic/real-DB tests**. The only thing provable on the
-  live store is the *negative* (a mews request returns the general corpus; a mews-**only** filter returns
-  zero). **To prove it live: label ≥1 Confluence page `mews`/`opera-cloud`/`toast` (or seed a scoped
-  curated entry) so a scoped query returns content a `general` query does not.** → Phase 13.5.
+  9 pages / 85 chunks (⚠️ `general` is now UNRECOGNIZED after the rename → **must re-tag to
+  `obi-general-test`**, see CURRENT STATE follow-up #1), and `curated_knowledge_entry` is **empty**. So
+  provider-specific answering (mews vs opera vs toast) is proven **only by synthetic/real-DB tests**. The
+  only thing provable on the live store is the *negative*. **To prove it live: label ≥1 Confluence page
+  `obi-mews-test`/`obi-operacloud-test`/`obi-toast-test` (or seed a scoped curated entry) so a scoped
+  query returns content an `obi-general-test` query does not.** → Phase 13.5.
 - **This is a "future ideas" concern surfaced to the top per operator request** — it does not change the
   Phase 11 → 12 order; it is a *verification* task (Phase 13), not a re-build.
 
@@ -144,11 +223,12 @@ axis from Phase 11.1a (reader-access correctness, not customer-scope isolation) 
 
 ### Where we stand (one line)
 Schema ✅ complete · pgvector/HNSW/GIN ✅ · source-axis RLS ✅ · **reader RLS → migration 0009 ✅
-built+tested, Option B/secure (13.1, UNCOMMITTED; NOT yet applied to Supabase — run `alembic upgrade
-head`, see `docs/runbooks/phase-13.1-apply-reader-rls-supabase.md`)** · **⚠️ `anon`/`authenticated`
-hold SELECT on all tables → RLS is the only privacy fence; must NOT disable it** ·
+built+tested, Option B/secure (13.1) — ✅ COMMITTED `f52d24a` and ✅ APPLIED to live Supabase (head
+`0009`, verified; reader smoke PASS; runbook `docs/runbooks/phase-13.1-apply-reader-rls-supabase.md`)** ·
+**⚠️ `anon`/`authenticated` hold SELECT on all tables → RLS is the only privacy fence; must NOT disable it** ·
 **tag-differentiation ✅ built/tested but not live-provable (Phase 13.5)** · **docs drifted 🟡 (Phase 13.3)**
-· Phase-6 + Phase-13 trees still **uncommitted**.
+· Phase 6 (`db4d0af`) + Phase 13.1 (`f52d24a`) ✅ **committed**; the `obi-…-test` scope rename remains
+**uncommitted** (backend green, 488).
 
 ---
 
@@ -200,15 +280,17 @@ hold SELECT on all tables → RLS is the only privacy fence; must NOT disable it
     on all tables → disabling RLS = public leak; the fix keeps RLS on + adds `rag_reader`-scoped
     policies.** ✅ **APPLIED to Supabase 2026-09-09** (live head `0009`; 3 reader policies + RLS posture
     verified; reader-level smoke PASS via catalog + RLS semantics). Runbook:
-    `docs/runbooks/phase-13.1-apply-reader-rls-supabase.md`. Still UNCOMMITTED in git.
+    `docs/runbooks/phase-13.1-apply-reader-rls-supabase.md`. ✅ **Committed `f52d24a`.**
   - **13.2** — extend `setup_supabase.py verify_isolation` to exercise the reader against its *full*
     read set (not just `chunk`), so this drift can never go latent again.
   - **13.3** — doc reconciliation sweep (curated "no RLS" correction, FORCE-RLS-resolved, "Phase-6
     executed not-planned", `rag_writer`→owner label, 10→11 table count, alembic 0007→0008 range).
   - **13.4** — runbook backups + monitoring section; `page_restriction`/curated transplant note;
     0008 docstring + `.env` path-comment fixes. *(low)*
-  - **13.5** — prove tag-differentiation on **live** data: label ≥1 Confluence page mews/opera/toast
-    (or seed a scoped curated entry) so a scoped query returns what a `general` query does not.
+  - **13.5** — prove tag-differentiation on **live** data: label ≥1 Confluence page
+    `obi-mews-test`/`obi-operacloud-test`/`obi-toast-test` (or seed a scoped curated entry) so a scoped
+    query returns what an `obi-general-test` query does not. **Prereq:** re-tag/re-ingest the live corpus
+    (currently `general`) to `obi-general-test` after the 2026-09-09 scope rename.
 - **Deploy — DEFERRED (AWS only, later):** containerize + AWS host (ECS/Fargate-class; the
   FastAPI + APScheduler backend needs a persistent host, not serverless) against Supabase; carries
   **11.1c**; then public HTTPS URL → register the Confluence webhook. **Run local until then.**
@@ -2671,7 +2753,7 @@ OCR/image reading untouched.
 | **10** — Knowledge-scope tagging & retrieval filtering (ADR-0011) | 🔶 in progress (10.1–10.7 done, `59997e8`) | see §0 | 10.8 build half done + uncommitted; **remaining 10.8/10.9/10.10 renumbered → Phase 12.1/12.3/12.2 (2026-08-24)** |
 | **11** — Separation of concerns (FE / backend-API / RAG-vector-DB core) + fail-open isolation backstop | ⬜ **todo — NEW, scoped 2026-08-24** | — | user chose *full repo split*; 11.1 security backstop **first, before public deploy**; 11.4 ADR-gated (needs ADR-0012 + 3 decisions). Full design in `IDEAS.md` #5 |
 | **12** — Remaining forward work (renumbered) | ⬜ todo | — | 12.1/12.2/12.3 = old 10.8/10.10/10.9; 12.4 = Phase 5 remainder. **12.5 (deploy) superseded 2026-09-07: Phase 6 = Supabase-Cloud-on-AWS migration pulled forward to NEXT, no longer deferred behind Phase 11.** Runs after Phase 11 otherwise |
-| **13** — Supabase completeness & tag-behavior verification | 🔶 in progress (13.1 built, uncommitted, not applied to Supabase) | see §0 top block + Phase 13 | NEW 2026-09-09 from live introspection + 6-agent doc audit. Schema ✅ complete. **13.1 (migration 0009 — reader RLS) ✅ built+tested, Option B/secure (TDD, +5 tests, `make check` 488; UNCOMMITTED).** ⚠️ Corrected from Option A after finding `anon`/`authenticated` hold SELECT on all tables → keep RLS on + `rag_reader`-scoped policies; runbook `docs/runbooks/phase-13.1-apply-reader-rls-supabase.md`. Remaining: apply 0009 to Supabase, verify-isolation blind spot (13.2), doc sweep (13.3), runbook/ops (13.4), live tag-proof (13.5). Distinct axis from 11.1a |
+| **13** — Supabase completeness & tag-behavior verification | 🔶 in progress (13.1 ✅ done; 13.2–13.5 open) | see §0 CURRENT STATE + Phase 13 | NEW 2026-09-09 from live introspection + 6-agent doc audit. Schema ✅ complete. **13.1 (migration 0009 — reader RLS, Option B/secure, TDD, +5 tests, 488 green) ✅ COMMITTED `f52d24a` + APPLIED to live Supabase (head `0009`, verified; reader smoke PASS).** ⚠️ Corrected from Option A after finding `anon`/`authenticated` hold SELECT on all tables → keep RLS on + `rag_reader`-scoped policies; runbook `docs/runbooks/phase-13.1-apply-reader-rls-supabase.md`. Remaining: verify-isolation blind spot + fix broken re-provision path (13.2), doc sweep (13.3), runbook/ops (13.4), live tag-proof (13.5, needs live corpus re-tag to `obi-general-test`). Distinct axis from 11.1a |
 
 Gate at each ✅: `make check` green (**219 backend tests** as of 5.3 — 4.5 touched no backend code;
 was 213 at 5.1/5.2, 197 at 5.1, 194 at 4.4, 167 at 4.3, 164 at 4.2, 144 at 3.5.6, 130 at 4.1, 120 at
@@ -6119,7 +6201,7 @@ head 0008** applied (`chunk` `force=false`, ADR-0013); `chunk_source_read` sourc
 `rag_reader` provisioned NOSUPERUSER/NOBYPASSRLS with complete `GRANT SELECT` + default privileges. **The
 pure "missing schema object" set is EMPTY** — the live gaps are RLS *posture*, not absent objects.
 
-### 13.1 — Migration 0009: reader-RLS on non-`chunk` tables *(HIGH — before any public deploy)* — ✅ **BUILT 2026-09-09 (Option B / secure, TDD, UNCOMMITTED); not yet applied to Supabase**
+### 13.1 — Migration 0009: reader-RLS on non-`chunk` tables *(HIGH — before any public deploy)* — ✅ **DONE 2026-09-09 (Option B / secure, TDD): COMMITTED `f52d24a` + APPLIED to live Supabase (head `0009`, verified; reader smoke PASS)**
 
 **⚠️ SECURITY PIVOT (2026-09-09) — Option A was WRONG for Supabase; corrected to Option B.** A live
 grant check found that `anon` **and** `authenticated` (Supabase's public PostgREST/REST-API roles)
@@ -6130,7 +6212,7 @@ REST endpoint**. Corrected design (**Option B**): keep RLS **enabled** (anon sta
 add a `FOR SELECT TO rag_reader USING (true)` policy to exactly the reader's read set
 (`page_source`, `page_restriction`, `curated_knowledge_entry`; `chunk` keeps its source policy).
 
-**Shipped (uncommitted, in working tree):** migration `0009_reconcile_non_chunk_rls` + schema helpers
+**Shipped (✅ committed `f52d24a` + applied to live Supabase, head `0009`):** migration `0009_reconcile_non_chunk_rls` + schema helpers
 `enable_non_chunk_rls` / `apply_reader_rls` (policy scoped `TO rag_reader`, skipped if the role is
 absent so a fresh deploy is safe) / `drop_reader_rls` / `disable_non_chunk_rls` (downgrade only, warned
 never to run against Supabase). TDD red→green incl. a **mutation check** (making the policy public →
@@ -6211,8 +6293,10 @@ De-duplicated across the 6-agent audit; fix all occurrences together:
 
 ### 13.5 — Prove tag-differentiation on LIVE data *(the operator's "does it respond differently by tag" check)*
 The mechanism is built + tested but the live corpus is 100 % `general`, so it has never *demonstrated*
-provider-differentiated answering. To close: label ≥1 Confluence page `mews`/`opera-cloud`/`toast` (or seed
-a scoped `curated_knowledge_entry`), re-sync, then show a scoped query returns content a `general` query
+provider-differentiated answering. To close: label ≥1 Confluence page
+`obi-mews-test`/`obi-operacloud-test`/`obi-toast-test` (or seed a scoped `curated_knowledge_entry`),
+re-sync (which also re-tags the base corpus to `obi-general-test`), then show a scoped query returns
+content an `obi-general-test` query
 does not — and the reverse exclusion. Depends on 13.1 (curated path) if using a curated entry. **Operator
 step** (needs a real Confluence label change or a seed).
 

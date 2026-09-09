@@ -17,6 +17,17 @@ answers. **Confirmed 2026-08-21: the initial recognized knowledge-scope set is `
 placeholders); `Settings.knowledge_scopes` (Decision 1) remains config-driven so a fifth platform is a
 config change, not a code change.
 
+> **Amendment (2026-09-09) — scope names renamed to the `obi-…-test` namespace.** Per operator decision
+> the recognized set is exactly four scopes: **`obi-general-test`** (the always-present base),
+> **`obi-mews-test`**, **`obi-operacloud-test`** (note: `opera-cloud`'s internal hyphen is dropped), and
+> **`obi-toast-test`**. Confluence lowercases labels, so labels are matched case-insensitively against
+> these exact names. The base-scope literal was renamed in code (`retrieval/domain/knowledge_scope.py`,
+> `confluence_sync/domain/knowledge_scope.py`, the loader's required-name check, and `answer_service`'s
+> default) and across the suite (488 tests green). Everywhere `general`/`mews`/`opera-cloud`/`toast`
+> appears as a scope value below, read the corresponding `obi-…-test` name. **Live data:** the existing
+> corpus is tagged `general` and must be re-tagged/re-ingested to `obi-general-test`, or existing content
+> drops out of scoped retrieval (`enable_knowledge_scope_filtering` is on).
+
 **Terminology collision, read first — and confirmed, not avoided.** This repo's own deployment is
 itself code-named **Toast** (`RAG-TOAST-omniboost`; `docs/adr/0006-Defer-Multi-Product-Extraction.md`'s
 "Muse vs. Toast" names two hypothetical *deployments of this same product*). This ADR's "provider" — a

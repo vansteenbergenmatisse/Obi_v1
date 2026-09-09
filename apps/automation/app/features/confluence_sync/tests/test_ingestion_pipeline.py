@@ -125,7 +125,7 @@ def test_label_driven_knowledge_scope_tag_unions_with_source_scope(
 
     # `toast` is recognized via the committed config/knowledge_scopes.json, not an env override —
     # deterministic regardless of the developer's local .env.
-    gateway.set_labels(1001, ["toast"])
+    gateway.set_labels(1001, ["obi-toast-test"])
     gateway.set_version(1001, 1)
     with session_scope() as s:
         outcome = handle_sync_page(
@@ -136,9 +136,9 @@ def test_label_driven_knowledge_scope_tag_unions_with_source_scope(
     with read() as s:
         ps = s.get(PageSource, 1001)
         assert ps is not None
-        assert set(ps.tags) == {"base", "toast"}
+        assert set(ps.tags) == {"base", "obi-toast-test"}
     children = active_child_chunks(1001)
-    assert children and all(set(c.tags) == {"base", "toast"} for c in children)
+    assert children and all(set(c.tags) == {"base", "obi-toast-test"} for c in children)
 
 
 def test_conflicting_provider_labels_contribute_no_tag_and_log_conflict(
@@ -156,7 +156,7 @@ def test_conflicting_provider_labels_contribute_no_tag_and_log_conflict(
         sync_service.log, "warning", lambda event, **kw: captured.update(event=event, **kw)
     )
 
-    gateway.set_labels(1001, ["mews", "toast"])
+    gateway.set_labels(1001, ["obi-mews-test", "obi-toast-test"])
     gateway.set_version(1001, 1)
     with session_scope() as s:
         outcome = sync_service.handle_sync_page(
@@ -164,7 +164,7 @@ def test_conflicting_provider_labels_contribute_no_tag_and_log_conflict(
         )
     assert outcome.action == "indexed"
     assert captured.get("event") == "knowledge_scope_conflict"
-    assert set(captured.get("matched_labels", [])) == {"mews", "toast"}
+    assert set(captured.get("matched_labels", [])) == {"obi-mews-test", "obi-toast-test"}
 
     with read() as s:
         ps = s.get(PageSource, 1001)

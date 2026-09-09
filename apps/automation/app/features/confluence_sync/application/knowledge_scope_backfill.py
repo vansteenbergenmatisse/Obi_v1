@@ -2,11 +2,12 @@
 ``enable_knowledge_scope_filtering`` is flipped on in any environment with real content.
 
 Once the flag is on, retrieval filters with ``tags && :allowed_scopes`` (PLAN 10.4) and the allowed
-set always contains ``general`` (ADR-0011 Decision 1) but is never inferred for an untagged chunk.
-A live (``is_active``) chunk whose tags overlap *none* of the recognized knowledge scopes
-(``general``/``mews``/``opera-cloud``/``toast``) can therefore never be returned once the flag is
-on — it silently vanishes from every scoped result. That silent disappearance is the exact failure
-10.7's manual-labeling step guards against; this read-only check proves the guard held before the
+set always contains ``obi-general-test`` (ADR-0011 Decision 1) but is never inferred for an untagged
+chunk. A live (``is_active``) chunk whose tags overlap *none* of the recognized knowledge scopes
+(``obi-general-test``/``obi-mews-test``/``obi-operacloud-test``/``obi-toast-test``) can therefore
+never be returned once the flag is on — it silently vanishes from every scoped result. That
+silent disappearance is the exact failure 10.7's manual-labeling step guards against; this
+read-only check proves the guard held before the
 flip. It counts only ``is_active`` chunks on purpose: retrieval reads only active chunks
 (``_base_filters``) and superseded rows are GC'd, so historical rows need no backfill.
 """

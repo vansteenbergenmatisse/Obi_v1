@@ -187,7 +187,7 @@ class Settings(BaseSettings):
     # itself lives in config/knowledge_scopes.json (see knowledge_scope_set below), not here;
     # this file only holds the runtime toggles for that feature.
     # deployment-level fallback scope when a chat request omits knowledge_scope (PLAN 10.5).
-    # Empty -> general-only.
+    # Empty -> obi-general-test-only.
     default_knowledge_scope: str = ""
     # rollout flag (PLAN 10.4). Off -> zero behavior change: HybridRetriever never applies the
     # `tags && ...` predicate regardless of what a caller passes, mirroring

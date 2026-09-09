@@ -754,12 +754,16 @@ def test_recognized_knowledge_scope_reaches_retriever_as_general_plus_scope() ->
         retriever,
         _FakeRewriter("q"),
         generator,
-        recognized_knowledge_scopes=frozenset({"general", "mews", "toast"}),
+        recognized_knowledge_scopes=frozenset(
+            {"obi-general-test", "obi-mews-test", "obi-toast-test"}
+        ),
     )
 
-    service.answer([ChatMessage(role="user", content="q")], scope=None, knowledge_scope="mews")
+    service.answer(
+        [ChatMessage(role="user", content="q")], scope=None, knowledge_scope="obi-mews-test"
+    )
 
-    assert retriever.knowledge_scopes_calls == [["general", "mews"]]
+    assert retriever.knowledge_scopes_calls == [["obi-general-test", "obi-mews-test"]]
 
 
 def test_unrecognized_knowledge_scope_degrades_to_general_without_raising(monkeypatch) -> None:
@@ -771,7 +775,7 @@ def test_unrecognized_knowledge_scope_degrades_to_general_without_raising(monkey
         retriever,
         _FakeRewriter("q"),
         generator,
-        recognized_knowledge_scopes=frozenset({"general", "mews"}),
+        recognized_knowledge_scopes=frozenset({"obi-general-test", "obi-mews-test"}),
     )
 
     result = service.answer(
@@ -779,11 +783,11 @@ def test_unrecognized_knowledge_scope_degrades_to_general_without_raising(monkey
     )
 
     assert not result.refused  # never a hard failure over a stale/misconfigured embed
-    assert retriever.knowledge_scopes_calls == [["general"]]
+    assert retriever.knowledge_scopes_calls == [["obi-general-test"]]
     degraded = [
         fields for event, fields in fake_log.calls if event == "knowledge_scope_unrecognized"
     ]
-    assert degraded == [{"requested": "not-a-real-scope", "resolved_scopes": ["general"]}]
+    assert degraded == [{"requested": "not-a-real-scope", "resolved_scopes": ["obi-general-test"]}]
 
 
 def test_omitted_knowledge_scope_falls_back_to_deployment_default() -> None:
@@ -793,13 +797,13 @@ def test_omitted_knowledge_scope_falls_back_to_deployment_default() -> None:
         retriever,
         _FakeRewriter("q"),
         generator,
-        recognized_knowledge_scopes=frozenset({"general", "opera-cloud"}),
-        default_knowledge_scope="opera-cloud",
+        recognized_knowledge_scopes=frozenset({"obi-general-test", "obi-operacloud-test"}),
+        default_knowledge_scope="obi-operacloud-test",
     )
 
     service.answer([ChatMessage(role="user", content="q")], scope=None)
 
-    assert retriever.knowledge_scopes_calls == [["general", "opera-cloud"]]
+    assert retriever.knowledge_scopes_calls == [["obi-general-test", "obi-operacloud-test"]]
 
 
 def test_omitted_knowledge_scope_with_no_default_is_general_alone() -> None:
@@ -809,7 +813,7 @@ def test_omitted_knowledge_scope_with_no_default_is_general_alone() -> None:
 
     service.answer([ChatMessage(role="user", content="q")], scope=None)
 
-    assert retriever.knowledge_scopes_calls == [["general"]]
+    assert retriever.knowledge_scopes_calls == [["obi-general-test"]]
 
 
 def test_crag_retry_reuses_the_same_resolved_allowed_scopes() -> None:
@@ -826,14 +830,19 @@ def test_crag_retry_reuses_the_same_resolved_allowed_scopes() -> None:
         _FakeRewriter("rewritten q"),
         generator,
         refusal_min_rerank_score=0.10,
-        recognized_knowledge_scopes=frozenset({"general", "mews"}),
+        recognized_knowledge_scopes=frozenset({"obi-general-test", "obi-mews-test"}),
     )
 
     service.answer(
-        [ChatMessage(role="user", content="original q")], scope=None, knowledge_scope="mews"
+        [ChatMessage(role="user", content="original q")],
+        scope=None,
+        knowledge_scope="obi-mews-test",
     )
 
-    assert retriever.knowledge_scopes_calls == [["general", "mews"], ["general", "mews"]]
+    assert retriever.knowledge_scopes_calls == [
+        ["obi-general-test", "obi-mews-test"],
+        ["obi-general-test", "obi-mews-test"],
+    ]
 
 
 def test_no_reader_sessionmaker_configured_composes_zero_curated_entries() -> None:
@@ -922,12 +931,14 @@ def test_curated_entries_fetched_with_the_same_resolved_allowed_scopes(monkeypat
         _FakeRewriter("q"),
         generator,
         reader_sessionmaker=_DummyReaderSession,
-        recognized_knowledge_scopes=frozenset({"general", "mews"}),
+        recognized_knowledge_scopes=frozenset({"obi-general-test", "obi-mews-test"}),
     )
 
-    service.answer([ChatMessage(role="user", content="q")], scope=None, knowledge_scope="mews")
+    service.answer(
+        [ChatMessage(role="user", content="q")], scope=None, knowledge_scope="obi-mews-test"
+    )
 
-    assert seen_scopes == [["general", "mews"]]
+    assert seen_scopes == [["obi-general-test", "obi-mews-test"]]
 
 
 def test_curated_entries_still_compose_on_the_text_empty_image_only_path(monkeypatch) -> None:

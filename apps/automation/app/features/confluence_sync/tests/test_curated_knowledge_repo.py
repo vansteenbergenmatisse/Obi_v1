@@ -26,23 +26,23 @@ def test_empty_tags_entry_is_always_included_regardless_of_allowed_scopes() -> N
     _seed(title="General FAQ", body="Applies everywhere.", tags=[])
 
     with get_sessionmaker()() as s:
-        entries = fetch_curated_entries(s, ["general"], limit=10)
+        entries = fetch_curated_entries(s, ["obi-general-test"], limit=10)
     assert [e.title for e in entries] == ["General FAQ"]
 
     with get_sessionmaker()() as s:
-        entries = fetch_curated_entries(s, ["general", "mews"], limit=10)
+        entries = fetch_curated_entries(s, ["obi-general-test", "obi-mews-test"], limit=10)
     assert [e.title for e in entries] == ["General FAQ"]
 
 
 def test_scoped_entry_only_returned_when_its_scope_is_allowed() -> None:
-    _seed(title="Mews-only note", body="Mews specific.", tags=["mews"])
+    _seed(title="Mews-only note", body="Mews specific.", tags=["obi-mews-test"])
 
     with get_sessionmaker()() as s:
-        excluded = fetch_curated_entries(s, ["general"], limit=10)
+        excluded = fetch_curated_entries(s, ["obi-general-test"], limit=10)
     assert excluded == []
 
     with get_sessionmaker()() as s:
-        included = fetch_curated_entries(s, ["general", "mews"], limit=10)
+        included = fetch_curated_entries(s, ["obi-general-test", "obi-mews-test"], limit=10)
     assert [e.title for e in included] == ["Mews-only note"]
 
 
@@ -50,7 +50,7 @@ def test_inactive_entry_is_never_returned() -> None:
     _seed(title="Retired note", body="Stale.", tags=[], is_active=False)
 
     with get_sessionmaker()() as s:
-        entries = fetch_curated_entries(s, ["general"], limit=10)
+        entries = fetch_curated_entries(s, ["obi-general-test"], limit=10)
     assert entries == []
 
 
@@ -59,7 +59,7 @@ def test_cap_enforcement_limits_the_result_count() -> None:
         _seed(title=f"Note {i}", body="...", tags=[])
 
     with get_sessionmaker()() as s:
-        entries = fetch_curated_entries(s, ["general"], limit=3)
+        entries = fetch_curated_entries(s, ["obi-general-test"], limit=3)
     assert len(entries) == 3
 
 
@@ -68,18 +68,18 @@ def test_ordering_is_stable_by_id_for_deterministic_citation_numbering() -> None
     second = _seed(title="A second", body="...", tags=[])
 
     with get_sessionmaker()() as s:
-        entries = fetch_curated_entries(s, ["general"], limit=10)
+        entries = fetch_curated_entries(s, ["obi-general-test"], limit=10)
     assert [e.id for e in entries] == sorted([first, second])
 
 
 def test_two_differently_scoped_entries_never_cross_leak() -> None:
-    _seed(title="Mews note", body="...", tags=["mews"])
-    _seed(title="Toast note", body="...", tags=["toast"])
+    _seed(title="Mews note", body="...", tags=["obi-mews-test"])
+    _seed(title="Toast note", body="...", tags=["obi-toast-test"])
 
     with get_sessionmaker()() as s:
-        mews_view = fetch_curated_entries(s, ["general", "mews"], limit=10)
+        mews_view = fetch_curated_entries(s, ["obi-general-test", "obi-mews-test"], limit=10)
     assert [e.title for e in mews_view] == ["Mews note"]
 
     with get_sessionmaker()() as s:
-        toast_view = fetch_curated_entries(s, ["general", "toast"], limit=10)
+        toast_view = fetch_curated_entries(s, ["obi-general-test", "obi-toast-test"], limit=10)
     assert [e.title for e in toast_view] == ["Toast note"]

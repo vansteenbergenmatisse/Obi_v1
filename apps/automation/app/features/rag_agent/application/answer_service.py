@@ -139,7 +139,7 @@ class AnswerService:
         retrieve_k: int = 5,
         clarification_classifier: AmbiguityClassifier | None = None,
         enable_clarification_branch: bool = False,
-        recognized_knowledge_scopes: frozenset[str] = frozenset({"general"}),
+        recognized_knowledge_scopes: frozenset[str] = frozenset({"obi-general-test"}),
         default_knowledge_scope: str | None = None,
         reader_sessionmaker: Callable[[], Session] | None = None,
         curated_knowledge_max_entries: int = 5,

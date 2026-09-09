@@ -259,12 +259,12 @@ def test_knowledge_scope_is_forwarded_to_the_answer_service(gateway, settings: S
 
     resp = client.post(
         "/chat",
-        json={"history": [{"role": "user", "content": "hi"}], "knowledge_scope": "mews"},
+        json={"history": [{"role": "user", "content": "hi"}], "knowledge_scope": "obi-mews-test"},
         headers=_auth(),
     )
 
     assert resp.status_code == 200
-    assert spy.calls[0][2] == "mews"
+    assert spy.calls[0][2] == "obi-mews-test"
 
 
 def test_omitted_knowledge_scope_forwards_none(gateway, settings: Settings) -> None:
@@ -317,7 +317,7 @@ _IDEMPOTENCY_REPLAY_CASES = {
         {"history": [{"role": "user", "content": "How do I request access?"}]},
         {
             "history": [{"role": "user", "content": "How do I request access?"}],
-            "knowledge_scope": "mews",
+            "knowledge_scope": "obi-mews-test",
         },
     ),
 }

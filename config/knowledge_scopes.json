@@ -1,9 +1,9 @@
 {
-  "_readme": "Knowledge scopes recognized by the RAG system (PLAN 10, ADR-0011). This is THE global place to add or remove a recognized scope/tag. To recognize a new integration platform: add an entry below, then label the matching Confluence pages with that exact 'name' (case-insensitive) — nothing else in the codebase needs to change. 'general' must always be present (the app fails fast at startup otherwise).",
+  "_readme": "Knowledge scopes recognized by the RAG system (PLAN 10, ADR-0011). This is THE global place to add or remove a recognized scope/tag. To recognize a new integration platform: add an entry below, then label the matching Confluence pages with that exact 'name' (case-insensitive — Confluence lowercases labels) — nothing else in the codebase needs to change. 'obi-general-test' is the always-included base scope and must always be present (the app fails fast at startup otherwise); it is the scope untagged content falls into and is always allowed at retrieval.",
   "scopes": [
-    { "name": "general", "description": "Content that applies to all customers/platforms." },
-    { "name": "mews", "description": "Mews PMS integration content." },
-    { "name": "opera-cloud", "description": "Opera Cloud PMS integration content." },
-    { "name": "toast", "description": "Toast POS integration content. Third-party platform — not this repo's own codename (see ADR-0011)." }
+    { "name": "obi-general-test", "description": "Base scope: content that applies to all customers/platforms. Always present, always allowed, never inferred from an untagged chunk (ADR-0011 Decision 1)." },
+    { "name": "obi-mews-test", "description": "Mews PMS integration content." },
+    { "name": "obi-operacloud-test", "description": "Opera Cloud PMS integration content." },
+    { "name": "obi-toast-test", "description": "Toast POS integration content. Third-party platform — not this repo's own codename (see ADR-0011)." }
   ]
 }

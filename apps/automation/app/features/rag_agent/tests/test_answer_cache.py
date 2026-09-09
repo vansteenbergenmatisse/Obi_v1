@@ -92,8 +92,8 @@ def test_identical_history_scope_and_knowledge_scope_is_served_from_cache() -> N
     inner = _CountingProvider()
     cache = CachingAnswerService(inner, ttl_seconds=60.0)
 
-    first = cache.answer(_history("what is the vpn policy"), "alice", "mews")
-    second = cache.answer(_history("what is the vpn policy"), "alice", "mews")
+    first = cache.answer(_history("what is the vpn policy"), "alice", "obi-mews-test")
+    second = cache.answer(_history("what is the vpn policy"), "alice", "obi-mews-test")
 
     assert len(inner.calls) == 1
     assert first == second
@@ -105,8 +105,8 @@ def test_different_knowledge_scope_is_not_served_from_cache() -> None:
     inner = _CountingProvider()
     cache = CachingAnswerService(inner, ttl_seconds=60.0)
 
-    cache.answer(_history("what is the vpn policy"), "alice", "mews")
-    cache.answer(_history("what is the vpn policy"), "alice", "opera-cloud")
+    cache.answer(_history("what is the vpn policy"), "alice", "obi-mews-test")
+    cache.answer(_history("what is the vpn policy"), "alice", "obi-operacloud-test")
 
     assert len(inner.calls) == 2
 
@@ -116,7 +116,7 @@ def test_omitted_knowledge_scope_is_not_conflated_with_a_named_one() -> None:
     cache = CachingAnswerService(inner, ttl_seconds=60.0)
 
     cache.answer(_history("what is the vpn policy"), "alice")
-    cache.answer(_history("what is the vpn policy"), "alice", "mews")
+    cache.answer(_history("what is the vpn policy"), "alice", "obi-mews-test")
 
     assert len(inner.calls) == 2
 

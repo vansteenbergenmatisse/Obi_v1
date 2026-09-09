@@ -24,6 +24,6 @@ def load_recognized_knowledge_scopes(path: Path = DEFAULT_KNOWLEDGE_SCOPES_PATH)
     names = frozenset(
         str(entry["name"]).strip().lower() for entry in data["scopes"] if str(entry["name"]).strip()
     )
-    if "general" not in names:
-        raise ValueError(f"{path} must include a 'general' scope (got {sorted(names)!r})")
+    if "obi-general-test" not in names:
+        raise ValueError(f"{path} must include a 'obi-general-test' scope (got {sorted(names)!r})")
     return names

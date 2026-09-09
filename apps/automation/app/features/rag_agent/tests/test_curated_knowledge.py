@@ -17,7 +17,7 @@ from app.features.rag_agent.infrastructure.curated_knowledge_repo import fetch_c
 
 
 def test_curated_entry_to_hit_uses_a_namespaced_page_id_and_negative_chunk_id() -> None:
-    entry = CuratedEntry(id=3, tags=("mews",), title="Password reset", body="...")
+    entry = CuratedEntry(id=3, tags=("obi-mews-test",), title="Password reset", body="...")
     hit = curated_entry_to_hit(entry)
     assert hit.page_id == "curated:3"
     assert hit.chunk_id == -3
@@ -53,10 +53,10 @@ class _SpySession:
 
 def test_fetch_curated_entries_binds_scopes_as_a_parameter_never_interpolated() -> None:
     s = _SpySession()
-    fetch_curated_entries(s.as_session(), ["general", "mews"], limit=5)
+    fetch_curated_entries(s.as_session(), ["obi-general-test", "obi-mews-test"], limit=5)
     sql, params = s.calls[0]
     assert "tags && :allowed_scopes" in sql
-    assert params["allowed_scopes"] == ["general", "mews"]
+    assert params["allowed_scopes"] == ["obi-general-test", "obi-mews-test"]
     assert params["limit"] == 5
 
 
@@ -71,7 +71,7 @@ def test_fetch_curated_entries_binds_a_malicious_scope_value_never_reaches_raw_s
 
 def test_fetch_curated_entries_includes_the_empty_tags_always_included_clause() -> None:
     s = _SpySession()
-    fetch_curated_entries(s.as_session(), ["general"], limit=5)
+    fetch_curated_entries(s.as_session(), ["obi-general-test"], limit=5)
     sql, _ = s.calls[0]
     assert "tags = '{}'" in sql
     assert "is_active" in sql
