@@ -15,6 +15,7 @@ reconciliation (the worker<->reconciliation cycle-breaker); do not hoist it.
 
 from __future__ import annotations
 
+from .application.event_service import IngestResult, ingest_event
 from .application.knowledge_scope_backfill import (
     KnowledgeScopeCoverage,
     verify_knowledge_scope_coverage,
@@ -33,9 +34,12 @@ from .domain.scope_resolver import (
     resolve_scope_roots,
     resolve_space_scope,
 )
+from .schemas.events import EventEnvelope
 from .server import router
 
 __all__ = [
+    "EventEnvelope",
+    "IngestResult",
     "KIND_COMPLETE",
     "KIND_LIGHTWEIGHT",
     "KnowledgeScopeCoverage",
@@ -44,6 +48,7 @@ __all__ = [
     "ROOT_TYPE_SPACE",
     "ScopeResolution",
     "drain",
+    "ingest_event",
     "reap",
     "resolve_knowledge_scope_tags",
     "resolve_scope_roots",
