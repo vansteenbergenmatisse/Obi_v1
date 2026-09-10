@@ -52,6 +52,12 @@ export interface ChatSession {
    * `PanelBody`'s subtree) need the same value. */
   locale: Locale;
   setLocale: (locale: Locale) => void;
+  /** The knowledge scope (ADR-0011 decision 6) applied to every outgoing chat request — seeded
+   * from the embed's `knowledgeScope` prop and, in dev/verification builds, overridable at runtime
+   * by the PLAN 10.8 scope switcher so a tester can prove the four scopes return isolated evidence.
+   * `undefined` means the backend's default/general scope. */
+  knowledgeScope: string | undefined;
+  setKnowledgeScope: (scope: string | undefined) => void;
 }
 
 const ChatSessionContext = createContext<ChatSession | null>(null);
@@ -63,16 +69,22 @@ export interface ChatSessionProviderProps {
    * (ADR-0011 decision 6) — set once at widget initialization (the
    * embedding page/deployment declares which platform it is), not
    * re-derived per message. Omitted means the backend's default/general
-   * scope applies. A visible switcher for this value is PLAN 10.8, not
-   * this plumbing.
+   * scope applies. Seeds the session's initial scope; the PLAN 10.8
+   * switcher can then override it at runtime in dev/verification builds.
    */
   knowledgeScope?: string;
 }
 
-export function ChatSessionProvider({ children, knowledgeScope }: ChatSessionProviderProps) {
+export function ChatSessionProvider({
+  children,
+  knowledgeScope: initialKnowledgeScope,
+}: ChatSessionProviderProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState(false);
   const [locale, setLocale] = useState<Locale>("en");
+  // Seeded from the embed's prop (the deployment declares its scope once); the 10.8 switcher
+  // sets it live so a tester can compare scopes without re-mounting the widget.
+  const [knowledgeScope, setKnowledgeScope] = useState<string | undefined>(initialKnowledgeScope);
   const conversationId = useRef<string | undefined>(undefined);
   const nextId = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -192,7 +204,17 @@ export function ChatSessionProvider({ children, knowledgeScope }: ChatSessionPro
 
   return (
     <ChatSessionContext.Provider
-      value={{ messages, pending, sendMessage, handleFeedback, restart, locale, setLocale }}
+      value={{
+        messages,
+        pending,
+        sendMessage,
+        handleFeedback,
+        restart,
+        locale,
+        setLocale,
+        knowledgeScope,
+        setKnowledgeScope,
+      }}
     >
       {children}
     </ChatSessionContext.Provider>

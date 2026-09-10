@@ -70,3 +70,39 @@ describe("PanelHeader", () => {
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
 });
+
+describe("PanelHeader — knowledge-scope switcher (PLAN 10.8, dev/verification only)", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it("is hidden unless NEXT_PUBLIC_SHOW_SCOPE_SWITCHER is set", () => {
+    renderHeader({ onRestart: vi.fn() });
+    expect(screen.queryByRole("button", { name: "Knowledge scope" })).not.toBeInTheDocument();
+  });
+
+  it("shows the switcher and applies a picked scope back into the session", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SHOW_SCOPE_SWITCHER", "true");
+    renderHeader({ onRestart: vi.fn() });
+
+    await userEvent.click(screen.getByRole("button", { name: "Knowledge scope" }));
+    expect(screen.getByRole("menu", { name: "Knowledge scope" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("menuitem", { name: "Toast" }));
+
+    // Reopening reflects the persisted selection: proof the pick round-tripped through the
+    // session context and back into the menu's `activeScope`.
+    await userEvent.click(screen.getByRole("button", { name: "Knowledge scope" }));
+    expect(screen.getByRole("menuitem", { name: "Toast" })).toHaveClass("font-semibold");
+  });
+
+  it("opening the scope menu closes the other menus (mutually exclusive)", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SHOW_SCOPE_SWITCHER", "true");
+    renderHeader({ onRestart: vi.fn() });
+
+    await userEvent.click(screen.getByRole("button", { name: "More" }));
+    expect(screen.getByRole("menu", { name: "More options" })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Knowledge scope" }));
+    expect(screen.queryByRole("menu", { name: "More options" })).not.toBeInTheDocument();
+    expect(screen.getByRole("menu", { name: "Knowledge scope" })).toBeInTheDocument();
+  });
+});

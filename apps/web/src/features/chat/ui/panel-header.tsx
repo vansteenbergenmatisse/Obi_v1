@@ -18,6 +18,7 @@ import { IconButton } from "./icon-button";
 import { LanguageMenu } from "./language-menu";
 import { Menu } from "./menu";
 import { MenuItem } from "./menu-item";
+import { ScopeMenu } from "./scope-menu";
 import { useChatSession } from "./chat-session-provider";
 import { getCopy } from "../model/i18n";
 
@@ -41,22 +42,37 @@ export function PanelHeader({
 }: PanelHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
-  const { locale, setLocale } = useChatSession();
+  const [scopeOpen, setScopeOpen] = useState(false);
+  const { locale, setLocale, knowledgeScope, setKnowledgeScope } = useChatSession();
   const copy = getCopy(locale);
+
+  // Dev/verification only (PLAN 10.8): a build with NEXT_PUBLIC_SHOW_SCOPE_SWITCHER="true" shows a
+  // knowledge-scope switcher so a tester can prove the four scopes return isolated evidence. A real
+  // per-deployment embed sets its scope once via ChatSessionProvider and never renders this.
+  const showScopeSwitcher = process.env.NEXT_PUBLIC_SHOW_SCOPE_SWITCHER === "true";
 
   function toggleMenu() {
     setLangOpen(false);
+    setScopeOpen(false);
     setMenuOpen((open) => !open);
   }
 
   function toggleLang() {
     setMenuOpen(false);
+    setScopeOpen(false);
     setLangOpen((open) => !open);
+  }
+
+  function toggleScope() {
+    setMenuOpen(false);
+    setLangOpen(false);
+    setScopeOpen((open) => !open);
   }
 
   function closeMenus() {
     setMenuOpen(false);
     setLangOpen(false);
+    setScopeOpen(false);
   }
 
   return (
@@ -98,6 +114,32 @@ export function PanelHeader({
               >
                 <path d="M3 8V5a2 2 0 0 1 2-2h3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" />
                 <circle cx="12" cy="12" r="3.2" />
+              </svg>
+            </IconButton>
+          ) : null}
+          {showScopeSwitcher ? (
+            <IconButton
+              // Not localized: a dev/verification-only control (PLAN 10.8), never shown in a real
+              // embed, so it stays out of the six-locale WidgetCopy table.
+              aria-label="Knowledge scope"
+              title="Knowledge scope"
+              aria-haspopup="menu"
+              aria-expanded={scopeOpen}
+              active={scopeOpen}
+              onClick={toggleScope}
+              className="h-[30px] w-[30px]"
+            >
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                aria-hidden="true"
+              >
+                <path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0l-7.2-7.2a2 2 0 0 1-.6-1.4V4a1 1 0 0 1 1-1h8a2 2 0 0 1 1.4.6l7.2 7.2a2 2 0 0 1 0 2.8z" />
+                <circle cx="7.5" cy="7.5" r="1.4" fill="currentColor" stroke="none" />
               </svg>
             </IconButton>
           ) : null}
@@ -166,6 +208,15 @@ export function PanelHeader({
         activeLocale={locale}
         onSelect={setLocale}
       />
+
+      {showScopeSwitcher ? (
+        <ScopeMenu
+          open={scopeOpen}
+          onClose={closeMenus}
+          activeScope={knowledgeScope}
+          onSelect={setKnowledgeScope}
+        />
+      ) : null}
     </>
   );
 }

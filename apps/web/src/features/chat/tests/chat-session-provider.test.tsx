@@ -176,7 +176,7 @@ describe("ChatSessionProvider", () => {
     });
 
     render(
-      <ChatSessionProvider knowledgeScope="mews">
+      <ChatSessionProvider knowledgeScope="obi-mews-test">
         <Harness />
       </ChatSessionProvider>,
     );
@@ -184,7 +184,46 @@ describe("ChatSessionProvider", () => {
     await userEvent.click(screen.getByText("send"));
     await waitFor(() => expect(requestBody).toBeDefined());
 
-    expect((requestBody as { knowledgeScope?: string }).knowledgeScope).toBe("mews");
+    expect((requestBody as { knowledgeScope?: string }).knowledgeScope).toBe("obi-mews-test");
+  });
+
+  it("applies a runtime scope change (the PLAN 10.8 switcher) to the next outgoing request", async () => {
+    let requestBody: unknown;
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+      requestBody = init?.body ? JSON.parse(init.body as string) : undefined;
+      return Promise.resolve(
+        okStreamResponse([
+          sse({ type: "start", conversationId: "conv-1" }),
+          sse({ type: "done", answer: "hi", citations: [], traceId: "trace-1", refused: false }),
+        ]),
+      );
+    });
+
+    function ScopeHarness() {
+      const { sendMessage, knowledgeScope, setKnowledgeScope } = useChatSession();
+      return (
+        <div>
+          <div data-testid="scope">{knowledgeScope ?? "none"}</div>
+          <button onClick={() => setKnowledgeScope("obi-toast-test")}>set-toast</button>
+          <button onClick={() => sendMessage("hi")}>send</button>
+        </div>
+      );
+    }
+
+    render(
+      <ChatSessionProvider knowledgeScope="obi-mews-test">
+        <ScopeHarness />
+      </ChatSessionProvider>,
+    );
+
+    // Seeded from the embed's prop, then overridden live by the switcher.
+    expect(screen.getByTestId("scope").textContent).toBe("obi-mews-test");
+    await userEvent.click(screen.getByText("set-toast"));
+    expect(screen.getByTestId("scope").textContent).toBe("obi-toast-test");
+
+    await userEvent.click(screen.getByText("send"));
+    await waitFor(() => expect(requestBody).toBeDefined());
+    expect((requestBody as { knowledgeScope?: string }).knowledgeScope).toBe("obi-toast-test");
   });
 
   it("omits knowledgeScope from the outgoing request when not configured", async () => {
