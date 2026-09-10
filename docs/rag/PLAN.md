@@ -16,22 +16,34 @@
 > Newest-first. The dated SESSION LOG below keeps the fuller build-session detail; this block is the
 > single source of "where things actually stand right now."
 
-### 🔭 NEXT UP — forward-looking roadmap (as of 2026-09-10, later² — P0 closed; 13.3/13.4/.env + 11.1a code done)
+### 🔭 NEXT UP — forward-looking roadmap (as of 2026-09-10, later³ — tree committed; 11.1a + verify-isolation scope axis done)
 
 > The single prioritized "what's next" list. Each item says who it needs. Phase-13 sub-items and the
 > Phase 5.4/12.4 eval remainder are the detail below; this is the ordered pointer.
 >
-> **▶ IMMEDIATE NEXT (in order):**
-> 1. **Commit** the uncommitted tree — two logical commits: (a) the 13.3/13.4 doc sweep + `.env`
->    cleanup, (b) the Phase 11.1a backstop (code + migration `0010` + tests + ADR-0014 + `phase-11.md`).
-> 2. **Apply migration `0010` live** to Supabase (`alembic upgrade head`, `0009`→`0010`) — needs
->    operator ok (live DB change; no extra step, reader already has the `extensions` grant).
->    `verify-isolation` **now gates the scope axis** (done 2026-09-10, see below) so it stays green on
->    the tagged live corpus after `0010` and proves scope isolation as exit code **8**.
-> 3. **Embedder bake-off** (bucket C, item 3) — the operator's stated next build; needs live API spend
->    (Voyage, inside the $5 cap) and is a real build (re-embed the corpus into a 1024-dim table/index).
-> 4. Then the rest of bucket C (latency/cost + red-team against the live reader; true TTFT/SSE),
->    buckets B (retrieval-grid finish, page purge), D (label-driven ingestion — ADR-gated).
+> **✅ DONE since last update:** the whole tree is committed — `7d79a07` (13.3/13.4 docs + `.env`),
+> `d6d6d67` (Phase 11.1a backstop: migration `0010`, schema DDL, GUC wiring, ADR-0014, `phase-11.md`,
+> tests), `1be08d4` (`verify-isolation` now gates the ADR-0014 **scope axis** — exit code **8** — so it
+> stays green on the tagged live corpus after `0010`). Automation **502 pass** (local-DSN override),
+> boundaries + ruff/format/pyright clean. No git remote configured, so nothing is pushed (local-only).
+>
+> **▶ IMMEDIATE NEXT (in order) — these are THE next things to do:**
+> 1. **Apply migration `0010` live** to Supabase — **NEEDS THE OPERATOR** (live DB change). From
+>    `apps/automation` with `.env` pointed at Supabase: `uv run alembic upgrade head` (advances the live
+>    head `0009`→`0010`), then `uv run python scripts/setup_supabase.py verify-isolation` — expect the
+>    new `scope axis` line and **exit 0**. No extra step: the reader already has the `extensions` grant.
+>    This closes the **last CRITICAL pre-public-deploy gate** (customer isolation fail-open → fail-closed,
+>    bucket E). Everything in buckets B/C/D stays barred from shipping externally until this lands.
+> 2. **Embedder bake-off + the eval remainder** (bucket C) — **NEEDS THE OPERATOR** (live API spend,
+>    inside the pre-authorized $5 cap). A real build: re-embed the corpus into a separate **1024-dim**
+>    table/index and score Voyage `voyage-3-large` vs the live OpenAI `halfvec(3072)`; then run the
+>    latency/cost + live red-team harness **against the Supabase `rag_reader`** with knowledge-scope
+>    filtering ON, plus true TTFT/SSE via the `/chat` server path. Gold set is tiny → any winner is
+>    directional. Also finish bucket B's retrieval grid (`grapes × {Opera, Toast}`, tiny Cohere spend).
+> 3. **Label-driven ingestion** (bucket D, NEXT FIXES #6) — **NEEDS A PRODUCT DECISION + AN ADR** before
+>    any code. Auto-ingest any page carrying a recognized `obi-*-test` label (webhook-kept-live) by adding
+>    a label-driven pull to the `source_scope` model + `knowledge_scopes.json`. A real feature, designed
+>    through the PLAN process, not ad hoc. Ties to IDEAS §0.
 
 **A. Near-term — code/ops the agent can do without new spend or decisions — ✅ ALL DONE (2026-09-10)**
 - **13.3 — ✅ DONE (2026-09-10, docs session).** Doc reconciliation sweep: corrected the stale
