@@ -37,9 +37,11 @@ caller once a second source type exists. Nothing else in ingestion needs to know
 the RLS policy, the reader-role GUC binding, and the negative-isolation tests are all retrieval-
 side (`../retrieval/phase-3.5.md`).
 
-The **writer role** half of the RLS role split (`rag_writer`, `BYPASSRLS`) is what every ingestion
-write already runs as — worker, webhook, reconcile, and this activation point are untouched by RLS
-by design (ADR-0004 decision 4).
+The **writer** is what every ingestion write already runs as — worker, webhook, reconcile, and this
+activation point are untouched by RLS by design (ADR-0004 decision 4). Originally the writer escaped
+RLS by being a superuser locally; **ADR-0013 (Phase 6) changed the mechanism to table ownership with
+`FORCE` dropped**, so the same bypass holds on managed Postgres with no superuser — see
+[`./phase-6.md`](./phase-6.md). The reader half (`rag_reader`, non-owner) is unchanged.
 
 ## 3.5.6 — Confluence source scoping (`source_scope` table)
 

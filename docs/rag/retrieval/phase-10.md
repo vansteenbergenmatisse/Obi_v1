@@ -200,6 +200,39 @@ citation's `url` is empty (`packages/contracts`' `Citation.url` already document
 "unavailable") — there is no distinct "Source: curated knowledge" visual treatment yet. That is a
 UI/contract decision for a future sub-step once the widget side is designed, not a gap in this one.
 
+## §10.8 — knowledge-scope switcher (dev/verification) + live self-test
+
+Two build outputs, both thin — no new backend mechanism (§§10.1–10.7 already built it):
+
+- **Widget scope switcher (frontend).** A dev/verification-only control in the panel header that
+  sets §10.5's `knowledgeScope` on the outgoing chat request, so a tester can prove the four scopes
+  return isolated evidence live in the UI (the real negative-test proof for ADR-0011's isolation,
+  run against a live UI, not just §10.4's SQL unit test). Files:
+  - `apps/web/src/features/chat/model/knowledge-scopes.ts` (new) — `KNOWLEDGE_SCOPES`, a hand-mirror
+    of the repo-root [`config/knowledge_scopes.json`](../../../config/knowledge_scopes.json) (Next
+    can't import a JSON from outside the app root into the client bundle). NOT a second source of
+    truth: `tests/knowledge-scopes.test.ts` reads the canonical file and fails the build on any
+    drift, so the canonical file stays authoritative.
+  - `ui/scope-menu.tsx` (new) — mirrors `LanguageMenu` exactly (same `Menu`/`MenuItem` primitives),
+    so it inherits the brand for free.
+  - `ui/chat-session-provider.tsx` — `knowledgeScope` is now session state (seeded from the embed's
+    prop, overridable at runtime), exposed as `knowledgeScope`/`setKnowledgeScope` on the context.
+  - `ui/panel-header.tsx` — the switcher trigger + menu, gated behind
+    `NEXT_PUBLIC_SHOW_SCOPE_SWITCHER === "true"` so real embeds (which declare one scope via the
+    provider prop) never render it. Documented in `apps/web/.env.example`.
+- **Live self-test script.** `apps/automation/scripts/verify_knowledge_scope_live.py` (one-off, not
+  pytest — needs real network + credentials + it mutates live Confluence, same ownership as
+  `run_reconciliation_once.py`). Adds/edits/removes a recognized label on a real page via the v1
+  Confluence label REST API, drives the same `sync_page` job a webhook enqueues, and asserts
+  `page_source.tags`/`chunk.tags` update **without a re-embed** — proven by the unchanged
+  `active_doc_version_id` + `action == "metadata_only"`, **not** by `last_indexed_at` (a correction:
+  `_apply_metadata_only` *does* bump `last_indexed_at`; an earlier plan draft claimed otherwise). It
+  restores the original labels in a `finally`. To let a script outside the feature drive the receipt
+  path, `ingest_event`/`EventEnvelope`/`IngestResult` are now exported from `confluence_sync`'s root.
+- **Still blocked (network leg):** Confluence Cloud → public `POST /confluence/events` needs the
+  operator's deployed URL. Until then a label change is picked up on the next reconciliation sweep,
+  and the script drives the job in-process.
+
 ## Not this file
 
 Label-driven tag derivation and the ingestion-side corpus migration — see

@@ -11,6 +11,44 @@ exists — not a spec.
 
 ---
 
+## 0. Verify live Confluence → RAG propagation for every mutation type (add / edit / delete, page & folder) — raised 2026-09-09
+
+**The ask.** Prove, live and end-to-end, that anything an operator does in Confluence actually
+propagates into the RAG system: **add** a page/folder, **edit** a page body or **its labels**,
+**move** a page, **delete/trash/archive** a page or folder, and **restore** it. For each, the index
+should reflect it — new content ingested, edits re-embedded, label changes re-scoped (metadata-only),
+deletions deactivated — with no manual step.
+
+**Why it's not yet provable today.** Two mechanisms exist but neither is fully exercised live:
+- **Webhook** (`POST /confluence/events`) — the handler is built and secured (HMAC, rate limit, size
+  cap), but **live delivery from Confluence Cloud → our backend is not wired** (backend runs on
+  localhost; needs a public URL). So real add/edit/delete events aren't actually being delivered yet.
+- **Reconciliation sweep** — the safety net that catches whatever the webhook missed, but it only
+  covers pages within an **active `source_scope` root** (ingestion is `source_scope`-driven, not
+  label-driven — see PLAN NEXT FIXES #6). A labeled page **outside** any root is never pulled in.
+
+**What a real verification would cover** (one live page/folder per case, asserting the DB result, the
+way `scripts/verify_knowledge_scope_live.py` does for label add/swap/remove today):
+- add page → ingested (chunks + tags); add page **under a `source_scope`-covered parent** vs outside
+  it (outside = not ingested — is that the intended behavior, or the label-driven feature?).
+- edit body → re-embed (new `active_doc_version_id`); edit **label only** → `metadata_only`, tags
+  re-scoped, **no** re-embed (same doc version).
+- move page (parent change) → still covered iff the new parent is in scope; coverage recomputed.
+- delete / trash / archive → deactivated (out of live index); restore → re-ingested.
+- **folder** operations (e.g. the `1671168029` test folder) — Confluence "folders" are not v2 pages
+  (they 404 on the pages API); confirm folder add/delete and child moves propagate correctly.
+- the missing leg explicitly: **stand up a public webhook URL** and prove a real Confluence-delivered
+  event (not just an in-process job) drives the update.
+
+**Relation to current work.** This is the live-proof umbrella over PLAN Phase 10.8 (webhook
+self-test), the reconciliation sweeps, and PLAN **NEXT FIXES #6** (operator wants label-driven
+ingestion — "any recognized `obi-*-test` label anywhere → auto-ingest, webhook-synced, new
+`knowledge_scopes.json` tag pulls matching pages"). If that feature is built, this verification is how
+you prove it. Route through `docs/rag/PLAN.md`'s process (design → ADR if it changes the ingestion
+model → a phase with acceptance criteria) before building.
+
+---
+
 ## 1. Clarify before searching, on an underspecified question — **promoted to `docs/rag/PLAN.md` Phase 9 (2026-08-11)**
 
 If the incoming question is too vague or irrelevant to search well, ask the user a clarifying
@@ -169,7 +207,15 @@ Opera Cloud). This idea is a different axis entirely (which *instance* of one co
 QuickBooks accounts) and remains unbuilt; ADR-0011 Decision 8 lists it as an explicit non-goal of
 Phase 10, not a duplicate of it.
 
-## 5. Frontend/backend repository separation — **de-scheduled from `docs/rag/PLAN.md` Phase 4.8 (2026-08-12)**
+## 5. Frontend/backend repository separation — **de-scheduled TWICE; operator leans towards never doing it (2026-09-09)**
+
+**Update 2026-09-09:** briefly re-scheduled as PLAN.md **Phase 11.3 + 11.4** (2026-08-24, "full repo
+split") — then **de-scheduled again** the same fortnight when the operator decided to **keep the
+monorepo** and only do the *in-monorepo* separation of concerns (PLAN.md Phase 11.1/11.2). The
+physical git split is parked here again and is **not scheduled**; its three open decisions (package
+registry, two repo names, monorepo fate) + a superseding ADR-0012 matter only if it is ever revisited.
+The one prerequisite worth doing regardless of a split — a `packages/contracts`↔Pydantic **drift
+test** — may be pulled into Phase 11.2 as monorepo hygiene.
 
 **Was briefly a real, scoped phase, then un-scheduled.** This was raised in conversation on
 2026-08-10 and immediately turned into `docs/rag/PLAN.md` Phase 4.8 (see

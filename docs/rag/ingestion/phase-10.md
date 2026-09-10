@@ -120,7 +120,17 @@ apps/automation/app/features/ingestion/application/versioning.py              un
 apps/automation/scripts/verify_knowledge_scope_backfill.py (new, §10.7)       readiness-gate CLI; exit 0 = ready to flip the filter flag
 apps/automation/scripts/run_reconciliation_once.py (new, §10.7)               one-off live complete sweep + drain; re-stamps tags metadata-only, never flips the flag
 apps/automation/scripts/seed_curated_knowledge.py (new)                       curated-knowledge CLI (retrieval-side data, ingestion-adjacent tooling)
+apps/automation/scripts/verify_knowledge_scope_live.py (new, §10.8)           live self-test: real Confluence label add/edit/remove -> drives sync_page -> asserts tags update with NO re-embed (unchanged active_doc_version_id + action==metadata_only), restores labels
+apps/automation/app/features/confluence_sync/__init__.py (§10.8)              also exports ingest_event, EventEnvelope, IngestResult so the live-test script can drive the webhook-receipt path from the feature root
 ```
+
+**§10.8 — the no-re-embed signal, corrected.** A label-only change routes through
+`_apply_metadata_only`, which re-stamps `chunk.tags` **without** rebuilding chunks or re-embedding.
+The proof of "no re-embed" is the **unchanged `active_doc_version_id`** (a rebuild mints a new doc
+version) plus `SyncOutcome.action == "metadata_only"` — **not** `last_indexed_at`, which
+`_apply_metadata_only` *does* stamp to `now` on every metadata write (an earlier plan draft claimed
+it stayed unchanged; that was wrong against the code). `scripts/verify_knowledge_scope_live.py`
+asserts the correct signal.
 
 ## Not this file
 
