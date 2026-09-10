@@ -38,12 +38,23 @@ on `feat/rag-phase-3.5`:**
 **Gates:** automation **492 pass** (was 491; local DSN override), web **171 pass**, `make boundaries`
 clean, ruff/format/pyright clean on every touched file.
 
-**STILL OPEN (unchanged by this session — need the operator / live spend):**
-- **NEXT FIXES #1 *ops* (P0, operator):** `GRANT USAGE ON SCHEMA extensions TO rag_reader;` +
-  `ALTER ROLE rag_reader SET search_path = public, extensions;` in Supabase. The baked code no-ops
-  these on Supabase (owner is permission-gated). Until it's run, live semantic retrieval as
-  `rag_reader` stays broken and the **e2e-as-actual-reader re-run** is blocked. `verify-isolation`
-  now *reports* this failure (exit 5) instead of masking it.
+**✅ P0 RESOLVED LIVE (2026-09-10, later) — operator applied the grant; reader retrieval proven.**
+The operator ran `GRANT USAGE ON SCHEMA extensions TO rag_reader;` +
+`ALTER ROLE rag_reader SET search_path = public, extensions;` in Supabase (verified: `usage_ok=true`,
+`search_path` carries `extensions`). Then, as the **actual `rag_reader`** (not the writer-fallback the
+prior demo used):
+- `setup_supabase.py verify-isolation` → **exit 0**: `reader halfvec: resolves halfvec (dense-query
+  path OK)` (was exit 5), chunk source-isolation holds (no-GUC 0 / scoped 93 / bogus 0), reader reads
+  non-chunk tables (page_source=13), and **`anon` stays default-denied** (chunk=0/page_source=0) —
+  live proof the public REST role sees nothing.
+- Real dense+rerank retrieval (live OpenAI embed + Cohere rerank, read-only, no trace write):
+  `apples`→Opera Cloud Testpage 0.367 in operacloud-scope; **absent** in general-scope (isolation
+  beats relevance); `bananas`→Mews Testpage 0.345. No 429. **The P0 blocker is closed end-to-end.**
+- Observed live corpus: owner sees 93 chunks / 13 page_source rows over `confluence:default` (the 13
+  = the 4 `obi-*-test` test pages + the 9 soft-deleted Base pages whose rows linger; retrieval only
+  ever returned the correct single test page per scope, so the effective corpus is the 4 as intended).
+
+**STILL OPEN (need live spend / a product decision):**
 - **NEXT FIXES #5 (P2):** finish the retrieval grid — `grapes × {Opera, Toast}` (small live Cohere
   spend).
 - **NEXT FIXES #6 (P3, feature):** label-driven ingestion — a real feature needing design + likely an
@@ -229,15 +240,15 @@ every scope by design.
      a no-`extensions`-schema / re-provision no-op guard. `make check` = **491 pass** (local DSN
      override), ruff/format/pyright clean on touched files, boundaries clean. (The optional
      `connect_args` search_path belt-and-suspenders was NOT added — the `ALTER ROLE … SET` covers it.)
-   - **🔴 Ops STILL PENDING (operator, in Supabase — agent is permission-gated off `GRANT`/`ALTER
-     ROLE` on the supabase-owned `extensions` schema):** run
-     `GRANT USAGE ON SCHEMA extensions TO rag_reader;` and `ALTER ROLE rag_reader SET search_path =
-     public, extensions;`. The baked code no-ops these on Supabase (savepoint rollback) because our
-     owner role cannot grant on the supabase `extensions` schema — so a live reader still needs these
-     run by hand until/unless the owner is given rights.
-   - **🔴 Then (BLOCKED on the ops above):** re-run the real end-to-end apples/bananas/grapes retrieval
-     as the ACTUAL `rag_reader` to prove the true production path (this session's demo ran as writer to
-     work around the blocker).
+   - **✅ Ops DONE (2026-09-10, operator):** ran `GRANT USAGE ON SCHEMA extensions TO rag_reader;` +
+     `ALTER ROLE rag_reader SET search_path = public, extensions;` in Supabase (verified
+     `usage_ok=true`, `extensions` on the role `search_path`). The baked code still no-ops these on
+     Supabase (savepoint rollback, owner permission-gated) — so a *fresh* reader on this managed store
+     still needs them run by hand; documented in the reader-provisioning runbook.
+   - **✅ Then DONE (2026-09-10):** re-ran the real end-to-end retrieval as the ACTUAL `rag_reader`
+     (not the writer-fallback the prior demo used): `verify-isolation` exit 0 (halfvec resolves,
+     anon default-denied), and live OpenAI+Cohere retrieval showed `apples`→Opera 0.367 in
+     operacloud-scope, absent in general-scope, `bananas`→Mews 0.345. **P0 closed end-to-end.**
 2. **✅ DONE (2026-09-09, UNCOMMITTED) — [P1] `ensure_reader_role` re-provision path.** Was: with the
    role present it emitted `ALTER ROLE … NOSUPERUSER … NOBYPASSRLS`, which Supabase's non-superuser
    `postgres` rejects. Now: the CREATE branch keeps the full attribute clause; the re-provision branch
@@ -381,13 +392,12 @@ corpus to the public `anon` REST role.
   the reader policies + RLS posture are verified, and `anon`/`authenticated` stay fenced. Done.
 - **✅ DONE — re-issue `rag_reader` password:** `ALTER ROLE rag_reader PASSWORD …` run + root `.env`
   `DATABASE_READER_URL` populated; live login round-trip PASSES.
-- **🔴 P0 outstanding Postgres op (blocks reader retrieval) — run in Supabase Studio SQL editor:**
-  `GRANT USAGE ON SCHEMA extensions TO rag_reader;` **and** `ALTER ROLE rag_reader SET search_path =
-  public, extensions;`. Without both, the reader cannot resolve pgvector's `vector`/`halfvec` types
-  (they live in the `extensions` schema, USAGE granted to `anon`/`authenticated`/`postgres` but not
-  our reader) → every dense query fails as `rag_reader`, so live semantic retrieval is broken on
-  Supabase. Also bake both into `schema.ensure_reader_role` + `setup_supabase.py provision-reader`
-  (§0 NEXT FIXES #1) so a fresh reader works.
+- **✅ P0 Postgres op DONE (2026-09-10, operator):** ran `GRANT USAGE ON SCHEMA extensions TO
+  rag_reader;` **and** `ALTER ROLE rag_reader SET search_path = public, extensions;` in Supabase.
+  The reader now resolves pgvector's `vector`/`halfvec` types; `verify-isolation` passes (exit 0) and
+  live OpenAI+Cohere retrieval runs as the actual `rag_reader` (see §0 CURRENT STATE). The code
+  half is baked into `schema.ensure_reader_role` (no-ops on Supabase since the owner is permission-
+  gated), so a fresh non-Supabase reader is covered automatically; on Supabase re-run by hand.
 - **NEVER in Postgres on Supabase:** `DISABLE ROW LEVEL SECURITY` on any table, or the 0009 downgrade
   — either re-exposes the corpus to the public `anon` REST role.
 - **13.2 — ✅ DONE (2026-09-10, `ec7c372`)** — `scripts/setup_supabase.py`: `provision-reader` now
