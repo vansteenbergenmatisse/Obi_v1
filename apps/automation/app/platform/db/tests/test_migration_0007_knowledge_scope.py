@@ -129,7 +129,9 @@ def test_0007_downgrade_then_upgrade_round_trips_cleanly(migration_engine: Engin
     cfg = _alembic_config()
     command.upgrade(cfg, "head")
 
-    command.downgrade(cfg, "-1")
+    # Downgrade to the revision *below* 0007 by explicit id (not a relative "-1", which breaks the
+    # moment any later migration is added on top of 0007 — as 0008 now is).
+    command.downgrade(cfg, "0006_dedupe_source_type_check")
 
     assert not _has_table(migration_engine, "curated_knowledge_entry")
     assert "allowed_knowledge_scopes" not in _column_names(migration_engine, "query_trace")
