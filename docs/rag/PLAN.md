@@ -16,6 +16,45 @@
 > Newest-first. The dated SESSION LOG below keeps the fuller build-session detail; this block is the
 > single source of "where things actually stand right now."
 
+### 🔭 NEXT UP — forward-looking roadmap (as of 2026-09-10, P0 closed)
+
+> The single prioritized "what's next" list. Each item says who it needs. Phase-13 sub-items and the
+> Phase 5.4/12.4 eval remainder are the detail below; this is the ordered pointer.
+
+**A. Near-term — code/ops the agent can do without new spend or decisions**
+- **13.3 — doc reconciliation sweep.** Fix stale claims now that 0009 is live + P0 is closed: docs
+  that still say curated/non-`chunk` tables "have no RLS" (false), the FORCE-RLS note (resolved), the
+  10→11/12 table count, and the alembic `0007`→`0009` range. `how_this_works.md` cross-links.
+- **13.4 — runbook hardening.** Add a backups + monitoring section; bake the "a *fresh* Supabase
+  reader still needs the `extensions` GRANT run by hand" note into the reader-provisioning runbook;
+  fix the `0008` docstring + `.env` path.
+
+**B. Small live spend (needs the operator's ok — each < $0.05)**
+- **NEXT FIXES #5 — finish the retrieval grid:** `grapes × {Opera, Toast}` as the reader, completing
+  the live 4-scope proof matrix (one Cohere rerank per cell).
+- **(optional) hard-purge the 9 soft-deleted Base pages** whose `page_source` rows still linger
+  (`status=deleted`; owner sees 93 chunks / 13 page_source vs the intended 4 test pages). Retrieval
+  already ignores them; this is tidy-up only.
+
+**C. Eval remainder — Phase 5.4 / 12.4 (now UNBLOCKED by the working reader; bounded by the $5 cap)**
+- Run the latency/cost + live red-team harness **against the Supabase `rag_reader`** (prior run used
+  the local writer-fallback) **with knowledge-scope filtering ON** on the `obi-*-test` corpus.
+- **True TTFT / SSE latency** via the real server path (`AnswerService.answer` is blocking; needs the
+  `/chat` SSE router), not the in-process harness.
+- **Embedder bake-off** (Voyage key verified): re-embed the corpus into a separate **1024-dim** table/
+  index and run the retrieval eval on Voyage `voyage-3-large` vs the live OpenAI `halfvec(3072)`.
+  Gold set is tiny → treat any winner as directional.
+
+**D. Needs a product decision + ADR before building**
+- **NEXT FIXES #6 — label-driven ingestion.** Auto-ingest any page carrying a recognized `obi-*-test`
+  label (webhook-kept-live), adding a new scope to `knowledge_scopes.json` to pull matching pages.
+  Real feature: design + likely an ADR through the PLAN process, not ad hoc. Ties to IDEAS §0.
+
+**E. Gate before ANY public deploy (CRITICAL — do not skip)**
+- **Phase 11.1a — customer-isolation DB backstop.** Customer isolation currently fails **OPEN**; the
+  DB backstop (fail-open → fail-closed) must land, TDD-first, before the widget is exposed publicly.
+  This gates B/C/D from shipping externally, not from being built.
+
 ### ✅ SESSION 2026-09-10 (later) — committed the uncommitted tree + shipped 13.2 (NEXT FIXES #1–#4, #7)
 
 Cleared the "🟡 Uncommitted" backlog and did the code half of the Phase-13 NEXT FIXES. **Five commits
