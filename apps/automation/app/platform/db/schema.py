@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from sqlalchemy import Connection, text
 from sqlalchemy.dialects.postgresql import ENUM
+from sqlalchemy.exc import ProgrammingError
 
 # import models for side effect: register tables on Base.metadata
 from app.platform.db import models  # noqa: F401
@@ -175,17 +176,59 @@ def ensure_reader_role(conn: Connection, *, role: str, password: str) -> None:
         raise ValueError(f"unsafe reader role name: {role!r}")
     exists = conn.execute(text("SELECT 1 FROM pg_roles WHERE rolname = :r"), {"r": role}).scalar()
     esc = password.replace("'", "''")
-    verb = "CREATE" if not exists else "ALTER"
-    # CREATE when absent; ALTER to (re)assert the password when the cluster-global role lingers
-    # from a prior run — keeps the login deterministic without dropping the role.
-    conn.execute(
-        text(
-            f"{verb} ROLE {role} LOGIN PASSWORD '{esc}' "
-            "NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS"
+    if not exists:
+        conn.execute(
+            text(
+                f"CREATE ROLE {role} LOGIN PASSWORD '{esc}' "
+                "NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS"
+            )
         )
-    )
+    else:
+        # Re-provision: reset ONLY the password. The attributes were fixed at CREATE and never
+        # change, and re-asserting NOSUPERUSER/NOBYPASSRLS here is rejected by managed Postgres —
+        # Supabase's non-superuser `postgres` cannot ALTER role attributes ("only SUPERUSER may
+        # alter roles with the SUPERUSER attribute"). A bare PASSWORD reset keeps the login
+        # deterministic on the managed store without dropping the cluster-global role. (13.2.)
+        conn.execute(text(f"ALTER ROLE {role} PASSWORD '{esc}'"))
     conn.execute(text(f"GRANT USAGE ON SCHEMA public TO {role}"))
     conn.execute(text(f"GRANT SELECT ON ALL TABLES IN SCHEMA public TO {role}"))
     conn.execute(
         text(f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO {role}")
     )
+    _grant_extensions_access(conn, role=role)
+
+
+def _grant_extensions_access(conn: Connection, *, role: str) -> None:
+    """Let the reader resolve pgvector's types when they live in an ``extensions`` schema.
+
+    Supabase installs pgvector into ``extensions`` (not ``public``); a plain ``rag_reader`` has no
+    ``USAGE`` there and ``extensions`` is off its ``search_path``, so every dense query
+    (``embedding::halfvec(dim)``) fails as the reader with ``type "halfvec" does not exist`` /
+    ``permission denied for schema extensions``. Because retrieval MUST run as the non-owner reader
+    (ADR-0004), that breaks live semantic search. We only act when an ``extensions`` schema exists —
+    a local/RDS install puts pgvector in ``public``, where the reader is already covered by the
+    ``GRANT USAGE ON SCHEMA public`` above.
+
+    On Supabase the owner role is permission-gated off both the supabase-owned ``extensions`` schema
+    (the ``GRANT``) and, on some clusters, the role config default (the ``ALTER ROLE … SET``). Each
+    statement is wrapped in its own SAVEPOINT so a permission failure leaves the surrounding
+    provisioning transaction intact and any partial success is retained; the operator applies
+    whatever was refused out of band (see the reader-provisioning runbook). ``role`` is already
+    validated by the caller as a plain identifier.
+    """
+    ext_exists = conn.execute(
+        text("SELECT 1 FROM information_schema.schemata WHERE schema_name = 'extensions'")
+    ).scalar()
+    if not ext_exists:
+        return
+    for stmt in (
+        f"ALTER ROLE {role} SET search_path = public, extensions",
+        f"GRANT USAGE ON SCHEMA extensions TO {role}",
+    ):
+        sp = conn.begin_nested()
+        try:
+            conn.execute(text(stmt))
+            sp.commit()
+        except ProgrammingError:
+            # insufficient_privilege on managed Postgres — operator runs it manually (see runbook).
+            sp.rollback()
