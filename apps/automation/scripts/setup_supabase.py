@@ -14,6 +14,12 @@ Order (from ``apps/automation``, with the writer/owner ``DATABASE_URL`` set in t
     uv run python scripts/setup_supabase.py verify-isolation   # step 5: RLS default-deny holds live
 
 ``preflight`` exits non-zero (and refuses to go further) if pgvector < 0.8.0, per the plan's gate.
+
+⚠️ Fresh Supabase reader: ``provision-reader`` *attempts* the pgvector ``extensions`` GRANT
+(``schema._grant_extensions_access``) but it **no-ops on Supabase** — our owner role cannot grant on
+the supabase-owned ``extensions`` schema. Until an operator runs, by hand, ``GRANT USAGE ON SCHEMA
+extensions TO rag_reader;`` + ``ALTER ROLE rag_reader SET search_path = public, extensions;``, the
+reader cannot cast ``halfvec`` and live semantic search fails. See the cutover runbook (step 3).
 """
 
 from __future__ import annotations

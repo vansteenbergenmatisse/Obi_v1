@@ -1,11 +1,19 @@
 # Phase 13.1 — apply the reader-RLS fix (migration 0009) to Supabase
 
-**What this is:** the exact steps to fix the live reader lockout on Supabase, safely. Migration 0009
-is written and tested in the repo but **not yet applied** to the managed store (live alembic head is
-still `0008`).
+> ## ✅ COMPLETED on the current Supabase project (2026-09-09)
+> Migration `0009` **is applied** — live alembic head is `0009_reconcile_non_chunk_rls`, the three
+> `*_reader_read` policies exist, and `rag_reader` reads `page_source`/`page_restriction`/
+> `curated_knowledge_entry` while `anon`/`authenticated` stay default-denied. **Do not re-run** the
+> apply steps against the current project. This runbook is retained as the procedure for a **fresh
+> Supabase deploy** (where the head starts below `0009`).
 
-**Status when this was written (2026-09-09), from a read-only introspection of the live project:**
-- alembic head = `0008_drop_force_rls` → **0009 not applied**.
+**What this is:** the exact steps to fix a reader lockout on Supabase, safely — RLS is enabled on the
+non-`chunk` tables with no policy for `rag_reader`, so the reader reads 0 rows until `0009` adds its
+role-scoped policies. Run these on any **fresh** Supabase project whose alembic head is below `0009`.
+
+**Snapshot from the read-only introspection that motivated this (2026-09-09, now HISTORICAL — the
+current project is at `0009`):**
+- alembic head = `0008_drop_force_rls` → **0009 not yet applied** (at that time).
 - All 12 tables have RLS **enabled**; only one policy exists (`chunk_source_read`).
 - `anon` **and** `authenticated` (Supabase's public REST roles) hold `GRANT SELECT` on **every**
   table.
@@ -51,7 +59,8 @@ alembic needs. From `apps/automation`:
 
 ```bash
 # 1. Confirm you're pointed at Supabase and see the current head
-uv run alembic current          # expect: 0008_drop_force_rls
+uv run alembic current          # a fresh deploy shows a head below 0009 (e.g. 0008_drop_force_rls).
+                                # The current live project is already 0009 — nothing to do there.
 
 # 2. Apply 0009 (creates the reader policies; rag_reader already exists on your store)
 uv run alembic upgrade head
@@ -137,10 +146,11 @@ is exposed).
 
 ## Follow-ups (tracked in PLAN.md Phase 13)
 
-- **13.2** — teach `scripts/setup_supabase.py`: `provision-reader` should call `apply_reader_rls`
-  after creating the role (so a *fresh* deploy, which migrates before the role exists, still gets the
-  policies), and `verify-isolation` should check that `rag_reader` can read `page_source` /
-  `page_restriction` / `curated_knowledge_entry` while an `anon`-like role cannot.
-- **13.3** — doc sweep (several docs still say curated "has no RLS", which is now false on Supabase).
+- **13.2 — ✅ DONE (`ec7c372`).** `scripts/setup_supabase.py` `provision-reader` now calls
+  `apply_reader_rls` after creating the role (so a *fresh* deploy, which migrates before the role
+  exists, still gets the policies), and `verify-isolation` checks that `rag_reader` can read
+  `page_source` / `page_restriction` / `curated_knowledge_entry` while an `anon`-like role cannot.
+- **13.3 — ✅ DONE.** Doc sweep: the docs that said curated / non-`chunk` tables "have no RLS" (now
+  false), the FORCE-RLS note (resolved by `0008`), the table count, and the alembic head are corrected.
 - **11.1a** — the customer-scope (mews/opera/toast) fail-closed backstop is a *separate* axis and
   still outstanding before any public deploy.

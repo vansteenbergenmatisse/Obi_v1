@@ -44,21 +44,40 @@ Run every step from `apps/automation`. Steps are idempotent and safe to re-run.
    Exits non-zero (and refuses to continue) if auth fails or pgvector < 0.8. Expect
    `is_superuser=off` on managed Postgres — that is the condition the FORCE-drop handles.
 
-2. **Migrate as the table-owner** — builds schema `0001→0008`; the migrations apply RLS
-   `ENABLE` + `NO FORCE`:
+2. **Migrate as the table-owner** — builds schema `0001→0009`; the migrations apply RLS
+   `ENABLE` + `NO FORCE` on `chunk` (`0008`) and the `rag_reader`-scoped policies on the non-`chunk`
+   tables (`0009`):
 
    ```
    uv run alembic upgrade head
-   uv run alembic current      # expect: 0008_drop_force_rls (head)
+   uv run alembic current      # expect: 0009_reconcile_non_chunk_rls (head)
    ```
 
-3. **Provision the reader** — creates/refreshes the non-owner `rag_reader`, re-asserts RLS, derives
-   the pooler reader DSN (`rag_reader.<project_ref>`), and writes `DATABASE_READER_URL` into `.env`
-   (password generated, never printed):
+3. **Provision the reader** — creates/refreshes the non-owner `rag_reader`, re-asserts RLS, applies
+   the `0009` reader policies, derives the pooler reader DSN (`rag_reader.<project_ref>`), and writes
+   `DATABASE_READER_URL` into `.env` (password generated, never printed):
 
    ```
    uv run python scripts/setup_supabase.py provision-reader
    ```
+
+   > ⚠️ **Fresh Supabase reader — the pgvector `extensions` GRANT must be run BY HAND.** On Supabase,
+   > pgvector's `vector`/`halfvec` types live in the supabase-owned `extensions` schema. `rag_reader`
+   > ships with no `USAGE` there, so every dense query (`embedding::halfvec(3072)`) fails as the reader
+   > (`type "halfvec" does not exist` / `permission denied for schema extensions`) — retrieval must run
+   > as the reader (RLS, ADR-0004), so **live semantic search is broken until this is granted.** The
+   > `provision-reader` code *attempts* the grant (`schema.py::_grant_extensions_access`, SAVEPOINT-
+   > guarded) but **no-ops on Supabase** because our owner role cannot grant on a schema it does not own.
+   > Run these once, as the Supabase project owner, in the SQL editor (P0, 2026-09-10):
+   >
+   > ```sql
+   > GRANT USAGE ON SCHEMA extensions TO rag_reader;
+   > ALTER ROLE rag_reader SET search_path = public, extensions;
+   > ```
+   >
+   > Verify: as `rag_reader`, `has_schema_privilege('rag_reader','extensions','USAGE')` → `true` and
+   > `SHOW search_path` carries `extensions`. On a local/RDS install (pgvector in `public`) this is a
+   > no-op and the reader is already covered.
 
 4. **Load the corpus** — dump the content tables from the local dev DB and restore into the target
    *in a single transaction*. Only the five **content** tables are transplanted — the operational
@@ -116,6 +135,31 @@ Run every step from `apps/automation`. Steps are idempotent and safe to re-run.
 6. **Cut over / roll back.** Cutover is just leaving `DATABASE_URL` pointed at the managed instance.
    **Rollback is a one-line revert** of `DATABASE_URL` in `.env` back to the local/previous DSN — the
    old store is untouched by this procedure. No data is destroyed on either side.
+
+## Backups & monitoring
+
+The corpus is reproducible from Confluence (a full reconciliation rebuild costs OpenAI embedding
+spend but loses nothing), so backups protect against *operational* loss — an accidental truncate,
+a bad migration, a deleted project — not irreplaceable data. Still, before any public cutover:
+
+- **Managed backups.** Supabase Cloud takes automatic daily backups on paid plans (PITR is a paid
+  add-on); confirm the plan actually has them enabled — a free-tier project has **no** automatic
+  backup. On RDS/Aurora, enable automated backups with a retention window and note the snapshot
+  schedule. Record where restores are triggered so the on-call path is known before it's needed.
+- **A cheap own-copy.** A periodic `pg_dump` of the five content tables (the exact set in step 4)
+  to object storage is a low-cost, provider-independent restore path and doubles as the seed for a
+  fresh deploy. It carries no operational logs (`job`/`query_trace`/`reconciliation_run`) by design.
+- **What to watch (minimum signals before public traffic):**
+  - **Reader health** — dense retrieval as `rag_reader` returning rows (not silently 0). The
+    `extensions`-GRANT failure mode above is invisible until a query runs as the reader; a synthetic
+    read-path probe (`verify-isolation` reader checks, or a canned retrieval) catches it early.
+  - **RLS still on** — `relrowsecurity = true` on every `public` table and the `*_reader_read` +
+    `chunk_source_read` policies present; a dropped policy silently re-exposes rows to `anon`.
+  - **pgvector version** — stays ≥ 0.8 across managed-platform upgrades (the `preflight` gate).
+  - **Errors & latency** — `429`s from OpenAI/Cohere (seen live — throttle, not a logic bug), DB
+    connection saturation on the session pooler, and end-to-end `/chat` latency vs the p95 target.
+  - **Cost** — OpenAI embedding + Cohere rerank + Anthropic generation spend, so a runaway loop or
+    abuse shows up before the bill does.
 
 ## Gotcha: the test suite reads `DATABASE_URL`
 

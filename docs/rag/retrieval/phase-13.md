@@ -1,7 +1,9 @@
 # Phase 13.1 — reader RLS on non-`chunk` tables (retrieval-side)
 
-**Status:** 🟩 code + tests done via TDD (2026-09-09), UNCOMMITTED; **migration 0009 not yet run
-against live Supabase** — until then the reader is still locked out there. Apply steps + verification:
+**Status:** ✅ DONE + committed. Code + tests via TDD (2026-09-09); **migration `0009` applied live to
+Supabase** (live head `0009`) and the **P0 `extensions` grant applied by the operator (2026-09-10)** —
+`rag_reader` now runs dense `halfvec` retrieval and isolation is proven live end to end. Apply steps +
+verification (now historical):
 [`../../runbooks/phase-13.1-apply-reader-rls-supabase.md`](../../runbooks/phase-13.1-apply-reader-rls-supabase.md).
 
 ## The problem (live, verified)
@@ -12,8 +14,8 @@ fails closed outside offline envs). It reads `page_source` + `page_restriction` 
 `curated_knowledge_entry` (via `rag_agent/infrastructure/curated_knowledge_repo.py`, wired to the
 reader sessionmaker in `main.py`). On Supabase all these tables had RLS **enabled with no policy**, so
 `rag_reader` (non-BYPASSRLS) got **0 rows** → the page ACL silently **failed open** and the curated
-layer went dark. Masked today only because those tables are empty and the corpus is single-space
-all-`general`.
+layer went dark. Was masked only because those tables were empty and the corpus was single-space
+all-`general`. **Fixed by migration `0009` (applied live 2026-09-09) — see Status above and "Applied".**
 
 ## Why "just disable RLS" is unsafe (the security pivot)
 
@@ -99,26 +101,27 @@ bites, so read-path source isolation is unchanged. Different axis from Phase 11.
   recognized-label *vocabulary*; the `source_scope` DB table decides which pages sync. A recognized
   label alone does not pull a page in unless a `source_scope` root covers it. Full label-driven
   ingestion (a recognized label anywhere → auto-ingest) would be a new feature, not yet built.
-- **🟠 BLOCKER — `rag_reader` cannot run vector retrieval on Supabase (code baked; live GRANT still
-  operator-pending).** pgvector's `vector`/`halfvec` types live in the `extensions` schema;
-  `rag_reader` has `USAGE = False` there (and `search_path` omits it), so `embedding::halfvec(...)`
-  fails for the reader (`type "halfvec" does not exist` / `permission denied for schema extensions`).
-  Retrieval must run as the reader (RLS), so live semantic search is broken on Supabase — masked until
-  the reader DSN was actually used (was falling back to the writer).
-  - **✅ Code (2026-09-09, uncommitted):** `platform/db/schema.py::_grant_extensions_access` (called
-    from `ensure_reader_role`, inherited by `provision-reader`) — when an `extensions` schema exists,
-    adds it to the reader role `search_path` and `GRANT USAGE ON SCHEMA extensions`, each in its own
+- **✅ RESOLVED (P0, 2026-09-10) — `rag_reader` now runs vector retrieval on Supabase.** pgvector's
+  `vector`/`halfvec` types live in the `extensions` schema; `rag_reader` shipped with `USAGE = False`
+  there (and `search_path` omitting it), so `embedding::halfvec(...)` failed for the reader (`type
+  "halfvec" does not exist` / `permission denied for schema extensions`). Retrieval must run as the
+  reader (RLS), so live semantic search was broken on Supabase — masked until the reader DSN was
+  actually used (was falling back to the writer).
+  - **✅ Code (committed `96a7511`):** `platform/db/schema.py::_grant_extensions_access` (called from
+    `ensure_reader_role`, inherited by `provision-reader`) — when an `extensions` schema exists, adds
+    it to the reader role `search_path` and `GRANT USAGE ON SCHEMA extensions`, each in its own
     SAVEPOINT so a managed-store permission failure doesn't abort provisioning. On a local/RDS install
     (pgvector in `public`) the reader is already covered and this is a no-op. Regression + RED-first
     tests in `confluence_sync/tests/test_reader_vector_access.py`.
-  - **🔴 Live ops STILL PENDING (operator, in Supabase):** `GRANT USAGE ON SCHEMA extensions TO
-    rag_reader;` + `ALTER ROLE rag_reader SET search_path = public, extensions;`. The baked code
-    no-ops these on Supabase because our owner role can't grant on the supabase-owned `extensions`
-    schema — so a live reader still needs them run by hand.
-  - The real end-to-end apples/bananas/grapes retrieval (OpenAI + Cohere) was demonstrated as the
-    writer to bypass this; isolation held (score high only when the matching product is in scope;
-    out-of-scope product never returned). Re-running it as the ACTUAL `rag_reader` is blocked on the
-    live ops above.
+  - **✅ Live ops APPLIED by the operator (2026-09-10):** `GRANT USAGE ON SCHEMA extensions TO
+    rag_reader;` + `ALTER ROLE rag_reader SET search_path = public, extensions;` (verified
+    `usage_ok=true`, `search_path` carries `extensions`). ⚠️ Because our owner role can't grant on the
+    supabase-owned `extensions` schema, the baked code no-ops these on Supabase — **a *fresh* Supabase
+    reader still needs the GRANT run by hand** (baked into the reader-provisioning runbook, 13.4).
+  - The real end-to-end apples/bananas/grapes retrieval (OpenAI + Cohere) now runs as the **actual
+    `rag_reader`**: `apples`→Opera Cloud 0.367 in operacloud-scope, **absent** in general-scope
+    (isolation beats relevance); `bananas`→Mews 0.345; `anon` stays default-denied (chunk=0/
+    page_source=0). The P0 blocker is closed end to end.
 
 ## Not this file
 

@@ -23,7 +23,7 @@
 
 1. [The 60-second picture](#1-the-60-second-picture)
 2. [Where the code lives](#2-where-the-code-lives)
-3. [The data model (the 10 tables)](#3-the-data-model-the-10-tables)
+3. [The data model (the 11 tables)](#3-the-data-model-the-11-tables)
 4. [Getting data IN — Confluence sync](#4-getting-data-in--confluence-sync)
 5. [Turning a page into chunks — ingestion](#5-turning-a-page-into-chunks--ingestion)
 6. [Versioning, activation, rollback](#6-versioning-activation-rollback)
@@ -103,7 +103,7 @@ apps/automation/app/
 │   └── evaluation/             # quality: metrics + datasets + baseline runner
 ├── platform/
 │   ├── clients/                # Confluence, embeddings, Anthropic, reranker (Cohere/Fake)
-│   ├── db/                     # models.py (the 10 tables), engine.py (sessions)
+│   ├── db/                     # models.py (the 11 tables), engine.py (sessions)
 │   ├── jobs/                   # the generic job queue (claim/complete/fail/reap)
 │   └── config/settings.py      # all env-driven config
 └── shared/                     # hashing.py, rate_limiter.py, ttl_cache.py — cross-feature primitives
@@ -116,7 +116,7 @@ reaching into `app.features.ingestion.application.versioning` from outside would
 
 ---
 
-## 3. The data model (the 10 tables)
+## 3. The data model (the 11 tables)
 
 Defined in `app/platform/db/models.py`. The relationships:
 
@@ -175,6 +175,7 @@ Table by table:
 | **`reconciliation_run`** | drift sweep | report: pages scanned, drift detected, jobs enqueued |
 | **`source_scope`** | a configured sync root | `space` or `page` root narrowing/tagging reconciliation (PLAN 3.5.6); unique on `(root_type, root_id)` |
 | **`query_trace`** | retrieval + answer request | tracing scoreboard (PLAN 3.5.4, extended by Phase 4): retrieved page/chunk ids, allowed sources, models, rerank scores, latency, plus the Phase-4 answer columns (`rewritten_query`, `answer`, `citations`, `feedback`) written by the answer runtime on the same row |
+| **`curated_knowledge_entry`** | hand-authored entry | knowledge always eligible for retrieval, independent of any Confluence page (PLAN 10.2). `tags` mirrors `chunk`/`page_source` scope tagging — empty = every scope; reuses the citation machinery at retrieval time |
 
 **Two search indexes on `chunk`** (both partial — they only cover *active child* rows, which keeps
 them small and fast; `models.py:58-74, 267-272`):
@@ -393,7 +394,7 @@ the phase links in [`ingestion/`](./ingestion/README.md) / [`retrieval/`](./retr
 | Concept | File |
 |---|---|
 | App wiring, gateway choice, scheduler, chat router mount | `app/main.py` |
-| The 10 tables + indexes | `app/platform/db/models.py` |
+| The 11 tables + indexes | `app/platform/db/models.py` |
 | Webhook + security controls | `app/features/confluence_sync/server/webhook.py` |
 | Job queue (claim/complete/fail/reap) | `app/platform/jobs/queue.py` |
 | Worker 3-transaction discipline | `app/features/confluence_sync/application/worker.py` |

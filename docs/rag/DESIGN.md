@@ -98,13 +98,14 @@ principal list per page (written by `confluence_sync`'s `handle_sync_page`), que
 by `search_repo.fetch_page_scopes` and fed into a request-scoped `PrincipalPermissionPolicy` — never
 the whole corpus, never the fixture data the constructor-injected policy used to carry.
 
-**Storage** — 10 tables in `app/platform/db/models.py`: `page_source` (`:85`, one per Confluence page),
+**Storage** — 11 tables in `app/platform/db/models.py`: `page_source` (`:85`, one per Confluence page),
 `page_restriction` (Phase 4.3, persisted per-page principal ACL), `document`, `document_version`
 (immutable snapshot, ≤1 active per document), `chunk` (`:206`, parents + children; hot-path columns
 `is_active`/`space_id`/`page_status` denormalized so search never joins), `event_ledger`, `job`,
 `reconciliation_run`, `source_scope` (PLAN 3.5.6), `query_trace` (PLAN 3.5.4, extended in Phase 4
-with the answer/citation/feedback columns). Two **partial** indexes on `chunk` cover only active
-child rows: HNSW over `embedding` and GIN over `tsv`.
+with the answer/citation/feedback columns), and `curated_knowledge_entry` (PLAN 10.2, hand-authored
+knowledge always eligible for retrieval independent of any page). Two **partial** indexes on `chunk`
+cover only active child rows: HNSW over `embedding` and GIN over `tsv`.
 
 **What is already modern — keep as-is** (do not rebuild): parent/child chunking, contextual retrieval,
 RRF fusion, `halfvec@3072` HNSW, immutable versioning + atomic activation + rollback + GC, the 3-pass
@@ -195,10 +196,11 @@ dropped** so ingestion must set `source_id` explicitly going forward. New partia
 
 | Role | Grants | Used by |
 |---|---|---|
-| `rag_writer` | owner, `BYPASSRLS` | worker / webhook / reconcile / ingestion (write path) — RLS never blocks writes or trace inserts |
+| `rag_writer` | owner, **non-superuser, `NOBYPASSRLS`** — exempt by table ownership + `NO FORCE` (ADR-0013) | worker / webhook / reconcile / ingestion (write path) — RLS never blocks writes or trace inserts |
 | `rag_reader` | login, **non-owner**, `GRANT SELECT` on read tables, **no `BYPASSRLS`** | `HybridRetriever` (read path) — RLS actually enforced |
 
-The owner bypasses RLS, so **reads must run as `rag_reader`**. `engine.py` keeps the existing
+The owner is exempt from RLS (by ownership + `NO FORCE`, ADR-0013 — not `BYPASSRLS`), so **reads
+must run as `rag_reader`**. `engine.py` keeps the existing
 writer sessionmaker and adds `get_reader_engine()`/`get_reader_sessionmaker()` bound to
 `database_reader_url` (falls back to `database_url` if empty).
 
@@ -206,10 +208,18 @@ writer sessionmaker and adds `get_reader_engine()`/`get_reader_sessionmaker()` b
 
 ```sql
 ALTER TABLE chunk ENABLE ROW LEVEL SECURITY;
-ALTER TABLE chunk FORCE  ROW LEVEL SECURITY;
+ALTER TABLE chunk NO FORCE ROW LEVEL SECURITY;  -- ADR-0013: keep ENABLE, drop FORCE so the
+                                                -- non-superuser owner (writer) reads its own rows
 CREATE POLICY chunk_source_read ON chunk FOR SELECT
   USING (source_id = ANY(string_to_array(current_setting('app.allowed_sources', true), ',')));
 ```
+
+> **FORCE was dropped in migration `0008` (ADR-0013).** The original design used `FORCE ROW LEVEL
+> SECURITY`, which subjects even the table owner to the policy and so required the writer to be a
+> superuser. Migration `0008` switched to `NO FORCE`: RLS stays `ENABLE`d (the non-owner
+> `rag_reader` is still default-denied), while the owner is exempt by ownership — no superuser or
+> `BYPASSRLS` needed. Migration `0009` extends the same reader-scoped policies to the non-`chunk`
+> tables (`page_source`, `page_restriction`, `curated_knowledge_entry`).
 
 The retriever sets the scope per transaction with **`set_config` (parameter-bound), never `SET LOCAL`**
 — `SET LOCAL` can't bind a parameter, which would be an injection vector or a silent default-deny:
