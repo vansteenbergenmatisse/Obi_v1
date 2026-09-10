@@ -28,19 +28,42 @@
 > boundaries + ruff/format/pyright clean. No git remote configured, so nothing is pushed (local-only).
 >
 > **▶ IMMEDIATE NEXT (in order) — these are THE next things to do:**
-> 1. **Apply migration `0010` live** to Supabase — **NEEDS THE OPERATOR** (live DB change). From
+> 1. **Docs-folder cleanup — remove what is neither "what the system does" nor "how to check it works."**
+>    Docs-only, no runtime impact, needs no spend. **Get operator sign-off on the list before deleting.**
+>    The removal candidates (verified 2026-09-10):
+>    - **`docs/rag/reference/obi-mockup/` — the entire folder (6 files, ≈ 425 KB):** `Obi Assistant.dc.html`,
+>      `obi-render.html`, `support.js` (69 KB third-party script), `README.md`, and `uploads/` (3
+>      screenshots ≈ 275 KB). This is the **original third-party UI mockup** the widget was built from —
+>      design *input* / reference art, **not** documentation of the built system (that's
+>      `OBI-WIDGET-DESIGN.md`) and not verification. Referenced only by **docstring provenance comments**
+>      in `apps/web/src/features/chat/ui/{contour-background.tsx,use-widget-visibility.ts}` (comments, not
+>      imports — deletion does NOT break the build) plus `OBI-WIDGET-DESIGN.md` / this PLAN. **On delete:**
+>      tidy those two comment pointers and drop `OBI-WIDGET-DESIGN.md`'s "source of visual truth" line.
+>    - **`docs/superpowers/specs/2026-08-10-confluence-source-scoping-design.md` (and the now-empty
+>      `docs/superpowers/` folder):** a dated brainstorm/design spec, **already implemented** (Phase 3.5.6);
+>      its content lives in `DESIGN.md §10`, `how_this_works.md`, and `OBI-RAG-SYSTEM-A-Z.md §14.4`. The
+>      `docs/superpowers/` tree is a process/tooling scratch dir, not system docs. Referenced only by
+>      `PLAN.md` + `DESIGN.md` (repoint those "design of record" links to `DESIGN.md §10` on delete).
+>    - **BORDERLINE — operator call, not a default removal:** `docs/future-ideas/IDEAS.md` (≈ 42 KB) is
+>      the un-built roadmap/backlog — strictly neither "what it does" nor "checking it works," but a
+>      legitimate forward-looking doc cross-referenced by several ADRs and `PLAN.md §0`. **Recommend KEEP**
+>      as the roadmap of record; listed only because it fails the strict test.
+>    - Everything else in `docs/` passes one of the two tests and **stays**: the ADRs, `final_design/*`,
+>      `DESIGN.md`, `how_this_works.md`, `OBI-WIDGET-DESIGN.md`, the `ingestion/*` + `retrieval/*` phase
+>      files (mandated by root `CLAUDE.md`), `runbooks/*`, `PLAN.md` (the ledger), and `OBI-RAG-SYSTEM-A-Z.md`.
+> 2. **Apply migration `0010` live** to Supabase — **NEEDS THE OPERATOR** (live DB change). From
 >    `apps/automation` with `.env` pointed at Supabase: `uv run alembic upgrade head` (advances the live
 >    head `0009`→`0010`), then `uv run python scripts/setup_supabase.py verify-isolation` — expect the
 >    new `scope axis` line and **exit 0**. No extra step: the reader already has the `extensions` grant.
 >    This closes the **last CRITICAL pre-public-deploy gate** (customer isolation fail-open → fail-closed,
 >    bucket E). Everything in buckets B/C/D stays barred from shipping externally until this lands.
-> 2. **Embedder bake-off + the eval remainder** (bucket C) — **NEEDS THE OPERATOR** (live API spend,
+> 3. **Embedder bake-off + the eval remainder** (bucket C) — **NEEDS THE OPERATOR** (live API spend,
 >    inside the pre-authorized $5 cap). A real build: re-embed the corpus into a separate **1024-dim**
 >    table/index and score Voyage `voyage-3-large` vs the live OpenAI `halfvec(3072)`; then run the
 >    latency/cost + live red-team harness **against the Supabase `rag_reader`** with knowledge-scope
 >    filtering ON, plus true TTFT/SSE via the `/chat` server path. Gold set is tiny → any winner is
 >    directional. Also finish bucket B's retrieval grid (`grapes × {Opera, Toast}`, tiny Cohere spend).
-> 3. **Label-driven ingestion** (bucket D, NEXT FIXES #6) — **NEEDS A PRODUCT DECISION + AN ADR** before
+> 4. **Label-driven ingestion** (bucket D, NEXT FIXES #6) — **NEEDS A PRODUCT DECISION + AN ADR** before
 >    any code. Auto-ingest any page carrying a recognized `obi-*-test` label (webhook-kept-live) by adding
 >    a label-driven pull to the `source_scope` model + `knowledge_scopes.json`. A real feature, designed
 >    through the PLAN process, not ad hoc. Ties to IDEAS §0.
