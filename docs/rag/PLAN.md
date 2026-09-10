@@ -25,8 +25,9 @@
 > 1. **Commit** the uncommitted tree — two logical commits: (a) the 13.3/13.4 doc sweep + `.env`
 >    cleanup, (b) the Phase 11.1a backstop (code + migration `0010` + tests + ADR-0014 + `phase-11.md`).
 > 2. **Apply migration `0010` live** to Supabase (`alembic upgrade head`, `0009`→`0010`) — needs
->    operator ok (live DB change; no extra step, reader already has the `extensions` grant). Optional:
->    extend `verify-isolation` for the scope axis.
+>    operator ok (live DB change; no extra step, reader already has the `extensions` grant).
+>    `verify-isolation` **now gates the scope axis** (done 2026-09-10, see below) so it stays green on
+>    the tagged live corpus after `0010` and proves scope isolation as exit code **8**.
 > 3. **Embedder bake-off** (bucket C, item 3) — the operator's stated next build; needs live API spend
 >    (Voyage, inside the $5 cap) and is a real build (re-embed the corpus into a 1024-dim table/index).
 > 4. Then the rest of bucket C (latency/cost + red-team against the live reader; true TTFT/SSE),
@@ -86,6 +87,23 @@
   - **Acceptance (met):** app-layer scope predicate bypassed (flag off) → cross-customer chunk/curated
     returns **zero**; the always-on general base + untagged/global content still return; source axis
     unaffected. Proven by `test_customer_isolation_backstop.py` + `test_migration_0010_scope_rls.py`.
+
+### ✅ SESSION 2026-09-10 (later³) — `verify-isolation` scope axis + committed the 11.1a tree
+
+Two clean commits landed the previously-uncommitted work: **`7d79a07`** (13.3/13.4 docs + `.env`
+cleanup) and **`d6d6d67`** (Phase 11.1a backstop — migration `0010`, schema DDL, retriever/curated
+GUC wiring, ADR-0014, `retrieval/phase-11.md`, both new tests). Then extended the live operator step
+`setup_supabase.py verify-isolation` (TDD) so it survives `0010` on a **tagged** corpus and proves the
+new axis:
+- The source-axis checks now set `app.allowed_knowledge_scopes='*'` (wildcard opt-out) so the
+  RESTRICTIVE scope policy doesn't zero out tagged rows and make the source count read 0 — a real
+  interaction bug that would have made the live step falsely FAIL after `0010`.
+- New `_check_reader_scope_axis`: reads a real tag from the owner side, then as the reader proves the
+  tagged chunk is visible under its own scope (`in-scope > 0`) and invisible under a bogus scope
+  (`out-of-scope = 0`); untagged corpus = documented skip-as-pass. New exit code **8** on a scope leak.
+- `test_verify_isolation_script.py` +1 (tagged-corpus scope isolation); the untagged test also asserts
+  the skip-as-pass. **Gates:** automation **502 pass** (local-DSN override, +1), boundaries clean,
+  ruff/format/pyright clean on touched files. No remote configured, so nothing pushed (local-only).
 
 ### ✅ SESSION 2026-09-10 (later²) — Phase 11.1a customer-isolation DB backstop (code, TDD)
 
