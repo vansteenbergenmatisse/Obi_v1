@@ -36,6 +36,7 @@ from app.features.retrieval.domain.fusion import reciprocal_rank_fusion
 from app.features.retrieval.domain.permission import PrincipalPermissionPolicy, classify_scope
 from app.features.retrieval.infrastructure.search_repo import (
     apply_hnsw_gucs,
+    apply_knowledge_scope,
     apply_source_scope,
     dense_search,
     fetch_page_scopes,
@@ -134,12 +135,16 @@ class HybridRetriever:
             # Per-txn knobs, same transaction as the searches below:
             #  - HNSW iterative_scan keeps recall honest once a narrow scope prunes rows (3.5.1)
             #  - the source-scope GUC drives RLS default-deny on the reader role (ADR-0004)
+            #  - the knowledge-scope GUC drives the customer-isolation RLS backstop (ADR-0014):
+            #    set from the raw `knowledge_scopes` arg, NOT `effective_scopes` — the DB enforces
+            #    the customer boundary independent of the scope-filtering flag (fail closed).
             apply_hnsw_gucs(
                 session,
                 ef_search=self._hnsw_ef_search,
                 iterative_scan=self._hnsw_iterative_scan,
             )
             apply_source_scope(session, sources)
+            apply_knowledge_scope(session, knowledge_scopes)
             kw = keyword_search(
                 session, query, space_id, self._candidate_k, sources, effective_scopes
             )
@@ -242,9 +247,13 @@ class HybridRetriever:
     def fetch_parent_texts(self, chunk_ids: Sequence[int]) -> dict[int, str]:
         """Each retrieved child chunk's parent text, keyed by chunk id (children retrieve, parents
         ground). Re-applies the source-scope GUC on this fresh session — a new transaction starts
-        with no GUC set, and the chunk table is RLS-protected regardless of parent/child kind."""
+        with no GUC set, and the chunk table is RLS-protected regardless of parent/child kind. The
+        knowledge-scope GUC is set to the ``'*'`` wildcard: these ids already came from a scoped,
+        permitted search (ADR-0014), so re-filtering by scope would risk dropping a legitimately
+        authorized parent — but the GUC must still be set, else the RESTRICTIVE policy denies."""
         if not chunk_ids:
             return {}
         with self._session_factory() as session:
             apply_source_scope(session, self._allowed_sources)
+            apply_knowledge_scope(session, None)  # '*': ids already authorized by the scoped search
             return fetch_parent_context(session, chunk_ids)

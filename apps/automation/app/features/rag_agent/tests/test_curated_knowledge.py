@@ -51,10 +51,31 @@ class _SpySession:
         return cast(Session, self)
 
 
+def _select_call(s: _SpySession) -> tuple[str, dict[str, Any]]:
+    """The curated SELECT among the spy's calls (the first call is now the ADR-0014 scope-GUC
+    `set_config`, which does not touch `curated_knowledge_entry`)."""
+    return next(c for c in s.calls if "curated_knowledge_entry" in c[0])
+
+
+def _guc_call(s: _SpySession) -> tuple[str, dict[str, Any]]:
+    return next(c for c in s.calls if "set_config" in c[0])
+
+
+def test_fetch_curated_entries_sets_the_scope_rls_guc_before_reading() -> None:
+    # ADR-0014: the RLS scope GUC is set (bound) before the SELECT, so a bypassed app predicate
+    # cannot leak a cross-customer curated entry; the GUC-set is the first statement.
+    s = _SpySession()
+    fetch_curated_entries(s.as_session(), ["obi-general-test", "obi-mews-test"], limit=5)
+    guc_sql, guc_params = _guc_call(s)
+    assert "app.allowed_knowledge_scopes" in guc_sql
+    assert guc_params["s"] == "obi-general-test,obi-mews-test"
+    assert "set_config" in s.calls[0][0]  # set BEFORE the read
+
+
 def test_fetch_curated_entries_binds_scopes_as_a_parameter_never_interpolated() -> None:
     s = _SpySession()
     fetch_curated_entries(s.as_session(), ["obi-general-test", "obi-mews-test"], limit=5)
-    sql, params = s.calls[0]
+    sql, params = _select_call(s)
     assert "tags && :allowed_scopes" in sql
     assert params["allowed_scopes"] == ["obi-general-test", "obi-mews-test"]
     assert params["limit"] == 5
@@ -64,15 +85,19 @@ def test_fetch_curated_entries_binds_a_malicious_scope_value_never_reaches_raw_s
     s = _SpySession()
     payload = "general'; DROP TABLE curated_knowledge_entry; --"
     fetch_curated_entries(s.as_session(), [payload], limit=5)
-    sql, params = s.calls[0]
+    sql, params = _select_call(s)
     assert payload not in sql
     assert params["allowed_scopes"] == [payload]
+    # the same value is bound (never interpolated) into the scope-GUC set_config too
+    guc_sql, guc_params = _guc_call(s)
+    assert payload not in guc_sql
+    assert guc_params["s"] == payload
 
 
 def test_fetch_curated_entries_includes_the_empty_tags_always_included_clause() -> None:
     s = _SpySession()
     fetch_curated_entries(s.as_session(), ["obi-general-test"], limit=5)
-    sql, _ = s.calls[0]
+    sql, _ = _select_call(s)
     assert "tags = '{}'" in sql
     assert "is_active" in sql
     assert "ORDER BY id" in sql

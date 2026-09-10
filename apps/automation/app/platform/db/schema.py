@@ -84,6 +84,78 @@ def drop_chunk_rls(conn: Connection) -> None:
     conn.execute(text("ALTER TABLE chunk DISABLE ROW LEVEL SECURITY"))
 
 
+# --- Phase 11.1a: customer/knowledge-scope isolation backstop (ADR-0014) ----------------------
+# A second axis on top of the source policy above. The mews/opera/toast/general boundary used to be
+# an app-layer ``tags && :scopes`` predicate gated by a fail-OPEN feature flag; this makes the DB
+# enforce it. The policy is ``AS RESTRICTIVE`` so it **ANDs** with ``chunk_source_read`` (a second
+# permissive policy would OR, weakening isolation). The per-txn GUC ``app.allowed_knowledge_scopes``
+# mirrors ``app.allowed_sources``: unset -> ``current_setting`` is NULL -> denies (fail closed); a
+# scope list -> ``tags``-overlap; the explicit sentinel ``'*'`` -> unrestricted (the internal/eval
+# opt-out — the public path always resolves a real scope list, never ``'*'``).
+_SCOPE_GUC = "app.allowed_knowledge_scopes"
+_CHUNK_SCOPE_POLICY = "chunk_scope_read"
+_CURATED_SCOPE_POLICY = "curated_knowledge_entry_scope_read"
+
+
+def apply_chunk_scope_rls(conn: Connection) -> None:
+    """Add the RESTRICTIVE knowledge-scope policy to ``chunk`` (ADR-0014). Idempotent.
+
+    Composes with ``apply_chunk_rls``'s source policy via AND. Requires that policy to already exist
+    (``chunk`` RLS ``ENABLE``d); this only adds the second, restrictive predicate.
+
+    ``cardinality(tags) = 0`` -> an **untagged** chunk is global (visible under any scope), so a
+    corpus that does not tag by knowledge scope keeps working and the always-on ``general`` base is
+    never hidden. Only a chunk carrying a customer tag is isolated to that customer — the boundary
+    the backstop exists to enforce. (The app-layer ADR-0011 Decision-1 predicate is *stricter* — it
+    drops untagged chunks when scope-filtering is ON — and ANDs on top when enabled; this RLS floor
+    only guarantees no *tagged* customer content crosses.) ``'*'`` -> unrestricted opt-out; unset ->
+    untagged still visible, tagged denied (fail closed for the isolated content).
+    """
+    conn.execute(text("ALTER TABLE chunk ENABLE ROW LEVEL SECURITY"))
+    conn.execute(text(f"DROP POLICY IF EXISTS {_CHUNK_SCOPE_POLICY} ON chunk"))
+    conn.execute(
+        text(
+            f"CREATE POLICY {_CHUNK_SCOPE_POLICY} ON chunk AS RESTRICTIVE FOR SELECT "
+            f"USING (current_setting('{_SCOPE_GUC}', true) = '*' "
+            f"OR cardinality(tags) = 0 "
+            f"OR tags && string_to_array(current_setting('{_SCOPE_GUC}', true), ','))"
+        )
+    )
+
+
+def drop_chunk_scope_rls(conn: Connection) -> None:
+    """Reverse ``apply_chunk_scope_rls`` (keeps the source policy + RLS enable state).
+    Idempotent."""
+    conn.execute(text(f"DROP POLICY IF EXISTS {_CHUNK_SCOPE_POLICY} ON chunk"))
+
+
+def apply_curated_scope_rls(conn: Connection) -> None:
+    """Add the RESTRICTIVE knowledge-scope policy to ``curated_knowledge_entry`` (ADR-0014).
+
+    Same GUC as ``chunk``, plus ``cardinality(tags) = 0`` — an empty-tags curated entry is global
+    ("every scope", ADR-0011) and stays visible under any real scope list; only a *tagged* curated
+    entry is isolated. ``'*'`` and unset behave as on ``chunk``. Composes (AND) with 0009's
+    permissive ``*_reader_read`` policy, so this only *subtracts* visibility; it never grants a new
+    role access. Idempotent.
+    """
+    conn.execute(text("ALTER TABLE curated_knowledge_entry ENABLE ROW LEVEL SECURITY"))
+    conn.execute(text(f"DROP POLICY IF EXISTS {_CURATED_SCOPE_POLICY} ON curated_knowledge_entry"))
+    conn.execute(
+        text(
+            f"CREATE POLICY {_CURATED_SCOPE_POLICY} ON curated_knowledge_entry "
+            f"AS RESTRICTIVE FOR SELECT "
+            f"USING (current_setting('{_SCOPE_GUC}', true) = '*' "
+            f"OR cardinality(tags) = 0 "
+            f"OR tags && string_to_array(current_setting('{_SCOPE_GUC}', true), ','))"
+        )
+    )
+
+
+def drop_curated_scope_rls(conn: Connection) -> None:
+    """Reverse ``apply_curated_scope_rls``. Idempotent."""
+    conn.execute(text(f"DROP POLICY IF EXISTS {_CURATED_SCOPE_POLICY} ON curated_knowledge_entry"))
+
+
 # Phase 13.1 — the reader's non-chunk read set. On Supabase the PostgREST roles anon/authenticated
 # hold blanket GRANT SELECT on every public table, so RLS (not its absence) is what keeps the corpus
 # private: an RLS-enabled table with no matching policy default-denies those roles. So we keep RLS

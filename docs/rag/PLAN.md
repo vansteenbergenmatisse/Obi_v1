@@ -16,18 +16,38 @@
 > Newest-first. The dated SESSION LOG below keeps the fuller build-session detail; this block is the
 > single source of "where things actually stand right now."
 
-### 🔭 NEXT UP — forward-looking roadmap (as of 2026-09-10, P0 closed)
+### 🔭 NEXT UP — forward-looking roadmap (as of 2026-09-10, later² — P0 closed; 13.3/13.4/.env + 11.1a code done)
 
 > The single prioritized "what's next" list. Each item says who it needs. Phase-13 sub-items and the
 > Phase 5.4/12.4 eval remainder are the detail below; this is the ordered pointer.
+>
+> **▶ IMMEDIATE NEXT (in order):**
+> 1. **Commit** the uncommitted tree — two logical commits: (a) the 13.3/13.4 doc sweep + `.env`
+>    cleanup, (b) the Phase 11.1a backstop (code + migration `0010` + tests + ADR-0014 + `phase-11.md`).
+> 2. **Apply migration `0010` live** to Supabase (`alembic upgrade head`, `0009`→`0010`) — needs
+>    operator ok (live DB change; no extra step, reader already has the `extensions` grant). Optional:
+>    extend `verify-isolation` for the scope axis.
+> 3. **Embedder bake-off** (bucket C, item 3) — the operator's stated next build; needs live API spend
+>    (Voyage, inside the $5 cap) and is a real build (re-embed the corpus into a 1024-dim table/index).
+> 4. Then the rest of bucket C (latency/cost + red-team against the live reader; true TTFT/SSE),
+>    buckets B (retrieval-grid finish, page purge), D (label-driven ingestion — ADR-gated).
 
-**A. Near-term — code/ops the agent can do without new spend or decisions**
-- **13.3 — doc reconciliation sweep.** Fix stale claims now that 0009 is live + P0 is closed: docs
-  that still say curated/non-`chunk` tables "have no RLS" (false), the FORCE-RLS note (resolved), the
-  10→11/12 table count, and the alembic `0007`→`0009` range. `how_this_works.md` cross-links.
-- **13.4 — runbook hardening.** Add a backups + monitoring section; bake the "a *fresh* Supabase
-  reader still needs the `extensions` GRANT run by hand" note into the reader-provisioning runbook;
-  fix the `0008` docstring + `.env` path.
+**A. Near-term — code/ops the agent can do without new spend or decisions — ✅ ALL DONE (2026-09-10)**
+- **13.3 — ✅ DONE (2026-09-10, docs session).** Doc reconciliation sweep: corrected the stale
+  "curated/non-`chunk` tables have no RLS" claims (now false — `0009` live), the FORCE-RLS note
+  (resolved by `0008`; writer is exempt by ownership + `NO FORCE`, not `BYPASSRLS`), the table count
+  (→ **11** ORM tables in `models.py`, adding `curated_knowledge_entry`), and the alembic head
+  (`0008`→`0009`). Touched `how_this_works.md`, `DESIGN.md`, `retrieval/phase-13.md`, and both
+  runbooks. (Note: `phase-6.md`/`phase-4.6.md` etc. left as correct dated history.)
+- **13.4 — ✅ DONE (2026-09-10, docs session).** Runbook hardening in `supabase-vector-store-cutover.md`:
+  new **Backups & monitoring** section; the "a *fresh* Supabase reader needs the `extensions` GRANT
+  run by hand" note baked into the `provision-reader` step **and** the `setup_supabase.py` module
+  docstring. The flagged "`0008` docstring + `.env` path" defect **could not be reproduced** — the
+  `0008` migration docstring and `setup_supabase.py`'s `_ROOT_ENV = parents[3]/".env"` are both
+  correct today (likely already fixed); no change invented there.
+- **`.env` cleanup — ✅ DONE.** Deleted the empty duplicate `VOYAGE_API_KEY=` (old line 28) so it can't
+  shadow the real key (line 90); repointed the alternative-provider comment. One `VOYAGE_API_KEY` line
+  remains.
 
 **B. Small live spend (needs the operator's ok — each < $0.05)**
 - **NEXT FIXES #5 — finish the retrieval grid:** `grapes × {Opera, Toast}` as the reader, completing
@@ -51,9 +71,69 @@
   Real feature: design + likely an ADR through the PLAN process, not ad hoc. Ties to IDEAS §0.
 
 **E. Gate before ANY public deploy (CRITICAL — do not skip)**
-- **Phase 11.1a — customer-isolation DB backstop.** Customer isolation currently fails **OPEN**; the
-  DB backstop (fail-open → fail-closed) must land, TDD-first, before the widget is exposed publicly.
-  This gates B/C/D from shipping externally, not from being built.
+- **Phase 11.1a — customer-isolation DB backstop. ✅ CODE DONE (2026-09-10, TDD) — NOT yet applied
+  live.** Customer isolation used to fail **OPEN**; the DB backstop (fail-open → fail-closed) now lands
+  as scope-GUC RLS (**option ii**, operator-confirmed). Design of record: **ADR-0014**; retrieval phase
+  doc `retrieval/phase-11.md`; migration `0010_customer_scope_rls`. **Remaining:** apply live (`alembic
+  upgrade head` on Supabase, `0009`→`0010` — no extra operator step, reader already has the extensions
+  grant) + optional `verify-isolation` extension. Still gates B/C/D from shipping externally; the
+  per-user→customer edge binding (shared `CHAT_API_KEY`) is 11.1c + the deferred AWS deploy, not this.
+  - **Design + rationale now live in [ADR-0014](../adr/0014-Customer-Scope-Isolation-Backstop.md)**
+    (fork (i) per-customer `source_id` vs (ii) scope-GUC RLS → chose **ii**; RESTRICTIVE-ANDs-not-OR;
+    fail-closed on unset; `cardinality(tags)=0` = untagged-global; `'*'` opt-out; enforced independent
+    of the flag). The session-log block below records the build; the `▶ IMMEDIATE NEXT` list at the top
+    of §0 has the remaining steps (commit → apply live).
+  - **Acceptance (met):** app-layer scope predicate bypassed (flag off) → cross-customer chunk/curated
+    returns **zero**; the always-on general base + untagged/global content still return; source axis
+    unaffected. Proven by `test_customer_isolation_backstop.py` + `test_migration_0010_scope_rls.py`.
+
+### ✅ SESSION 2026-09-10 (later²) — Phase 11.1a customer-isolation DB backstop (code, TDD)
+
+Closed the fail-**open** customer-isolation leak at the DB layer (was app-predicate-only behind a
+fail-open flag). Operator confirmed the design fork = **(ii) scope-GUC RLS**. Built TDD-first
+(RED→GREEN throughout):
+- **RESTRICTIVE RLS**, second axis on `chunk` (`chunk_scope_read`) + `curated_knowledge_entry`
+  (`*_scope_read`), keyed on a new per-txn GUC `app.allowed_knowledge_scopes` that mirrors
+  `app.allowed_sources`. RESTRICTIVE so it **ANDs** with the source policy (a permissive policy would OR
+  and weaken isolation). Predicate: `'*'` (opt-out) `OR cardinality(tags)=0` (untagged = global, so
+  untagged/single-tenant corpora keep working) `OR tags && :scopes`. Unset GUC → tagged rows denied
+  (**fail closed**). Migration `0010`; DDL in `schema.py` (shared migration↔harness).
+- **Enforced independent of the `enable_knowledge_scope_filtering` flag** — the retriever/curated read
+  set the GUC on every reader txn from the raw scopes; the flag now only governs the redundant app
+  predicate. Intentional contract change (flag-off now still isolates tagged content); the old
+  `test_flag_off_ignores_knowledge_scopes_argument` was rewritten to lock the new behavior in.
+- **Security posture** (securing-http-and-llm-endpoints gate): strengthens isolation on the existing
+  `/chat` LLM-CALL surface; GUC set via **bound** `set_config` (never interpolated — SQL-injection safe);
+  fail-closed default-deny for tagged content; owner unaffected (ADR-0013 NO FORCE). Not a new endpoint,
+  so no new control-matrix surface; the per-user→customer edge binding remains 11.1c.
+- **Acceptance proven:** app predicate bypassed (flag off) → cross-customer chunk/curated returns **zero**;
+  general/untagged still returns; source axis unchanged. Docs: ADR-0014 + `retrieval/phase-11.md`.
+- **Gates:** automation **501 pass** (local-DSN override, +9 vs 492), `make boundaries` clean, ruff/
+  format/pyright clean on every touched file. **Uncommitted.** **Live apply pending:** `alembic upgrade
+  head` on Supabase (`0009`→`0010`).
+
+### ✅ SESSION 2026-09-10 (docs) — 13.3 doc sweep + 13.4 runbook hardening + `.env` cleanup
+
+Doc-only pass (no runtime behaviour changed). Cleared bucket **A** of the NEXT-UP roadmap.
+
+- **13.3 — doc reconciliation sweep.** Reconciled current-state docs to the now-live `0009` + closed P0:
+  `how_this_works.md` (table count 10→**11**, added the `curated_knowledge_entry` row + TOC/heading),
+  `DESIGN.md` (11 tables; §3.2/3.3 rewritten — writer exempt by **ownership + `NO FORCE`** per ADR-0013,
+  not `BYPASSRLS`; `FORCE`→`NO FORCE` DDL + a `0008`/`0009` explainer), `retrieval/phase-13.md` (Status
+  header + the whole P0 `extensions`-blocker section flipped to **RESOLVED**), and both runbooks
+  (`phase-13.1-*` got a **✅ COMPLETED** banner + fresh-deploy reframing; cutover step 2 `0001→0008`
+  →`0001→0009`, "expect head" 0008→0009). Dated per-phase history (`phase-6.md`, `phase-4.6.md`, the
+  runbook "Recorded result" blocks) left intact.
+- **13.4 — runbook hardening.** `supabase-vector-store-cutover.md`: new **Backups & monitoring** section
+  (managed backups caveat, cheap `pg_dump` own-copy, the minimum pre-public monitoring signals — reader
+  health, RLS-still-on, pgvector≥0.8, 429s/latency, cost); the **fresh-reader `extensions` GRANT-by-hand**
+  note baked into the `provision-reader` step and into `setup_supabase.py`'s module docstring. The
+  flagged "`0008` docstring + `.env` path" defect **could not be reproduced** (both correct today) — not
+  invented.
+- **`.env`** — removed the empty duplicate `VOYAGE_API_KEY=` (old line 28); real key at line 90 unchanged.
+
+**Gates:** automation **492 pass** (local-DSN override; no regression), `make boundaries` clean, ruff/
+format/pyright clean on the one touched code file (`setup_supabase.py`, docstring-only). **Uncommitted.**
 
 ### ✅ SESSION 2026-09-10 (later) — committed the uncommitted tree + shipped 13.2 (NEXT FIXES #1–#4, #7)
 
@@ -3073,7 +3153,7 @@ OCR/image reading untouched.
 | **7** — Vision-grounded image analysis (attachments + screenshot capture) | ✅ **done (2026-08-12), all 8 sub-steps closed** | `eb30837` (7.1), `7ffd916` (7.2), `12db45a` (7.3+7.4), `1398e64` (7.5); 7.6 is a verification pass, no commit (no code changed); 7.7/7.8 docs+fixes, no commit yet | supersedes `docs/future-ideas/IDEAS.md` #3; ADR-0009 + DESIGN.md §12 lock the contract shape (`ChatTurn.images`, `Answer.imageAnalysis`, no new SSE event), the `has_image` refusal gate, and the independent (never citation-enforced) vision call; 7.6's live adversarial red-team found zero injection compliance, caps enforced live; 7.7 re-ran the full gate with zero regressions and closed ADR-0009; **7.8 found and fixed 5 stacked, user-reported bugs** in a "triple-check the feature" pass — a pre-image-era proxy body-size ceiling (413), a proxy content-length check that rejected genuine image-only turns (400), a backend crash embedding an empty query (uncaught `EmbeddingError`), Anthropic itself rejecting an empty text content block (400), and — found only once real browser testing replaced curl repros — the same content-length check breaking again on any *later* turn once an earlier image-only turn aged out and lost both its content and its image; all five found by fixing one, re-testing, and hitting the next one underneath |
 | **9** — Unanswerable/vague-query fallback (9.1 → 9.9) | ✅ **done (2026-08-13), all 9 sub-steps closed** (9.1 `771cfce`; 9.2-9.7 across `ba5416a`/`d20257c`/`f9ed445`/`10947d8`/`8e1450a`; 9.8 `34706e1`; 9.9 docs-only, not yet committed) — dead last, no phase follows | — | supersedes `docs/future-ideas/IDEAS.md` #1; ADR-0008 + DESIGN.md §11 lock the contract shape (extend `Answer`, no new SSE event), the 3-value refusal-reason taxonomy, and eval-kind reuse — **all 9 decisions confirmed matching shipped code at 9.9, ADR-0008 closed as-is**; ambiguity/vagueness classifier + clarification response, differentiated refusal reasons, human-hand-off stub (Salesforce noted as eventual target), fallback-quality eval metrics, live+deterministic red-team (9.8, zero findings); MMR/diversity filtering and any new vector store explicitly out of scope |
 | **10** — Knowledge-scope tagging & retrieval filtering (ADR-0011) | 🔶 in progress (10.1–10.7 done, `59997e8`) | see §0 | 10.8 build half done + uncommitted; **remaining 10.8/10.9/10.10 renumbered → Phase 12.1/12.3/12.2 (2026-08-24)** |
-| **11** — Separation of concerns (FE / backend-API / RAG-vector-DB core) + fail-open isolation backstop | ⬜ **todo — NEW, scoped 2026-08-24** | — | user chose *full repo split*; 11.1 security backstop **first, before public deploy**; 11.4 ADR-gated (needs ADR-0012 + 3 decisions). Full design in `IDEAS.md` #5 |
+| **11** — Separation of concerns (FE / backend-API / RAG-vector-DB core) + fail-open isolation backstop | 🔶 in progress (**11.1a ✅ code done TDD 2026-09-10** — scope-GUC RLS, ADR-0014, migration `0010`, `retrieval/phase-11.md`; **uncommitted + not applied live**; 11.1b/11.2 open; 11.3/11.4 → IDEAS #5) | see §0 + ADR-0014 | user chose monorepo (11.3/11.4 de-scheduled). 11.1a closes the customer-axis fail-**open** leak (RESTRICTIVE RLS, fail-closed) — still gates public deploy until applied live. 11.1b (owner DSN out of read core) + 11.2 (config injection, refile curated repo, secret partition) remain |
 | **12** — Remaining forward work (renumbered) | ⬜ todo | — | 12.1/12.2/12.3 = old 10.8/10.10/10.9; 12.4 = Phase 5 remainder. **12.5 (deploy) superseded 2026-09-07: Phase 6 = Supabase-Cloud-on-AWS migration pulled forward to NEXT, no longer deferred behind Phase 11.** Runs after Phase 11 otherwise |
 | **13** — Supabase completeness & tag-behavior verification | 🔶 in progress (13.1 ✅ done+committed `f52d24a`; 13.2 ✅ done `ec7c372`; 13.5 ✅ live-proven 2026-09-09; 13.3/13.4 open; live reader run blocked on P0 `extensions` grant) | see §0 CURRENT STATE + Phase 13 | NEW 2026-09-09 from live introspection + 6-agent doc audit. Schema ✅ complete. **13.1 (migration 0009 — reader RLS, Option B/secure, TDD, +5 tests, 488 green) ✅ COMMITTED `f52d24a` + APPLIED to live Supabase (head `0009`, verified; reader smoke PASS).** ⚠️ Corrected from Option A after finding `anon`/`authenticated` hold SELECT on all tables → keep RLS on + `rag_reader`-scoped policies; runbook `docs/runbooks/phase-13.1-apply-reader-rls-supabase.md`. Remaining: verify-isolation blind spot + fix broken re-provision path (13.2), doc sweep (13.3), runbook/ops (13.4), live tag-proof (13.5, needs live corpus re-tag to `obi-general-test`). Distinct axis from 11.1a |
 

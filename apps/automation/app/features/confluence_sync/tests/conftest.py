@@ -73,6 +73,12 @@ def _configure_test_engine() -> Iterator[None]:
         # RLS + the non-owner reader role (ADR-0004), so retrieval is RLS-subject like production.
         schema.ensure_reader_role(conn, role=_READER_ROLE, password=_READER_PASSWORD)
         schema.apply_chunk_rls(conn)
+        # Phase 11.1a / ADR-0014: the customer-scope backstop on chunk (RESTRICTIVE, ANDs with the
+        # source policy) — chunk RLS is already ENABLEd above, so this only adds the second
+        # predicate. The curated-table analogue needs non-chunk reader RLS (0009) too, so it is
+        # exercised in a dedicated isolated test (test_customer_isolation_backstop) rather than the
+        # shared harness — keeping tests that toggle non-chunk RLS state unperturbed.
+        schema.apply_chunk_scope_rls(conn)
 
     # Point the reader engine at the same test DB but as the non-owner rag_reader role.
     reader_url = (

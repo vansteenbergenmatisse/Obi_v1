@@ -46,14 +46,33 @@ def _retriever(*, enable_knowledge_scope_filtering: bool = False) -> HybridRetri
     )
 
 
-def test_flag_off_ignores_knowledge_scopes_argument(gateway, settings: Settings) -> None:
+def test_flag_off_still_enforces_scope_via_rls_backstop(gateway, settings: Settings) -> None:
+    """Phase 11.1a / ADR-0014: passing `knowledge_scopes` now enforces isolation at the DB (RLS)
+    EVEN with the app-layer flag off. Before the backstop, flag-off returned the mews page to a
+    toast-scoped caller (fail OPEN); the RLS scope GUC is now set from the raw argument regardless
+    of the flag, so the cross-customer page is excluded. The flag only governs the redundant SQL
+    predicate now, not the security boundary.
+    """
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
     _set_chunk_tags(_ONBOARDING_PAGE, ["obi-mews-test"])
     retr = _retriever(enable_knowledge_scope_filtering=False)
 
     hits = retr.retrieve("Onboarding Guide", "100", k=5, knowledge_scopes=["obi-toast-test"])
 
-    # flag off -> the caller's knowledge_scopes is never applied, query unchanged from pre-10.4.
+    assert str(_ONBOARDING_PAGE) not in hits  # RLS backstop excludes the cross-customer page
+
+
+def test_no_knowledge_scopes_argument_is_unrestricted(gateway, settings: Settings) -> None:
+    """A caller passing no `knowledge_scopes` (the internal/eval path) sets the '*' wildcard, so the
+    RLS backstop does not restrict — the legacy `retrieve()` contract is preserved. The public path
+    always resolves a real scope list (`resolve_allowed_scopes`), never None, so it never hits '*'.
+    """
+    index_page(gateway, settings, _ONBOARDING_PAGE, 3)
+    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-mews-test"])
+    retr = _retriever(enable_knowledge_scope_filtering=False)
+
+    hits = retr.retrieve("Onboarding Guide", "100", k=5)  # no knowledge_scopes
+
     assert str(_ONBOARDING_PAGE) in hits
 
 

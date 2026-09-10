@@ -21,6 +21,7 @@ from __future__ import annotations
 from .application.retriever import HybridRetriever, RetrievalResult, RetrievedHit
 from .domain.knowledge_scope import resolve_allowed_scopes
 from .domain.permission import PrincipalPermissionPolicy, classify_scope
+from .infrastructure.search_repo import apply_knowledge_scope
 from .infrastructure.trace_repo import update_query_trace_answer, update_query_trace_feedback
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "PrincipalPermissionPolicy",
     "RetrievedHit",
     "RetrievalResult",
+    "apply_knowledge_scope",
     "classify_scope",
     "resolve_allowed_scopes",
     "update_query_trace_answer",

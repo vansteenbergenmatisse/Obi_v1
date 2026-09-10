@@ -49,6 +49,33 @@ def apply_source_scope(session: Session, allowed_sources: Sequence[str]) -> None
     )
 
 
+# The '*' sentinel is an explicit opt-out from customer-scope RLS, distinct from an unset GUC (which
+# the RESTRICTIVE `chunk_scope_read` policy reads as default-deny). Public retrieval always resolves
+# a real scope list; only the internal/eval path (`knowledge_scopes is None`) sets '*' (ADR-0014).
+KNOWLEDGE_SCOPE_WILDCARD = "*"
+
+
+def apply_knowledge_scope(session: Session, allowed_scopes: Sequence[str] | None) -> None:
+    """Set the customer/knowledge-scope RLS GUC ``app.allowed_knowledge_scopes`` for this txn.
+
+    Enforces the customer-isolation backstop (ADR-0014, Phase 11.1a) **independent of the
+    ``enable_knowledge_scope_filtering`` app-layer flag** — that flag only governs the redundant SQL
+    predicate; RLS always enforces so a dropped predicate or a flag flip can no longer leak.
+
+    * ``None`` -> the ``'*'`` wildcard (unrestricted; the internal/eval opt-out). NOT unset: an
+      unset GUC fails closed and would return zero rows for every legacy caller.
+    * a list -> bound and joined; the RESTRICTIVE policy overlaps ``chunk.tags`` against it. An
+      empty list yields ``''`` -> the policy matches nothing -> default-deny (fail closed).
+
+    Bound param, never interpolated (same injection-safety discipline as ``apply_source_scope``).
+    """
+    value = KNOWLEDGE_SCOPE_WILDCARD if allowed_scopes is None else ",".join(allowed_scopes)
+    session.execute(
+        text("SELECT set_config('app.allowed_knowledge_scopes', :s, true)"),
+        {"s": value},
+    )
+
+
 def _base_filters(
     space_id: int | None,
     sources: Sequence[str] | None,
