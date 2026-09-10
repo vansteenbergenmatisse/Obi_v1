@@ -24,6 +24,7 @@ from pathlib import Path
 
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.platform.config import get_settings
 from app.platform.db import engine as engine_mod
@@ -127,6 +128,12 @@ def provision_reader() -> int:
         # Belt-and-suspenders: migrations already apply this, but re-assert ENABLE + NO FORCE so a
         # partially-migrated instance still ends RLS-correct (ADR-0013). Idempotent.
         schema.apply_chunk_rls(conn)
+        # Fresh-deploy path (13.2): install the non-chunk reader read policies (migration 0009) now
+        # that the role exists in this same transaction. The `alembic upgrade` in step 2 ran before
+        # the role, so its apply_reader_rls skipped policy creation (role absent) and only enabled
+        # RLS. Re-running here creates the `*_reader_read` policies so the reader sees its page-ACL
+        # + curated tables while anon/authenticated stay default-denied. Idempotent.
+        schema.apply_reader_rls(conn, role=_READER_ROLE)
 
     reader_url = _derive_reader_url(get_settings().database_url, password)
     _write_reader_dsn(reader_url)
@@ -136,12 +143,79 @@ def provision_reader() -> int:
     return 0
 
 
+_READER_READ_TABLES = ("page_source", "page_restriction", "curated_knowledge_entry")
+
+
+def _check_reader_halfvec(reader) -> tuple[bool, str]:
+    """The production dense-query path (``embedding::halfvec``) must resolve as the reader.
+
+    On Supabase pgvector lives in the ``extensions`` schema; without ``USAGE`` + it on the reader
+    ``search_path`` the reader fails with ``type "halfvec" does not exist`` — so live semantic
+    retrieval (which MUST run as the non-owner reader, ADR-0004) is broken even though chunk RLS is
+    fine. We return ``(ok, detail)`` instead of raising so the summary can point at the operator
+    remediation (NEXT FIXES #1: ``GRANT USAGE ON SCHEMA extensions TO rag_reader`` + ``ALTER ROLE
+    rag_reader SET search_path = public, extensions``) rather than a traceback.
+    """
+    try:
+        with reader() as s:
+            s.execute(text("SELECT CAST('[1,2,3]' AS halfvec(3))")).scalar_one()
+    except SQLAlchemyError as exc:
+        return False, f"reader CANNOT resolve halfvec ({type(exc).__name__}) — retrieval broken"
+    return True, "reader resolves halfvec (dense-query path OK)"
+
+
+def _check_reader_non_chunk(reader, owner_page_sources: int) -> tuple[bool, str]:
+    """The reader must read its page-ACL + curated tables (migration 0009 ``*_reader_read`` policy).
+
+    ``page_source`` is the discriminating table: with the corpus loaded the owner sees > 0 rows, and
+    ``apply_reader_rls``'s ``USING (true)`` policy lets the reader see the same count. If the reader
+    sees 0 while the owner sees rows, the reader is default-denied (0009 not applied / policy
+    missing) → the page ACL fails open and the curated layer goes dark. ``page_restriction`` /
+    ``curated_knowledge_entry`` may legitimately be empty, so they are reported, not asserted.
+    """
+    with reader() as s:
+        counts = {
+            t: s.execute(text(f"SELECT count(*) FROM {t}")).scalar_one()  # noqa: S608 — const table
+            for t in _READER_READ_TABLES
+        }
+    detail = ", ".join(f"{t}={n}" for t, n in counts.items())
+    ok = counts["page_source"] == owner_page_sources
+    if not ok:
+        return False, f"reader default-DENIED on page_source ({detail}; owner={owner_page_sources})"
+    return True, f"reader reads its non-chunk tables ({detail})"
+
+
+def _check_anon_denied(conn) -> tuple[bool, str]:
+    """Confirm Supabase's public REST role ``anon`` stays default-denied despite ``GRANT SELECT``.
+
+    Only meaningful where an ``anon`` role exists (live Supabase); a local/RDS store has none, so
+    we skip (reported as pass). Impersonating ``anon`` needs owner membership; if the owner is not a
+    member we cannot prove it here, and say so rather than assert.
+    """
+    if not conn.execute(text("SELECT 1 FROM pg_roles WHERE rolname = 'anon'")).scalar():
+        return True, "no `anon` role on this instance — anon-denied check N/A (skipped)"
+    try:
+        conn.execute(text("SET ROLE anon"))
+    except SQLAlchemyError:
+        return True, "owner is not a member of `anon` — cannot impersonate to prove (skipped)"
+    try:
+        chunk_n = conn.execute(text("SELECT count(*) FROM chunk")).scalar_one()
+        page_n = conn.execute(text("SELECT count(*) FROM page_source")).scalar_one()
+    finally:
+        conn.execute(text("RESET ROLE"))
+    ok = chunk_n == 0 and page_n == 0
+    detail = f"anon sees chunk={chunk_n} page_source={page_n} (expect 0/0)"
+    return ok, ("anon stays default-denied — " + detail if ok else "anon LEAK — " + detail)
+
+
 def verify_isolation() -> int:
     """Prove the ADR-0004 read-path guarantee holds live: owner sees rows, reader is default-deny.
 
     Meaningful only once the corpus is loaded (an empty chunk table reads 0 either way). Reads the
     real ``source_id`` set from the owner side, then checks the reader: no GUC -> 0 rows; GUC set to
-    a real source -> only that source's rows; GUC set to a bogus source -> 0 rows.
+    a real source -> only that source's rows; GUC set to a bogus source -> 0 rows. Then (13.2) also
+    checks the reader can resolve pgvector types (dense-query path), can read its non-``chunk``
+    page-ACL + curated tables (migration 0009), and that an ``anon``-like public role stays denied.
     """
     eng = engine_mod.get_engine()
     with eng.connect() as conn:
@@ -152,6 +226,7 @@ def verify_isolation() -> int:
                 text("SELECT DISTINCT source_id FROM chunk ORDER BY source_id")
             ).all()
         ]
+        owner_page_sources = conn.execute(text("SELECT count(*) FROM page_source")).scalar_one()
     if total == 0:
         print("SKIP: chunk table is empty — load the corpus before verifying isolation.")
         return 1
@@ -183,11 +258,39 @@ def verify_isolation() -> int:
     print(f"reader, {real!r}: {scoped}  (expect > 0 — scoped access)")
     print(f"reader, bogus src : {bogus}  (expect 0 — non-matching source excluded)")
 
-    ok = no_guc == 0 and scoped > 0 and bogus == 0
-    if not ok:
+    chunk_ok = no_guc == 0 and scoped > 0 and bogus == 0
+
+    # 13.2: dense-query path + non-chunk reader reads + anon-denied.
+    halfvec_ok, halfvec_detail = _check_reader_halfvec(reader)
+    non_chunk_ok, non_chunk_detail = _check_reader_non_chunk(reader, owner_page_sources)
+    with eng.connect() as conn:
+        anon_ok, anon_detail = _check_anon_denied(conn)
+    print(f"reader halfvec    : {halfvec_detail}")
+    print(f"reader non-chunk  : {non_chunk_detail}")
+    print(f"anon role         : {anon_detail}")
+
+    if not chunk_ok:
         print("FAIL: RLS default-deny / scoping did not hold as expected.", file=sys.stderr)
         return 4
-    print("OK: ADR-0004 read-path isolation holds on this instance.")
+    if not halfvec_ok:
+        print(
+            "FAIL: reader cannot run vector queries — run `GRANT USAGE ON SCHEMA extensions TO "
+            "rag_reader;` + `ALTER ROLE rag_reader SET search_path = public, extensions;` "
+            "(NEXT FIXES #1).",
+            file=sys.stderr,
+        )
+        return 5
+    if not non_chunk_ok:
+        print(
+            "FAIL: reader is denied on page_source — apply migration 0009 / provision-reader "
+            "(page ACL fails open otherwise).",
+            file=sys.stderr,
+        )
+        return 6
+    if not anon_ok:
+        print("FAIL: an anon-like public role can read the corpus — RLS leak.", file=sys.stderr)
+        return 7
+    print("OK: ADR-0004 read-path isolation + reader read-access hold on this instance.")
     return 0
 
 
