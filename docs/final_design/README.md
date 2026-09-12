@@ -1,10 +1,11 @@
 # Omniboost RAG — Final Design
 
-> The definitive as-built design of the Omniboost RAG system ("Obi"): an accuracy-first,
-> Confluence-native, multi-platform retrieval-augmented chat assistant. This folder is written
-> against the running code (Aug–Sep 2026) and cross-checked against the ADRs, `docs/rag/DESIGN.md`,
-> `docs/rag/PLAN.md`'s status ledger, and the two phase folders. Where a claim is load-bearing it is
-> anchored `file:line` so it can be checked against the tree.
+> The **target design** of the Omniboost RAG system ("Obi"): an accuracy-first, Confluence-native,
+> multi-platform retrieval-augmented chat assistant. This folder describes the system as it is meant to
+> be built — the design of record, in the present tense — so it is the reference you check work against.
+> **Build status lives elsewhere:** `docs/rag/PLAN.md` §0 is the authoritative ledger of what is live on
+> which host. Claims here are cross-checked against the ADRs and `docs/rag/DESIGN.md`; where one is
+> load-bearing it is anchored `file:line` so it can be checked against the tree.
 
 ---
 
@@ -22,36 +23,25 @@ around **two independent flows that share one Postgres + pgvector corpus**:
 - **Retrieval + answer (the read path)** — a user question is rewritten to a standalone query,
   embedded, and searched two ways in parallel: **dense** (HNSW cosine) ∥ **keyword** (GIN tsvector),
   fused with **Reciprocal Rank Fusion**, filtered by three security layers (source-level Postgres
-  RLS, page-level principal ACL, knowledge-scope tag filter), **cross-encoder reranked** (Cohere
-  `rerank-v3.5`), abstained on if the top score is weak, expanded to parent context, and turned into
-  a **grounded answer with forced numbered citations** — streamed to the browser widget over
+  RLS, customer-axis `RESTRICTIVE` scope-GUC RLS, page-level principal ACL), **cross-encoder reranked**
+  (Cohere `rerank-v3.5`), abstained on if the top score is weak, expanded to parent context, and turned
+  into a **grounded answer with forced numbered citations** — streamed to the browser widget over
   `POST /chat` (SSE).
 
 The design's whole thesis: **accuracy is enforced in code, not merely prompted** — uncited claims
 are stripped, a hard refusal threshold routes weak matches to a human, and a database-enforced
 default-deny boundary means the failure mode is "no results," never "another tenant's results."
 
-## What is shipped vs. planned
+## Build status lives in PLAN §0
 
-Shipped and verified (backend suite: 481 passing as of PLAN 10.7):
+This folder is the *target* — what the system is meant to be. It deliberately does **not** track which
+phases are built, committed, or live; that is the job of `docs/rag/PLAN.md` §0, the authoritative status
+ledger. Read the design here, then diff it against PLAN §0 to see what remains to do.
 
-- Phases 0, 3, 3.5, 4, 4.6, 4.7 (Obi widget), 5.1–5.3, 7 (vision image analysis), 9 (ambiguity
-  clarification), and Phase 10 sub-steps 10.1–10.7 (knowledge-scope tagging + filter, flag flipped on
-  in the live deployment).
-
-In flight / planned (see `docs/rag/PLAN.md` §0 for the live ledger):
-
-- Phase 10.8 (widget scope switcher + live self-test) — **build half done, uncommitted**.
-- Phase 6 (Supabase-on-AWS vector-store migration + deploy) — **specced, not built; the chosen next
-  work**; needs an operator-provided connection string (blocker #8) and a small `FORCE`-RLS fix
-  (see `05-security-isolation.md`).
-- Phase 11 (separation-of-concerns + a **critical** customer-isolation security backstop, 11.1a) and
-  Phase 12 (renumber) — **scoped, not built**.
-
-Two honest, recorded caveats: pgvector was affirmed positively but never benchmarked head-to-head
-against other vector stores, and **no scale/latency/QPS/SLA target exists anywhere** in the repo
-(corpus today ≈ 9 pages / 85 chunks; latency unmeasured until Phase 5.4). This design does not invent
-those numbers — where none exists it says so.
+Two honest, recorded caveats that are part of the design's posture, not its status: pgvector was
+affirmed positively but never benchmarked head-to-head against other vector stores, and **no
+scale/latency/QPS/SLA target exists anywhere** in the repo (the corpus is small; latency is measured in
+the Phase 5.4 eval). This design does not invent those numbers — where none exists it says so.
 
 ## Reading order
 
@@ -61,12 +51,12 @@ those numbers — where none exists it says so.
 | 2 | [`02-ingestion.md`](./02-ingestion.md) | The full write path, step by step, with the files/functions for each stage |
 | 3 | [`03-retrieval.md`](./03-retrieval.md) | The full read/answer path, step by step |
 | 4 | [`04-data-model.md`](./04-data-model.md) | Every table, key columns, relationships, the two search indexes, ER diagram |
-| 5 | [`05-security-isolation.md`](./05-security-isolation.md) | The three-layer isolation model + the two known open issues |
+| 5 | [`05-security-isolation.md`](./05-security-isolation.md) | The three-layer isolation model + the writer/reader split and its ADR-0013/0014 rationale |
 | 6 | [`06-system-visualization.md`](./06-system-visualization.md) | The whole system as a set of Mermaid diagrams (architecture, ER, ingestion, retrieval, security, deployment) |
 
 ## Source-of-truth documents this folder is derived from
 
-- **ADRs** — `docs/adr/0001`–`0011` (accepted decisions of record).
+- **ADRs** — `docs/adr/0001`–`0014` (accepted decisions of record).
 - **`docs/rag/DESIGN.md`** — the normative design of record.
 - **`docs/rag/PLAN.md`** — the execution plan and the authoritative **status ledger** (§0).
 - **`docs/rag/how_this_works.md`** and the per-phase maps in `docs/rag/ingestion/` and

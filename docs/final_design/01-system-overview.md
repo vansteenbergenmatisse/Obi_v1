@@ -18,8 +18,9 @@ requested in a prompt — at three points:
 2. **A hard refusal threshold** — if the top reranked score is below `refusal_min_rerank_score`
    (default `0.10`, settings.py:99) the runtime abstains and offers a human hand-off instead of
    guessing.
-3. **Database-enforced isolation** — source-level Postgres Row-Level Security is **default-deny**, so
-   a retrieval that forgets to scope returns *zero* rows, never another tenant's rows.
+3. **Database-enforced isolation** — both the source axis and the customer/platform axis are
+   **default-deny Postgres Row-Level Security** (source RLS, ADR-0004; a `RESTRICTIVE` scope-GUC policy,
+   ADR-0014), so a retrieval that forgets to scope returns *zero* rows, never another tenant's rows.
 
 ## Fixed product decisions
 
@@ -34,7 +35,7 @@ open for casual re-litigation; changing one requires a new ADR.
 | **Cross-encoder rerankers only** — no general-LLM reranker | ADR-0005 | Cheaper per candidate, deterministic enough to eval |
 | The answer runtime is a **fixed workflow, not an agent loop** | ADR-0005 | Bounded latency, stage-by-stage testable, auditable refusal + citation enforcement |
 | **One CRAG corrective retry** maximum | ADR-0005 | Bounded to protect p95; not an unbounded agent loop |
-| **Two → three layered security controls**, all applied on every read | ADR-0004, ADR-0011 | Source RLS + page-principal ACL + knowledge-scope tag filter |
+| **Three layered security controls**, all applied on every read | ADR-0004, ADR-0011, ADR-0014 | Source RLS + customer-axis `RESTRICTIVE` scope-GUC RLS (+ app predicate) + page-principal ACL |
 | Deterministic **SQL filtering**, never LLM filters | ADR-0002, DESIGN §8 | Keeps recall honest |
 | **Postgres + pgvector** is the stack; switching is ruled out | ADR-0001/0002, PLAN §0 | See "Storage decision" below |
 | Frontend/backend stay one monorepo for now | ADR-0006, ADR-0010 | Repo split re-deferred until a real second consumer exists |
@@ -45,12 +46,11 @@ The system is best understood as two flows that share one Postgres corpus and ot
 independently:
 
 - **Ingestion (write path)** — `app/features/confluence_sync` → `app/features/ingestion`. Turns a
-  Confluence page into searchable rows. Runs as the **writer** DB role (owner, bypasses RLS). Fully
-  built and verified. See [`02-ingestion.md`](./02-ingestion.md).
+  Confluence page into searchable rows. Runs as the **writer** DB role (owner, exempt from RLS by
+  ownership + `NO FORCE`). See [`02-ingestion.md`](./02-ingestion.md).
 - **Retrieval + answer (read path)** — `app/features/retrieval` → `app/features/rag_agent` →
   `POST /chat`. Turns a question into a grounded, cited, streamed answer. Runs the search as the
-  non-owner **reader** DB role (RLS enforced). Fully built and wired to the live widget. See
-  [`03-retrieval.md`](./03-retrieval.md).
+  non-owner **reader** DB role (RLS enforced). See [`03-retrieval.md`](./03-retrieval.md).
 
 The only seam between them is the shared corpus and one ingestion activation point that stamps
 `source_id`/`source_type`/`tags` onto each chunk.
@@ -89,18 +89,18 @@ There are **two layers** to reconcile — the code default and the deployed over
   default**, so the *actual running/prod configuration is OpenAI 3072-dim → the `halfvec(3072)` HNSW
   path** — matching the ADR-0002 amendment and DESIGN §1, not the settings.py default.
 
-So the ADR/DESIGN description (OpenAI-3072/halfvec) is what the deployment actually runs; the Voyage/1024
-values are only the *fallback* baked into `settings.py` for when no `.env` override is present (and
-`VOYAGE_API_KEY` is currently empty, so Voyage isn't even live). **The verified current prod state is
-OpenAI `text-embedding-3-large` @ 3072 → `halfvec(3072)` HNSW.** Phase 5.4's "embedder bake-off"
-(blocked on `VOYAGE_API_KEY`, PLAN §0) is where any change of provider would be settled and the
-`settings.py` default reconciled with the `.env`. Whichever provider is active, ingestion and retrieval always use the **same**
-embedder, and a change of embedding model/dim forces a full re-embed via the version-stamp gate
-(ADR-0002 point 6).
+So the ADR/DESIGN description (OpenAI-3072/halfvec) is what the deployment runs; the Voyage/1024 values
+are the *fallback* baked into `settings.py` for when no `.env` override is present. **The target prod
+embedder is OpenAI `text-embedding-3-large` @ 3072 → `halfvec(3072)` HNSW.** Phase 5.4's "embedder
+bake-off" (`VOYAGE_API_KEY` provisioned) is where any provider change would be settled — Voyage
+`voyage-3-large` is 1024-dim vs the live `halfvec(3072)`, so a fair comparison re-embeds the corpus into
+a separate 1024-dim index before scoring — and the `settings.py` default reconciled with the `.env`.
+Whichever provider is active, ingestion and retrieval always use the **same** embedder, and a change of
+embedding model/dim forces a full re-embed via the version-stamp gate (ADR-0002 point 6).
 
 ## Storage decision (VERIFIED)
 
-Cross-checked 2026-09-08 against every doc in `docs/rag`, all 11 ADRs, and the code (PLAN §0):
+Cross-checked against every doc in `docs/rag`, all 14 ADRs, and the code (PLAN §0):
 
 - **Engine = Postgres + pgvector — ratified.** ADR-0001 declares the stack, ADR-0002 builds the
   retrieval core on pgvector HNSW + tsvector GIN + RRF, ADR-0004 makes Postgres RLS the isolation
@@ -115,9 +115,9 @@ Cross-checked 2026-09-08 against every doc in `docs/rag`, all 11 ADRs, and the c
 - **AWS RDS/Aurora = a documented, reversible fallback**, not the primary. Supabase → RDS is a
   connection-string swap + role/RLS re-apply, not a rewrite. This becomes relevant only if an
   in-our-own-VPC requirement ever hardens.
-- **This is a decision on paper; Phase 6 (the migration) is not built.** It is the chosen next work,
-  gated on the operator creating the Supabase project and handing back the writer + reader DSNs and a
-  pgvector ≥ 0.8 confirmation (blocker #8). A durable ADR-0013 will record it.
+- **Recorded in ADR-0013.** The managed-Postgres cutover — Supabase on AWS, `NO FORCE` RLS, separate
+  writer/reader DSNs, pgvector ≥ 0.8 — is a durable decision of record. Live cutover progress (which
+  migrations are applied to the Supabase head) is tracked in `docs/rag/PLAN.md` §0.
 
 **Two honest caveats (recorded, not smoothed over):** (1) pgvector was affirmed *positively* but never
 benchmarked head-to-head against Pinecone/Weaviate/Qdrant — those names appear nowhere in the repo;

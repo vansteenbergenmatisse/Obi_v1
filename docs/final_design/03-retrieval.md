@@ -84,7 +84,10 @@ stored on the trace.
 2. **Set per-transaction GUCs** — `apply_hnsw_gucs` sets `SET LOCAL hnsw.ef_search=100` and
    `hnsw.iterative_scan='relaxed_order'` (whitelisted mode, search_repo.py:21-35); `apply_source_scope`
    runs `SELECT set_config('app.allowed_sources', :s, true)` with the **bound** comma-joined source
-   list (search_repo.py:38-49). An empty source list ⇒ default-deny (zero rows).
+   list (search_repo.py:38-49); `apply_knowledge_scope` sets `app.allowed_knowledge_scopes` the same
+   bound way (the customer-axis GUC that drives the ADR-0014 `RESTRICTIVE` RLS backstop, set on **every**
+   reader transaction regardless of the feature flag). An empty source list ⇒ default-deny (zero rows);
+   an unset knowledge-scope GUC ⇒ tagged rows default-denied (fail closed).
 3. **Dense ∥ keyword** — the `∥` is *conceptual*: the two are independent ranking signals, but they
    run **sequentially** in the one synchronous transaction (keyword first, then dense,
    retriever.py:143-154 — the module docstring's "parallel" is aspirational).
@@ -113,11 +116,16 @@ retriever.py:158). Ties broken by keyword rank then page id
 1. **Source RLS** — applied up front via the `app.allowed_sources` GUC + the explicit
    `source_id = ANY(:sources)` predicate (retriever.py:142; search_repo.py:38-49, 63). Isolates whole
    source systems. Default-deny.
-2. **Knowledge-scope tag filter** — in-SQL during search via `tags && :knowledge_scopes`
-   (search_repo.py:64-69), backed by `ix_chunk_tags_gin`. **Double-gated:** only applied when the
-   `enable_knowledge_scope_filtering` construction flag is on AND the caller passed scopes; with the
-   flag off, no predicate regardless of caller input (retriever.py:116, 128-132). A chunk with empty
-   `tags` overlaps nothing and drops out.
+2. **Knowledge-scope isolation** — two mutually-reinforcing parts on the customer axis (see
+   [`05-security-isolation.md`](./05-security-isolation.md) Layer 2). The **DB backstop** is a
+   `RESTRICTIVE` scope-GUC RLS policy (`chunk_scope_read`, ADR-0014) driven by the
+   `app.allowed_knowledge_scopes` GUC set in §4 step 2 on **every** reader transaction — so tagged
+   content fails *closed* independent of the feature flag. On top of that, the **app predicate**
+   `tags && :knowledge_scopes` (search_repo.py:64-69, backed by `ix_chunk_tags_gin`) is double-gated —
+   applied only when `enable_knowledge_scope_filtering` is on AND the caller passed scopes
+   (retriever.py:116, 128-132) — and adds recall/planner benefit plus the ADR-0011 untagged-drop. A
+   chunk with empty `tags` is treated as global by the backstop; the app predicate drops it when the
+   flag is on.
 3. **Page-principal ACL** — after fusion, on the candidate set only: `fetch_page_scopes(session,
    ranked)` loads each page's `space_id` + `page_restriction` principals fresh (search_repo.py:187-212),
    builds a request-scoped `PrincipalPermissionPolicy`, and filters (retriever.py:167-171).
@@ -216,8 +224,10 @@ gets a synthetic `page_id="curated:<id>"` and a **negative** `chunk_id = -entry.
 collides with real ids (curated_knowledge.py:33-54), and its body is injected into `parent_texts`
 under that negative id. It rides through the identical evidence/citation machinery — so curated
 knowledge is grounded and citation-enforced exactly like retrieved evidence, with zero new citation
-logic (ADR-0011 decision 7). **Note:** `curated_knowledge_entry` has no RLS; tag filtering is its only
-access control.
+logic (ADR-0011 decision 7). **Isolation:** `curated_knowledge_entry` is protected on the customer axis
+by its own `RESTRICTIVE` scope-GUC RLS policy (`curated_knowledge_entry_scope_read`, ADR-0014 / migration
+`0010`) driven by the same `app.allowed_knowledge_scopes` GUC, so it fails closed like `chunk`; the app
+predicate here (`tags = '{}' OR tags && :allowed_scopes`) is defense-in-depth on top.
 
 ## 13. Vision / image analysis (ADR-0009)
 

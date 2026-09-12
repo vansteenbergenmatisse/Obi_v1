@@ -3,8 +3,7 @@
 The write path turns a Confluence page into searchable rows in Postgres. It runs as the **writer**
 DB role (table owner; bypasses RLS), so ingestion is never blocked by the read-path isolation policy.
 Two features own it: `app/features/confluence_sync` (get data in, classify the change) and
-`app/features/ingestion` (turn a page into chunks + embeddings + a new immutable version). It is
-fully built and verified.
+`app/features/ingestion` (turn a page into chunks + embeddings + a new immutable version).
 
 End-to-end order:
 
@@ -253,10 +252,11 @@ Two distinct tag systems, **unioned** (never one replacing the other):
 **(a) Confluence label → knowledge-scope tag** (`domain/knowledge_scope.py`, ADR-0011). A page's
 native Confluence labels (already fetched every sync for `labels_hash`) are intersected with the
 recognized set (`Settings.knowledge_scope_set`, loaded from repo-root `config/knowledge_scopes.json`:
-`general, mews, opera-cloud, toast`). `resolve_knowledge_scope_tags` (knowledge_scope.py:24-31):
-provider tags = matched labels minus `general`; **more than one provider label ⇒ a quarantined
-conflict** — zero label-derived tags contributed, `knowledge_scope_conflict` logged, self-heals on the
-next sync (never "first wins," never "available everywhere"). `handle_sync_page` computes `final_tags =
+`obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test`). `resolve_knowledge_scope_tags`
+(knowledge_scope.py:24-31): provider tags = matched labels minus `obi-general-test`; **more than one
+provider label ⇒ a quarantined conflict** — zero label-derived tags contributed, `knowledge_scope_conflict`
+logged, self-heals on the next sync (never "first wins," never "available everywhere"). `handle_sync_page`
+computes `final_tags =
 sorted(source_scope_tags ∪ label_tags)` and threads it into the same `stage_and_activate` /
 metadata-only seam (sync_service.py:103-115, 180-189).
 

@@ -25,7 +25,7 @@ adequate: relational **immutable versioning** (the `document`/`document_version`
 and **Postgres RLS** give us hard, transactional isolation and point-in-time version integrity that a
 bolt-on vector store would make us reassemble. And a store switch would **not** remove the
 customer-axis isolation work — you would rebuild that boundary in the new store regardless (see
-`05-security-isolation.md` Issue 2), so it is not a shortcut around the isolation gap.
+`05-security-isolation.md` Layer 2), so it is not a shortcut around the isolation model.
 
 ## ER diagram
 
@@ -184,13 +184,14 @@ so search never joins: `is_active`, `space_id`, `page_status`, `source_id`, `tag
 `(doc_version_id, stable_key)` (models.py:307). See the index section below for the two search
 indexes.
 
-**Which columns back a *hard* vs a *soft* boundary.** `source_id` backs a **hard** boundary — it is
-enforced by Postgres RLS + the explicit `source_id = ANY(:sources)` predicate, default-deny (but see
-`05-security-isolation.md` **Issue 1**: the `FORCE ROW LEVEL SECURITY` guarantee needs the managed-PG
-fix before the Supabase migration). `tags` backs a **soft**, app-layer boundary — the knowledge-scope
-`tags && :scopes` predicate is flag-gated and **fails open** (`05-security-isolation.md` **Issue 2**:
-the customer-axis scope must get a DB backstop before any public deploy). The same soft/tag-only story
-holds for `curated_knowledge_entry.tags` below (it has no RLS at all).
+**Which columns back a hard boundary.** Both `source_id` and `tags` back **hard**, database-enforced
+boundaries (`05-security-isolation.md`). `source_id` is enforced by Postgres RLS (`chunk_source_read`,
+ADR-0004) + the explicit `source_id = ANY(:sources)` predicate, default-deny; RLS is `ENABLE`d + `NO
+FORCE` so it is portable to managed Postgres with the owner exempt by ownership (ADR-0013). `tags` on
+the customer axis is enforced by a second `RESTRICTIVE` scope-GUC RLS policy (`chunk_scope_read`,
+ADR-0014) keyed on `app.allowed_knowledge_scopes` — fail-closed and independent of the feature flag —
+with the app-layer `tags && :scopes` predicate as defense-in-depth on top. The same DB-backstop story
+holds for `curated_knowledge_entry.tags` below (its own `curated_knowledge_entry_scope_read` policy).
 
 ### `event_ledger` (models.py:345-387) — one row per webhook/reconcile delivery
 Dedup + audit. `payload_hash` `LargeBinary NOT NULL`, **`UNIQUE`** (`uq_event_ledger_payload_hash`,
@@ -230,8 +231,10 @@ isolation audit trail. Small-talk and clarification short-circuits write **no** 
 
 ### `curated_knowledge_entry` (models.py:548-569) — one row per always-present knowledge item
 Admin-maintained knowledge (Phase 10.6). `tags` (empty ⇒ applies to every scope, models.py:560-562),
-`title`, `body`, `is_active`. **No FKs, no unique constraints, no explicit indexes, and — notably —
-no RLS**: tag filtering is its only access control (see `05-security-isolation.md`).
+`title`, `body`, `is_active`. **No FKs, no unique constraints, no explicit indexes.** Isolation is the
+customer-axis `RESTRICTIVE` scope-GUC RLS policy `curated_knowledge_entry_scope_read` (ADR-0014 /
+migration `0010`), fail-closed like `chunk`, with tag filtering as defense-in-depth (see
+`05-security-isolation.md`).
 
 ## The two search indexes (both partial, on active child rows)
 
