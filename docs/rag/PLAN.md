@@ -27,6 +27,22 @@
 > stays green on the tagged live corpus after `0010`). Automation **502 pass** (local-DSN override),
 > boundaries + ruff/format/pyright clean. No git remote configured, so nothing is pushed (local-only).
 >
+> **🔨 IN PROGRESS — Phase 11.1c execution (started 2026-09-12):**
+> - **Task A1 (platform registry) — ✅ DONE + COMMITTED `49844fa`.** Created `config/platforms.json`
+>   (mews/toast/opera-cloud entries, all `active:false` — Opera Cloud issuer/jwks still `PLACEHOLDER`) +
+>   `app/platform/config/platforms.py` (`load_platform_registry` / `PlatformEntry` / `PlatformRegistry`:
+>   integration→scope map, `obi-general-test` always appended, `classified` never mappable, unknown-slug
+>   and HS256 rejected, empty-registry stops startup unless `allow_empty`). Wired `settings.py`
+>   (`platforms_path` / `allow_empty_platforms` fields + `platform_registry` property + a
+>   `_require_valid_platform_registry` model_validator mirroring `_require_general_knowledge_scope`) and
+>   set `ALLOW_EMPTY_PLATFORMS=true` in the suite conftest. **Deviation vs plan:** fail-fast is a Settings
+>   `@model_validator` (matches the existing knowledge-scope pattern) rather than a `main.py` lifespan
+>   touch — the lifespan `TokenVerifier` build lands in Task B1. Tests: `test_platforms.py` (+7 incl. an
+>   extra HS256-forbidden case). **Full gate GREEN:** `make check` (local-DSN override) → automation
+>   **509 pass** (+7 vs 502), `make boundaries` clean, ruff/format/pyright clean on all touched files.
+>   Remaining 11.1c tasks: A2 AuthContext, A3 JWT verifier, B1/B2 threading+trace, C contracts, D
+>   frontend, E test-hosts, F hand-over/ops.
+>
 > **▶ IMMEDIATE NEXT (in order) — these are THE next things to do:**
 > 0. **★ Phase 11.1c — Embedding Obi in another application (iframe loader + JWT edge binding). NEW,
 >    HEADLINE (scoped 2026-09-12) — the operator's chosen next feature.** Build the shareable embed so we
