@@ -157,6 +157,18 @@ write a `reconciliation_run` report. **Scope** — which spaces/pages get swept,
 when scope shrinks — is governed by the `source_scope` table
 ([phase-3.5.md](./phase-3.5.md#confluence-source-scoping-3-5-6)), not an env var.
 
+**On-demand re-pull — `make reingest` (PLAN 3c, 2026-09-12).** The scheduled sweeps and the
+in-process worker only run when `enable_background_jobs=true` (`settings.py`, default **False**),
+and a live Confluence webhook is only wired in a deployed environment. So when the backend runs
+locally with the defaults, **editing a Confluence page re-indexes nothing** — no webhook fires, no
+sweep runs, no worker drains. The change-detection/versioning path is correct (a body edit bumps the
+Confluence version → body fetch → content-hash mismatch → re-embed → atomic swap, old chunks
+`is_active=False`); it just isn't triggered. `make reingest` (→ `scripts/run_reconciliation_once.py`)
+runs a **complete sweep + drain against live Confluence** so edits propagate on demand; it refuses
+against the offline fixture. (Secondary gotcha: the in-process answer cache,
+`chat_answer_cache_ttl_seconds=300`, can replay a pre-edit answer for ~5 min on an *identical*
+repeated question; it clears on restart.)
+
 ## 7. The Confluence gateway (live vs. fixture)
 
 `main.build_gateway` picks the client at startup:

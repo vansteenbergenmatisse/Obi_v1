@@ -62,9 +62,23 @@ always present) plus an optional 1–2 sentence LLM-written situating context, p
 child text (`_compose`, `contextualizer.py:89-91`). The LLM step uses the **whole page as a
 prompt-cached system block** — billed once per page, not once per chunk
 (`contextualizer.py:50-54`, `cached_system_block`). If the model errors, `_llm_context`
-(`contextualizer.py:65-76`) catches `AnthropicError` and the chunk degrades to the metadata-only
-prefix — ingestion never fails because of contextualization. Offline (no key), `_enabled` is
-`False` (`contextualizer.py:45`) and you get the metadata prefix only.
+catches `AnthropicError` and the chunk degrades to the metadata-only prefix — ingestion never fails
+because of contextualization. Offline (no key), `_enabled` is `False` (`contextualizer.py:45`) and
+you get the metadata prefix only.
+
+**Meta-refusal guard (PLAN 3b, 2026-09-12).** A *successful* API call can still return a meta-reply
+about the model's own lack of access (*"I don't have access to the overall document…"*) instead of
+real situating context. `_llm_context` now runs `_is_meta_refusal(reply)` and **discards** such a
+reply — degrading to the deterministic metadata prefix exactly like a transport error, logging
+`contextualization_meta_refusal_discarded` — rather than baking it into `retrieval_content`. Left
+un-discarded, that text is embedded and cross-encoder-reranked (the `tsv` keyword vector is built
+from the *raw* chunk text in §4 and is immune), depressing the relevance signal below the 0.10
+refusal threshold and causing false "routed to a human" answers on pages that do have content. The
+detector is deliberately conservative (a false positive merely falls back to the safe prefix).
+`contextualization_version` was bumped **1→2** so v1-poisoned chunks re-contextualize + re-embed on
+their next reconcile (diff-reuse is disabled on a version mismatch); run `make reingest` to clear
+live pollution on demand. Tests: `test_contextualizer.py` (`test_llm_meta_refusal_is_discarded_*`,
+`test_llm_real_context_first_person_is_not_discarded`).
 
 ## 4. The keyword vector (`tsv`)
 

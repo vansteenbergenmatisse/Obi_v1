@@ -31,6 +31,45 @@ _PROMPT = (
     "using only information present in the document. Do not add facts. Answer with context only."
 )
 
+# Signal phrases that mark a *meta-refusal* — the model talking about its own lack of access to
+# the document instead of writing situating context. Left un-discarded, this text is stored as
+# ``retrieval_content`` and then embedded + cross-encoder-reranked (BM25 is immune), depressing the
+# relevance signal below the refusal threshold and causing false "routed to a human" answers even
+# when real content exists (PLAN 3b(b), observed live on the obi-*-test pages). Conservative by
+# design: a false positive merely degrades to the deterministic metadata prefix (always safe),
+# while a miss poisons the corpus — so we err toward discarding.
+_META_REFUSAL_SIGNALS = (
+    "i don't have access",
+    "i do not have access",
+    "i don't have the document",
+    "i do not have the document",
+    "without access to the",
+    "i can't see the",
+    "i cannot see the",
+    "i can't access",
+    "i cannot access",
+    "i'm unable to",
+    "i am unable to",
+    "i don't have enough context",
+    "i do not have enough context",
+    "no document was provided",
+    "no document is provided",
+    "there is no document",
+    "there's no document",
+    "wasn't provided",
+    "was not provided",
+    "isn't provided",
+    "is not provided",
+    "i don't see the",
+    "i do not see the",
+)
+
+
+def _is_meta_refusal(reply: str) -> bool:
+    """True when the model reply is *about* missing document access rather than real context."""
+    low = reply.strip().lower()
+    return any(sig in low for sig in _META_REFUSAL_SIGNALS)
+
 
 @dataclass
 class ContextItem:
@@ -65,7 +104,7 @@ class Contextualizer:
     def _llm_context(self, system_blocks: list[dict] | None, item: ContextItem) -> str:
         assert self._client is not None
         try:
-            return self._client.create_message(
+            reply = self._client.create_message(
                 model=self._model,
                 user_text=_PROMPT.format(chunk=item.text),
                 system_blocks=system_blocks,
@@ -74,6 +113,12 @@ class Contextualizer:
         except AnthropicError as exc:
             log.warning("contextualization_failed_using_metadata_only", error=str(exc))
             return ""
+        if _is_meta_refusal(reply):
+            # Discard the meta-reply and degrade to the metadata-only prefix, same as a transport
+            # failure — never let "I don't have access to the document…" become embeddable text.
+            log.warning("contextualization_meta_refusal_discarded", reply=reply[:120])
+            return ""
+        return reply
 
 
 def _metadata_prefix(item: ContextItem) -> str:

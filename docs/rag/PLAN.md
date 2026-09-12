@@ -78,6 +78,27 @@
 >   General content (`General Obi information`) is in scope in **every** case. Ran on local test RS256 keys
 >   (`apps/web/.env.local`) + `config/platforms.local.json` (both apps via `PLATFORMS_PATH`).
 >
+> **✅ 11.1c embed UX polish (2026-09-12, later — UNCOMMITTED):** the host-page launcher was a plain
+> black "Obi" text circle; it is now the **exact main-site "star"** (Obi's two-tone sparkle in a 52px
+> white round button, `ChatLauncher` tokens inlined into `loader.ts`/`obi.js`). The `/embed` frame now
+> renders the **panel directly** on `obi:open` (was the full `ChatWidget`, which showed a second nested
+> launcher → double-click); one click now opens the overlay, which floats **above** the launcher (no
+> overlap), and the launcher is a toggle. postMessage contract unchanged (still exactly three types —
+> `obi:open` was only wired to a UI effect via the bridge's new `onOpen`). Files: `features/embed/{loader.ts,
+> iframe-bridge.ts}`, `app/embed/embed-frame.tsx`, `features/chat/{index.ts,ui/panel-body.tsx}` (onClose
+> now optional). Web **187 pass** (+3), tsc clean, `obi.js` rebuilt. Verified live in-browser on
+> `/test-hosts/opera-cloud`: star launcher, single-click overlay, toggle-close, and a real scoped answer
+> ("which fruit is the only fruit?" → **"Apples … [1] Opera Cloud Testpage"**). Read-path doc updated
+> (`retrieval/phase-11.1c.md` → "Embed UX"). **Investigated the "general isn't working / can't answer
+> about salads" report: NOT a bug.** The general scope is always included and working; the live corpus is
+> only the 4 trivial test pages (general = *"fruits do not exist"*, mews=bananas, opera=apples,
+> toast=grapes) — there is **no salad/menu content anywhere**, so "Do we have salads?" correctly refuses
+> (*"Not found in the docs — routed to a human"*) rather than invent, exactly as accuracy-first RAG
+> should. To make Obi answer general/menu questions, ingest real **general-tagged** Confluence content;
+> no code change needed. (Also noted: the contextual-retrieval blurb on those test chunks stored the
+> LLM's *"I don't have access to the overall document…"* meta-reply as chunk text — a cosmetic
+> ingestion-quality artifact on the throwaway test pages, not the cause of the refusal.)
+>
 > **▶ Phase 11.1c — the ONLY thing left before REAL platforms go live (operator-gated):**
 > - **Provide the three platforms' real values** (issuer / JWKS URL / domains / integration) per the
 >   hand-over packs `docs/embedding/{mews,toast,opera-cloud}.md`; fill + flip `active:false`→`true` in
@@ -145,7 +166,62 @@
 >    latency/cost + live red-team harness **against the Supabase `rag_reader`** with knowledge-scope
 >    filtering ON, plus true TTFT/SSE via the `/chat` server path. Gold set is tiny → any winner is
 >    directional. Also finish bucket B's retrieval grid (`grapes × {Opera, Toast}`, tiny Cohere spend).
-> 4. **Label-driven ingestion** (bucket D, NEXT FIXES #6) — **NEEDS A PRODUCT DECISION + AN ADR** before
+> 3b. **🔧 TODO (fix later) — make GENERAL documents answerable ("do we have salads?" type questions).**
+    Raised by the operator 2026-09-12. **Not a retrieval-code bug** — the `obi-general-test` scope is
+    already always included in `resolve_allowed_scopes` and is fetched on every query (proven live). The
+    reason general questions refuse is purely that **there is no real general content in the live corpus**
+    (the only `obi-general-test` chunk is the throwaway test sentence *"fruits do not exist"*). Concrete
+    fixes, in order:
+    - **(a) Ingest real general content — the actual fix.** Create/label the real company/menu/FAQ
+      Confluence page(s) with the `obi-general-test` label (the always-included base scope, per
+      `config/knowledge_scopes.json`) and run ingestion so those chunks exist. Until then Obi *correctly*
+      refuses general questions instead of inventing answers. **NEEDS THE OPERATOR** (which pages count as
+      "general"). No code change.
+    - **(b) Fix the contextual-retrieval meta-reply artifact (ingestion quality). ✅ CODE DONE
+      (2026-09-12, TDD).** Root-caused: the per-chunk contextualization step stored the LLM's *"I don't
+      have access to the overall document to provide context…"* meta-reply **as the chunk's
+      `retrieval_content`** instead of a real context blurb. That text is **embedded + cross-encoder
+      reranked** (BM25/`tsv` is built from the raw chunk text at `versioning.py:140` and is *immune*),
+      so the poison depresses the dense + rerank signals below `refusal_min_rerank_score=0.10` → false
+      "routed to a human" refusals even when real content exists. **Fix:** `contextualizer._llm_context`
+      now runs `_is_meta_refusal(reply)` and discards a meta-reply (falls back to the existing
+      deterministic title+heading prefix, logging `contextualization_meta_refusal_discarded`) instead of
+      baking it into `retrieval_content` (`app/features/ingestion/application/contextualizer.py`). Tests:
+      `test_contextualizer.py` +2 (meta-refusal discarded across four phrasings; a real first-person blurb
+      is kept). **`contextualization_version` bumped 1→2** (`settings.py:188`) so already-poisoned v1
+      chunks route through a full re-contextualize + re-embed on the next reconcile (diff-reuse is disabled
+      on a version mismatch — the corpus self-heals). Automation **532 pass**. **⚠️ Operator step to clear
+      live pollution:** run `make reingest` against live Confluence (re-embeds the affected pages — small
+      live embedding spend). Until then the fix is latent (new/edited pages are clean; existing ones heal
+      on their next sync).
+    - **(c) (optional, product decision) refusal-threshold / general-knowledge fallback.** If general
+      questions should be answered from the model's own world knowledge when the docs are silent, that is a
+      deliberate move *away* from accuracy-first (ADR-0005 refusal) and needs an ADR — do **not** just lower
+      the threshold silently. Default recommendation: keep refusing; fix via (a)+(b).
+3c. **✅ ROOT-CAUSED + ergonomic fix shipped (2026-09-12) — edits to an already-ingested page don't
+    propagate to answers.** Raised by the operator 2026-09-12 (Opera Cloud test page *"apples are the only
+    fruit"* → *"kiwis are the only fruit"*, Obi kept answering the old value). **Not a code bug** — the
+    ingestion pipeline is entirely queue-driven and *nothing triggers a re-pull in the local runtime*. A
+    page edit only re-indexes via one of three triggers, none of which fire locally:
+    - **Confluence webhook** (`POST /confluence/events`) → enqueues `sync_page`. Not pointed at localhost.
+    - **Scheduled reconcile + in-process worker** — only when `enable_background_jobs=true`
+      (`settings.py:182`, default **False**, not set in `.env`). Even on, lightweight reconcile runs
+      **daily at 03:00 UTC** (`lightweight_recon_cron`), so not immediate; complete sweep every 14 days.
+    - **Manual** `scripts/run_reconciliation_once.py` (complete sweep + drain) — hadn't been run.
+
+    The change-detection + versioning code is **correct**: a body edit bumps the Confluence version →
+    `decide_body_fetch` fetches the body → `content_hash` mismatch → `needs_reembed` → new
+    `document_version` staged and atomically activated, old chunks `is_active=False`
+    (`versioning._activate`). It simply never gets invoked. Secondary masking factor: the in-process
+    answer cache (`chat_answer_cache_ttl_seconds=300`, cleared on restart) can replay a pre-edit answer
+    for ~5 min on an *identical* repeated question. **Fix shipped:** new **`make reingest`** target
+    (wraps `run_reconciliation_once.py` — full sweep + drain against live Confluence) so edits can be
+    pulled on demand; regression coverage already exists in `test_worker_sync.py`
+    (`test_content_change_swaps_version_atomically`). **Operator step:** after editing a live page, run
+    `make reingest` (needs live Confluence configured; re-embeds changed/version-bumped pages). The real
+    production trigger (webhook or scheduled reconcile) is a deploy-time wiring decision, not a code gap.
+    Related to item 4 (label-driven ingestion) and IDEAS §0.
+4. **Label-driven ingestion** (bucket D, NEXT FIXES #6) — **NEEDS A PRODUCT DECISION + AN ADR** before
 >    any code. Auto-ingest any page carrying a recognized `obi-*-test` label (webhook-kept-live) by adding
 >    a label-driven pull to the `source_scope` model + `knowledge_scopes.json`. A real feature, designed
 >    through the PLAN process, not ad hoc. Ties to IDEAS §0.

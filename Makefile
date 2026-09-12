@@ -7,7 +7,7 @@
 AUTOMATION := apps/automation
 COMPOSE := infra/foundation/docker-compose.yml
 
-.PHONY: up down migrate test eval boundaries check web-dev fmt
+.PHONY: up down migrate test eval boundaries check web-dev fmt reingest
 
 ## up: start Postgres (pgvector) in the background.
 up:
@@ -38,6 +38,14 @@ boundaries:
 ## check: the machine-enforced gate — architecture boundaries then the tests.
 ## (Ruff and Pyright are tracked separately at no-regression; see docs/adr.)
 check: boundaries test
+
+## reingest: pull edits from live Confluence on demand — a full reconciliation sweep + drain.
+## Use this after editing a live Confluence page when the backend runs without background jobs
+## (enable_background_jobs=false, the local default) and no webhook is wired: nothing re-pulls
+## edits automatically, so run this to re-index them. Refuses against the offline fixture — needs
+## live Confluence configured. Re-embeds changed/version-bumped pages (small live embedding spend).
+reingest:
+	cd $(AUTOMATION) && uv run python scripts/run_reconciliation_once.py
 
 ## web-dev: run the Next.js dev server.
 web-dev:

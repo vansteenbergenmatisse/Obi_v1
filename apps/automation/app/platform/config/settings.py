@@ -185,7 +185,12 @@ class Settings(BaseSettings):
     # pipeline version stamps (bumping these forces recompute / re-embed per ADR-0002)
     parser_version: int = 1
     chunker_version: int = 1
-    contextualization_version: int = 1
+    # bumped 1->2: the contextualizer now discards LLM meta-refusals ("I don't have access to the
+    # document…") instead of baking them into retrieval_content (PLAN 3b). Pages ingested under v1
+    # may carry that poisoned text in their stored embedding + retrieval_content; the bump routes
+    # every page through a full re-contextualize + re-embed on the next reconcile so the corpus
+    # self-heals (index_config_change -> rebuild; diff-reuse is disabled on a version mismatch).
+    contextualization_version: int = 2
     retrieval_schema_version: int = 1
 
     # knowledge-scope tagging (PLAN 10.1; ADR-0011) — the recognized set of scope identifiers
