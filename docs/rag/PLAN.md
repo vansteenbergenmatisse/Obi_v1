@@ -16,7 +16,7 @@
 > Newest-first. The dated SESSION LOG below keeps the fuller build-session detail; this block is the
 > single source of "where things actually stand right now."
 
-### 🔭 NEXT UP — forward-looking roadmap (as of 2026-09-12 — ★ NEW headline: Phase 11.1c Obi embed + JWT edge binding scoped; 11.1a + verify-isolation scope axis done)
+### 🔭 NEXT UP — forward-looking roadmap (as of 2026-09-12 — ★ NEW headline: Phase 11.1c Obi embed + JWT edge binding DONE, migrations 0010+0011 LIVE on Supabase (head 0011), scope isolation PROVEN end-to-end; only real-platform onboarding remains)
 
 > The single prioritized "what's next" list. Each item says who it needs. Phase-13 sub-items and the
 > Phase 5.4/12.4 eval remainder are the detail below; this is the ordered pointer.
@@ -27,9 +27,12 @@
 > stays green on the tagged live corpus after `0010`). Automation **502 pass** (local-DSN override),
 > boundaries + ruff/format/pyright clean. No git remote configured, so nothing is pushed (local-only).
 >
-> **✅ Phase 11.1c — Obi embed + JWT edge binding: IMPLEMENTED & GREEN (2026-09-12).** All task groups
-> A–F built and committed on `feat/rag-phase-3.5`; `make check` **530 pass** (was 502), web **184 pass**,
-> boundaries + ruff/format/pyright clean. **Live cutover is operator-gated (see prerequisites).** Commits:
+> **✅ Phase 11.1c — Obi embed + JWT edge binding: IMPLEMENTED, GREEN & LIVE-PROVEN (2026-09-12).** All
+> task groups A–F built and committed on `feat/rag-phase-3.5`; `make check` **530 pass** (was 502), web
+> **184 pass**, boundaries + ruff/format/pyright clean. **Migrations `0010`+`0011` are now applied to
+> live Supabase (head `0011`) and end-to-end scope isolation is PROVEN against the real corpus** — see
+> the live-proof block below. Only the three real platforms' onboarding values remain (kept inactive).
+> Commits:
 > - **A1 registry** `49844fa` — `config/platforms.json` + `platforms.py` (integration→scope, general
 >   always included, HS256/classified/unknown-slug rejected), `settings.platform_registry` + fail-fast.
 > - **A3 verifier + A2 AuthContext** `ed58618` — `token_verifier.py` (alg allow-list, JWKS-by-`kid` w/
@@ -48,6 +51,8 @@
 >   `sha256(sub)`, never raw) + `test_token_claims_contract` (schema↔verifier lockstep).
 > - **F docs** — `docs/rag/retrieval/phase-11.1c.md` (read-path), hand-over packs
 >   `docs/embedding/{mews,toast,opera-cloud}.md`, `docs/embedding/obi-embed-local-test-keys.md`.
+> - **Homepage dev links** `e925add` — dev-only Mews/Toast/Opera/None test-host links on `/` (gated by
+>   `isLocalOrDevEnv`, never in prod) for the browser walkthrough.
 >
 > **⚠️ DEVIATIONS from the written plan (accepted):** (a) A1 fail-fast is a Settings `@model_validator`
 > (matches the knowledge-scope pattern) rather than only a `main.py` lifespan touch — the lifespan
@@ -60,19 +65,31 @@
 > isolation remain.** (e) A background agent produced the frontend commit `9080146`; its security-critical
 > code (CSP/postMessage/loader/token/test-keys) was reviewed and passes the endpoint-security gate.
 >
-> **▶ Phase 11.1c LIVE cutover — operator-gated (the ONLY thing left before it runs for real):**
-> - **Apply migrations `0010` then `0011`** to Supabase: `uv run alembic upgrade head` (advances live
->   `0009`→`0011`), then `verify-isolation` → expect exit 0. Closes the last CRITICAL customer-isolation
->   gate + adds the trace column.
+> **✅ LIVE PROOF (2026-09-12) — end-to-end isolation demonstrated against the real Supabase corpus:**
+> - **Migrations `0010`+`0011` APPLIED to live Supabase** (operator ran `alembic upgrade head`; live head
+>   `0009`→`0011`). `verify-isolation` → **exit 0**, incl. the new **scope axis** (`in-scope=85,
+>   out-of-scope=0`), reader default-deny (no-GUC=0 / scoped=93 / bogus=0), anon locked out (0/0),
+>   dense-query path OK. Closes the last CRITICAL customer-isolation gate + adds the trace column.
+> - **Browser/HTTP proof** (real path: Next proxy → JWT verify → AuthContext → scoped Supabase retrieval →
+>   Cohere rerank → Anthropic answer). Same question per scope: **mews→Mews Testpage ("bananas") + general;
+>   toast→Toast Testpage ("grapes") + general; opera-cloud→Opera Cloud Testpage ("apples") + general;
+>   none→general only**. Cross-scope query "which fruit is the only fruit?" returns each customer's own
+>   answer with **zero leakage**; `none` correctly **refuses** (no scoped content, general insufficient).
+>   General content (`General Obi information`) is in scope in **every** case. Ran on local test RS256 keys
+>   (`apps/web/.env.local`) + `config/platforms.local.json` (both apps via `PLATFORMS_PATH`).
+>
+> **▶ Phase 11.1c — the ONLY thing left before REAL platforms go live (operator-gated):**
 > - **Provide the three platforms' real values** (issuer / JWKS URL / domains / integration) per the
->   hand-over packs; flip `active:false`→`true` in `config/platforms.json`. Kept inactive until then.
-> - **Generate the local test RS256 keys** to click through `/test-hosts/*` locally — steps in
->   `docs/embedding/obi-embed-local-test-keys.md` (private keys in `apps/web/.env.local`, gitignored).
-> - **To see real answers locally**, point the backend reader at a tagged corpus (the Supabase corpus
->   already has the four `obi-*-test` pages) + the embedding/rerank/Anthropic keys.
+>   hand-over packs `docs/embedding/{mews,toast,opera-cloud}.md`; fill + flip `active:false`→`true` in
+>   `config/platforms.json`. Kept inactive until then. (The `test-*` issuers used above live only in
+>   `config/platforms.local.json`, never in the committed real registry.)
+> - **Per-user page ACL** (`principal`) stays a later phase — v1 is integration-level only.
 >
 > **▶ IMMEDIATE NEXT (in order) — these are THE next things to do:**
-> 0. **★ Phase 11.1c — Embedding Obi in another application (iframe loader + JWT edge binding). NEW,
+> 0. **✅ DONE 2026-09-12 — Phase 11.1c is IMPLEMENTED + LIVE-PROVEN (see the ✅ block at the top of §0
+>    for commits, live migration, and the isolation proof). Everything below is the ORIGINAL scoping,
+>    kept for history; the only open remainder is onboarding the three real platforms' values.**
+>    **★ Phase 11.1c — Embedding Obi in another application (iframe loader + JWT edge binding).
 >    HEADLINE (scoped 2026-09-12) — the operator's chosen next feature.** Build the shareable embed so we
 >    can test end-to-end: `obi.js` loader + round button + `/embed` iframe frame; the platform hands a
 >    short **signed note (JWT)** at button-click; the backend verifies it (alg allow-list, JWKS-by-`kid`,
@@ -118,12 +135,10 @@
 >      cross-referenced by several ADRs; not deprecated. Everything else in `docs/` stays (ADRs,
 >      `final_design/*`, `DESIGN.md`, `how_this_works.md`, `OBI-WIDGET-DESIGN.md`, `ingestion/*` + `retrieval/*`
 >      phase files, `runbooks/*`, `PLAN.md`, `OBI-RAG-SYSTEM-A-Z.md`, `embedding/*`).
-> 2. **Apply migration `0010` live** to Supabase — **NEEDS THE OPERATOR** (live DB change). From
->    `apps/automation` with `.env` pointed at Supabase: `uv run alembic upgrade head` (advances the live
->    head `0009`→`0010`), then `uv run python scripts/setup_supabase.py verify-isolation` — expect the
->    new `scope axis` line and **exit 0**. No extra step: the reader already has the `extensions` grant.
->    This closes the **last CRITICAL pre-public-deploy gate** (customer isolation fail-open → fail-closed,
->    bucket E). Everything in buckets B/C/D stays barred from shipping externally until this lands.
+> 2. **✅ DONE 2026-09-12 — Apply migration `0010` (+`0011`) live to Supabase.** Operator ran
+>    `uv run alembic upgrade head` (live head `0009`→`0011`); `verify-isolation` → **exit 0** with the
+>    new `scope axis` line. Closed the **last CRITICAL pre-public-deploy gate** (customer isolation
+>    fail-open → fail-closed). Buckets B/C/D are no longer barred by this gate.
 > 3. **Embedder bake-off + the eval remainder** (bucket C) — **NEEDS THE OPERATOR** (live API spend,
 >    inside the pre-authorized $5 cap). A real build: re-embed the corpus into a separate **1024-dim**
 >    table/index and score Voyage `voyage-3-large` vs the live OpenAI `halfvec(3072)`; then run the
@@ -173,14 +188,15 @@
   label (webhook-kept-live), adding a new scope to `knowledge_scopes.json` to pull matching pages.
   Real feature: design + likely an ADR through the PLAN process, not ad hoc. Ties to IDEAS §0.
 
-**E. Gate before ANY public deploy (CRITICAL — do not skip)**
-- **Phase 11.1a — customer-isolation DB backstop. ✅ CODE DONE (2026-09-10, TDD) — NOT yet applied
-  live.** Customer isolation used to fail **OPEN**; the DB backstop (fail-open → fail-closed) now lands
-  as scope-GUC RLS (**option ii**, operator-confirmed). Design of record: **ADR-0014**; retrieval phase
-  doc `retrieval/phase-11.md`; migration `0010_customer_scope_rls`. **Remaining:** apply live (`alembic
-  upgrade head` on Supabase, `0009`→`0010` — no extra operator step, reader already has the extensions
-  grant) + optional `verify-isolation` extension. Still gates B/C/D from shipping externally; the
-  per-user→customer edge binding (shared `CHAT_API_KEY`) is 11.1c + the deferred AWS deploy, not this.
+**E. Gate before ANY public deploy — ✅ CLOSED (2026-09-12)**
+- **Phase 11.1a — customer-isolation DB backstop. ✅ CODE DONE (2026-09-10, TDD) + ✅ APPLIED LIVE
+  (2026-09-12).** Customer isolation used to fail **OPEN**; the DB backstop (fail-open → fail-closed)
+  is scope-GUC RLS (**option ii**, operator-confirmed) and is now live on Supabase — migration `0010`
+  applied (`alembic upgrade head`, live head reached `0011`), `verify-isolation` **exit 0** incl. the
+  scope axis. Design of record: **ADR-0014**; retrieval phase doc `retrieval/phase-11.md`; migration
+  `0010_customer_scope_rls`. The per-user→customer edge binding is **11.1c — also DONE + live-proven**
+  (the verified `X-Obi-Token` replaces the caller-reported scope; see the 11.1c ✅ block at the top of
+  §0). This CRITICAL gate is closed; B/C/D are no longer barred by it.
   - **Design + rationale now live in [ADR-0014](../adr/0014-Customer-Scope-Isolation-Backstop.md)**
     (fork (i) per-customer `source_id` vs (ii) scope-GUC RLS → chose **ii**; RESTRICTIVE-ANDs-not-OR;
     fail-closed on unset; `cardinality(tags)=0` = untagged-global; `'*'` opt-out; enforced independent
