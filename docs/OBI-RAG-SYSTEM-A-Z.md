@@ -1040,9 +1040,10 @@ rotation is in `docs/runbooks/chat-api-key-rotation.md`.
 
 ## 10. The frontend widget
 
-> Scope: the floating chat widget UI only (`apps/web/src/features/chat`). Source of visual truth:
-> `docs/rag/reference/obi-mockup/`. The widget is the app's **only** chat surface — the old full-page
-> `/chat` route was removed once the widget covered everything.
+> Scope: the floating chat widget UI only (`apps/web/src/features/chat`). As-built reference:
+> `docs/rag/OBI-WIDGET-DESIGN.md` (the widget was built from a proprietary Obi mockup, since removed).
+> The widget is the app's **only** chat surface — the old full-page `/chat` route was removed once the
+> widget covered everything.
 
 ### 10.1 Component map (`apps/web/src/features/chat/ui/`)
 

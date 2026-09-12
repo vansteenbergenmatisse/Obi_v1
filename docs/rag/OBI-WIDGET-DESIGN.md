@@ -4,9 +4,9 @@
 > retrieval/answer pipeline — that's [`DESIGN.md`](./DESIGN.md). This is the standalone as-built
 > reference for the widget, kept in sync with the code (not a session-by-session log — that
 > history lives in git and in `PLAN.md`'s own commit trail if it's ever needed). Rewritten
-> 2026-08-11 to reflect the widget after it became the app's only chat surface. Source of visual
-> truth: `docs/rag/reference/obi-mockup/` (`obi-render.html` is a live, clickable copy of the
-> original mockup this widget was built from).
+> 2026-08-11 to reflect the widget after it became the app's only chat surface. It was originally
+> built from a proprietary Obi mockup export (reference art only, removed 2026-09-12); this document
+> is now the as-built source of truth for the widget.
 
 ---
 

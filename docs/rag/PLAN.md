@@ -16,7 +16,7 @@
 > Newest-first. The dated SESSION LOG below keeps the fuller build-session detail; this block is the
 > single source of "where things actually stand right now."
 
-### 🔭 NEXT UP — forward-looking roadmap (as of 2026-09-10, later³ — tree committed; 11.1a + verify-isolation scope axis done)
+### 🔭 NEXT UP — forward-looking roadmap (as of 2026-09-12 — ★ NEW headline: Phase 11.1c Obi embed + JWT edge binding scoped; 11.1a + verify-isolation scope axis done)
 
 > The single prioritized "what's next" list. Each item says who it needs. Phase-13 sub-items and the
 > Phase 5.4/12.4 eval remainder are the detail below; this is the ordered pointer.
@@ -28,29 +28,52 @@
 > boundaries + ruff/format/pyright clean. No git remote configured, so nothing is pushed (local-only).
 >
 > **▶ IMMEDIATE NEXT (in order) — these are THE next things to do:**
-> 1. **Docs-folder cleanup — remove what is neither "what the system does" nor "how to check it works."**
->    Docs-only, no runtime impact, needs no spend. **Get operator sign-off on the list before deleting.**
->    The removal candidates (verified 2026-09-10):
->    - **`docs/rag/reference/obi-mockup/` — the entire folder (6 files, ≈ 425 KB):** `Obi Assistant.dc.html`,
->      `obi-render.html`, `support.js` (69 KB third-party script), `README.md`, and `uploads/` (3
->      screenshots ≈ 275 KB). This is the **original third-party UI mockup** the widget was built from —
->      design *input* / reference art, **not** documentation of the built system (that's
->      `OBI-WIDGET-DESIGN.md`) and not verification. Referenced only by **docstring provenance comments**
->      in `apps/web/src/features/chat/ui/{contour-background.tsx,use-widget-visibility.ts}` (comments, not
->      imports — deletion does NOT break the build) plus `OBI-WIDGET-DESIGN.md` / this PLAN. **On delete:**
->      tidy those two comment pointers and drop `OBI-WIDGET-DESIGN.md`'s "source of visual truth" line.
->    - **`docs/superpowers/specs/2026-08-10-confluence-source-scoping-design.md` (and the now-empty
->      `docs/superpowers/` folder):** a dated brainstorm/design spec, **already implemented** (Phase 3.5.6);
->      its content lives in `DESIGN.md §10`, `how_this_works.md`, and `OBI-RAG-SYSTEM-A-Z.md §14.4`. The
->      `docs/superpowers/` tree is a process/tooling scratch dir, not system docs. Referenced only by
->      `PLAN.md` + `DESIGN.md` (repoint those "design of record" links to `DESIGN.md §10` on delete).
->    - **BORDERLINE — operator call, not a default removal:** `docs/future-ideas/IDEAS.md` (≈ 42 KB) is
->      the un-built roadmap/backlog — strictly neither "what it does" nor "checking it works," but a
->      legitimate forward-looking doc cross-referenced by several ADRs and `PLAN.md §0`. **Recommend KEEP**
->      as the roadmap of record; listed only because it fails the strict test.
->    - Everything else in `docs/` passes one of the two tests and **stays**: the ADRs, `final_design/*`,
->      `DESIGN.md`, `how_this_works.md`, `OBI-WIDGET-DESIGN.md`, the `ingestion/*` + `retrieval/*` phase
->      files (mandated by root `CLAUDE.md`), `runbooks/*`, `PLAN.md` (the ledger), and `OBI-RAG-SYSTEM-A-Z.md`.
+> 0. **★ Phase 11.1c — Embedding Obi in another application (iframe loader + JWT edge binding). NEW,
+>    HEADLINE (scoped 2026-09-12) — the operator's chosen next feature.** Build the shareable embed so we
+>    can test end-to-end: `obi.js` loader + round button + `/embed` iframe frame; the platform hands a
+>    short **signed note (JWT)** at button-click; the backend verifies it (alg allow-list, JWKS-by-`kid`,
+>    `iss`∈`platforms.json`, `aud=obi`, `exp`) and builds one frozen `AuthContext` that drives **every**
+>    read (both GUCs). This is the **edge binding ADR-0014 deferred** — the verified `integration` claim
+>    replaces the caller-self-reported `knowledge_scope`, closing the last trusted-from-caller gap on the
+>    scope axis (the 11.1a DB backstop is the net beneath it). Retires the pilot `?access_token=` shared
+>    invite token. v1 is **integration-level only** (`principal` stays `None`, open pages only — operator
+>    decision 2026-09-11); token lifetime 60 min, issued at click. **Full spec (design of record):**
+>    [`docs/embedding/PHASE-11.1c-obi-embed-jwt-spec.md`](../embedding/PHASE-11.1c-obi-embed-jwt-spec.md).
+>    **Three drift/blocker flags captured there:** (a) the referenced `obi-rag-system-flow.html` /
+>    `obi-system-brief.md` are **not in the repo** — drop them in `docs/` or the spec stands alone; (b)
+>    **scope-slug drift** — the source prompt's bare tags (`mews`/`general`) would fail the startup rule
+>    against the live `obi-*-test` vocabulary; default is to map `integrations`→`obi-*-test` slugs with
+>    the platform key as the JWT wire value (confirm); (c) **needs migration `0010` live** (item 2) before
+>    the isolation done-when checks hard-enforce on staging/prod. **NEEDS THE OPERATOR** for: the Confluence
+>    test pages tagged per scope, the three platforms' hand-back values (issuer / JWKS URL / domains /
+>    integration value) — kept inactive until then — and test companies + a restricted-group test user.
+>    This is an **architectural** feature. **✅ Implementation plan written 2026-09-12** (task-by-task,
+>    TDD): [`docs/embedding/PHASE-11.1c-implementation-plan.md`](../embedding/PHASE-11.1c-implementation-plan.md)
+>    — 6 task groups (A backend verify+AuthContext / B thread+trace / C contracts / D frontend frame+loader
+>    / E test-hosts / F hand-over packs+ops). Scope-slug mapping drift #2 **CONFIRMED by operator 2026-09-12**
+>    (platform key → live `obi-*-test` slugs, config-only). Header collision resolved: user JWT rides
+>    `X-Obi-Token`, host key stays on `Authorization`. New deps: `pyjwt[crypto]` + migration `0011`
+>    (`query_trace.subject_hash`). **NEXT process step:** execute the plan (subagent-driven) — needs operator
+>    inputs below (apply `0010`/`0011` live, real platform issuer/JWKS/domains, test companies+restricted user).
+>    **Scope confirmed by operator 2026-09-12:** test-host pages = `none`, `mews`, `toast`, `opera-cloud`
+>    (swapped the spec's `mews-2` for `opera-cloud` → three-way isolation; the `company_id`-is-audit-only
+>    proof moves to a backend unit test); Confluence content = **reuse the existing four live `obi-*-test`
+>    pages** (no new content); **prepare all three platform hand-over packs + inactive `platforms.json`
+>    entries now**. Still needed from operator: (i) embed domain for staging/prod (`obi.omniboost.com`?)
+>    — local-only otherwise; (ii) apply `0010` live (item 2) before staging isolation checks hard-enforce.
+> 1. **Docs-folder cleanup — ✅ DONE 2026-09-12** (operator authorized deleting deprecated docs). Removed:
+>    - **`docs/rag/reference/obi-mockup/`** (whole folder, ≈ 425 KB — the original third-party UI mockup the
+>      widget was built from: reference art, not system docs). The two docstring provenance comments in
+>      `apps/web/src/features/chat/ui/{contour-background.tsx,use-widget-visibility.ts}` were repointed to
+>      `OBI-WIDGET-DESIGN.md`, and the mockup pointers in `OBI-WIDGET-DESIGN.md` / `OBI-RAG-SYSTEM-A-Z.md §10`
+>      / this PLAN were tidied. Empty parent `docs/rag/reference/` removed too. No build impact (comments only).
+>    - **`docs/superpowers/`** (whole tree — the dated `2026-08-10-confluence-source-scoping-design.md`
+>      brainstorm spec, already implemented in Phase 3.5.6; content lives in `DESIGN.md §10`,
+>      `how_this_works.md`, `OBI-RAG-SYSTEM-A-Z.md §14.4`). The `DESIGN.md` + `PLAN.md` pointers were repointed.
+>    - **KEPT** (operator call, recommended): `docs/future-ideas/IDEAS.md` — the roadmap of record,
+>      cross-referenced by several ADRs; not deprecated. Everything else in `docs/` stays (ADRs,
+>      `final_design/*`, `DESIGN.md`, `how_this_works.md`, `OBI-WIDGET-DESIGN.md`, `ingestion/*` + `retrieval/*`
+>      phase files, `runbooks/*`, `PLAN.md`, `OBI-RAG-SYSTEM-A-Z.md`, `embedding/*`).
 > 2. **Apply migration `0010` live** to Supabase — **NEEDS THE OPERATOR** (live DB change). From
 >    `apps/automation` with `.env` pointed at Supabase: `uv run alembic upgrade head` (advances the live
 >    head `0009`→`0010`), then `uv run python scripts/setup_supabase.py verify-isolation` — expect the
@@ -3132,8 +3155,7 @@ follow-up session before committing: `make boundaries` clean, `pytest -q` → 14
 errors/19 unformatted (within the ≤25/2 baseline), pyright 31 errors (exactly at baseline, none on
 touched files), migration 0004 round-tripped `head → -1 → head`. Followed
 `superpowers:brainstorming` end to end (clarifying questions → 2 approaches proposed → design
-presented in 3 sections, each approved → spec written to
-`docs/superpowers/specs/2026-08-10-confluence-source-scoping-design.md` → approved → built directly
+presented in 3 sections, each approved → design spec written and approved → built directly
 given the spec's completeness and the user's explicit go-ahead, skipping a separate `writing-plans`
 pass). **Did not block Phase 4.2** — this only touched ingestion scope config; 4.2 remains next.
 
@@ -3201,7 +3223,7 @@ OCR/image reading untouched.
 | **4.6** — fixes-backlog remediation (16 sub-steps + exit gate) | ✅ done | see "4.6 progress snapshot" (§0) for all 16 commit refs | independent same-day audit (`docs/rag/fixes/`) found a CRITICAL ACL bypass + a HIGH cross-principal leak + 12 more findings in already-"done" phases 0-4; all fixed, exit gate 4.6.16 green, 274 tests, no ruff/pyright regression; 4.6.2 live-verification still outstanding — Confluence token now works (blocker #3, fixed 2026-08-19) but no space is seeded and no live sync has actually run yet, does not gate anything |
 | **5** (remaining) — 5.4 live-LLM red-team + latency/cost proof, embedder bake-off, adaptive routing | ⬜ todo (unblocked by 4.6; Confluence token fixed 2026-08-19, still blocked on API spend go-ahead + `VOYAGE_API_KEY`) | — | 5.4 needs real API calls/spend (go-ahead not yet given); bake-off still blocked on `VOYAGE_API_KEY` (not in `.env`) |
 | **6** — Supabase Cloud (on AWS) vector store migration & deploy | ⬜ **todo — NEXT (user, 2026-09-07)** | — | prod target = **Supabase Cloud in an AWS region** (RDS/Aurora = documented fallback); needs writer+reader DSNs (session-pooler/direct :5432) + pgvector ≥ 0.8 (blocker #8); first tasks ADR-0013 + the FORCE-RLS fix (`schema.py:60`, needed on Supabase too — no superuser) |
-| **4.7** — Obi widget: chat UI rebuild, brand tokens, screenshot capture, real i18n, `/chat` route removed, image lightbox (4.7.8) | ✅ done, **committed** | `206baab` (first sub-step), `aae90e5` (4.7.2-4.7.6), `bf99635` (rest, incl. 4.7.8 + the test-gap closure) | frontend-only, `apps/web`; does not gate Phase 5; source of truth `docs/rag/reference/obi-mockup/` + `docs/rag/OBI-WIDGET-DESIGN.md` |
+| **4.7** — Obi widget: chat UI rebuild, brand tokens, screenshot capture, real i18n, `/chat` route removed, image lightbox (4.7.8) | ✅ done, **committed** | `206baab` (first sub-step), `aae90e5` (4.7.2-4.7.6), `bf99635` (rest, incl. 4.7.8 + the test-gap closure) | frontend-only, `apps/web`; does not gate Phase 5; as-built source of truth `docs/rag/OBI-WIDGET-DESIGN.md` (the mockup reference art was removed 2026-09-12) |
 | **4.8** — Frontend/backend repository separation | **moved to `docs/future-ideas/IDEAS.md` #5 (2026-08-12)** | — | re-deferred per `docs/adr/0010-Redefer-Repository-Separation.md`; no longer part of this plan |
 | **7** — Vision-grounded image analysis (attachments + screenshot capture) | ✅ **done (2026-08-12), all 8 sub-steps closed** | `eb30837` (7.1), `7ffd916` (7.2), `12db45a` (7.3+7.4), `1398e64` (7.5); 7.6 is a verification pass, no commit (no code changed); 7.7/7.8 docs+fixes, no commit yet | supersedes `docs/future-ideas/IDEAS.md` #3; ADR-0009 + DESIGN.md §12 lock the contract shape (`ChatTurn.images`, `Answer.imageAnalysis`, no new SSE event), the `has_image` refusal gate, and the independent (never citation-enforced) vision call; 7.6's live adversarial red-team found zero injection compliance, caps enforced live; 7.7 re-ran the full gate with zero regressions and closed ADR-0009; **7.8 found and fixed 5 stacked, user-reported bugs** in a "triple-check the feature" pass — a pre-image-era proxy body-size ceiling (413), a proxy content-length check that rejected genuine image-only turns (400), a backend crash embedding an empty query (uncaught `EmbeddingError`), Anthropic itself rejecting an empty text content block (400), and — found only once real browser testing replaced curl repros — the same content-length check breaking again on any *later* turn once an earlier image-only turn aged out and lost both its content and its image; all five found by fixing one, re-testing, and hitting the next one underneath |
 | **9** — Unanswerable/vague-query fallback (9.1 → 9.9) | ✅ **done (2026-08-13), all 9 sub-steps closed** (9.1 `771cfce`; 9.2-9.7 across `ba5416a`/`d20257c`/`f9ed445`/`10947d8`/`8e1450a`; 9.8 `34706e1`; 9.9 docs-only, not yet committed) — dead last, no phase follows | — | supersedes `docs/future-ideas/IDEAS.md` #1; ADR-0008 + DESIGN.md §11 lock the contract shape (extend `Answer`, no new SSE event), the 3-value refusal-reason taxonomy, and eval-kind reuse — **all 9 decisions confirmed matching shipped code at 9.9, ADR-0008 closed as-is**; ambiguity/vagueness classifier + clarification response, differentiated refusal reasons, human-hand-off stub (Salesforce noted as eventual target), fallback-quality eval metrics, live+deterministic red-team (9.8, zero findings); MMR/diversity filtering and any new vector store explicitly out of scope |
@@ -4515,8 +4537,8 @@ gate** — they remain separately blocked on real API spend and a live Confluenc
 ## Phase 4.7 — Obi widget (chat UI) ✅ done, test gap closed, committed *(independent; does not gate Phase 5)*
 
 **What this phase built:** replaced `apps/web`'s chat UI with a pixel-accurate rebuild of the
-user-supplied Obi mockup (`docs/rag/reference/obi-mockup/Obi Assistant.dc.html`, a proprietary
-prototyping-tool export — design/interaction reference only, no reusable code, no real backend).
+user-supplied Obi mockup (a proprietary prototyping-tool export — design/interaction reference
+only, no reusable code, no real backend; the mockup files were removed 2026-09-12 as reference art).
 The floating widget (launcher → teaser → panel) is now the **only** chat surface in `apps/web` —
 the old standalone full-page `/chat` route existed for most of this phase and was removed at the
 end once the widget covered everything it did. This section is the ledger's as-built summary,

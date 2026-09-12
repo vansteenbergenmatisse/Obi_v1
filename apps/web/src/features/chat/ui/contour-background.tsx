@@ -1,6 +1,7 @@
 /**
- * ContourBackground — the message thread's ambient wavy-line decoration (pixel-exact reference:
- * `docs/rag/reference/obi-mockup/Obi Assistant.dc.html`'s body SVG, `stroke: #edeff6`).
+ * ContourBackground — the message thread's ambient wavy-line decoration (a pixel-exact copy of
+ * the original Obi mockup's body SVG, `stroke: #edeff6`; the mockup was reference art and has been
+ * removed — the as-built widget doc is `docs/rag/OBI-WIDGET-DESIGN.md`).
  *
  * Pure decoration, no state, no behavior — feature-internal, used once by `panel-body.tsx`.
  * `pointer-events: none` so it never intercepts clicks/scroll from the message list above it.

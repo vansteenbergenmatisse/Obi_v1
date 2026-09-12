@@ -455,9 +455,9 @@ Two things worth knowing that weren't obvious from the original design note:
   former is unrestricted (today's default); the latter restricts to the empty set, so deactivating
   a space's last root purges everything it covered rather than silently reverting to unrestricted.
 
-Full schema, resolver contract, reconciliation integration, and test plan are in
-`docs/superpowers/specs/2026-08-10-confluence-source-scoping-design.md`; status/decision history is
-in `docs/rag/PLAN.md` §0.
+Full schema, resolver contract, reconciliation integration, and test plan are covered in this
+section (§10), `how_this_works.md`, and `OBI-RAG-SYSTEM-A-Z.md §14.4`; the original design spec was
+removed as implemented (2026-09-12). Status/decision history is in `docs/rag/PLAN.md` §0.
 
 ## 11. Ambiguity clarification and fallback — implemented (PLAN Phase 9)
 
