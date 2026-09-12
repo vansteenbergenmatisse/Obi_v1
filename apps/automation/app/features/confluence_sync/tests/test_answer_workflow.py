@@ -11,13 +11,19 @@ import re
 
 from sqlalchemy import text
 
-from app.features.rag_agent import AnswerService, ChatMessage
+from app.features.rag_agent import AnswerService, AuthContext, ChatMessage
 from app.features.retrieval import HybridRetriever
 from app.platform.clients import build_embedding_provider, build_reranker
 from app.platform.config import Settings
 from app.platform.db.engine import get_reader_sessionmaker, get_sessionmaker
 
 from .test_retrieval_eval import _build_policy, _index_corpus
+
+
+def _auth(
+    principal: str | None = None, scopes: tuple[str, ...] = ("obi-general-test",)
+) -> AuthContext:
+    return AuthContext(None, None, None, scopes, ("confluence:default",), principal, None)
 
 
 class _EchoRewriter:
@@ -111,7 +117,7 @@ def test_answer_service_grounds_a_cited_answer_end_to_end(gateway, settings: Set
     )
 
     question = "How do I request access to core systems when I join?"
-    answer = service.answer([ChatMessage(role="user", content=question)], scope="100")
+    answer = service.answer([ChatMessage(role="user", content=question)], _auth(principal="100"))
 
     assert not answer.refused
     assert answer.citations
@@ -142,7 +148,8 @@ def test_answer_service_refuses_when_source_scope_excludes_everything(
     )
 
     answer = service.answer(
-        [ChatMessage(role="user", content="How do I request access to core systems?")], scope="100"
+        [ChatMessage(role="user", content="How do I request access to core systems?")],
+        _auth(principal="100"),
     )
 
     assert answer.refused
@@ -157,7 +164,7 @@ def test_answer_service_refuses_when_generator_cites_nothing(gateway, settings: 
     )
 
     question = "How do I request access to core systems when I join?"
-    answer = service.answer([ChatMessage(role="user", content=question)], scope="100")
+    answer = service.answer([ChatMessage(role="user", content=question)], _auth(principal="100"))
 
     assert answer.refused
     assert answer.refusal_reason == "no_citations"
@@ -181,7 +188,7 @@ def test_answer_service_small_talk_skips_retrieval_even_with_a_real_indexed_corp
         get_sessionmaker(),
     )
 
-    answer = service.answer([ChatMessage(role="user", content="hi")], scope="100")
+    answer = service.answer([ChatMessage(role="user", content="hi")], _auth(principal="100"))
 
     assert answer.text == "Hi! Ask me anything about the documentation."
     assert not answer.refused

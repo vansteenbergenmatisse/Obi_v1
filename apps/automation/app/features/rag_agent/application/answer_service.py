@@ -73,6 +73,7 @@ from typing import Protocol, runtime_checkable
 
 from sqlalchemy.orm import Session
 
+from app.features.rag_agent.application.auth_context import AuthContext
 from app.features.rag_agent.domain.citations import enforce_citations
 from app.features.rag_agent.domain.clarification import AmbiguityClassifier, decide_clarification
 from app.features.rag_agent.domain.curated_knowledge import CuratedEntry, curated_entry_to_hit
@@ -85,7 +86,6 @@ from app.features.rag_agent.schemas import Answer, ChatMessage, Citation
 from app.features.retrieval import (
     HybridRetriever,
     RetrievalResult,
-    resolve_allowed_scopes,
     update_query_trace_answer,
 )
 from app.platform.logging import get_logger
@@ -118,11 +118,14 @@ _REFUSAL_COPY: dict[RefusalReason, str] = {
 @runtime_checkable
 class AnswerProvider(Protocol):
     """The shape `POST /chat` depends on — satisfied by `AnswerService` itself and by
-    `answer_cache.CachingAnswerService`, which wraps one `AnswerProvider` around another."""
+    `answer_cache.CachingAnswerService`, which wraps one `AnswerProvider` around another.
 
-    def answer(
-        self, history: Sequence[ChatMessage], scope: str | None, knowledge_scope: str | None = None
-    ) -> Answer: ...
+    PLAN 11.1c (ADR-0014): the read path is driven by a single frozen `AuthContext` (built from a
+    verified edge JWT, or the general-only tokenless context) instead of a caller-reported
+    `knowledge_scope` string — `auth.allowed_scopes` are the authoritative retrieval scopes and
+    `auth.principal` the page-ACL identity (always `None` for embedded users in v1)."""
+
+    def answer(self, history: Sequence[ChatMessage], auth: AuthContext) -> Answer: ...
 
 
 class AnswerService:
@@ -162,12 +165,7 @@ class AnswerService:
         self._reader_sessionmaker = reader_sessionmaker
         self._curated_knowledge_max_entries = curated_knowledge_max_entries
 
-    def answer(
-        self,
-        history: Sequence[ChatMessage],
-        scope: str | None,
-        knowledge_scope: str | None = None,
-    ) -> Answer:
+    def answer(self, history: Sequence[ChatMessage], auth: AuthContext) -> Answer:
         if not history or history[-1].role != "user":
             raise ValueError("history must be non-empty and end with a user turn")
         original_query = history[-1].content
@@ -200,24 +198,13 @@ class AnswerService:
                     clarification_options=reply.options,
                 )
 
-        # PLAN 10.5, ADR-0011 decision 6: resolved once per request, not per-retrieval-attempt — the
-        # CRAG retry below reuses the same allow-list, it never re-resolves it. Hoisted above the
-        # query/no-query split (PLAN 10.6): the always-present curated layer needs it on the
-        # text-empty/image-only path too, which never retrieves but still composes curated evidence.
-        allowed_scopes = resolve_allowed_scopes(
-            knowledge_scope, self._recognized_knowledge_scopes, self._default_knowledge_scope
-        )
-        requested_scope_unrecognized = (
-            knowledge_scope is not None
-            and knowledge_scope.lower() not in self._recognized_knowledge_scopes
-        )
-        if requested_scope_unrecognized:
-            # `resolve_allowed_scopes`'s own docstring: "The caller logs the degradation."
-            log.info(
-                "knowledge_scope_unrecognized",
-                requested=knowledge_scope,
-                resolved_scopes=allowed_scopes,
-            )
+        # PLAN 11.1c (ADR-0014): scopes come from the verified edge identity, never a caller-
+        # reported string. Resolved once per request (the registry already guarantees
+        # obi-general-test is included) — the CRAG retry below reuses this same allow-list, and the
+        # always-present curated layer needs it on the text-empty/image-only path too. `scope` is
+        # the page-ACL principal (always None for embedded users in v1).
+        allowed_scopes = list(auth.allowed_scopes)
+        scope = auth.principal
 
         if original_query.strip():
             rewritten = self._rewriter.rewrite(history) if self._rewrite_enabled else original_query

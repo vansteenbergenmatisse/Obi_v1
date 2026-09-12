@@ -141,11 +141,19 @@ from sqlalchemy.orm import Session
 from starlette.responses import StreamingResponse
 
 from app.features.rag_agent.application.answer_service import AnswerProvider
+from app.features.rag_agent.application.auth_context import (
+    AuthContext,
+    UnknownIntegrationError,
+    build_auth_context,
+    general_only_context,
+)
 from app.features.rag_agent.schemas import Answer, ChatMessage, Citation
+from app.features.rag_agent.server.token_verifier import TokenError, TokenVerifier
 from app.features.retrieval import update_query_trace_feedback
 from app.platform.config import Settings
 from app.platform.db.engine import session_scope
 from app.platform.logging import get_logger
+from app.shared.hashing import sha256_text
 from app.shared.rate_limiter import SlidingWindowRateLimiter
 from app.shared.ttl_cache import TTLCache
 
@@ -156,6 +164,9 @@ router = APIRouter(tags=["chat"])
 _AUTH_HEADER = "authorization"
 _BEARER_PREFIX = "Bearer "
 _IDEMPOTENCY_HEADER = "idempotency-key"
+# PLAN 11.1c (ADR-0014): the platform-signed user JWT rides its own header so it never collides
+# with the host `chat_api_key` on `Authorization`. Verified into an AuthContext that drives scope.
+_OBI_TOKEN_HEADER = "x-obi-token"
 
 # PLAN 10.5 (ADR-0011 decision 6): a short lowercase slug shape — not a whitelist.
 # `resolve_allowed_scopes` already degrades an unrecognized-but-well-shaped value to
@@ -224,6 +235,50 @@ def get_answer_service_dep(request: Request) -> AnswerProvider:
     return request.app.state.answer_service
 
 
+def get_token_verifier_dep(request: Request) -> TokenVerifier:
+    """The singleton `TokenVerifier` built once at app startup from `settings.platform_registry`
+    (`main.create_app`), PLAN 11.1c."""
+    return request.app.state.token_verifier
+
+
+def _resolve_auth_context(
+    request: Request, settings: Settings, verifier: TokenVerifier
+) -> AuthContext:
+    """PLAN 11.1c (ADR-0014). Turn the platform-signed `X-Obi-Token` into the frozen `AuthContext`
+    that drives scope. No token -> the general-only context (the tokenless internal/eval path, and
+    the pilot fallback while platforms are still being onboarded). A present-but-invalid token, or a
+    verified-but-unknown integration, is a bare 401 — no detail leaked about which check failed."""
+    raw = request.headers.get(_OBI_TOKEN_HEADER, "")
+    if not raw:
+        return general_only_context()
+    try:
+        claims = verifier.verify(raw)
+        return build_auth_context(claims, settings.platform_registry)
+    except (TokenError, UnknownIntegrationError) as exc:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token") from exc
+
+
+def _validate_body_knowledge_scope(
+    body: ChatRequestBody, auth: AuthContext, settings: Settings
+) -> None:
+    """PLAN 11.1c: the body `knowledge_scope` is NO LONGER authoritative — the verified token drives
+    scope. A well-shaped body scope that is not even a recognized slug is a 400 (before any search);
+    a recognized slug that simply disagrees with the token's scopes is logged once and ignored (the
+    token always wins). The value never reaches retrieval either way."""
+    requested = body.knowledge_scope
+    if requested is None:
+        return
+    normalized = requested.lower()
+    if normalized not in settings.knowledge_scope_set:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "unknown knowledge scope")
+    if normalized not in auth.allowed_scopes:
+        log.info(
+            "body_knowledge_scope_ignored",
+            requested=normalized,
+            token_scopes=list(auth.allowed_scopes),
+        )
+
+
 def get_writer_db() -> Iterator[Session]:
     with session_scope() as session:
         yield session
@@ -267,11 +322,14 @@ def _verify_api_key(request: Request, settings: Settings) -> None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid or missing API key")
 
 
-def _rate_limit_key(request: Request) -> str:
-    """Client IP only (PLAN 4.6.4 fix). A caller-reported `principal` is untrusted free text — an
-    earlier version keyed on it when present, so any caller could defeat the limit outright by
-    sending a different `principal` on every request; IP is the one dimension the caller cannot
-    freely rotate at will."""
+def _rate_limit_key(request: Request, auth: AuthContext | None = None) -> str:
+    """PLAN 11.1c (C2): prefer the *verified* token subject — `sub:<sha256(subject)>` — so an
+    embedded user is limited per real identity, not per shared proxy IP. The subject is hashed, so
+    the limiter's key space never holds the raw subject. Falls back to client IP when there is no
+    token (PLAN 4.6.4: a caller-reported principal was never trusted as a key, since it is freely
+    rotatable free text — only the cryptographically-verified `sub` is)."""
+    if auth is not None and auth.token_subject:
+        return "sub:" + sha256_text(auth.token_subject).hex()
     client_ip = request.client.host if request.client else "unknown"
     return f"ip:{client_ip}"
 
@@ -309,24 +367,25 @@ def _validate_history(body: ChatRequestBody, settings: Settings) -> None:
 
 def _idempotency_cache_key(
     idempotency_key: str,
-    principal: str | None,
+    auth: AuthContext,
     history: list[ChatMessage],
-    knowledge_scope: str | None = None,
 ) -> str:
-    """Binds the caller-supplied `Idempotency-Key` header to a hash of
-    `(principal, history, knowledge_scope)` so a replay of the same header value with a
-    *different* principal, history, or knowledge_scope is never served the first caller's cached
-    `Answer` (PLAN 4.6.3 fix, extended PLAN 10.5 — mirrors `answer_cache._cache_key`'s same
-    binding, without which the raw header alone was the whole cache key)."""
+    """Binds the caller-supplied `Idempotency-Key` header to a hash of the verified edge identity
+    `(principal, allowed_scopes, token_subject)` + full history, so a replay of the same header
+    value with a different identity, scope allow-list, or history is never served the first
+    caller's cached `Answer` (PLAN 4.6.3 fix, extended PLAN 10.5, re-bound to AuthContext in
+    PLAN 11.1c — mirrors `answer_cache._cache_key`; the raw token is never part of the key)."""
     turns = [(m.role, m.content) for m in history]
     payload = (
         idempotency_key
         + "|"
         + json.dumps(turns, separators=(",", ":"))
         + "|"
-        + (principal or "")
+        + (auth.principal or "")
         + "|"
-        + (knowledge_scope or "")
+        + ",".join(auth.allowed_scopes)
+        + "|"
+        + (auth.token_subject or "")
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -349,13 +408,12 @@ async def _stream_answer(
     settings: Settings,
     cache: TTLCache[str, Answer],
     idempotency_key: str | None,
+    auth: AuthContext,
 ) -> AsyncIterator[str]:
     yield _sse({"type": "start", "conversationId": conversation_id})
 
     cache_key = (
-        _idempotency_cache_key(idempotency_key, body.principal, body.history, body.knowledge_scope)
-        if idempotency_key
-        else None
+        _idempotency_cache_key(idempotency_key, auth, body.history) if idempotency_key else None
     )
     cached = cache.get(cache_key) if cache_key else None
     if cached is not None:
@@ -369,7 +427,7 @@ async def _stream_answer(
     else:
         started = time.perf_counter()
         try:
-            answer = service.answer(body.history, body.principal, body.knowledge_scope)
+            answer = service.answer(body.history, auth)
         except Exception as exc:  # generation failure surfaces as an SSE error, not a 5xx —
             # the stream already committed to a 200 response by the time this runs.
             log.error("chat_answer_failed", conversation_id=conversation_id, error=str(exc))
@@ -431,21 +489,28 @@ async def post_chat(
     body: ChatRequestBody,
     settings: Settings = Depends(get_settings_dep),  # noqa: B008 — FastAPI dependency idiom
     service: AnswerProvider = Depends(get_answer_service_dep),  # noqa: B008
+    verifier: TokenVerifier = Depends(get_token_verifier_dep),  # noqa: B008
 ) -> StreamingResponse:
+    # Order is deliberate (PLAN 11.1c): host key FIRST (gates the endpoint), then verify the user
+    # token into an AuthContext (may 401), then rate-limit keyed on the verified subject, then
+    # validate the body. Kept in-body rather than as chained Depends so this order is explicit.
     _verify_api_key(request, settings)
 
+    auth = _resolve_auth_context(request, settings, verifier)
+
     limiter = _chat_rate_limiter(request, settings)
-    if not limiter.allow(_rate_limit_key(request)):
+    if not limiter.allow(_rate_limit_key(request, auth)):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "rate limited")
 
     _validate_history(body, settings)
+    _validate_body_knowledge_scope(body, auth, settings)
 
     conversation_id = body.conversation_id or _new_conversation_id()
     idempotency_key = request.headers.get(_IDEMPOTENCY_HEADER)
     cache = _idempotency_cache(request, settings)
 
     return StreamingResponse(
-        _stream_answer(conversation_id, body, service, settings, cache, idempotency_key),
+        _stream_answer(conversation_id, body, service, settings, cache, idempotency_key, auth),
         media_type="text/event-stream",
     )
 

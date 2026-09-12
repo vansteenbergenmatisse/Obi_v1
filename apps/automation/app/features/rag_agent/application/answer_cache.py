@@ -36,6 +36,7 @@ import json
 from collections.abc import Sequence
 
 from app.features.rag_agent.application.answer_service import AnswerProvider
+from app.features.rag_agent.application.auth_context import AuthContext
 from app.features.rag_agent.schemas import Answer, ChatMessage
 from app.platform.logging import get_logger
 from app.shared.ttl_cache import TTLCache
@@ -43,16 +44,20 @@ from app.shared.ttl_cache import TTLCache
 log = get_logger("rag_agent.answer_cache")
 
 
-def _cache_key(
-    history: Sequence[ChatMessage], scope: str | None, knowledge_scope: str | None
-) -> str:
+def _cache_key(history: Sequence[ChatMessage], auth: AuthContext) -> str:
+    """PLAN 11.1c (ADR-0014): the key binds the full history to the verified edge identity —
+    `principal` (page-ACL), `allowed_scopes` (knowledge scope), and `token_subject`. A cache hit
+    can therefore never cross a principal, a scope allow-list, or a subject boundary; the raw
+    token is never part of the key (only its verified subject)."""
     turns = [(m.role, m.content) for m in history]
     payload = (
         json.dumps(turns, separators=(",", ":"))
         + "|"
-        + (scope or "")
+        + (auth.principal or "")
         + "|"
-        + (knowledge_scope or "")
+        + ",".join(auth.allowed_scopes)
+        + "|"
+        + (auth.token_subject or "")
     )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
@@ -70,17 +75,12 @@ class CachingAnswerService:
         self._inner = inner
         self._cache: TTLCache[str, Answer] = TTLCache(ttl_seconds, max_entries)
 
-    def answer(
-        self,
-        history: Sequence[ChatMessage],
-        scope: str | None,
-        knowledge_scope: str | None = None,
-    ) -> Answer:
-        key = _cache_key(history, scope, knowledge_scope)
+    def answer(self, history: Sequence[ChatMessage], auth: AuthContext) -> Answer:
+        key = _cache_key(history, auth)
         cached = self._cache.get(key)
         if cached is not None:
             log.info("chat_answer_cache_hit", trace_id=cached.trace_id)
             return cached
-        result = self._inner.answer(history, scope, knowledge_scope)
+        result = self._inner.answer(history, auth)
         self._cache.set(key, result)
         return result

@@ -15,12 +15,19 @@ from app.features.evaluation import (
     fallback_rate,
     load_dataset,
 )
-from app.features.rag_agent import AnswerService, ChatMessage, ClarificationReply
+from app.features.rag_agent import AnswerService, AuthContext, ChatMessage, ClarificationReply
 from app.platform.config import Settings
 from app.platform.db.engine import get_sessionmaker
 
 from .test_answer_workflow import _build_retriever, _CitingGenerator, _EchoRewriter
 from .test_retrieval_eval import _index_corpus
+
+
+def _auth(principal: str | None = None) -> AuthContext:
+    return AuthContext(
+        None, None, None, ("obi-general-test",), ("confluence:default",), principal, None
+    )
+
 
 _DATASETS = datasets_dir()
 
@@ -70,7 +77,9 @@ def test_ambiguity_dataset_cases_trigger_clarification_end_to_end(
 
     fell_back: list[bool] = []
     for case in dataset.cases:
-        answer = service.answer([ChatMessage(role="user", content=case.question)], scope=case.scope)
+        answer = service.answer(
+            [ChatMessage(role="user", content=case.question)], _auth(principal=case.scope)
+        )
         assert answer.needs_clarification is True, case.id
         assert answer.clarification_question
         assert answer.refused is False
@@ -109,7 +118,9 @@ def test_out_of_corpus_case_refuses_not_clarifies_or_hallucinates(
         # refusal, not get relabelled as ambiguous just because the query happens to be short.
     )
 
-    answer = service.answer([ChatMessage(role="user", content=case.question)], scope=case.scope)
+    answer = service.answer(
+        [ChatMessage(role="user", content=case.question)], _auth(principal=case.scope)
+    )
 
     assert answer.refused is True
     assert answer.refusal_reason == "no_candidates"
@@ -133,7 +144,9 @@ def test_citation_grounding_rate_on_a_real_grounded_answer(gateway, settings: Se
         # generator's "cite every marker in the evidence block" behavior stays a fair proxy for a
         # real generator that only cites what it was actually given.
     )
-    answer = service.answer([ChatMessage(role="user", content=case.question)], scope=case.scope)
+    answer = service.answer(
+        [ChatMessage(role="user", content=case.question)], _auth(principal=case.scope)
+    )
 
     assert not answer.refused
     cited_ids = [c.page_id for c in answer.citations]

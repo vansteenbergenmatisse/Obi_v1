@@ -31,6 +31,7 @@ from app.features.rag_agent import (
     AnthropicAnswerGenerator,
     AnthropicQueryRewriter,
     CachingAnswerService,
+    TokenVerifier,
 )
 from app.features.rag_agent import router as chat_router
 from app.features.retrieval import HybridRetriever, PrincipalPermissionPolicy
@@ -185,6 +186,10 @@ def create_app(*, settings: Settings | None = None, start_scheduler: bool | None
         ttl_seconds=settings.chat_answer_cache_ttl_seconds,
         max_entries=settings.chat_answer_cache_max_entries,
     )
+    # PLAN 11.1c (ADR-0014): the /chat token verifier, built once from the platform registry.
+    # Touching settings.platform_registry here is also the fail-fast startup check (bad
+    # platforms.json -> boot fails, never fails open to an unverified caller).
+    app.state.token_verifier = TokenVerifier(settings.platform_registry)
     app.include_router(confluence_router)
     app.include_router(chat_router)
 

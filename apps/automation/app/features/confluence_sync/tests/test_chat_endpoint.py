@@ -16,8 +16,10 @@ from app.features.rag_agent import (
     Answer,
     AnswerProvider,
     AnswerService,
+    AuthContext,
     CachingAnswerService,
     ClarificationReply,
+    VerifiedClaims,
     chat_router_module,
 )
 from app.main import create_app
@@ -55,6 +57,26 @@ def _client_with_service(settings: Settings, service: AnswerProvider) -> TestCli
 
 def _auth() -> dict[str, str]:
     return {"authorization": f"Bearer {_API_KEY}"}
+
+
+class _StubTokenVerifier:
+    """Test double for `TokenVerifier` (PLAN 11.1c): maps a raw `X-Obi-Token` value to a
+    `VerifiedClaims`, a raised `TokenError`, or (default) a subject-only claim whose subject is the
+    header value itself. Set as `app.state.token_verifier` to drive the /chat auth path
+    deterministically without real JWT signing/JWKS."""
+
+    def __init__(self, claims_by_token: dict[str, object] | None = None) -> None:
+        self._claims = claims_by_token or {}
+
+    def verify(self, raw: str) -> VerifiedClaims:
+        mapped = self._claims.get(raw)
+        if isinstance(mapped, Exception):
+            raise mapped
+        if isinstance(mapped, VerifiedClaims):
+            return mapped
+        return VerifiedClaims(
+            issuer="test-iss", subject=raw, company_id=None, company_name=None, integration=None
+        )
 
 
 def _parse_sse(body: str) -> list[dict]:
@@ -241,18 +263,26 @@ def test_image_within_caps_is_accepted_and_analysis_reaches_the_done_event(
 
 
 class _SpyAnswerService:
-    """PLAN 10.5: records exactly what `POST /chat` forwards into `AnswerService.answer` — used to
-    prove `knowledge_scope` reaches the service call without needing a real scoped corpus."""
+    """PLAN 11.1c (ADR-0014): records the AuthContext `POST /chat` forwards into
+    `AnswerService.answer` — proves the *verified token* (not the request body) drives scope,
+    without needing a real scoped corpus. The per-integration token->scope resolution itself is
+    proven in test_router_auth_context.py; here we only prove the tokenless/body-ignored path."""
 
     def __init__(self) -> None:
-        self.calls: list[tuple[object, str | None, str | None]] = []
+        self.calls: list[AuthContext] = []
 
-    def answer(self, history, scope, knowledge_scope=None):
-        self.calls.append((history, scope, knowledge_scope))
+    def answer(self, history, auth: AuthContext):
+        self.calls.append(auth)
         return Answer(text="ok", refused=False, trace_id="1")
 
 
-def test_knowledge_scope_is_forwarded_to_the_answer_service(gateway, settings: Settings) -> None:
+def test_tokenless_request_forwards_general_only_and_ignores_body_scope(
+    gateway, settings: Settings
+) -> None:
+    """PLAN 11.1c: with no X-Obi-Token the service receives the general-only context, and a body
+    `knowledge_scope` is NOT authoritative — it never reaches the service as scope (the verified
+    token is the only scope source; token integration->scope resolution is covered by
+    test_router_auth_context.py)."""
     chat_settings = _chat_settings(settings)
     spy = _SpyAnswerService()
     client = _client_with_service(chat_settings, spy)
@@ -264,20 +294,8 @@ def test_knowledge_scope_is_forwarded_to_the_answer_service(gateway, settings: S
     )
 
     assert resp.status_code == 200
-    assert spy.calls[0][2] == "obi-mews-test"
-
-
-def test_omitted_knowledge_scope_forwards_none(gateway, settings: Settings) -> None:
-    chat_settings = _chat_settings(settings)
-    spy = _SpyAnswerService()
-    client = _client_with_service(chat_settings, spy)
-
-    resp = client.post(
-        "/chat", json={"history": [{"role": "user", "content": "hi"}]}, headers=_auth()
-    )
-
-    assert resp.status_code == 200
-    assert spy.calls[0][2] is None
+    assert spy.calls[0].allowed_scopes == ("obi-general-test",)
+    assert spy.calls[0].token_subject is None
 
 
 def test_malformed_knowledge_scope_is_rejected(gateway, settings: Settings) -> None:
@@ -298,27 +316,16 @@ def test_malformed_knowledge_scope_is_rejected(gateway, settings: Settings) -> N
     assert resp.status_code == 422
 
 
+# PLAN 11.1c (ADR-0014): the pre-existing "principal" and "knowledge_scope" cases are gone — body
+# principal is now ignored and body knowledge_scope no longer affects scope, so a tokenless replay
+# differing only by those fields legitimately shares the (general-only, no-subject) AuthContext and
+# is a correct cache hit, not a leak. The AuthContext-keyed idempotency binding (principal, scopes,
+# token_subject) is unit-covered in test_answer_cache.py; token-subject differentiation at the HTTP
+# layer is covered by test_router_auth_context.py. The "history" case remains meaningful here.
 _IDEMPOTENCY_REPLAY_CASES = {
-    "principal": (
-        {
-            "history": [{"role": "user", "content": "How do I request access?"}],
-            "principal": "acct-alice",
-        },
-        {
-            "history": [{"role": "user", "content": "How do I request access?"}],
-            "principal": "acct-bob",
-        },
-    ),
     "history": (
         {"history": [{"role": "user", "content": "How do I request access?"}]},
         {"history": [{"role": "user", "content": "A completely different question?"}]},
-    ),
-    "knowledge_scope": (
-        {"history": [{"role": "user", "content": "How do I request access?"}]},
-        {
-            "history": [{"role": "user", "content": "How do I request access?"}],
-            "knowledge_scope": "obi-mews-test",
-        },
     ),
 }
 
@@ -651,23 +658,29 @@ def test_answer_cache_replays_without_rerunning_retrieval(gateway, settings: Set
     assert first[-1]["traceId"] == second[-1]["traceId"]
 
 
-def test_answer_cache_does_not_cross_principal_boundary(gateway, settings: Settings) -> None:
+def test_answer_cache_does_not_cross_token_subject_boundary(gateway, settings: Settings) -> None:
+    """PLAN 11.1c (ADR-0014): the answer cache is keyed off the verified AuthContext, so two
+    different token subjects never share a cached answer. (Body `principal` is ignored now — the
+    pre-11.1c body-principal variant of this test was removed; identity comes from the token.)"""
     _index_corpus(gateway, settings)
     chat_settings = _chat_settings(settings)
     cached_service = CachingAnswerService(
         _grounded_service(gateway, chat_settings), ttl_seconds=60.0
     )
-    client = _client_with_service(chat_settings, cached_service)
+    app = create_app(settings=chat_settings, start_scheduler=False)
+    app.state.answer_service = cached_service
+    app.state.token_verifier = _StubTokenVerifier()  # default: subject == the header value
+    client = TestClient(app)
 
-    body_template = {"history": [{"role": "user", "content": "How do I request access?"}]}
-    alice = _parse_sse(
-        client.post("/chat", json={**body_template, "principal": "alice"}, headers=_auth()).text
+    body = {"history": [{"role": "user", "content": "How do I request access?"}]}
+    user_a = _parse_sse(
+        client.post("/chat", json=body, headers={**_auth(), "x-obi-token": "user-a"}).text
     )
-    bob = _parse_sse(
-        client.post("/chat", json={**body_template, "principal": "bob"}, headers=_auth()).text
+    user_b = _parse_sse(
+        client.post("/chat", json=body, headers={**_auth(), "x-obi-token": "user-b"}).text
     )
 
-    assert alice[-1]["traceId"] != bob[-1]["traceId"]
+    assert user_a[-1]["traceId"] != user_b[-1]["traceId"]
 
 
 def test_create_app_wires_the_answer_cache_by_default(settings: Settings) -> None:

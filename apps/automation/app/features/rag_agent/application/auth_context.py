@@ -16,9 +16,16 @@ degrades to general-only (not refused); an unknown integration raises `UnknownIn
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
-from app.features.rag_agent.server.token_verifier import VerifiedClaims
 from app.platform.config.platforms import PlatformRegistry
+
+if TYPE_CHECKING:
+    # Imported for typing only: importing server.token_verifier at runtime would pull in
+    # server/__init__ -> router -> answer_service (which imports THIS module), a circular import.
+    # `from __future__ import annotations` keeps the `claims: VerifiedClaims` hint a string, and
+    # build_auth_context only ever touches attributes on the passed object at runtime.
+    from app.features.rag_agent.server.token_verifier import VerifiedClaims
 
 _GENERAL = "obi-general-test"
 # v1: every platform reads the same source; AuthContext carries it for the future source axis, but
