@@ -4,6 +4,13 @@
  * Speaks the wire contract from `@omniboost/contracts` against this app's own `/api/chat`
  * route (which proxies to the Python automation API). SSE parsing lives here so the UI only
  * ever sees typed events, never raw stream bytes.
+ *
+ * PLAN 11.1c (ADR-0014): the pilot invite-token header is retired. When this client runs inside
+ * the Obi `/embed` frame, `getToken()` (features/embed) returns the platform-signed user JWT
+ * handed over by the host's `obi.js` loader via `postMessage`; it rides on `Authorization: Bearer`
+ * so the proxy (`server/route-handlers.ts`) can thread it to the backend as `X-Obi-Token`. No
+ * token (the un-embedded/default app shell) means no `Authorization` header at all — the backend
+ * degrades that to its general-only scope, never an error.
  */
 import type {
   ChatCitationsEvent,
@@ -13,16 +20,15 @@ import type {
   FeedbackRequest,
   FeedbackResponse,
 } from "@omniboost/contracts";
-import { getWidgetAccessToken } from "./access-token";
+import { getToken } from "@/features/embed";
 
 const CHAT_ENDPOINT = "/api/chat";
-const ACCESS_TOKEN_HEADER = "x-widget-access-token";
 
-/** Attaches the widget's shared invite token (idea #6) when one has been captured; omitted
- * entirely when absent so the server sees a plain missing header, not an empty one. */
-function accessTokenHeaders(): Record<string, string> {
-  const token = getWidgetAccessToken();
-  return token ? { [ACCESS_TOKEN_HEADER]: token } : {};
+/** Attaches the embed's platform-signed user JWT when one is present; omitted entirely when
+ * absent so the server sees a plain missing header, not an empty one. */
+function authHeaders(): Record<string, string> {
+  const token = getToken();
+  return token ? { authorization: `Bearer ${token}` } : {};
 }
 
 /** Thrown when the fetch itself fails, or the server rejects the request before any
@@ -35,6 +41,30 @@ export class ChatRequestError extends Error {
     this.name = "ChatRequestError";
     this.status = status;
   }
+}
+
+type UnauthorizedListener = () => void;
+const unauthorizedListeners = new Set<UnauthorizedListener>();
+
+/**
+ * Subscribe to be notified once whenever the backend rejects the current token (401) — the
+ * closest thing to "signal the loader to renew" this module can offer honestly: the fixed
+ * three-message `ObiMessage` postMessage contract (`@omniboost/contracts`) is host->frame only,
+ * so this frame has no defined channel to directly *request* a fresh token from `obi.js` in the
+ * host page (a real round trip would need a fourth message type, out of scope here — left for a
+ * future phase behind its own ADR if needed). This hook exists so embed-side code (e.g. the
+ * `/embed` page) can still react locally — clear stale UI state, prompt a manual retry, etc. —
+ * without this module needing to know who's listening. Returns an unsubscribe function.
+ */
+export function onUnauthorized(listener: UnauthorizedListener): () => void {
+  unauthorizedListeners.add(listener);
+  return () => {
+    unauthorizedListeners.delete(listener);
+  };
+}
+
+function notifyUnauthorized(): void {
+  for (const listener of unauthorizedListeners) listener();
 }
 
 export interface ChatStreamHandlers {
@@ -56,7 +86,7 @@ export async function streamChat(
   try {
     response = await fetch(CHAT_ENDPOINT, {
       method: "POST",
-      headers: { "content-type": "application/json", ...accessTokenHeaders() },
+      headers: { "content-type": "application/json", ...authHeaders() },
       body: JSON.stringify(request),
       signal,
     });
@@ -65,6 +95,7 @@ export async function streamChat(
   }
 
   if (!response.ok || !response.body) {
+    if (response.status === 401) notifyUnauthorized();
     const body = (await response.json().catch(() => null)) as { error?: string } | null;
     throw new ChatRequestError(body?.error ?? `request failed (${response.status})`, response.status);
   }
@@ -128,7 +159,7 @@ export async function sendFeedback(
 ): Promise<FeedbackResponse> {
   const response = await fetch(`${CHAT_ENDPOINT}/${encodeURIComponent(traceId)}/feedback`, {
     method: "PATCH",
-    headers: { "content-type": "application/json", ...accessTokenHeaders() },
+    headers: { "content-type": "application/json", ...authHeaders() },
     body: JSON.stringify({ feedback } satisfies FeedbackRequest),
   });
   const body = (await response.json().catch(() => null)) as (FeedbackResponse & { error?: string }) | null;

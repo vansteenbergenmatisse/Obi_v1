@@ -1,15 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChatStreamEvent } from "@omniboost/contracts";
 
-const { getWidgetAccessTokenMock } = vi.hoisted(() => ({
-  getWidgetAccessTokenMock: vi.fn(),
+const { getTokenMock } = vi.hoisted(() => ({
+  getTokenMock: vi.fn(),
 }));
 
-vi.mock("../api/access-token", () => ({
-  getWidgetAccessToken: getWidgetAccessTokenMock,
+vi.mock("@/features/embed", () => ({
+  getToken: getTokenMock,
 }));
 
-import { sendFeedback, streamChat } from "../api/chat-client";
+import { onUnauthorized, sendFeedback, streamChat } from "../api/chat-client";
 
 function sse(event: ChatStreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
@@ -43,32 +43,32 @@ describe("streamChat", () => {
   beforeEach(() => {
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    getWidgetAccessTokenMock.mockReset();
-    getWidgetAccessTokenMock.mockReturnValue(null);
+    getTokenMock.mockReset();
+    getTokenMock.mockReturnValue(null);
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
   });
 
-  it("attaches the access token header when one is present", async () => {
-    getWidgetAccessTokenMock.mockReturnValue("invite-abc123");
+  it("attaches the Authorization bearer header when a token is present", async () => {
+    getTokenMock.mockReturnValue("jwt-abc123");
     fetchMock.mockResolvedValue(okStreamResponse([sse({ type: "start", conversationId: "c" })]));
 
     await streamChat({ history: [{ role: "user", content: "hi" }] }, {});
 
     const [, init] = fetchMock.mock.calls[0];
-    expect((init.headers as Record<string, string>)["x-widget-access-token"]).toBe("invite-abc123");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer jwt-abc123");
   });
 
-  it("omits the access token header when none is present", async () => {
-    getWidgetAccessTokenMock.mockReturnValue(null);
+  it("omits the Authorization header when no token is present", async () => {
+    getTokenMock.mockReturnValue(null);
     fetchMock.mockResolvedValue(okStreamResponse([sse({ type: "start", conversationId: "c" })]));
 
     await streamChat({ history: [{ role: "user", content: "hi" }] }, {});
 
     const [, init] = fetchMock.mock.calls[0];
-    expect((init.headers as Record<string, string>)["x-widget-access-token"]).toBeUndefined();
+    expect((init.headers as Record<string, string>).authorization).toBeUndefined();
   });
 
   it("dispatches start/token/citations/done in order from a single chunk", async () => {
@@ -150,6 +150,34 @@ describe("streamChat", () => {
       streamChat({ history: [{ role: "user", content: "hi" }] }, {}),
     ).rejects.toMatchObject({ message: "network down", status: 0 });
   });
+
+  it("notifies onUnauthorized listeners exactly once on a 401, and not on other error statuses", async () => {
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ error: "invalid token" }), { status: 401 }),
+    );
+    await expect(streamChat({ history: [{ role: "user", content: "hi" }] }, {})).rejects.toThrow();
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: "rate limited" }), { status: 429 }));
+    await expect(streamChat({ history: [{ role: "user", content: "hi" }] }, {})).rejects.toThrow();
+    expect(listener).toHaveBeenCalledTimes(1);
+
+    unsubscribe();
+  });
+
+  it("stops notifying an unsubscribed onUnauthorized listener", async () => {
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+    unsubscribe();
+
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: "invalid token" }), { status: 401 }));
+    await expect(streamChat({ history: [{ role: "user", content: "hi" }] }, {})).rejects.toThrow();
+
+    expect(listener).not.toHaveBeenCalled();
+  });
 });
 
 describe("sendFeedback", () => {
@@ -158,8 +186,8 @@ describe("sendFeedback", () => {
   beforeEach(() => {
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    getWidgetAccessTokenMock.mockReset();
-    getWidgetAccessTokenMock.mockReturnValue(null);
+    getTokenMock.mockReset();
+    getTokenMock.mockReturnValue(null);
   });
 
   afterEach(() => {
@@ -178,24 +206,24 @@ describe("sendFeedback", () => {
     );
   });
 
-  it("attaches the access token header when one is present", async () => {
-    getWidgetAccessTokenMock.mockReturnValue("invite-abc123");
+  it("attaches the Authorization bearer header when a token is present", async () => {
+    getTokenMock.mockReturnValue("jwt-abc123");
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
     await sendFeedback("trace-1", 1);
 
     const [, init] = fetchMock.mock.calls[0];
-    expect((init.headers as Record<string, string>)["x-widget-access-token"]).toBe("invite-abc123");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer jwt-abc123");
   });
 
-  it("omits the access token header when none is present", async () => {
-    getWidgetAccessTokenMock.mockReturnValue(null);
+  it("omits the Authorization header when no token is present", async () => {
+    getTokenMock.mockReturnValue(null);
     fetchMock.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
 
     await sendFeedback("trace-1", 1);
 
     const [, init] = fetchMock.mock.calls[0];
-    expect((init.headers as Record<string, string>)["x-widget-access-token"]).toBeUndefined();
+    expect((init.headers as Record<string, string>).authorization).toBeUndefined();
   });
 
   it("throws ChatRequestError on a non-ok response", async () => {

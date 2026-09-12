@@ -214,3 +214,14 @@ export interface ConfluenceEventEnvelope {
   /** Unique delivery id, used for idempotent processing / dedup. */
   deliveryId: string;
 }
+
+// ---- Obi embed: iframe postMessage contract (PLAN 11.1c, ADR-0014) ---------
+
+export type {
+  ObiMessage,
+  ObiMessageType,
+  ObiOpenMessage,
+  ObiTokenMessage,
+  ObiClearMessage,
+} from "./iframe-messages";
+export { OBI_MESSAGE_TYPES } from "./iframe-messages";

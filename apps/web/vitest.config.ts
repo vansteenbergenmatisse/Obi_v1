@@ -7,6 +7,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Next.js swaps the real `server-only` package (which unconditionally throws) for a no-op
+      // when building its SERVER webpack graph; Vitest has no such split, so tests need the same
+      // no-op here or every test touching `features/embed/platforms.ts` fails on import alone.
+      "server-only": path.resolve(__dirname, "./src/test-stubs/server-only.ts"),
     },
   },
   test: {

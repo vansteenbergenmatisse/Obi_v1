@@ -36,6 +36,13 @@ export interface AutomationApiRequest {
   method: "POST" | "PATCH";
   body: unknown;
   idempotencyKey?: string;
+  /**
+   * The platform-signed user JWT (PLAN 11.1c, ADR-0014), forwarded on its own header —
+   * `X-Obi-Token` — never on `Authorization` (that header carries the host `chat_api_key`
+   * below). Verified backend-side by `TokenVerifier`; absent means the tokenless/general-only
+   * path. Never logged.
+   */
+  userToken?: string;
 }
 
 /** Issues one bounded, authenticated call to the automation API. No retries here — retrying a
@@ -51,6 +58,9 @@ export async function callAutomationApi(
   };
   if (request.idempotencyKey) {
     headers["idempotency-key"] = request.idempotencyKey;
+  }
+  if (request.userToken) {
+    headers["x-obi-token"] = request.userToken;
   }
   return fetch(`${config.baseUrl}${request.path}`, {
     method: request.method,

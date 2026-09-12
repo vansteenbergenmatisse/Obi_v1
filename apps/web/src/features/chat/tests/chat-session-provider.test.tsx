@@ -11,15 +11,11 @@ import userEvent from "@testing-library/user-event";
 import type { ChatStreamEvent } from "@omniboost/contracts";
 import type { SentImage } from "../model/messages";
 
-const { captureWidgetAccessTokenMock } = vi.hoisted(() => ({
-  captureWidgetAccessTokenMock: vi.fn(),
-}));
-
-// `chat-client.ts` (exercised for real, not mocked, by these tests) also imports this module
-// for `getWidgetAccessToken` — both exports must stay present or its fetch calls will throw.
-vi.mock("../api/access-token", () => ({
-  captureWidgetAccessToken: captureWidgetAccessTokenMock,
-  getWidgetAccessToken: () => null,
+// `chat-client.ts` (exercised for real, not mocked, by these tests) reads the embed token via
+// `@/features/embed`'s `getToken` — stubbed to "no token" so these tests exercise the tokenless/
+// default-app-shell path, matching this provider's pre-PLAN-11.1c behavior.
+vi.mock("@/features/embed", () => ({
+  getToken: () => null,
 }));
 
 import { ChatSessionProvider, useChatSession } from "../ui/chat-session-provider";
@@ -68,7 +64,6 @@ describe("ChatSessionProvider", () => {
   beforeEach(() => {
     fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    captureWidgetAccessTokenMock.mockReset();
   });
 
   afterEach(() => {
@@ -76,19 +71,9 @@ describe("ChatSessionProvider", () => {
     vi.unstubAllGlobals();
   });
 
-  it("captures the widget access token once on mount", () => {
-    render(
-      <ChatSessionProvider>
-        <Harness />
-      </ChatSessionProvider>,
-    );
-
-    expect(captureWidgetAccessTokenMock).toHaveBeenCalledTimes(1);
-  });
-
-  it("shows an actionable message when the access token is rejected (401)", async () => {
+  it("surfaces the backend's error message on a rejected (401) request", async () => {
     fetchMock.mockResolvedValue(
-      new Response(JSON.stringify({ error: "unauthorized" }), { status: 401 }),
+      new Response(JSON.stringify({ error: "invalid token" }), { status: 401 }),
     );
 
     function ErrorHarness() {
@@ -109,11 +94,7 @@ describe("ChatSessionProvider", () => {
     );
 
     await userEvent.click(screen.getByText("send"));
-    await waitFor(() =>
-      expect(screen.getByTestId("error-text").textContent).toBe(
-        "Your access link has expired — open the chat from your invite link again.",
-      ),
-    );
+    await waitFor(() => expect(screen.getByTestId("error-text").textContent).toBe("invalid token"));
   });
 
   it("clears messages and pending state", async () => {

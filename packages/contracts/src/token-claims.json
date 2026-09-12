@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://omniboost.dev/contracts/obi-token-claims.json",
+  "title": "Obi embed token claims",
+  "description": "The claim set a platform's server puts in the short-lived JWT it signs at Obi button-click (PLAN 11.1c, ADR-0014). The Obi backend verifier (apps/automation .../server/token_verifier.py) is the security-authoritative side; this schema mirrors it and a drift test keeps them in lockstep. company_id/company_name/integration are all-three-or-none: a note either carries the full business identity or none of it (a note with none scopes to obi-general-test only).",
+  "type": "object",
+  "required": ["iss", "aud", "sub", "iat", "exp"],
+  "properties": {
+    "iss": { "type": "string", "description": "Issuer — must match a trusted platform issuer in config/platforms.json." },
+    "aud": { "const": "obi", "description": "Audience — always the literal \"obi\"." },
+    "sub": { "type": "string", "description": "Stable per-user subject. Only a hash of it is ever traced; the raw value is never persisted or logged." },
+    "iat": { "type": "integer", "description": "Issued-at (epoch seconds)." },
+    "exp": { "type": "integer", "description": "Expiry (epoch seconds). exp - iat must not exceed the platform's configured lifetime_minutes." },
+    "company_id": { "type": "string", "description": "Opaque customer id. Audit/future use only — never a scope axis in v1." },
+    "company_name": { "type": "string", "description": "Human-readable customer name. Display/audit only." },
+    "integration": { "type": "string", "description": "Platform key (e.g. \"mews\") — the ONLY business value that maps to knowledge scopes, via platforms.json integrations." }
+  },
+  "dependentRequired": {
+    "company_id": ["company_name", "integration"],
+    "company_name": ["company_id", "integration"],
+    "integration": ["company_id", "company_name"]
+  },
+  "additionalProperties": true
+}
