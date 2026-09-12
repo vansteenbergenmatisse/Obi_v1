@@ -539,6 +539,9 @@ class QueryTrace(Base):
     # populated by retrieval once knowledge-scope filtering resolves the allowed set (PLAN 10.4);
     # nullable because rows written before that phase never had a knowledge scope to record
     allowed_knowledge_scopes: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
+    # sha256 of the verified edge-token subject (PLAN 11.1c, ADR-0014) — never the raw subject and
+    # never the token; nullable on the tokenless internal/eval path and every pre-11.1c row.
+    subject_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = _ts_created()
 

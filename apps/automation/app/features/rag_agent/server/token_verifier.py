@@ -34,6 +34,10 @@ from app.platform.config.platforms import PlatformEntry, PlatformRegistry
 
 _LEEWAY_SECONDS = 60
 _AUD = "obi"
+# The registered claims a valid token MUST carry. Kept as a module constant (not an inline literal)
+# so the contract drift test (test_token_claims_contract.py) can assert the JSON Schema's `required`
+# list matches this security-authoritative set exactly.
+REQUIRED_CLAIMS: tuple[str, ...] = ("exp", "iat", "iss", "aud", "sub")
 # C4: finite timeout on the outbound JWKS fetch so a slow/hung IdP cannot stall a chat request.
 _JWKS_TIMEOUT_SECONDS = 5
 
@@ -97,7 +101,7 @@ class TokenVerifier:
                 audience=_AUD,
                 issuer=iss,
                 leeway=_LEEWAY_SECONDS,
-                options={"require": ["exp", "iat", "iss", "aud", "sub"]},
+                options={"require": list(REQUIRED_CLAIMS)},
             )
 
             # 5. bound the lifetime by the platform max

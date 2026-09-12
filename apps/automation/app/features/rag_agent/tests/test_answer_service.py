@@ -160,6 +160,7 @@ class _FakeTraceRow:
         self.rewritten_query: str | None = None
         self.answer: str | None = None
         self.citations: object | None = None
+        self.subject_hash: str | None = None
 
 
 class _FakeSession:
@@ -788,6 +789,23 @@ def test_auth_allowed_scopes_reach_the_retriever_verbatim() -> None:
     )
 
     assert retriever.knowledge_scopes_calls == [["obi-general-test", "obi-mews-test"]]
+
+
+def test_subject_hash_persisted_is_the_hash_not_the_raw_subject() -> None:
+    """PLAN 11.1c (ADR-0014): the trace records sha256(sub), never the raw token subject."""
+    from app.shared.hashing import sha256_text
+
+    row = _FakeTraceRow()
+    retriever = _FakeRetriever({"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, {501: "text"})
+    service, _ = _service(retriever, _FakeRewriter("q"), _FakeGenerator("Answer [1]."), row=row)
+
+    auth = AuthContext(
+        None, None, None, ("obi-general-test",), ("confluence:default",), None, "user-x"
+    )
+    service.answer([ChatMessage(role="user", content="q")], auth)
+
+    assert row.subject_hash == sha256_text("user-x").hex()
+    assert row.subject_hash != "user-x"
 
 
 def test_omitted_knowledge_scope_with_no_default_is_general_alone() -> None:

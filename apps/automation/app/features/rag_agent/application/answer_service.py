@@ -89,6 +89,7 @@ from app.features.retrieval import (
     update_query_trace_answer,
 )
 from app.platform.logging import get_logger
+from app.shared.hashing import sha256_text
 
 log = get_logger("rag_agent.answer_service")
 
@@ -205,6 +206,8 @@ class AnswerService:
         # the page-ACL principal (always None for embedded users in v1).
         allowed_scopes = list(auth.allowed_scopes)
         scope = auth.principal
+        # PLAN 11.1c (ADR-0014): audit *who* asked as sha256(sub) — never the raw subject/token.
+        subject_hash = sha256_text(auth.token_subject).hex() if auth.token_subject else None
 
         if original_query.strip():
             rewritten = self._rewriter.rewrite(history) if self._rewrite_enabled else original_query
@@ -245,7 +248,7 @@ class AnswerService:
                 refusal_reason=decision.reason,
             )
             refusal_text = _REFUSAL_COPY[decision.reason]
-            self._persist(result.trace_id, rewritten, refusal_text, [])
+            self._persist(result.trace_id, rewritten, refusal_text, [], subject_hash)
             return Answer(
                 text=refusal_text,
                 refused=True,
@@ -291,7 +294,7 @@ class AnswerService:
                 refusal_reason=_NO_CITATIONS_REASON,
             )
             refusal_text = _REFUSAL_COPY[_NO_CITATIONS_REASON]
-            self._persist(result.trace_id, rewritten, refusal_text, [])
+            self._persist(result.trace_id, rewritten, refusal_text, [], subject_hash)
             return Answer(
                 text=refusal_text,
                 refused=True,
@@ -309,7 +312,7 @@ class AnswerService:
             )
             for m in used_markers
         ]
-        self._persist(result.trace_id, rewritten, cleaned, citations)
+        self._persist(result.trace_id, rewritten, cleaned, citations, subject_hash)
         return Answer(
             text=cleaned,
             citations=citations,
@@ -361,6 +364,7 @@ class AnswerService:
         rewritten_query: str,
         answer_text: str,
         citations: list[Citation],
+        subject_hash: str | None = None,
     ) -> None:
         if trace_id is None or self._writer_sessionmaker is None:
             return
@@ -371,4 +375,5 @@ class AnswerService:
                 rewritten_query=rewritten_query,
                 answer=answer_text,
                 citations=[c.model_dump() for c in citations],
+                subject_hash=subject_hash,
             )

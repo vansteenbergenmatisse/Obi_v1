@@ -55,14 +55,22 @@ def update_query_trace_answer(
     rewritten_query: str,
     answer: str,
     citations: list[dict],
+    subject_hash: str | None = None,
 ) -> None:
-    """UPDATE a trace row with the grounded answer (PLAN 4.2). Writer session; RLS never applies."""
+    """UPDATE a trace row with the grounded answer (PLAN 4.2). Writer session; RLS never applies.
+
+    ``subject_hash`` (PLAN 11.1c) is the sha256 of the verified edge-token subject — recorded here
+    on the answer UPDATE rather than at insert time, since the retriever writes the row before the
+    answer runtime knows the auth context. ``None`` on the tokenless path leaves the column
+    unset."""
     row = session.get(QueryTrace, trace_id)
     if row is None:
         return
     row.rewritten_query = rewritten_query
     row.answer = answer
     row.citations = {"markers": citations}
+    if subject_hash is not None:
+        row.subject_hash = subject_hash
     session.commit()
 
 
