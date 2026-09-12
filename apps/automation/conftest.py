@@ -18,3 +18,6 @@ os.environ.setdefault("CONTEXTUALIZATION_ENABLED", "false")
 # only on an *empty* key, so without this the suite would hit Cohere non-deterministically. A real
 # env var outranks the .env file in pydantic-settings, so this pins the deterministic FakeReranker.
 os.environ.setdefault("RERANKER_PROVIDER", "fake")
+# PLAN 11.1c: tolerate an empty Obi platform registry in the suite so unrelated tests never
+# depend on config/platforms.json having entries (the real file is validated by its own tests).
+os.environ.setdefault("ALLOW_EMPTY_PLATFORMS", "true")

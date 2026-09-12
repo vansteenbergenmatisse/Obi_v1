@@ -7,11 +7,16 @@ app-local .env for local development; real deployments inject env vars directly.
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.platform.config.knowledge_scopes import load_recognized_knowledge_scopes
+
+if TYPE_CHECKING:
+    from app.platform.config.platforms import PlatformRegistry
 
 # Envs where a missing hosted-provider key or DB role falls back to a safe offline default
 # instead of failing (PLAN 4.6.10) — was duplicated as a local constant in
@@ -198,6 +203,14 @@ class Settings(BaseSettings):
     # numbered evidence block, so an unbounded cap could crowd out real retrieval evidence entirely.
     curated_knowledge_max_entries: int = 5
 
+    # Obi embed platform registry (PLAN 11.1c; ADR-0014). The trusted-issuer + integration->scope
+    # map itself lives in config/platforms.json (see platform_registry below), beside
+    # knowledge_scopes.json; this file only holds where to read it and whether an empty registry
+    # is tolerated. platforms_path empty -> the repo-root default. allow_empty_platforms is True
+    # only in local/test (an empty registry stops startup in a real deployment).
+    platforms_path: str = ""
+    allow_empty_platforms: bool = False
+
     def is_offline_env(self) -> bool:
         """True in local/test/dev/ci — envs where a missing hosted key or DB role is a safe
         default-to-fake / default-to-writer fallback rather than a real deployment gap."""
@@ -207,9 +220,27 @@ class Settings(BaseSettings):
     def knowledge_scope_set(self) -> frozenset[str]:
         return load_recognized_knowledge_scopes()
 
+    @property
+    def platform_registry(self) -> PlatformRegistry:
+        from app.platform.config.platforms import (
+            DEFAULT_PLATFORMS_PATH,
+            load_platform_registry,
+        )
+
+        path = Path(self.platforms_path) if self.platforms_path else DEFAULT_PLATFORMS_PATH
+        return load_platform_registry(
+            path, self.knowledge_scope_set, allow_empty=self.allow_empty_platforms
+        )
+
     @model_validator(mode="after")
     def _require_general_knowledge_scope(self) -> Settings:
         _ = self.knowledge_scope_set  # fail fast at startup if the scopes config file is malformed
+        return self
+
+    @model_validator(mode="after")
+    def _require_valid_platform_registry(self) -> Settings:
+        # fail fast if platforms.json is malformed or maps unknown scopes
+        _ = self.platform_registry
         return self
 
 
