@@ -51,6 +51,31 @@ Per-request flow on `POST /chat`:
 Frontend counterpart (host loader + `/embed` frame + test hosts) is under `apps/web` — see the
 implementation plan and `docs/embedding/obi-embed-local-test-keys.md`.
 
+### Embed UX (host launcher + `/embed` frame) — updated 2026-09-12
+
+The host-page launcher and the framed chat now mirror the main-site widget exactly:
+
+- **`apps/web/src/features/embed/loader.ts`** (bundled to `public/obi.js`) injects the **same "star"
+  launcher as the main site** — Obi's two-tone sparkle in a 52px white round button with the
+  `ChatLauncher` border/shadow/hover tokens, inlined as literals since the bundle runs in the host
+  realm with no Tailwind (kept in lockstep with `features/chat/ui/{chat-launcher,assistant-mark}.tsx`).
+  It is a **toggle**: click opens (show iframe + `obi:open`), click again hides it (token/conversation
+  kept; `Obi.clear()` is the real logout). The iframe sits **above** the launcher so the open panel
+  never overlaps it.
+- **`apps/web/src/app/embed/embed-frame.tsx`** renders the **panel directly** (`FloatingFrame` +
+  `PanelBody`) on `obi:open`, not the full `ChatWidget` — the host launcher is the only launcher, so
+  there is no second, nested one inside the frame, and one click goes straight to the panel. The
+  embedded panel shows no Close (X) chrome; the host launcher is the single open/close control.
+- `obi:open` now drives the frame (via `initIframeBridge`'s new `onOpen`), still accepted only from an
+  allowed parent origin — the postMessage contract is unchanged (still exactly `obi:open`/`obi:token`/
+  `obi:clear`); only its UI effect was wired up.
+
+**Local-testing gotcha:** the backend must be started with `PLATFORMS_PATH` pointing at
+`config/platforms.local.json` (the same value `apps/web/.env.local` uses). Without it the backend loads
+the committed `config/platforms.json`, which has no `test-*` issuers, so every test-host token is
+rejected and `/chat` returns **401** (`request failed (401)` in the widget). Both apps must read the
+same registry — see `docs/embedding/obi-embed-local-test-keys.md`.
+
 ## Security baseline (surface: POST /chat, tier LLM-CALL — 11.1c delta only)
 
 ```yaml

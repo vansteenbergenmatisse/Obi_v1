@@ -20,7 +20,10 @@ import { useChatSession } from "./chat-session-provider";
 
 export interface PanelBodyProps {
   assistantName?: string;
-  onClose: () => void;
+  /** Optional: the main-site widget passes this so the header's Close (X) returns to the launcher.
+   * The `/embed` frame omits it — there the host page's injected launcher is the single open/close
+   * control, so `PanelHeader` renders no Close icon (it only shows one when `onClose` is set). */
+  onClose?: () => void;
 }
 
 const FLASH_DURATION_MS = 550;

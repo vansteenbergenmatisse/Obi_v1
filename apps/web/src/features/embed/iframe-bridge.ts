@@ -19,6 +19,7 @@ export interface InitIframeBridgeOptions {
   /** Exact origins (scheme + host + port) allowed to drive this frame — the active platform
    * domains for this deployment. Never `"*"`. */
   allowedOrigins: string[];
+  onOpen?: () => void;
   onToken?: (token: string) => void;
   onClear?: () => void;
 }
@@ -60,8 +61,9 @@ export function initIframeBridge(options: InitIframeBridgeOptions): () => void {
         options.onClear?.();
         return;
       case "obi:open":
-        // Carries no data (PLAN 11.1c) — the frame's own widget owns its open/teaser state;
-        // no bridge-level effect today. Handled explicitly so the switch stays exhaustive.
+        // Carries no data (PLAN 11.1c). The host launcher is the single open/close control, so
+        // the frame opens its panel directly here rather than showing a second, nested launcher.
+        options.onOpen?.();
         return;
     }
   }

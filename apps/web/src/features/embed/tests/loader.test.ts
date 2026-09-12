@@ -46,6 +46,49 @@ describe("Obi loader", () => {
     expect(iframes[0].src).toBe(`${window.location.origin}/embed`);
   });
 
+  it("injects the two-tone sparkle 'star' launcher (not a plain text button), matching ChatLauncher", async () => {
+    const Obi = await loadObi();
+    Obi.init({ tokenUrl: TOKEN_URL });
+
+    const button = document.querySelector("button") as HTMLButtonElement;
+    // The star mark, not the old black "Obi" text.
+    expect(button.textContent).not.toContain("Obi");
+    expect(button.getAttribute("aria-label")).toBe("Open Obi chat");
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    const paths = button.querySelectorAll("svg path");
+    expect(paths.length).toBe(2);
+    // The two-tone fills are Obi's accent + accent-secondary design tokens.
+    expect(paths[0].getAttribute("fill")).toBe("#635bff");
+    expect(paths[1].getAttribute("fill")).toBe("#8f8af7");
+    // Hover/focus states come from a single scoped style tag injected into <head>.
+    expect(document.getElementById("obi-launcher-style")).not.toBeNull();
+  });
+
+  it("toggles: a second launcher click hides the iframe without clearing the token or re-fetching", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ token: fakeJwt(3600) }), { status: 200 }),
+    );
+    const Obi = await loadObi();
+    Obi.init({ tokenUrl: TOKEN_URL });
+
+    const iframe = document.querySelector("iframe") as HTMLIFrameElement;
+    const postMessageSpy = vi.fn();
+    Object.defineProperty(iframe, "contentWindow", { value: { postMessage: postMessageSpy } });
+    const button = document.querySelector("button") as HTMLButtonElement;
+
+    button.click(); // open
+    expect(iframe.style.display).toBe("block");
+    expect(button.getAttribute("aria-expanded")).toBe("true");
+
+    button.click(); // close (toggle)
+    expect(iframe.style.display).toBe("none");
+    expect(button.getAttribute("aria-expanded")).toBe("false");
+    // A host-side hide never forgets the token, so no obi:clear is sent.
+    for (const call of postMessageSpy.mock.calls) {
+      expect(call[0].type).not.toBe("obi:clear");
+    }
+  });
+
   it("posts obi:token to the exact OBI_ORIGIN (never '*') after a launcher click fetches the token", async () => {
     fetchMock.mockResolvedValue(
       new Response(JSON.stringify({ token: fakeJwt(3600) }), { status: 200 }),

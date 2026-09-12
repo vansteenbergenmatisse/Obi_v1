@@ -78,11 +78,23 @@ describe("initIframeBridge", () => {
     expect(onClear).toHaveBeenCalledTimes(1);
   });
 
-  it("ignores obi:open (carries no data) without throwing or setting a token", () => {
-    teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN] });
+  it("invokes onOpen on obi:open without setting a token (the message carries no data)", () => {
+    const onOpen = vi.fn();
+    teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN], onOpen });
 
     expect(() => post({ type: "obi:open" }, ALLOWED_ORIGIN)).not.toThrow();
+    expect(onOpen).toHaveBeenCalledTimes(1);
     expect(getToken()).toBeNull();
+  });
+
+  it("does not invoke onOpen for an obi:open from a disallowed origin", () => {
+    const onOpen = vi.fn();
+    teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN], onOpen });
+
+    post({ type: "obi:open" }, DISALLOWED_ORIGIN);
+
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledTimes(1);
   });
 
   it("resets to null token on re-init (a fresh frame load never carries a stale token)", () => {
