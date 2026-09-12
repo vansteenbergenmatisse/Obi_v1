@@ -34,6 +34,12 @@ from __future__ import annotations
 
 from .application.answer_cache import CachingAnswerService
 from .application.answer_service import AnswerProvider, AnswerService
+from .application.auth_context import (
+    AuthContext,
+    UnknownIntegrationError,
+    build_auth_context,
+    general_only_context,
+)
 from .domain.clarification import ClarificationReply
 from .domain.curated_knowledge import CuratedEntry
 from .infrastructure.curated_knowledge_repo import fetch_curated_entries
@@ -46,6 +52,7 @@ from .infrastructure.llm_client import (
 )
 from .schemas import Answer, ChatMessage, Citation, ImageAttachment
 from .server import chat_router_module, router
+from .server.token_verifier import TokenError, TokenVerifier, VerifiedClaims
 
 __all__ = [
     "Answer",
@@ -57,6 +64,13 @@ __all__ = [
     "AnswerService",
     "AnswerProvider",
     "CachingAnswerService",
+    "AuthContext",
+    "build_auth_context",
+    "general_only_context",
+    "UnknownIntegrationError",
+    "TokenVerifier",
+    "TokenError",
+    "VerifiedClaims",
     "QueryRewriter",
     "AnswerGenerator",
     "AnthropicQueryRewriter",

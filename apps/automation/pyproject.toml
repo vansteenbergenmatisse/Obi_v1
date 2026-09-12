@@ -17,6 +17,7 @@ dependencies = [
     "apscheduler>=3.10",
     "structlog>=24.4",
     "python-dotenv>=1.0",
+    "pyjwt[crypto]>=2.14.0",
 ]
 
 [project.optional-dependencies]
