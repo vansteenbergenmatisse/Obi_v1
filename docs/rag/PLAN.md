@@ -21,6 +21,56 @@
 > The single prioritized "what's next" list. Each item says who it needs. Phase-13 sub-items and the
 > Phase 5.4/12.4 eval remainder are the detail below; this is the ordered pointer.
 >
+> ---
+> ### ▶▶ NEXT SESSION (2026-09-12 pm) — do these two first (operator asked; NOT yet built)
+>
+> Both queued to run AFTER a context wipe. Each names exact files/symbols and its done-when check.
+>
+> **A. Make a Confluence page edit actually propagate to answers (auto, ~30–60 s) — TODAY it does
+> NOT auto-update.** Confirmed behaviour (see item 3c): the pipeline is queue-driven and, in the
+> local runtime, *nothing re-pulls an edited page* — no webhook, `enable_background_jobs=false`, and
+> the scheduled lightweight reconcile is a **daily** cron. So editing Opera *kiwis→pineapple* changes
+> nothing until `make reingest` is run by hand; it will **never** self-update after 30–60 s as the
+> operator expected. The change-detection/versioning path itself is correct (proven: kiwis landed via
+> `make reingest`). **What to build (make edits auto-propagate for dev/live):**
+> 1. **`apps/automation/app/platform/config/settings.py`** — add `dev_reconcile_interval_seconds:
+>    int | None = None` (a fast lightweight-reconcile poll; `None` = off, keeps prod on the daily
+>    cron). Document that it needs `enable_background_jobs=true` to have any effect.
+> 2. **`apps/automation/app/main.py::_build_scheduler`** — when `dev_reconcile_interval_seconds` is
+>    set, register an **IntervalTrigger** lightweight-reconcile job (in addition to / instead of the
+>    daily `lightweight_recon_cron`) so drifted pages are enqueued every N seconds; `worker_tick`
+>    already drains on `worker_tick_seconds`. Net: edit → enqueued within N s → drained → new version
+>    active. **Operator run-config:** `.env` `ENABLE_BACKGROUND_JOBS=true` +
+>    `DEV_RECONCILE_INTERVAL_SECONDS=30` (and `worker_tick_seconds` small), then `uvicorn app.main:app`.
+> 3. **Alternative (instant, prod-shaped):** wire the Confluence **webhook** (`POST /confluence/events`
+>    already exists) via a public URL/tunnel — out of scope for pure-local, note as the prod path.
+> 4. **Also surface the answer-cache masking:** even after re-ingest, the in-process
+>    `chat_answer_cache_ttl_seconds=300` can replay a pre-edit answer for ~5 min on an *identical*
+>    question — restart the server or reword. Consider dropping the dev TTL.
+> 5. **Tests:** a scheduler test that an interval lightweight reconcile job is registered when the
+>    setting is set; reuse `test_worker_sync` for the enqueue→drain→new-version path. Keep
+>    `docs/rag/ingestion/phase-1.md` (§6 on-demand re-pull) in sync — add the auto path.
+> **Done-when:** with the dev run-config, editing a live tagged page shows the new answer within
+> ~1 min with no manual command; `make reingest` remains the on-demand fallback.
+>
+> **B. Fix the React hydration mismatch on the `/test-hosts/*` pages** ("A tree hydrated but some
+> attributes of the server rendered HTML didn't match…"). **Lead (found 2026-09-12):**
+> **`apps/web/src/app/test-hosts/layout.tsx`** renders `<html lang="en">` **without**
+> `suppressHydrationWarning`, whereas its sibling layouts **`src/app/(site)/layout.tsx`** and
+> **`src/app/embed/layout.tsx`** both carry `suppressHydrationWarning` on `<html>` (the standard guard
+> for browser-extension / theme attribute diffs on the root element). Already cleared as deterministic
+> (NOT the cause): `test-host-content.tsx`, `token-url.ts`, `embed-frame.tsx` (initial `open=false`
+> render matches SSR). **What to do:** (1) reproduce in-browser on `/test-hosts/opera-cloud` and read
+> the **exact component stack** from the console — do NOT blind-fix; (2) if it is the root-element
+> attribute diff, add `suppressHydrationWarning` to `test-hosts/layout.tsx`'s `<html>` to match the
+> siblings; (3) if the stack points at real variable input (e.g. `Math.random()` in
+> `features/chat/ui/typing-indicator.tsx`, or a `Date`/locale value), fix *that* deterministically
+> instead of suppressing. **Tests:** extend `test-host-content.test.tsx` / add a layout render test as
+> appropriate. **Done-when:** loading `/test-hosts/opera-cloud` logs no hydration warning; web suite
+> green.
+>
+> ---
+>
 > **✅ DONE since last update:** the whole tree is committed — `7d79a07` (13.3/13.4 docs + `.env`),
 > `d6d6d67` (Phase 11.1a backstop: migration `0010`, schema DDL, GUC wiring, ADR-0014, `phase-11.md`,
 > tests), `1be08d4` (`verify-isolation` now gates the ADR-0014 **scope axis** — exit code **8** — so it
