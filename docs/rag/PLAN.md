@@ -27,21 +27,49 @@
 > stays green on the tagged live corpus after `0010`). Automation **502 pass** (local-DSN override),
 > boundaries + ruff/format/pyright clean. No git remote configured, so nothing is pushed (local-only).
 >
-> **🔨 IN PROGRESS — Phase 11.1c execution (started 2026-09-12):**
-> - **Task A1 (platform registry) — ✅ DONE + COMMITTED `49844fa`.** Created `config/platforms.json`
->   (mews/toast/opera-cloud entries, all `active:false` — Opera Cloud issuer/jwks still `PLACEHOLDER`) +
->   `app/platform/config/platforms.py` (`load_platform_registry` / `PlatformEntry` / `PlatformRegistry`:
->   integration→scope map, `obi-general-test` always appended, `classified` never mappable, unknown-slug
->   and HS256 rejected, empty-registry stops startup unless `allow_empty`). Wired `settings.py`
->   (`platforms_path` / `allow_empty_platforms` fields + `platform_registry` property + a
->   `_require_valid_platform_registry` model_validator mirroring `_require_general_knowledge_scope`) and
->   set `ALLOW_EMPTY_PLATFORMS=true` in the suite conftest. **Deviation vs plan:** fail-fast is a Settings
->   `@model_validator` (matches the existing knowledge-scope pattern) rather than a `main.py` lifespan
->   touch — the lifespan `TokenVerifier` build lands in Task B1. Tests: `test_platforms.py` (+7 incl. an
->   extra HS256-forbidden case). **Full gate GREEN:** `make check` (local-DSN override) → automation
->   **509 pass** (+7 vs 502), `make boundaries` clean, ruff/format/pyright clean on all touched files.
->   Remaining 11.1c tasks: A2 AuthContext, A3 JWT verifier, B1/B2 threading+trace, C contracts, D
->   frontend, E test-hosts, F hand-over/ops.
+> **✅ Phase 11.1c — Obi embed + JWT edge binding: IMPLEMENTED & GREEN (2026-09-12).** All task groups
+> A–F built and committed on `feat/rag-phase-3.5`; `make check` **530 pass** (was 502), web **184 pass**,
+> boundaries + ruff/format/pyright clean. **Live cutover is operator-gated (see prerequisites).** Commits:
+> - **A1 registry** `49844fa` — `config/platforms.json` + `platforms.py` (integration→scope, general
+>   always included, HS256/classified/unknown-slug rejected), `settings.platform_registry` + fail-fast.
+> - **A3 verifier + A2 AuthContext** `ed58618` — `token_verifier.py` (alg allow-list, JWKS-by-`kid` w/
+>   finite timeout, `iss`/`aud`/`exp`/`iat`, lifetime bound, all-three-or-none) + `auth_context.py`;
+>   added `pyjwt[crypto]`.
+> - **Frontend D/E + C1** `9080146` — `/embed` frame + per-request `frame-ancestors` CSP (fail-closed,
+>   never `*`), `iframe-bridge` (origin+parent-checked, in-memory token), `obi.js` loader (targetOrigin
+>   never `*`, silent renew), proxy forwards user JWT as `X-Obi-Token`, four `/test-hosts/*` pages +
+>   local RS256 test-signing routes, `packages/contracts` token-claims schema + iframe message types.
+> - **B1 router threading** `3ed4c19` — `/chat` derives scope from the verified `X-Obi-Token`; body
+>   `knowledge_scope` validated-then-ignored (400 if unrecognized), body `principal` ignored; bad/unknown
+>   token → 401; tokenless → general-only; rate-limit + caches keyed on hashed subject. Full backend test
+>   migration to `answer(history, auth)` + `test_router_auth_context` isolation proof. Fixed a circular
+>   import (`auth_context` imports `VerifiedClaims` under `TYPE_CHECKING`).
+> - **B2 trace + C1 drift** `a54ade8` — migration `0011` `query_trace.subject_hash` (idempotent; persists
+>   `sha256(sub)`, never raw) + `test_token_claims_contract` (schema↔verifier lockstep).
+> - **F docs** — `docs/rag/retrieval/phase-11.1c.md` (read-path), hand-over packs
+>   `docs/embedding/{mews,toast,opera-cloud}.md`, `docs/embedding/obi-embed-local-test-keys.md`.
+>
+> **⚠️ DEVIATIONS from the written plan (accepted):** (a) A1 fail-fast is a Settings `@model_validator`
+> (matches the knowledge-scope pattern) rather than only a `main.py` lifespan touch — the lifespan
+> `TokenVerifier` build is also present. (b) The router auth is resolved in-body (not chained `Depends`)
+> so host-key→token→rate-limit ordering is explicit. (c) The test-host + router-proof tests live in
+> `confluence_sync/tests/` (reusing the app/DB fixtures) rather than `rag_agent/tests/`. (d) **The pilot
+> `WIDGET_ACCESS_TOKEN` (browser→proxy shared secret) was retired (plan D4) — a real posture change: the
+> Next proxy is now open, tokenless→general-only (the general corpus is intentionally public for an
+> embeddable widget); scoped content still requires a verified token; backend rate-limit/cost-caps/scope
+> isolation remain.** (e) A background agent produced the frontend commit `9080146`; its security-critical
+> code (CSP/postMessage/loader/token/test-keys) was reviewed and passes the endpoint-security gate.
+>
+> **▶ Phase 11.1c LIVE cutover — operator-gated (the ONLY thing left before it runs for real):**
+> - **Apply migrations `0010` then `0011`** to Supabase: `uv run alembic upgrade head` (advances live
+>   `0009`→`0011`), then `verify-isolation` → expect exit 0. Closes the last CRITICAL customer-isolation
+>   gate + adds the trace column.
+> - **Provide the three platforms' real values** (issuer / JWKS URL / domains / integration) per the
+>   hand-over packs; flip `active:false`→`true` in `config/platforms.json`. Kept inactive until then.
+> - **Generate the local test RS256 keys** to click through `/test-hosts/*` locally — steps in
+>   `docs/embedding/obi-embed-local-test-keys.md` (private keys in `apps/web/.env.local`, gitignored).
+> - **To see real answers locally**, point the backend reader at a tagged corpus (the Supabase corpus
+>   already has the four `obi-*-test` pages) + the embedding/rerank/Anthropic keys.
 >
 > **▶ IMMEDIATE NEXT (in order) — these are THE next things to do:**
 > 0. **★ Phase 11.1c — Embedding Obi in another application (iframe loader + JWT edge binding). NEW,
