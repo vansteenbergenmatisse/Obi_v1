@@ -95,6 +95,12 @@ def test_llm_meta_refusal_is_discarded_and_falls_back_to_metadata() -> None:
         "I do not have access to the overall document, so I cannot situate this chunk.",
         "I'm sorry, but no document was provided, so I can't add context.",
         "Without access to the full document, I'm unable to provide meaningful context.",
+        # exact phrasings captured live on the obi-*-test pages (Opera Cloud / General Obi):
+        "I cannot provide context for this chunk because the document provided contains only "
+        "this single statement.",
+        "I cannot provide context for this chunk because the document provided contains only "
+        "the single sentence shown.",
+        'I don\'t have access to the full document, only the chunk "grapes are the only fruit."',
     ]
     for reply in meta_replies:
         http = httpx.Client(

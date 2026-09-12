@@ -52,6 +52,15 @@ _META_REFUSAL_SIGNALS = (
     "i am unable to",
     "i don't have enough context",
     "i do not have enough context",
+    # the "I cannot provide context … the document provided contains only …" family — the exact
+    # phrasing seen live on the obi-*-test pages that the first signal list missed (PLAN 3b).
+    "cannot provide context",
+    "can't provide context",
+    "provided contains only",
+    "contains only the single",
+    "contains only this single",
+    "only see this single",
+    "only this single chunk",
     "no document was provided",
     "no document is provided",
     "there is no document",

@@ -52,6 +52,32 @@ def test_content_change_swaps_version_atomically(gateway, settings):
     assert {c.doc_version_id for c in active_child_chunks(1001)} == {new_id}
 
 
+def test_contextualization_version_bump_rebuilds_at_same_cf_version(gateway, settings):
+    """A pipeline-config bump (parser/chunker/contextualization version) must force a rebuild at the
+    SAME cf_version without colliding on uq_document_version_idem (PLAN 3b/3c regression).
+
+    Before the constraint was widened to include the pipeline-version columns, a config-only bump
+    tried to create a second document_version row at the same (document_id, cf_version,
+    retrieval_schema_version, embedding_model), raised IntegrityError, and the re-embed silently
+    failed — pinning the corpus to the old (e.g. meta-refusal-poisoned) contextualization. Observed
+    live on the obi-*-test pages: Toast/Mews stuck on contextualization_version=1."""
+    index_page(gateway, settings, 1001, version=1)
+    assert active_version(1001).contextualization_version == settings.contextualization_version
+    assert count_versions(1001) == 1
+
+    bumped = settings.model_copy(
+        update={"contextualization_version": settings.contextualization_version + 1}
+    )
+    enqueue_sync(1001, 1, key="sync:1001:ctxbump")  # SAME cf_version — only the config changed
+    result = run_once(gateway, bumped, owner="test")
+
+    assert result is not None and result.status == "succeeded", result
+    assert result.outcome.action == "indexed"  # config change routes to a rebuild, not no_change
+    assert active_version(1001).contextualization_version == bumped.contextualization_version
+    assert count_versions(1001) == 2  # new version created, old retained for rollback
+    assert active_versions_count(1001) == 1  # exactly one active — no mixed versions
+
+
 def test_version_guard_drops_stale_update(gateway, settings):
     index_page(gateway, settings, 1001, version=3)
     assert count_versions(1001) == 1

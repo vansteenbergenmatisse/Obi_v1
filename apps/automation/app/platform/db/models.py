@@ -222,9 +222,20 @@ class DocumentVersion(Base):
     superseded_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
+        # Build identity = one row per (page revision × full pipeline config). This MUST list every
+        # column `change_detection.index_config_changed` treats as a rebuild trigger, otherwise a
+        # config-only bump (same cf_version) collides here and the re-embed fails with
+        # IntegrityError instead of staging a new version (PLAN 3b/3c; migration 0012). parser/
+        # chunker/
+        # contextualization versions were added for exactly that reason; retrieval_schema_version +
+        # embedding_model were already here. True idempotent replay (identical everything) still
+        # collides — which is the point.
         UniqueConstraint(
             "document_id",
             "cf_version",
+            "parser_version",
+            "chunker_version",
+            "contextualization_version",
             "retrieval_schema_version",
             "embedding_model",
             name="uq_document_version_idem",

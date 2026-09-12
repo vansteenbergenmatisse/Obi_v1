@@ -74,11 +74,21 @@ reply — degrading to the deterministic metadata prefix exactly like a transpor
 un-discarded, that text is embedded and cross-encoder-reranked (the `tsv` keyword vector is built
 from the *raw* chunk text in §4 and is immune), depressing the relevance signal below the 0.10
 refusal threshold and causing false "routed to a human" answers on pages that do have content. The
-detector is deliberately conservative (a false positive merely falls back to the safe prefix).
-`contextualization_version` was bumped **1→2** so v1-poisoned chunks re-contextualize + re-embed on
-their next reconcile (diff-reuse is disabled on a version mismatch); run `make reingest` to clear
-live pollution on demand. Tests: `test_contextualizer.py` (`test_llm_meta_refusal_is_discarded_*`,
+detector is deliberately conservative (a false positive merely falls back to the safe prefix). The
+signal list covers both the *"I don't have access to the document…"* and the *"I cannot provide
+context … the document provided contains only …"* families seen live. `contextualization_version`
+was bumped to **3** so poisoned chunks re-contextualize + re-embed on their next reconcile (diff-reuse
+is disabled on a version mismatch); run `make reingest` to clear live pollution on demand. Tests:
+`test_contextualizer.py` (`test_llm_meta_refusal_is_discarded_*`,
 `test_llm_real_context_first_person_is_not_discarded`).
+
+**Dependency — migration 0012.** Bumping any pipeline-version stamp (parser/chunker/contextualization)
+forces a rebuild at the *same* `cf_version`. The `document_version` idempotency constraint
+`uq_document_version_idem` originally keyed only on `(document_id, cf_version, retrieval_schema_version,
+embedding_model)`, so a config-only rebuild collided with `IntegrityError` and silently failed.
+Migration **0012** widens that constraint to include the three pipeline-version columns so the rebuild
+gets a distinct key (regression: `test_worker_sync.py::test_contextualization_version_bump_rebuilds_at_
+same_cf_version`).
 
 ## 4. The keyword vector (`tsv`)
 

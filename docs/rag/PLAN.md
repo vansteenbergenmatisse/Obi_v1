@@ -188,12 +188,25 @@
       deterministic title+heading prefix, logging `contextualization_meta_refusal_discarded`) instead of
       baking it into `retrieval_content` (`app/features/ingestion/application/contextualizer.py`). Tests:
       `test_contextualizer.py` +2 (meta-refusal discarded across four phrasings; a real first-person blurb
-      is kept). **`contextualization_version` bumped 1→2** (`settings.py:188`) so already-poisoned v1
-      chunks route through a full re-contextualize + re-embed on the next reconcile (diff-reuse is disabled
-      on a version mismatch — the corpus self-heals). Automation **532 pass**. **⚠️ Operator step to clear
-      live pollution:** run `make reingest` against live Confluence (re-embeds the affected pages — small
-      live embedding spend). Until then the fix is latent (new/edited pages are clean; existing ones heal
-      on their next sync).
+      is kept, plus the exact live phrasings). **`contextualization_version` bumped to 3** (`settings.py`)
+      to force a clean re-embed of the whole corpus. **✅ VERIFIED LIVE (2026-09-12):** ran `make reingest`
+      against live Supabase — all four `obi-*-test` pages rebuilt at `ctx_ver=3`, every meta-reply
+      discarded (`contextualization_meta_refusal_discarded` logged per chunk), and `retrieval_content` is
+      now the clean metadata prefix (e.g. *"General Obi information  salads do not exist"*, *"Opera Cloud
+      Testpage  kiwis are the only fruit"*) — no poison. The general "salads" content is now cleanly
+      retrievable (was refusing purely because of the poison).
+
+      **★ A second, deeper bug surfaced during the first `make reingest` and was fixed (migration 0012).**
+      The first re-ingest FAILED on 2 of 4 pages with `IntegrityError: uq_document_version_idem`. Root
+      cause: that constraint was `(document_id, cf_version, retrieval_schema_version, embedding_model)` but
+      `change_detection.index_config_changed` *also* treats `parser_version`/`chunker_version`/
+      `contextualization_version` as rebuild triggers — so a **config-only** bump (same `cf_version`)
+      collided and the re-embed silently failed, pinning the corpus to the old build. **Fix:** migration
+      **`0012_widen_document_version_idem`** recreates the constraint including the three pipeline-version
+      columns (reversible; models.py updated to match). Regression test
+      `test_worker_sync.py::test_contextualization_version_bump_rebuilds_at_same_cf_version`. **Applied
+      live** (Supabase head `0011`→`0012`), after which the re-ingest succeeded `indexed=4`. Automation
+      **533 pass**, boundaries + ruff/format/pyright clean.
     - **(c) (optional, product decision) refusal-threshold / general-knowledge fallback.** If general
       questions should be answered from the model's own world knowledge when the docs are silent, that is a
       deliberate move *away* from accuracy-first (ADR-0005 refusal) and needs an ADR — do **not** just lower
@@ -220,7 +233,10 @@
     (`test_content_change_swaps_version_atomically`). **Operator step:** after editing a live page, run
     `make reingest` (needs live Confluence configured; re-embeds changed/version-bumped pages). The real
     production trigger (webhook or scheduled reconcile) is a deploy-time wiring decision, not a code gap.
-    Related to item 4 (label-driven ingestion) and IDEAS §0.
+    **✅ VERIFIED LIVE (2026-09-12):** the operator's Opera edit *apples→kiwis* propagated after
+    `make reingest` — live active chunk now `display="kiwis are the only fruit"` (`cf_version` 2→3). NOTE:
+    the first `make reingest` also exposed the `uq_document_version_idem` constraint bug fixed in item 3b
+    (migration 0012). Related to item 4 (label-driven ingestion) and IDEAS §0.
 4. **Label-driven ingestion** (bucket D, NEXT FIXES #6) — **NEEDS A PRODUCT DECISION + AN ADR** before
 >    any code. Auto-ingest any page carrying a recognized `obi-*-test` label (webhook-kept-live) by adding
 >    a label-driven pull to the `source_scope` model + `knowledge_scopes.json`. A real feature, designed
