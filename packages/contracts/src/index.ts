@@ -112,6 +112,17 @@ export interface ChatCitationsEvent {
   citations: Citation[];
 }
 
+/**
+ * Closed refusal-reason taxonomy (ADR-0008 decision 4; `off_topic` added 2026-09-12).
+ * `off_topic` is a friendly "ask me about the docs" redirect with no human hand-off;
+ * the other three route to a human. Mirrors the backend `RefusalReason` literal.
+ */
+export type RefusalReason =
+  | "no_candidates"
+  | "off_topic"
+  | "weak_score"
+  | "no_citations";
+
 /** Terminal success event. */
 export interface ChatDoneEvent {
   type: "done";
@@ -126,9 +137,18 @@ export interface ChatDoneEvent {
   traceId: string | null;
   /**
    * True when the pipeline refused below `refusal_min_rerank_score`; the UI
-   * should route to a human instead of treating `answer` as grounded.
+   * should not treat `answer` as grounded. Whether to route to a human depends
+   * on `refusalReason` (see below) — `off_topic` is a redirect, not a hand-off.
    */
   refused: boolean;
+  /**
+   * The refusal category (ADR-0008 decision 4; `off_topic` added 2026-09-12),
+   * present only when `refused` is true. The UI shows the human-hand-off CTA for
+   * `no_candidates | weak_score | no_citations` and a softer redirect (no CTA)
+   * for `off_topic`. Absent/null on a non-refused turn, and on older backends
+   * that did not yet send it — treat a missing value as "show the hand-off CTA."
+   */
+  refusalReason?: RefusalReason | null;
   /**
    * Vision-analysis text for any images on the turn (ADR-0009 decision 5),
    * appended after the grounded answer and rendered as its own labeled

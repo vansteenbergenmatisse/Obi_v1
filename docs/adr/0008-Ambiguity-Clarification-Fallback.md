@@ -59,10 +59,27 @@ without altering any decision ADR-0005 already made about the grounded path itse
    `needs_clarification=True` is a still-open conversation turn, not a refusal, and does not set
    `refused=True`.
 
+   **Amendment (2026-09-12): the taxonomy is now four values — `off_topic` added.** The below-
+   threshold `weak_score` refusal is split by a second, lower threshold
+   (`settings.offtopic_max_rerank_score`, kept `< refusal_min_rerank_score`): a top rerank score
+   at/below it is `off_topic` (a genuinely unrelated question), between it and the refusal bar stays
+   `weak_score`. Justified by a live measurement showing a bimodal rerank distribution (unrelated
+   probes ≈0.02, supported facts ≥0.076, an empty gap between), so the split is a real signal, not a
+   guess — provisional, re-tuned on the Phase-5 gold set. `off_topic` still sets `refused=True` and
+   never fabricates; it only changes the *copy and the hand-off* (decision 5). `no_candidates`
+   (retrieval returned nothing) stays a hand-off, not a redirect: an empty in-scope result is a real
+   coverage gap, not obviously off-topic. `refusalReason` now also rides the `/chat` SSE `done` event
+   (was log-only) so the widget can branch on it.
+
 5. **Differentiated refusal copy, still routes to "a human," still no real integration this
-   phase.** Each of the three reasons gets its own honest, user-facing string (copy drafted under
-   `copywriting-rules`/`anti-ai-writing` at implementation time, not fixed by this ADR). All three
-   continue to end with the same human-hand-off affordance from decision 6.
+   phase.** Each of the reasons gets its own honest, user-facing string (copy drafted under
+   `copywriting-rules`/`anti-ai-writing` at implementation time, not fixed by this ADR).
+
+   **Amendment (2026-09-12): `off_topic` does NOT route to a human.** The three hand-off reasons
+   (`no_candidates | weak_score | no_citations`) keep the decision-6 human-hand-off affordance and
+   emit the `human_handoff` audit record; `off_topic` instead shows a softer "ask me about the
+   documentation" redirect with **no** CTA, and emits a distinct `off_topic_redirect` audit record so
+   PLAN 9.7 fallback-rate reporting can separate "sent to a human" from "steered back to the docs."
 
 6. **Human hand-off is a stub, this phase, by explicit user decision.** On any `refused=True`
    answer, emit one structured log record (existing `structlog` convention — `trace_id`, `raw_query`,

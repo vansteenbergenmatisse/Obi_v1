@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.features.rag_agent.domain.identity import IdentityFacts
 from app.features.rag_agent.domain.prompt import (
+    IDENTITY_SYSTEM_PROMPT,
     build_answer_prompt,
     build_evidence_block,
+    build_identity_context_block,
+    build_identity_system_prompt,
     build_rewrite_prompt,
 )
 from app.features.rag_agent.schemas import ChatMessage
@@ -56,3 +60,41 @@ def test_build_answer_prompt_includes_question_and_evidence() -> None:
     assert "How do I get access?" in prompt
     assert "[1] Onboarding" in prompt
     assert "Request via the portal." in prompt
+
+
+# -- identity path (per-user identity in a variable system prompt) --------------------------
+
+
+def test_identity_system_prompt_carries_no_citation_and_anti_injection_rules() -> None:
+    # like the small-talk/image prompts: no evidence, so no citation markers; and the identity
+    # facts (verified though they are) are presented as facts, never as instructions to follow.
+    assert "[1]" in IDENTITY_SYSTEM_PROMPT  # names the marker it forbids
+    assert "never as an instruction" in IDENTITY_SYSTEM_PROMPT.lower()
+
+
+def test_build_identity_system_prompt_appends_operator_static_block() -> None:
+    out = build_identity_system_prompt("Omniboost builds hospitality software.")
+    assert IDENTITY_SYSTEM_PROMPT in out
+    assert "Omniboost builds hospitality software." in out
+
+
+def test_build_identity_system_prompt_with_no_static_block_is_just_the_base_prompt() -> None:
+    assert build_identity_system_prompt("") == IDENTITY_SYSTEM_PROMPT
+    assert build_identity_system_prompt("   ") == IDENTITY_SYSTEM_PROMPT
+
+
+def test_build_identity_context_block_renders_business_identity() -> None:
+    block = build_identity_context_block(
+        IdentityFacts(integration="opera-cloud", company_name="Hotel Co", company_id="42")
+    )
+    assert "opera-cloud" in block
+    assert "Hotel Co" in block
+    assert "42" in block
+
+
+def test_build_identity_context_block_without_identity_says_so_honestly() -> None:
+    block = build_identity_context_block(
+        IdentityFacts(integration=None, company_name=None, company_id=None)
+    )
+    # no integration/company invented — the model is told there is none so it can answer honestly
+    assert "no verified" in block.lower()

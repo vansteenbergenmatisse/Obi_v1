@@ -50,6 +50,35 @@ describe("MessageBubble", () => {
       render(<MessageBubble message={assistantMessage({ status: "complete" })} />);
       expect(screen.queryByRole("link", { name: "test@gmail.com" })).not.toBeInTheDocument();
     });
+
+    it("keeps the banner + CTA for a hand-off refusal reason (weak_score)", () => {
+      render(
+        <ChatSessionProvider>
+          <MessageBubble message={assistantMessage({ status: "refused", refusalReason: "weak_score" })} />
+        </ChatSessionProvider>,
+      );
+      expect(screen.getByText(/routed to a human/i)).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "test@gmail.com" })).toBeInTheDocument();
+    });
+
+    it("shows NO banner and NO hand-off CTA for an off_topic redirect — just the softer body", () => {
+      render(
+        <ChatSessionProvider>
+          <MessageBubble
+            message={assistantMessage({
+              status: "refused",
+              refusalReason: "off_topic",
+              text: "I can only answer questions about your documentation.",
+            })}
+          />
+        </ChatSessionProvider>,
+      );
+      expect(screen.queryByText(/routed to a human/i)).not.toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "test@gmail.com" })).not.toBeInTheDocument();
+      expect(
+        screen.getByText(/only answer questions about your documentation/i),
+      ).toBeInTheDocument();
+    });
   });
 
   describe("clarification turns (PLAN 9.3/9.5)", () => {

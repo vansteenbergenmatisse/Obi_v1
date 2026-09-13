@@ -176,4 +176,41 @@ describe("Obi loader", () => {
 
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
+
+  it("Obi.destroy() removes the launcher and iframe so no widget is left in the DOM", async () => {
+    const Obi = await loadObi();
+    Obi.init({ tokenUrl: TOKEN_URL });
+    expect(document.querySelectorAll("iframe").length).toBe(1);
+    expect(document.querySelectorAll("button").length).toBe(1);
+
+    Obi.destroy();
+
+    expect(document.querySelectorAll("iframe").length).toBe(0);
+    expect(document.querySelectorAll("button").length).toBe(0);
+  });
+
+  it("re-init points at a new tokenUrl without leaking a second launcher/iframe (user switch)", async () => {
+    // The multi-user test host re-points Obi at a different signed-in user by calling init again;
+    // init must be idempotent (tear down first) so the host page never accumulates duplicate
+    // widgets and the previous user's iframe (its conversation) is gone.
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ token: fakeJwt(3600) }), { status: 200 }),
+    );
+    const Obi = await loadObi();
+
+    Obi.init({ tokenUrl: "/api/test-hosts/mews/obi-token" });
+    const firstIframe = document.querySelector("iframe");
+    Obi.init({ tokenUrl: "/api/test-hosts/toast/obi-token" });
+
+    expect(document.querySelectorAll("iframe").length).toBe(1);
+    expect(document.querySelectorAll("button").length).toBe(1);
+    // The original iframe was torn down, not reused — so no stale conversation carries over.
+    expect(document.querySelector("iframe")).not.toBe(firstIframe);
+
+    // The launcher now fetches the NEW user's token endpoint.
+    (document.querySelector("button") as HTMLButtonElement).click();
+    expect(fetchMock).toHaveBeenCalledWith("/api/test-hosts/toast/obi-token", {
+      credentials: "same-origin",
+    });
+  });
 });

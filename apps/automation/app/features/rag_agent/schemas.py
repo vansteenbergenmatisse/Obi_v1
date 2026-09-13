@@ -77,10 +77,11 @@ class Answer(BaseModel):
     refusal_reason: RefusalReason | None = Field(
         default=None,
         description=(
-            "One of the closed taxonomy `no_candidates | weak_score | no_citations` (PLAN 9.4, "
-            "ADR-0008 decision 4) — never a free-text diagnostic. Not sent over the `/chat` SSE "
-            "wire today; surfaced here so callers (and the `chat_request` audit log line) have a "
-            "stable, groupable category rather than the interpolated-score string this used to be."
+            "One of the closed taxonomy `no_candidates | off_topic | weak_score | no_citations` "
+            "(PLAN 9.4, ADR-0008 decision 4; `off_topic` added 2026-09-12) — never a free-text "
+            "diagnostic. Sent over the `/chat` SSE `done` event as `refusalReason` (only on a "
+            "refused turn) so the widget shows the hand-off CTA for the hand-off reasons and a "
+            "softer redirect for `off_topic`; also the groupable category the audit log uses."
         ),
     )
     trace_id: str | None = None

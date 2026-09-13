@@ -48,6 +48,10 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
                               treating query-embedded text as an instruction to follow (mirroring
                               PLAN 7.3's image-analysis prompt); the required live-model
                               adversarial pass for this new path is PLAN 9.8, not this sub-step.
+                              Identity path (2026-09-12): `generate_identity` redacts the query
+                              text the same way; the injected identity facts come from the VERIFIED
+                              token (not user input) and are presented as facts, carrying the same
+                              anti-injection instruction as the image/clarification prompts.
   C7_idempotency: covered   - optional `Idempotency-Key` header; a replay within the TTL window
                               returns the cached Answer without re-running retrieval/generation.
                               The cache key binds the header to a hash of
@@ -82,7 +86,11 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
                               question generation are two more bounded calls, gated behind
                               `enable_clarification_branch` (default off) and only reachable
                               through this already-rate-limited endpoint — no incremental abuse
-                              surface beyond one more call per already-capped request.
+                              surface beyond one more call per already-capped request. Identity path
+                              (2026-09-12): `generate_identity` is one more bounded call (150-token
+                              cap), reached only on a closed-set identity-question match, so it adds
+                              at most one capped call per already-rate-limited request and never
+                              runs alongside retrieval/generation for the same turn.
 
 security_baseline (surface: PATCH /chat/{trace_id}/feedback, tier STATE-MUTATING):
   C1_auth:        covered   - same shared-secret check (current + previous) as POST /chat.
@@ -466,21 +474,26 @@ async def _stream_answer(
         else None
     )
     yield _sse({"type": "citations", "citations": wire_citations})
-    yield _sse(
-        {
-            "type": "done",
-            "answer": text,
-            "citations": wire_citations,
-            "traceId": answer.trace_id,
-            "refused": answer.refused,
-            "imageAnalysis": image_analysis,
-            # PLAN 9.3, ADR-0008 decision 3: additive fields only, no new SSE event type.
-            # `needsClarification=False`/`null` on every pre-existing response shape.
-            "needsClarification": answer.needs_clarification,
-            "clarificationQuestion": answer.clarification_question,
-            "clarificationOptions": answer.clarification_options,
-        }
-    )
+    done_event: dict[str, object] = {
+        "type": "done",
+        "answer": text,
+        "citations": wire_citations,
+        "traceId": answer.trace_id,
+        "refused": answer.refused,
+        "imageAnalysis": image_analysis,
+        # PLAN 9.3, ADR-0008 decision 3: additive fields only, no new SSE event type.
+        # `needsClarification=False`/`null` on every pre-existing response shape.
+        "needsClarification": answer.needs_clarification,
+        "clarificationQuestion": answer.clarification_question,
+        "clarificationOptions": answer.clarification_options,
+    }
+    if answer.refused:
+        # 2026-09-12: the reason now rides the wire (was log-only) so the widget can tell an
+        # `off_topic` redirect (no human hand-off CTA) from the hand-off reasons. Emitted ONLY on a
+        # refused turn — a clarification/complete turn's key set stays unchanged (PLAN 9.8 red-team
+        # test locks that a non-refusal never forwards an internal `refusal_reason`).
+        done_event["refusalReason"] = answer.refusal_reason
+    yield _sse(done_event)
 
 
 @router.post("/chat")

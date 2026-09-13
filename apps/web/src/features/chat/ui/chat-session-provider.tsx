@@ -152,6 +152,7 @@ export function ChatSessionProvider({
               citations: event.citations,
               status: event.needsClarification ? "clarifying" : event.refused ? "refused" : "complete",
               traceId: event.traceId ?? undefined,
+              refusalReason: event.refusalReason ?? undefined,
               imageAnalysis: event.imageAnalysis ?? undefined,
               clarificationOptions: event.clarificationOptions ?? undefined,
             });

@@ -23,6 +23,11 @@ if TYPE_CHECKING:
 # embeddings_client.py/reranker_client.py; both now call Settings.is_offline_env() instead.
 _OFFLINE_ENVS = {"local", "test", "dev", "ci"}
 
+# Operator-editable static identity block for Obi's per-user identity path (operator-requested
+# 2026-09-12). Lives at the repo-root config/ beside platforms.json / knowledge_scopes.json — one
+# place an operator edits directly. app/platform/config/settings.py -> repo root is 5 levels up.
+DEFAULT_OBI_IDENTITY_PATH = Path(__file__).resolve().parents[5] / "config" / "obi_identity.md"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -97,11 +102,29 @@ class Settings(BaseSettings):
     rerank_breaker_threshold: int = 5  # consecutive failed calls -> open the fuse
     rerank_max_docs: int = 1000  # C10 abuse cap on a single rerank() call
 
-    # refusal threshold (PLAN 4, tuned from the 3.5.5 measurement). If the top survivor's
-    # cross-encoder relevance score is below this, the answer runtime refuses ("not in the
-    # docs") and routes to a human rather than hallucinate. Cohere rerank-v3.5 scores are in
-    # [0, 1]. Provisional floor from the 3.5.5 fixture run; re-tune on the Phase-5 gold set.
-    refusal_min_rerank_score: float = 0.10
+    # refusal threshold (PLAN 4). If the top survivor's cross-encoder relevance score is below
+    # this, the answer runtime refuses ("not in the docs") and routes to a human rather than
+    # hallucinate. Cohere rerank-v3.5 scores are in [0, 1]. The post-generation citation-
+    # enforcement gate (answer_service `no_citations`) is the real grounding backstop; this
+    # rerank floor is only a coarse pre-filter that skips generation when retrieval is hopeless.
+    # Recalibrated 0.10 -> 0.05 (2026-09-12): at 0.10 a legitimately-supported short fact scored
+    # 0.076/0.089/0.155 across EQUIVALENT phrasings — so two of three false-refused while the
+    # third answered (the operator-reported flapping). Measured on the live corpus the score
+    # distribution is bimodal: genuinely-unsupported queries cluster at 0.019-0.026, supported
+    # ones at 0.076-0.155, with an empty gap between; 0.05 sits in that gap (above every
+    # unsupported probe, below every supported one), fixing the flap without letting unsupported
+    # queries through. Re-tune on the Phase-5 gold set. See test_refusal_threshold_separation.
+    refusal_min_rerank_score: float = 0.05
+
+    # off-topic split (2026-09-12). A refused turn (top score < refusal_min_rerank_score) is split:
+    # a candidate at/below this bar is a genuinely UNRELATED question ("how do I reset my password"
+    # against a corpus with no such page — scores near the reranker floor, ~0.02) and gets a
+    # friendly "ask me about the documentation" redirect with NO human hand-off; one between this
+    # and refusal_min_rerank_score plausibly belongs but couldn't be grounded, so it still routes to
+    # a human (weak_score). Provisional, from the same bimodal live measurement (unsupported
+    # 0.019-0.026, supported 0.076-0.155); re-tune on the Phase-5 gold set. MUST stay strictly below
+    # refusal_min_rerank_score (enforced by _require_offtopic_below_refusal_threshold).
+    offtopic_max_rerank_score: float = 0.035
 
     # answer workflow (PLAN 4.2)
     rewrite_enabled: bool = True  # conversational query rewrite (routing_model), always on
@@ -155,6 +178,10 @@ class Settings(BaseSettings):
     # PLAN 5: exact-match answer cache in front of AnswerService (answer_cache.py). Same TTL
     # default/shape as chat_idempotency_ttl_seconds — a bounded staleness tradeoff already
     # accepted there. Semantic caching is deliberately not built (see answer_cache.py docstring).
+    # DEV caveat (PLAN item A.4): even after a live page edit is re-ingested (e.g. via
+    # dev_reconcile_interval_seconds above), this in-process cache can replay a pre-edit answer for
+    # up to this TTL (~5 min) on an IDENTICAL question. To see the fresh answer immediately, restart
+    # the server or reword the question. The prod default is deliberately left unchanged.
     chat_answer_cache_ttl_seconds: float = 300.0
     chat_answer_cache_max_entries: int = 500  # bounds in-process memory, not a cost/scale target
 
@@ -181,6 +208,10 @@ class Settings(BaseSettings):
     # background scheduler + in-process worker (off unless explicitly enabled)
     enable_background_jobs: bool = False
     worker_tick_seconds: int = 5
+    # optional fast lightweight-reconcile poll for DEV so live page edits self-propagate in
+    # ~N seconds instead of waiting for the daily lightweight_recon_cron. None = off (prod
+    # default). Only has any effect when enable_background_jobs=true.
+    dev_reconcile_interval_seconds: int | None = None
 
     # pipeline version stamps (bumping these forces recompute / re-embed per ADR-0002)
     parser_version: int = 1
@@ -219,6 +250,12 @@ class Settings(BaseSettings):
     platforms_path: str = ""
     allow_empty_platforms: bool = False
 
+    # Per-user identity path (operator-requested 2026-09-12). The static "facts Obi should always
+    # know" prose lives in config/obi_identity.md (see obi_identity_text below); this only holds
+    # where to read it. Empty -> the repo-root default. A missing file is not an error — the
+    # identity reply degrades to the per-user token facts alone.
+    obi_identity_path: str = ""
+
     def is_offline_env(self) -> bool:
         """True in local/test/dev/ci — envs where a missing hosted key or DB role is a safe
         default-to-fake / default-to-writer fallback rather than a real deployment gap."""
@@ -227,6 +264,18 @@ class Settings(BaseSettings):
     @property
     def knowledge_scope_set(self) -> frozenset[str]:
         return load_recognized_knowledge_scopes()
+
+    @property
+    def obi_identity_text(self) -> str:
+        """The operator's static identity block (config/obi_identity.md), stripped. Read at use
+        time, not cached, so an operator edit takes effect on the next generator build. A missing
+        file returns "" rather than raising — the identity reply then answers from the verified
+        per-user token facts alone (see rag_agent/domain/identity.py)."""
+        path = Path(self.obi_identity_path) if self.obi_identity_path else DEFAULT_OBI_IDENTITY_PATH
+        try:
+            return path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
 
     @property
     def platform_registry(self) -> PlatformRegistry:
@@ -249,6 +298,18 @@ class Settings(BaseSettings):
     def _require_valid_platform_registry(self) -> Settings:
         # fail fast if platforms.json is malformed or maps unknown scopes
         _ = self.platform_registry
+        return self
+
+    @model_validator(mode="after")
+    def _require_offtopic_below_refusal_threshold(self) -> Settings:
+        # the off-topic band must sit strictly below the refusal bar, else the split is meaningless
+        # (nothing would ever be "borderline weak_score") or inverted.
+        if self.offtopic_max_rerank_score >= self.refusal_min_rerank_score:
+            raise ValueError(
+                "offtopic_max_rerank_score "
+                f"({self.offtopic_max_rerank_score}) must be < refusal_min_rerank_score "
+                f"({self.refusal_min_rerank_score})"
+            )
         return self
 
 

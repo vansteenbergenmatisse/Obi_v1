@@ -11,7 +11,9 @@ that turns a retrieval into a grounded, cited, streamed chat answer — and wire
 flowchart LR
   H[chat history] --> ST{small talk?}
   ST -->|yes| STG[generate_small_talk]
-  ST -->|no| AMB{ambiguous? Phase 9}
+  ST -->|no| ID{identity question?}
+  ID -->|yes| IDG[generate_identity<br/>verified token facts + operator static block]
+  ID -->|no| AMB{ambiguous? Phase 9}
   AMB -->|yes| CLR[generate_clarification]
   AMB -->|no| RW[query rewrite, optional LLM]
   RW --> RET[HybridRetriever.retrieve_with_context]
@@ -62,6 +64,43 @@ Every retrieval-driving branch persists its result onto the same `query_trace` r
 (`_persist` → `trace_repo.update_query_trace_answer`). The small-talk and (Phase 9) clarification
 branches bypass this pipeline entirely and write no `query_trace` row — they were never a retrieval
 event.
+
+### Identity short-circuit (per-user identity, operator-requested 2026-09-12)
+
+A basic identity question — "which integration do we use?", "what company am I?", "who am I" — is
+not a retrieval failure: no document states it, so the normal pipeline scored ~0.02 and refused it
+as `off_topic`. But the answer is already carried by the verified edge token (`AuthContext`,
+[phase-11.1c.md](./phase-11.1c.md)). `AnswerService.answer` now checks `domain/identity.py::
+is_identity_question` right after small-talk (before rewrite/retrieval) and, on a match, short-
+circuits to `AnswerGenerator.generate_identity(query, facts)` — an ungrounded reply seeded with the
+token's `integration`/`company_name`/`company_id` plus an operator-editable static block. Same shape
+as small-talk: no retrieval/CRAG/refusal/citation-enforcement, no `query_trace` row, `refused=False`,
+no citation markers.
+
+- **Detection** (`domain/identity.py`) is a closed exact-match set, exactly like `small_talk.py`, so
+  a real documentation question that merely shares words ("how do I set up the mews integration")
+  still runs the full grounded pipeline. Accepted v1 tradeoff: recall — an unusual phrasing falls
+  through to retrieval rather than the identity reply.
+- **Prompt assembly** (`domain/prompt.py`): a **cached** system block = persona + operator static
+  facts (`build_identity_system_prompt`), plus an **uncached** per-user block = the verified identity
+  (`build_identity_context_block`), so per-user variation never busts the shared prompt cache. The
+  identity facts are from the *verified* token but presented as facts, never instructions (same anti-
+  injection posture as the image/clarification prompts). Fails open to a static reply on any LLM error.
+- **Operator static block** lives at repo-root `config/obi_identity.md`, loaded via
+  `settings.obi_identity_text` (missing file → empty, not an error) and injected by `main.py` into
+  `AnthropicAnswerGenerator`. The same "operator edits a file at `config/`" surface as
+  `platforms.json`/`knowledge_scopes.json`.
+- **Tokenless/general path**: no business identity → the per-user block says so honestly and the
+  reply answers from the static block alone, rather than refusing.
+- **Live proof surface** (`apps/web`, operator-requested 2026-09-13): `/test-hosts/multi`
+  (`app/test-hosts/multi/page.tsx` → `multi-user-content.tsx`) hosts all three business users
+  (Mews/Toast/Opera Cloud) from the single `TEST_HOSTS` source and switches between them — at random
+  or by name — always showing who is active. Switching re-points the embedded widget with
+  `Obi.init({ tokenUrl })`, which is now **idempotent**: `features/embed/loader.ts` gained
+  `Obi.destroy()` and `init` tears down the previous user's launcher + iframe first, so no
+  conversation or cached answer bleeds across identities (backend answer/idempotency caches are
+  already keyed per verified identity; the risk was purely client-side widget state). `pnpm --filter
+  web build:obi` rebuilds `public/obi.js` from that source.
 
 ### 4.3 — Real principal ACL storage
 

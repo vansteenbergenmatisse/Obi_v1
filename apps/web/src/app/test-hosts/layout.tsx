@@ -16,7 +16,7 @@ export default function TestHostsLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body style={{ fontFamily: "system-ui, sans-serif" }}>{children}</body>
     </html>
   );

@@ -136,10 +136,15 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   const isPlaceholder = message.status === "streaming" && message.text.length === 0;
   const showFeedback =
     !isUser && message.traceId && (message.status === "complete" || message.status === "refused");
+  // 2026-09-12: an `off_topic` refusal is a gentle "ask me about the docs" redirect, not a
+  // hand-off — it renders as a plain assistant turn (the softer backend copy in `message.text`),
+  // with no danger banner and no human-hand-off CTA. Every other refusal reason keeps both. A
+  // missing reason (older backend) falls through to the hand-off, the safe default.
+  const isOffTopicRedirect = message.status === "refused" && message.refusalReason === "off_topic";
 
   return (
     <div className={isUser ? "self-end text-right" : "self-start"}>
-      {message.status === "refused" && (
+      {message.status === "refused" && !isOffTopicRedirect && (
         <>
           <p className="mb-xs inline-block rounded-sm border border-danger-bg bg-danger-bg px-xs py-xs text-xs font-medium text-danger">
             Not found in the docs — routed to a human

@@ -96,10 +96,13 @@ def build_answer_service(settings: Settings) -> AnswerService:
     return AnswerService(
         retriever,
         AnthropicQueryRewriter(client, settings.routing_model),
-        AnthropicAnswerGenerator(client, settings.answer_model),
+        AnthropicAnswerGenerator(
+            client, settings.answer_model, identity_static_facts=settings.obi_identity_text
+        ),
         get_sessionmaker(),
         rewrite_enabled=settings.rewrite_enabled,
         refusal_min_rerank_score=settings.refusal_min_rerank_score,
+        offtopic_max_rerank_score=settings.offtopic_max_rerank_score,
         crag_max_retries=settings.crag_max_retries,
         retrieve_k=settings.rerank_top_k,
         clarification_classifier=AnthropicAmbiguityClassifier(client, settings.routing_model),
@@ -155,6 +158,20 @@ def _build_scheduler(gateway: ConfluenceGateway, settings: Settings) -> Backgrou
         max_instances=1,
         coalesce=True,
     )
+    # Optional DEV-only fast lightweight-reconcile poll (PLAN item A): when set, run the SAME
+    # scheduled_lightweight_reconcile as the daily cron above, just on a short interval, so a live
+    # page edit is enqueued within N seconds and drained by worker_tick into a new document_version
+    # — instead of waiting for lightweight_recon_cron. This is IN ADDITION to the daily cron and
+    # adds no new gateway/network surface; None (prod default) leaves the scheduler unchanged.
+    if settings.dev_reconcile_interval_seconds and settings.dev_reconcile_interval_seconds > 0:
+        scheduler.add_job(
+            scheduled_lightweight_reconcile,
+            IntervalTrigger(seconds=settings.dev_reconcile_interval_seconds, timezone="UTC"),
+            args=[gateway, settings],
+            id="dev_lightweight_reconcile",
+            max_instances=1,
+            coalesce=True,
+        )
     return scheduler
 
 

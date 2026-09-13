@@ -80,6 +80,20 @@ _SMALL_TALK_PHRASES = frozenset(
         "what can you help me with",
         "what do you do",
         "help",
+        # coverage / usage meta questions — the widget's own suggested starter chips (PLAN 9.5,
+        # message-list `copy.suggestions`) plus their obvious spoken variants. These ask about the
+        # bot's coverage or how to use it, not about any document, so they were never going to
+        # match a chunk; without this they fell through to retrieval and refused ("routed to a
+        # human") even though the UI itself suggested them. They get the same ungrounded capability
+        # reply as "what can you help me with" above. Kept exact-match: "what topics does the
+        # payroll doc cover" is a real question and still runs the full grounded pipeline.
+        "what topics do you know about",
+        "what topics do you know",
+        "what topics can you help with",
+        "what topics can you help me with",
+        "how specific should my question be",
+        "what can i ask",
+        "what can i ask you",
     }
 )
 

@@ -77,6 +77,7 @@ from app.features.rag_agent.application.auth_context import AuthContext
 from app.features.rag_agent.domain.citations import enforce_citations
 from app.features.rag_agent.domain.clarification import AmbiguityClassifier, decide_clarification
 from app.features.rag_agent.domain.curated_knowledge import CuratedEntry, curated_entry_to_hit
+from app.features.rag_agent.domain.identity import IdentityFacts, is_identity_question
 from app.features.rag_agent.domain.prompt import build_evidence_block
 from app.features.rag_agent.domain.refusal import RefusalReason, decide_refusal
 from app.features.rag_agent.domain.small_talk import is_small_talk
@@ -105,6 +106,14 @@ _REFUSAL_COPY: dict[RefusalReason, str] = {
         "I couldn't find anything about this in the documentation I can search — "
         "routing this to a human."
     ),
+    # off_topic (2026-09-12): a genuinely unrelated question. Softer than the hand-off reasons —
+    # steers back to the docs instead of "routing to a human," and the UI shows no hand-off CTA for
+    # this reason. Still a refusal (no grounded answer). Copy drafted under copywriting-rules/
+    # ux-writing/anti-ai-writing.
+    "off_topic": (
+        "I can only answer questions about your documentation, so I can't help with that one. "
+        "Ask me something covered in the docs and I'll take a look."
+    ),
     "weak_score": (
         "I found a few possible matches, but none of them look reliable enough to trust — "
         "routing this to a human."
@@ -114,6 +123,13 @@ _REFUSAL_COPY: dict[RefusalReason, str] = {
         "routing this to a human."
     ),
 }
+
+# off_topic gets a friendly redirect and no human hand-off; every other refusal reason routes to a
+# human and emits the `human_handoff` audit record (PLAN 9.6). Keeping this a set (not a bool on the
+# decision) keeps the taxonomy the single source of truth for "does this route to a human."
+_HANDOFF_REASONS: frozenset[RefusalReason] = frozenset(
+    {"no_candidates", "weak_score", "no_citations"}
+)
 
 
 @runtime_checkable
@@ -138,7 +154,8 @@ class AnswerService:
         writer_sessionmaker: Callable[[], Session] | None = None,
         *,
         rewrite_enabled: bool = True,
-        refusal_min_rerank_score: float = 0.10,
+        refusal_min_rerank_score: float = 0.05,
+        offtopic_max_rerank_score: float = 0.035,
         crag_max_retries: int = 1,
         retrieve_k: int = 5,
         clarification_classifier: AmbiguityClassifier | None = None,
@@ -154,6 +171,7 @@ class AnswerService:
         self._writer_sessionmaker = writer_sessionmaker
         self._rewrite_enabled = rewrite_enabled
         self._refusal_min_rerank_score = refusal_min_rerank_score
+        self._offtopic_max_rerank_score = offtopic_max_rerank_score
         self._crag_max_retries = max(0, crag_max_retries)
         self._retrieve_k = retrieve_k
         self._clarification_classifier = clarification_classifier
@@ -175,6 +193,24 @@ class AnswerService:
 
         if is_small_talk(original_query):
             text = self._generator.generate_small_talk(original_query)
+            return Answer(text=text, citations=[], refused=False, trace_id=None)
+
+        # Per-user identity path (operator-requested 2026-09-12): checked right after small-talk,
+        # before rewrite/retrieval. A basic identity question ("which integration do we use?",
+        # "what company am I?") is not a retrieval failure — it was never going to match a document,
+        # and the answer is already carried by the verified `auth` — so it short-circuits to a
+        # dedicated ungrounded reply seeded with the token's identity facts (plus the operator's
+        # static block, held by the generator) instead of running retrieval and refusing off_topic.
+        # Same shape as small-talk: no rewrite/retrieval/CRAG/refusal/citation-enforcement, no
+        # `query_trace` row, `refused=False`. `is_identity_question` is a closed exact-match set, so
+        # a real content question that merely shares words still runs the full grounded pipeline.
+        if is_identity_question(original_query):
+            facts = IdentityFacts(
+                integration=auth.integration,
+                company_name=auth.company_name,
+                company_id=auth.company_id,
+            )
+            text = self._generator.generate_identity(original_query, facts)
             return Answer(text=text, citations=[], refused=False, trace_id=None)
 
         if self._enable_clarification_branch and self._clarification_classifier is not None:
@@ -230,7 +266,12 @@ class AnswerService:
             self._generator.generate_image_analysis(original_query, images) if has_image else None
         )
 
-        decision = decide_refusal(result.top_score, self._refusal_min_rerank_score, has_image)
+        decision = decide_refusal(
+            result.top_score,
+            self._refusal_min_rerank_score,
+            has_image,
+            self._offtopic_max_rerank_score,
+        )
         trace_id = str(result.trace_id) if result.trace_id is not None else None
         if decision.refuse and decision.reason is not None:
             # Score-level detail lives here, in the log, not in `refusal_reason` (a static,
@@ -240,13 +281,25 @@ class AnswerService:
                 reason=decision.reason,
                 top_score=result.top_score,
                 threshold=self._refusal_min_rerank_score,
+                offtopic_threshold=self._offtopic_max_rerank_score,
             )
-            log.info(
-                "human_handoff",
-                trace_id=trace_id,
-                raw_query=original_query,
-                refusal_reason=decision.reason,
-            )
+            # off_topic is a friendly redirect, not a hand-off — emit a distinct audit record so
+            # PLAN 9.7 fallback-rate reporting can tell "sent to a human" from "steered back to the
+            # docs." The hand-off reasons keep the existing `human_handoff` record unchanged.
+            if decision.reason in _HANDOFF_REASONS:
+                log.info(
+                    "human_handoff",
+                    trace_id=trace_id,
+                    raw_query=original_query,
+                    refusal_reason=decision.reason,
+                )
+            else:
+                log.info(
+                    "off_topic_redirect",
+                    trace_id=trace_id,
+                    raw_query=original_query,
+                    refusal_reason=decision.reason,
+                )
             refusal_text = _REFUSAL_COPY[decision.reason]
             self._persist(result.trace_id, rewritten, refusal_text, [], subject_hash)
             return Answer(

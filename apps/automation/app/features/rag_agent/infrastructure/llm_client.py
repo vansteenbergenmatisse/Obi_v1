@@ -21,6 +21,7 @@ from app.features.rag_agent.domain.clarification import (
     ClarificationReply,
     parse_clarification_reply,
 )
+from app.features.rag_agent.domain.identity import IdentityFacts
 from app.features.rag_agent.domain.pii import redact_pii
 from app.features.rag_agent.domain.prompt import (
     AMBIGUITY_CLASSIFIER_SYSTEM_PROMPT,
@@ -29,6 +30,8 @@ from app.features.rag_agent.domain.prompt import (
     IMAGE_ANALYSIS_SYSTEM_PROMPT,
     SMALL_TALK_SYSTEM_PROMPT,
     build_answer_prompt,
+    build_identity_context_block,
+    build_identity_system_prompt,
     build_rewrite_prompt,
 )
 from app.features.rag_agent.schemas import ChatMessage, ImageAttachment
@@ -48,6 +51,11 @@ _SMALL_TALK_MAX_TOKENS = 150
 _SMALL_TALK_FALLBACK = "Hi! I'm Obi — ask me anything about the documentation and I'll look it up."
 _IMAGE_ANALYSIS_MAX_TOKENS = 500
 _IMAGE_ANALYSIS_FALLBACK = "I couldn't look at that image right now — feel free to try again."
+_IDENTITY_MAX_TOKENS = 150  # one or two short sentences of identity facts, never a full answer
+_IDENTITY_FALLBACK = (
+    "I'm Obi, your documentation assistant. Ask me anything about the documentation and I'll "
+    "look it up."
+)
 _AMBIGUITY_CLASSIFIER_MAX_TOKENS = 10  # a single word (AMBIGUOUS/SPECIFIC), never a full reply
 _CLARIFICATION_MAX_TOKENS = 200  # one short question + up to 4 short options, never a full answer
 _CLARIFICATION_FALLBACK = ClarificationReply(
@@ -84,6 +92,14 @@ class AnswerGenerator(Protocol):
         classifier judged ambiguous (PLAN 9.3, ADR-0008 decision 3). Always returns a value, never
         raises — fails open to a static fallback on any generation or parsing failure, the same
         shape as ``generate_small_talk``."""
+        ...
+
+    def generate_identity(self, query: str, facts: IdentityFacts) -> str:
+        """Return a brief, ungrounded reply to a basic identity question (`domain/identity.py`
+        decides when this runs), grounded in the operator's static facts + the verified per-user
+        ``facts`` supplied in the system prompt — never in retrieved evidence, so it carries no
+        citation marker. Structurally parallel to ``generate_small_talk``: makes no grounded
+        documentation claim, so it fails open to a static fallback on any `AnthropicError`."""
         ...
 
 
@@ -126,9 +142,15 @@ class AnthropicAnswerGenerator:
     open on any `AnthropicError` — the same reasoning `AnthropicQueryRewriter.rewrite` uses, applied
     to a reply instead of a rewrite."""
 
-    def __init__(self, client: AnthropicMessagesClient, model: str) -> None:
+    def __init__(
+        self, client: AnthropicMessagesClient, model: str, identity_static_facts: str = ""
+    ) -> None:
         self._client = client
         self._model = model
+        # Operator-editable static block (`settings.obi_identity_text`, from config/obi_identity.md)
+        # baked into the cached identity system prompt. Constant per deployment, so it caches with
+        # the persona; the per-user identity rides a separate, uncached block. "" -> base prompt.
+        self._identity_static_facts = identity_static_facts
 
     def generate(self, query: str, evidence_block: str) -> str:
         return self._client.create_message(
@@ -195,6 +217,28 @@ class AnthropicAnswerGenerator:
             log.warning("clarification_generation_unparseable_using_fallback")
             return _CLARIFICATION_FALLBACK
         return parsed
+
+    def generate_identity(self, query: str, facts: IdentityFacts) -> str:
+        """Two system blocks: a CACHED block (persona + operator static facts — constant per
+        deployment, billed once) and an UNCACHED per-user block (this request's verified identity),
+        so per-user variation never busts the shared cache. The ``query`` text still goes through
+        `redact_pii` (C6) like every call here. No evidence block, no citation instruction —
+        structurally parallel to ``generate_small_talk``; fails open to a static fallback on any
+        `AnthropicError`, since the reply makes no grounded documentation claim."""
+        try:
+            out = self._client.create_message(
+                model=self._model,
+                user_text=redact_pii(query),
+                system_blocks=[
+                    cached_system_block(build_identity_system_prompt(self._identity_static_facts)),
+                    {"type": "text", "text": build_identity_context_block(facts)},
+                ],
+                max_tokens=_IDENTITY_MAX_TOKENS,
+            )
+        except AnthropicError:
+            log.warning("identity_generation_failed_using_fallback")
+            return _IDENTITY_FALLBACK
+        return out.strip() or _IDENTITY_FALLBACK
 
 
 class AnthropicAmbiguityClassifier:

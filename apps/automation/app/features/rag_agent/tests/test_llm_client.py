@@ -8,6 +8,7 @@ import json
 
 import httpx
 
+from app.features.rag_agent.domain.identity import IdentityFacts
 from app.features.rag_agent.infrastructure.llm_client import (
     AnthropicAmbiguityClassifier,
     AnthropicAnswerGenerator,
@@ -114,6 +115,56 @@ def test_generate_small_talk_fails_open_to_a_static_greeting_on_error() -> None:
     generator = AnthropicAnswerGenerator(client, "answer-model")
 
     out = generator.generate_small_talk("hi")
+
+    assert "Obi" in out  # the static fallback, not a raised AnthropicError
+
+
+def test_generate_identity_sends_cached_static_block_plus_uncached_per_user_block() -> None:
+    seen: list[dict] = []
+    generator = AnthropicAnswerGenerator(
+        _client_capturing(seen),
+        "answer-model",
+        identity_static_facts="Omniboost builds hospitality software.",
+    )
+    facts = IdentityFacts(integration="opera-cloud", company_name="Hotel Co", company_id="42")
+
+    out = generator.generate_identity("which integration do we use?", facts)
+
+    body = seen[0]
+    blocks = body["system"]
+    # first block is cached (persona + operator static facts, constant per deployment)
+    assert blocks[0]["cache_control"] == {"type": "ephemeral"}
+    assert "Omniboost builds hospitality software." in blocks[0]["text"]
+    # second block carries the per-user identity and is NOT cached (varies per user)
+    assert "cache_control" not in blocks[1]
+    assert "opera-cloud" in blocks[1]["text"]
+    assert "Hotel Co" in blocks[1]["text"]
+    assert out == "ok"
+
+
+def test_generate_identity_redacts_pii_in_the_query() -> None:
+    seen: list[dict] = []
+    generator = AnthropicAnswerGenerator(_client_capturing(seen), "answer-model")
+    generator.generate_identity(
+        "who am I, email alice@example.com",
+        IdentityFacts(integration=None, company_name=None, company_id=None),
+    )
+    sent_text = seen[0]["messages"][0]["content"][0]["text"]
+    assert "alice@example.com" not in sent_text
+    assert "[REDACTED_EMAIL]" in sent_text
+
+
+def test_generate_identity_fails_open_to_a_static_reply_on_error() -> None:
+    client = AnthropicMessagesClient(
+        api_key="k",
+        client=httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(500, json={}))),
+        max_retries=1,
+    )
+    generator = AnthropicAnswerGenerator(client, "answer-model")
+
+    out = generator.generate_identity(
+        "who am I", IdentityFacts(integration=None, company_name=None, company_id=None)
+    )
 
     assert "Obi" in out  # the static fallback, not a raised AnthropicError
 

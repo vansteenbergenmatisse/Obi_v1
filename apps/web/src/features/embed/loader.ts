@@ -189,6 +189,11 @@ function toggleWidget(tokenUrl: string): void {
 }
 
 function init(options: ObiInitOptions): void {
+  // Idempotent: tear down any existing widget first so a host can re-point Obi at a new tokenUrl
+  // (e.g. the `/test-hosts/multi` page switching the signed-in user) without accumulating a second
+  // launcher/iframe. The fresh iframe also means the previous user's in-frame conversation is gone
+  // — no answer from one identity can carry over to the next.
+  if (iframeEl || launcherEl) destroy();
   iframeEl = injectIframe();
   launcherEl = injectLauncherButton(() => toggleWidget(options.tokenUrl));
 }
@@ -202,10 +207,26 @@ function clear(): void {
   hideWidget();
 }
 
+/** Full teardown: cancels the renewal timer and removes the launcher + iframe from the DOM,
+ * resetting module state. Unlike `clear()` (which forgets the token but leaves the hidden widget
+ * in place to re-open), this leaves no Obi elements behind — used to re-init cleanly under a
+ * different tokenUrl, and available to hosts that need to fully unmount the widget. */
+function destroy(): void {
+  if (renewTimer) {
+    clearTimeout(renewTimer);
+    renewTimer = null;
+  }
+  iframeEl?.remove();
+  launcherEl?.remove();
+  iframeEl = null;
+  launcherEl = null;
+  isOpen = false;
+}
+
 declare global {
   interface Window {
-    Obi: { init: typeof init; clear: typeof clear };
+    Obi: { init: typeof init; clear: typeof clear; destroy: typeof destroy };
   }
 }
 
-window.Obi = { init, clear };
+window.Obi = { init, clear, destroy };

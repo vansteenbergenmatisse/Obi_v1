@@ -169,6 +169,27 @@ against the offline fixture. (Secondary gotcha: the in-process answer cache,
 `chat_answer_cache_ttl_seconds=300`, can replay a pre-edit answer for ~5 min on an *identical*
 repeated question; it clears on restart.)
 
+**Auto-propagate in DEV — fast reconcile poll (PLAN item A, 2026-09-12).** For a local runtime that
+keeps itself current without a manual `make reingest`, turn on the background scheduler and give it a
+short lightweight-reconcile interval. In `.env`:
+
+```
+ENABLE_BACKGROUND_JOBS=true
+DEV_RECONCILE_INTERVAL_SECONDS=30
+WORKER_TICK_SECONDS=5
+```
+
+Then run `uvicorn app.main:app`. `_build_scheduler` registers an extra `dev_lightweight_reconcile`
+interval job **in addition to** the daily `lightweight_recon_cron` (unchanged): every N seconds it
+runs the *same* `scheduled_lightweight_reconcile` against live Confluence, so an edited page is
+enqueued within N s and the existing `worker_tick` drains it into a new `document_version` — edit →
+answer reflects it in ~30–60 s. This adds no new gateway/network surface (same client, timeouts, and
+retries as the cron); `DEV_RECONCILE_INTERVAL_SECONDS` unset (prod default) leaves the scheduler
+exactly as before. `make reingest` remains the on-demand fallback when background jobs are off. The
+answer-cache caveat above still applies: an *identical* repeated question can replay a pre-edit
+answer for up to `chat_answer_cache_ttl_seconds` (~5 min) — restart the server or reword to see the
+fresh answer.
+
 ## 7. The Confluence gateway (live vs. fixture)
 
 `main.build_gateway` picks the client at startup:

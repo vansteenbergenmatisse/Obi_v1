@@ -52,3 +52,23 @@ def test_default_knowledge_scope_defaults_to_empty() -> None:
 
 def test_enable_knowledge_scope_filtering_defaults_to_false() -> None:
     assert Settings.model_fields["enable_knowledge_scope_filtering"].default is False
+
+
+# -- obi_identity_text: operator-editable static identity block (config/obi_identity.md) ----------
+
+
+def test_obi_identity_path_defaults_to_empty() -> None:
+    assert Settings.model_fields["obi_identity_path"].default == ""
+
+
+def test_obi_identity_text_reads_the_file_when_present(tmp_path) -> None:
+    f = tmp_path / "obi_identity.md"
+    f.write_text("Omniboost builds hospitality software.\n")
+    assert Settings(obi_identity_path=str(f)).obi_identity_text == (
+        "Omniboost builds hospitality software."
+    )
+
+
+def test_obi_identity_text_is_empty_when_file_missing_does_not_raise(tmp_path) -> None:
+    missing = tmp_path / "nope.md"
+    assert Settings(obi_identity_path=str(missing)).obi_identity_text == ""

@@ -16,13 +16,293 @@
 > Newest-first. The dated SESSION LOG below keeps the fuller build-session detail; this block is the
 > single source of "where things actually stand right now."
 
-### 🔭 NEXT UP — forward-looking roadmap (as of 2026-09-12 — ★ NEW headline: Phase 11.1c Obi embed + JWT edge binding DONE, migrations 0010+0011 LIVE on Supabase (head 0011), scope isolation PROVEN end-to-end; only real-platform onboarding remains)
+### 🔭 NEXT UP — forward-looking roadmap (as of 2026-09-13 — ★ NEW headline: per-user identity in a variable system prompt DONE + the multi-user test page (`/test-hosts/multi`, random-switch across Mews/Toast/Opera Cloud + `Obi.destroy()`/idempotent `init`) DONE (both uncommitted, see below); NEXT STEP = live in-browser proof of the identity feature via that page, then real-platform onboarding. Phase 11.1c Obi embed + JWT edge binding DONE, migrations 0010+0011 LIVE on Supabase (head 0011), scope isolation PROVEN end-to-end)
 
 > The single prioritized "what's next" list. Each item says who it needs. Phase-13 sub-items and the
 > Phase 5.4/12.4 eval remainder are the detail below; this is the ordered pointer.
 >
 > ---
-> ### ▶▶ NEXT SESSION (2026-09-12 pm) — do these two first (operator asked; NOT yet built)
+> ### ▶▶ ✅ DONE (2026-09-13) — multi-user test page: random-switch between 3 business users (uncommitted)
+>
+> **Built (TDD, `apps/web`).** New route `apps/web/src/app/test-hosts/multi/page.tsx` (thin) →
+> route-owned `apps/web/src/app/test-hosts/multi-user-content.tsx` (`"use client"`). Hosts all three
+> BUSINESS users from the single `TEST_HOSTS` source (`app/api/test-hosts/config.ts`, filtering out the
+> tokenless `none`): Mews→**Test Hotel**, Toast→**Test Restaurant**, Opera Cloud→**Test Resort**. An
+> always-visible "Active user" panel (`data-testid="active-user"`, `aria-live="polite"`) shows the
+> active user's `company_name` + `integration` + `company_id`; a "Switch to a random user" button picks
+> a *different* one each click (never re-picks current, so state always visibly changes) plus three
+> explicit per-user buttons (`aria-pressed`). The four existing single-user pages are untouched.
+> - **Open-question resolved (obi.js re-init):** `public/obi.js` is built from source
+>   `apps/web/src/features/embed/loader.ts` (`pnpm --filter web build:obi`, esbuild). Chose option
+>   (a)+(b): added **`Obi.destroy()`** (removes launcher+iframe, cancels renewal timer, resets state)
+>   and made **`init` idempotent** (tears down any existing widget first). Switching users is just
+>   `Obi.init({ tokenUrl })` again → fresh iframe = the previous user's conversation is gone (no bleed),
+>   no duplicate DOM. Rebuilt `public/obi.js` (now exposes `{init, clear, destroy}`).
+> - **Security.** No new HTTP/LLM surface, no new secret — reuses the existing local-only test-host
+>   token endpoints and `test-*` issuers. `destroy()` only manipulates DOM/timers.
+> - **Gate:** `apps/web` `pnpm test` = **196 passed** (added 2 loader tests for destroy/idempotent
+>   re-init + 4 multi-user-content tests) and `pnpm typecheck` clean. (`next lint` is not configured in
+>   this repo — it prompts interactively; the configured web gate is test + typecheck.) Docs:
+>   `docs/rag/retrieval/phase-4.md` Identity short-circuit section gained a "Live proof surface" note.
+> - **⚠️ Uncommitted; live in-browser proof still pending** (green suite + typecheck only). To prove:
+>   run backend with the identity feature + the 2026-09-12 run-config (`PLATFORMS_PATH` in root `.env`,
+>   test signing keys in `apps/web/.env.local`), open `/test-hosts/multi`, switch through all three, ask
+>   "what company am I?" → expect Test Hotel / Test Restaurant / Test Resort respectively.
+>
+> #### Original scoping (kept for history — now built)
+>
+> **Goal.** A single local test page that hosts **three** signed-in users at once — Mews, Toast, and
+> Opera Cloud, each a different company — where the operator can **switch to a random user** with one
+> click and **always see which user is currently active**. Its purpose is to prove the just-shipped
+> per-user identity feature (the DONE block right below) end-to-end in the browser: switch user →
+> ask "what company am I?" / "which integration do we use?" → Obi answers with *that* user's company
+> and integration, and the answers differ per user.
+>
+> **What already exists (reuse it — no new keys/issuers/tokens needed).** The three business users are
+> already fully wired in `apps/web/src/app/api/test-hosts/config.ts::TEST_HOSTS`, each with its own
+> issuer, RS256 key pair (env vars), token endpoint `/api/test-hosts/<name>/obi-token`, and distinct
+> `businessClaims.company_name`:
+> - `mews` → company **"Test Hotel"**, integration `mews`
+> - `toast` → company **"Test Restaurant"**, integration `toast`
+> - `opera-cloud` → company **"Test Resort"**, integration `opera-cloud`
+> Today each has its own single-user page at `apps/web/src/app/test-hosts/<name>/page.tsx` (plus
+> `none` = general/tokenless), all rendering the shared `test-host-content.tsx` which runs
+> `window.Obi.init({ tokenUrl })` from `obi.js`. The new page is an *additional* route; leave the four
+> existing single-user pages untouched.
+>
+> **What to build.**
+> 1. **New route** `apps/web/src/app/test-hosts/multi/page.tsx` (thin, per the arch rule) rendering a
+>    new client component — e.g. `apps/web/src/app/test-hosts/multi-user-content.tsx`, route-owned and
+>    colocated beside `test-host-content.tsx` (specific to this one route, not promoted to
+>    `components/`). It imports the 3 business hosts from `TEST_HOSTS` (filter out `none`) so the user
+>    list stays a single source of truth.
+> 2. **Current-user indicator** — always-visible panel showing the active user's `name`,
+>    `company_name`, and `integration` (read straight from the `TestHostConfig`), so it's never
+>    ambiguous who is signed in.
+> 3. **Random switch** — a "Switch to a random user" button that picks a different one of the three at
+>    random (never re-pick the current one, so a click always visibly changes state) and re-points the
+>    embedded Obi widget at that user's `tokenUrl` (`tokenUrlFor(name)`). Optionally also 3 explicit
+>    per-user buttons.
+> 4. **Re-init the widget on switch** — the crux/open question below.
+>
+> **Open question to resolve at build (the one real unknown).** `obi.js` today is initialized once via
+> `Obi.init({ tokenUrl })` (see `test-host-content.tsx` + `apps/web/public/obi.js`). Switching identity
+> in the same tab needs either (a) `Obi.init` to support being called again with a new `tokenUrl`
+> (tearing down / re-creating the launcher+iframe and dropping any in-widget conversation so no answer
+> from user A bleeds into user B), or (b) a small teardown API on `obi.js` (`Obi.destroy()`), or (c)
+> the pragmatic fallback: force a full remount by keying the embed on the active user (React `key`) or
+> reloading the iframe. **Read `apps/web/public/obi.js` first** and pick the smallest correct option;
+> if `obi.js` needs a teardown/re-init hook it doesn't have yet, that becomes a scoped sub-task. A
+> clean switch MUST NOT let the previous user's conversation or cached answer carry over (backend
+> answer/idempotency caches are already keyed per verified identity, so the risk is purely client-side
+> widget state).
+>
+> **Security.** No new HTTP/LLM surface and no new secret — reuses the existing local-only test-host
+> token endpoints and `config/platforms.local.json` `test-*` issuers (never used outside local browser
+> proof). The `securing-http-and-llm-endpoints` gate applies only if a new endpoint/LLM call is added
+> (not expected).
+>
+> **Tests / done-when.** (1) Component test (Vitest/RTL, beside the existing
+> `test-host-content.test.tsx`) that the page lists exactly the 3 business users, shows the current
+> user, and a switch changes the active user to a different one. (2) `pnpm test` + `pnpm typecheck`
+> green. (3) Live browser proof: on `/test-hosts/multi`, switch through all three users and confirm
+> "what company am I?" answers Test Hotel / Test Restaurant / Test Resort respectively (this is also
+> the deferred live-proof of the identity feature below). (4) Update this ledger + `docs/rag/retrieval/
+> phase-4.md` (or a short embed-side doc) with what was built.
+>
+> **Prereq to actually see it work:** the backend needs the identity feature (DONE below) running, and
+> the local run-config from the 2026-09-12 notes (`PLATFORMS_PATH` in root `.env`, test signing keys in
+> `apps/web/.env.local`).
+>
+> ---
+> ### ▶▶ ✅ DONE (2026-09-13) — per-user identity in a variable system prompt (dedicated short-circuit; uncommitted)
+>
+> **Built (TDD, approach (a) + repo-root config file, both operator-confirmed).** A basic identity
+> question ("which integration do we use?", "what company am I?", "who am I") now short-circuits in
+> `AnswerService.answer` right after small-talk (before rewrite/retrieval) to a new
+> `AnswerGenerator.generate_identity(query, facts)` — an ungrounded reply seeded with the VERIFIED
+> token's `integration`/`company_name`/`company_id` plus an operator-editable static block. Same
+> shape as small-talk: no retrieval/CRAG/refusal/citation-enforcement, no `query_trace` row,
+> `refused=False`, no citation markers. Previously these scored ~0.02 and were refused as `off_topic`.
+> - **New/changed:** `domain/identity.py` (new — `is_identity_question` closed exact-match set +
+>   `IdentityFacts`), `domain/prompt.py` (`IDENTITY_SYSTEM_PROMPT`, `build_identity_system_prompt`,
+>   `build_identity_context_block`), `infrastructure/llm_client.py` (`generate_identity` on the
+>   Protocol + `AnthropicAnswerGenerator`: **cached** persona+static block, **uncached** per-user
+>   block so per-user variation never busts the prompt cache; redacts query; fails open),
+>   `application/answer_service.py` (the branch), `platform/config/settings.py`
+>   (`obi_identity_path` + `obi_identity_text` property, missing file → empty), `main.py` (wires
+>   `settings.obi_identity_text` into the generator), new repo-root `config/obi_identity.md`
+>   (operator-editable). Tokenless/general path: no business identity → the reply says so honestly
+>   and answers from the static block alone, never refuses.
+> - **Detection is a closed exact-match set** (mirrors `small_talk.py`) so a real doc question that
+>   merely shares words ("how do I set up the mews integration") still runs the full grounded
+>   pipeline. Accepted v1 tradeoff: recall — an unusual phrasing falls through to retrieval.
+> - **Security (LLM-CALL tier, `securing-http-and-llm-endpoints` gate run):** reached only through
+>   the already-authed/rate-limited `POST /chat`; identity facts are from the *verified* token (not
+>   user input), presented as facts with the anti-injection line; query still `redact_pii`'d;
+>   150-token cap; one extra bounded call only on an identity match. Recorded in `router.py`'s
+>   C6/C10 security_baseline docstring.
+> - **Gate:** `make check` = **594 passed** (added identity/prompt/llm_client/answer_service/settings
+>   tests); boundaries exit 0; ruff/format/pyright clean on touched files. Doc: `docs/rag/retrieval/
+>   phase-4.md` gained an "Identity short-circuit" subsection + flowchart branch. **Open (confirm at
+>   deploy):** `integration` is rendered as the raw key (e.g. `opera-cloud`) — no friendly-name map
+>   in v1; the required live-model adversarial pass for this new prompt path is not yet run.
+> - **⚠️ Uncommitted; not yet verified live in-browser** (green suite + gate only, as with the other
+>   uncommitted 2026-09-12 items below).
+>
+> #### Original scoping (kept for history — feature is now built)
+>
+> **Goal:** Obi should answer basic identity questions directly — e.g. "which integration do we use?",
+> "what company am I?" — which today fail (no document states it → retrieval finds nothing → off-topic
+> refusal). The verified token already carries the answer; it's just discarded after the request and
+> never reaches the model.
+>
+> **What to build:** inject the verified `AuthContext` identity into the **answer generation system
+> prompt**, making the system prompt *variable per user*:
+> - **Dynamic block** (per request, from the VERIFIED token — safe, not user input): `integration`,
+>   `company_name`, `company_id`. Threaded `AuthContext` → `AnswerService` → `AnthropicAnswerGenerator.
+>   generate_answer` as a **second system block** appended after `cached_system_block(ANSWER_SYSTEM_PROMPT)`
+>   (`llm_client.py:137`) — keep the static grounding/citation rules in the cached block; the small
+>   per-user identity block stays uncached so it doesn't blow prompt caching for everyone.
+> - **Operator-defined static section**: a config-owned block of basic facts Obi should always know/answer
+>   (operator-editable). Decide storage: a settings string / a config file / a `curated_knowledge`-style
+>   entry. (Open: exactly what static content the operator wants — confirm at build time.)
+>
+> **Design subtlety (must handle):** identity questions are NOT small-talk and today get **off-topic
+> refused before generation runs** (retrieval score ~0.02 → `off_topic`). So injecting the prompt alone
+> is insufficient — the feature must also let identity/basic questions **reach a generation step that has
+> the identity context**. Options to weigh: (a) extend the capability/small-talk path with the identity
+> block (answer without retrieval); (b) always run generation with the identity block and only refuse
+> when *document* grounding is actually required; (c) seed the identity as a synthetic always-present
+> evidence/curated entry so it survives the refusal gate and is citable. (a) or (b) preferred — confirm.
+>
+> **Storage note (answers the operator's "where is this stored?"):** today `integration`/`company_name`/
+> `company_id` are NOT persisted — source of truth is the platform's own JWT; Obi holds them in-memory
+> per request only; `query_trace` stores just `subject_hash` (sha256 of `sub`) + `allowed_knowledge_scopes`.
+> This feature reads them live from `AuthContext`; it does not require persisting them (persisting for
+> audit is a separate optional decision).
+>
+> **Files this will touch:** `application/auth_context.py` (already has the fields), `application/
+> answer_service.py` (thread identity + gate/route identity questions), `infrastructure/llm_client.py`
+> (`generate_answer` second system block), `domain/prompt.py` (identity/static prompt template), settings
+> or a config file (operator static block), tests both the routing and the prompt assembly. Security: the
+> identity is from the *verified* token — present it as CONTEXT, keep the existing anti-prompt-injection
+> posture (don't let it be treated as an instruction).
+>
+> ---
+>
+> ### ▶▶ NEXT SESSION (2026-09-12 pm) — ✅ BOTH DONE (2-agent parallel run, uncommitted)
+>
+> **✅ A — live edit auto-propagate in dev: DONE (uncommitted).** Added an optional DEV fast
+> lightweight-reconcile poll so a live Confluence page edit self-propagates in ~30–60s locally
+> without a manual `make reingest`. New setting `dev_reconcile_interval_seconds: int | None = None`
+> (prod default None = off; only effective when `enable_background_jobs=true`). `_build_scheduler`
+> now registers an additional `dev_lightweight_reconcile` `IntervalTrigger` job running the same
+> `scheduled_lightweight_reconcile` (same gateway/timeouts/retries — **no new HTTP/outbound
+> surface**) alongside the unchanged daily `lightweight_recon_cron`; the existing `worker_tick`
+> drains the enqueued job into a new `document_version`. Answer-cache masking (A.4) documented only
+> (comment near `chat_answer_cache_ttl_seconds`, prod default untouched) — an identical repeated
+> question can replay a pre-edit answer for ~5 min; restart or reword. TDD: new
+> `app/features/confluence_sync/tests/test_scheduler.py` (2 tests: off-by-default keeps baseline 3
+> jobs; interval=30 registers an IntervalTrigger dev job). Docs: `docs/rag/ingestion/phase-1.md` §6
+> gained an "Auto-propagate in DEV" subsection (`.env`: `ENABLE_BACKGROUND_JOBS=true` +
+> `DEV_RECONCILE_INTERVAL_SECONDS=30` + small `WORKER_TICK_SECONDS`), `make reingest` stays the
+> on-demand fallback. Gate: `make check` = **535 passed** (was 533); boundaries exit 0;
+> ruff/format/pyright clean on touched files (no baseline regression). Files:
+> `app/platform/config/settings.py`, `app/main.py`, the new `test_scheduler.py`, `phase-1.md`.
+> **Operator run-config to use it:** `.env` `ENABLE_BACKGROUND_JOBS=true` +
+> `DEV_RECONCILE_INTERVAL_SECONDS=30` (+ small `WORKER_TICK_SECONDS`), then `uvicorn app.main:app`.
+>
+> **✅ A — LIVE-ENABLED + root-caused against a real "still says kiwi" report (2026-09-12 pm).**
+> Operator reported Opera Cloud still answered "kiwi" after editing the page. Root cause (NOT a cache
+> bug, NOT a flaw in the new job): the running backend had `enable_background_jobs=false` **and**
+> `dev_reconcile_interval_seconds=None`, so the feature was present in code but switched OFF, and no
+> `make reingest` had run — the **DB active version was cf_v=3 "kiwis" while live Confluence had moved
+> to v5 "watermelon"** (proven by a read-only diag + a live `get_page` fetch). Fix applied: (1) ran
+> `make reingest` → pulled v5, re-embedded, DB active now cf_v=5 "watermelon" (verified); browser
+> widget on `/test-hosts/opera-cloud` now answers *"Watermelon is the only fruit that exists [1] Opera
+> Cloud Testpage"* (was kiwi). (2) Enabled the poller in `.env`
+> (`ENABLE_BACKGROUND_JOBS=true` + `DEV_RECONCILE_INTERVAL_SECONDS=30` + `WORKER_TICK_SECONDS=5`) and
+> restarted `uvicorn app.main:app`; startup logged `scheduler_started jobs=['worker_tick',
+> 'dev_lightweight_reconcile', 'lightweight_reconcile', 'complete_reconcile']` and the 30s
+> `scheduled_lightweight_reconcile` was observed firing live (`reconciliation_done drift=0
+> kind=lightweight pages_scanned=4`). Auto-propagation is now ACTIVE on the local backend — the next
+> Confluence edit self-updates in ~30–60s. Caveat still applies: an IDENTICAL previously-asked
+> question can replay a cached pre-edit answer for up to `chat_answer_cache_ttl_seconds` (~5 min) —
+> reword or restart. (Live backend runs under the session as a background process; restart with
+> `cd apps/automation && uv run uvicorn app.main:app --port 8000` if it stops.)
+>
+> **⚠️ REGRESSION found + fixed (2026-09-12 pm): `/chat` → 401 after a plain backend restart.** The
+> test-host JWTs are minted with the local `test-*` issuers, which live only in
+> `config/platforms.local.json`. The Next app gets that via `apps/web/.env.local`
+> (`PLATFORMS_PATH=…/config/platforms.local.json`), but the **root `.env` the backend loads did NOT
+> set `PLATFORMS_PATH`** — the previously-running backend had it via the shell env, and restarting
+> with a bare `uvicorn app.main:app` fell back to the committed real registry (`config/platforms.json`,
+> no test issuers) → every test-host token rejected → `POST /chat 401`. Fix: added
+> `PLATFORMS_PATH=/…/config/platforms.local.json` to the root `.env` so backend and web agree; after
+> restart `settings.platform_registry.scopes_for('opera-cloud')` →
+> `['obi-general-test','obi-operacloud-test']` and `/chat` returns 200. **Durable takeaway for local
+> dev: the backend needs `PLATFORMS_PATH` in root `.env` (not just web `.env.local`) for test-host
+> auth.** Verified live in-browser (scoped answer with `[1] Opera Cloud Testpage`, no 401).
+>
+> **✅ AUTO-PROPAGATION PROVEN on a real operator edit (2026-09-12 pm):** with the poller live, the
+> operator edited the Opera page to v6 "kiwi"; backend log shows `reconciliation_done drift=1 jobs=1`
+> at 20:46:34 (three prior 30s cycles were drift=0), the worker drained it, DB active → cf_v=6 "kiwi",
+> and the widget answered "kiwi" — the full edit→answer loop with NO manual `make reingest`.
+>
+> **✅ Flaky-refusal bug fixed (2026-09-12, fork): equivalent questions no longer flip answer↔refusal.**
+> Operator saw "what fruits exist according to you" / "what do you know about fruits" REFUSE (routed to
+> a human) while "what fruits do you know" ANSWERED "red bananas [1]". Root cause: the absolute rerank
+> floor `refusal_min_rerank_score=0.10` cut through the score spread of a supported short fact —
+> equivalent phrasings scored 0.076/0.089/0.155 against the "red bananas" Mews chunk, so two
+> false-refused while one answered (the rewrite was NOT the culprit; it left queries unchanged).
+> Measured distribution on the live corpus is bimodal (unsupported probes 0.019–0.026, supported
+> 0.076–0.155, empty gap). Fix: recalibrated the threshold **0.10 → 0.05** (`settings.py` +
+> `answer_service.py` default) — sits in the gap, so equivalent supported phrasings all answer and
+> unsupported ones still refuse; the post-generation citation-enforcement gate remains the real
+> grounding backstop. Regression test `test_shipped_threshold_separates_supported_from_unsupported`
+> locks the measured cluster separation. Also fixed a test-isolation bug in `test_scheduler.py` (the
+> "default None" case leaked the ambient `.env` `DEV_RECONCILE_INTERVAL_SECONDS=30` added earlier this
+> session). `make check` **536 pass**; boundaries/ruff/pyright clean. **Verified live in-browser after
+> restarting :8000 with 0.05:** on `/test-hosts/mews` both previously-refused phrasings now answer
+> "red bananas [1] Mews Testpage", and the unsupported control "how do I reset my password" still
+> refuses (`weak_score threshold=0.05 top_score=0.024 → human_handoff`, trace 79/81). Uncommitted.
+> **Tradeoff:** this lowers a globally-tuned threshold; the 0.10 came from a 3.5.5 fixture run — re-tune
+> on the Phase-5 gold set when it exists.
+>
+> **✅ Suggested-chip refusal fixed (2026-09-12): the widget's own meta chips no longer route to a human.**
+> Operator saw "What topics do you know about?" → refuse/human-handoff. Root cause: the deterministic
+> `is_small_talk` exact-match set (`domain/small_talk.py`) short-circuits meta/capability questions to an
+> ungrounded capability reply BEFORE retrieval, but it only contained `"what can you help me with"` — the
+> other two suggested starter chips (`i18n.ts` `copy.suggestions`: "What topics do you know about?",
+> "How specific should my question be?") were missing, so they fell through to retrieval, scored ~0.022
+> (no topics/coverage document exists), and refused. NOT the same as the threshold flap — 0.022 is
+> genuinely unsupported. Fix: added the two chips + obvious spoken variants to the exact-match set (kept
+> closed/exact for the security reason in the module docstring — a real "what topics does the payroll doc
+> cover" still runs grounded). Tests: extended `test_small_talk.py` (chips match; real look-alike
+> questions don't). Verified: harness shows the chip now returns a capability reply; `make check`
+> **543 pass**; ruff/format/pyright clean; backend restarted so it's live. Uncommitted. **Caveat:** the
+> reply is a generic "ask me about the documentation" capability message, not an enumerated topic list
+> (the bot can't list topics without a coverage document — see the open "softer off-topic fallback"
+> product question below).
+>
+> **✅ B — `/test-hosts/*` hydration mismatch: DONE (uncommitted).** Diagnosed statically: the SSR
+> test-host tree is fully deterministic (grep for `Math.random`/`new Date`/`Date.now`/`toLocale*`/
+> `typeof window`/`localStorage`/`sessionStorage` across `test-hosts/layout.tsx`,
+> `test-host-content.tsx`, `token-url.ts`, and the 4 `{mews,none,opera-cloud,toast}/page.tsx` → no
+> matches), so the warning was a root-element attribute diff (extension-injected `<html>` attrs
+> before hydration), not real non-determinism. Non-blind fix = added `suppressHydrationWarning` to
+> `<html>` in `apps/web/src/app/test-hosts/layout.tsx`, matching both sibling root layouts
+> (`(site)` and `embed`); deliberately did NOT add `className={inter.variable}` (test-host layout
+> loads no fonts/tokens by design). Regression test in `test-host-content.test.tsx` asserts the
+> layout's `<html>` carries the guard. Verify: `pnpm test` **188 pass** (was ~187, +1),
+> `pnpm typecheck` clean. (`pnpm lint` is unrunnable non-interactively repo-wide — no ESLint config
+> exists, `next lint` prompts — pre-existing, unrelated to this change.) In-browser reproduction was
+> NOT run (relied on static diagnosis + green suite + the proven sibling pattern).
+>
+> ---
+>
+> #### Original scoping (kept for history — both items above are now built)
 >
 > Both queued to run AFTER a context wipe. Each names exact files/symbols and its done-when check.
 >

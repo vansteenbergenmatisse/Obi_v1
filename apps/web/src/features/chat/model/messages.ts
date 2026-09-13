@@ -5,7 +5,7 @@
  * intentionally separate from the wire contract in `@omniboost/contracts`
  * (`ChatRequest` / `ChatStreamEvent`). The client maps wire events onto these.
  */
-import type { Citation } from "@omniboost/contracts";
+import type { Citation, RefusalReason } from "@omniboost/contracts";
 
 export type MessageRole = "user" | "assistant";
 
@@ -37,6 +37,10 @@ export interface ChatMessage {
   citations?: Citation[];
   /** Only meaningful for assistant turns; user turns are always complete. */
   status: MessageStatus;
+  /** The refusal category from the `done` event (only on `status: "refused"` turns). The human-
+   * hand-off CTA renders for `no_candidates | weak_score | no_citations`; `off_topic` is a softer
+   * redirect with no CTA (2026-09-12). Absent on older backends — treated as "show the CTA." */
+  refusalReason?: RefusalReason;
   /** Set from the stream's `done` event; enables the feedback control once present. */
   traceId?: string;
   /** The rating the user has already submitted for this turn, if any. */

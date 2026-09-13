@@ -20,6 +20,7 @@ from app.features.rag_agent.application.answer_service import (
 from app.features.rag_agent.application.auth_context import AuthContext, general_only_context
 from app.features.rag_agent.domain.clarification import ClarificationReply
 from app.features.rag_agent.domain.curated_knowledge import CuratedEntry
+from app.features.rag_agent.domain.identity import IdentityFacts
 from app.features.rag_agent.schemas import ChatMessage, ImageAttachment
 from app.features.retrieval import RetrievalResult, RetrievedHit
 
@@ -27,11 +28,20 @@ _IMAGE = ImageAttachment(mediaType="image/png", data="ZmFrZQ==")
 
 
 def _auth(
-    principal: str | None = None, scopes: tuple[str, ...] = ("obi-general-test",)
+    principal: str | None = None,
+    scopes: tuple[str, ...] = ("obi-general-test",),
+    *,
+    integration: str | None = None,
+    company_name: str | None = None,
+    company_id: str | None = None,
 ) -> AuthContext:
     """PLAN 11.1c: the AuthContext an already-verified edge identity would produce, for driving
-    AnswerService directly in unit tests (scope resolution now lives in the registry/router)."""
-    return AuthContext(None, None, None, scopes, ("confluence:default",), principal, None)
+    AnswerService directly in unit tests (scope resolution now lives in the registry/router).
+    ``integration``/``company_*`` default to None (the tokenless/general shape); pass them to
+    exercise the per-user identity path."""
+    return AuthContext(
+        company_id, company_name, integration, scopes, ("confluence:default",), principal, None
+    )
 
 
 _HIT_A = RetrievedHit(page_id="101", chunk_id=501, score=0.9, title="Onboarding Guide", url="u/101")
@@ -81,10 +91,12 @@ class _FakeGenerator:
         small_talk_text: str = "Hi there!",
         image_analysis_text: str = "I see a cat.",
         clarification_reply: ClarificationReply | None = None,
+        identity_text: str = "You're using Opera Cloud at Hotel Co.",
     ) -> None:
         self._text = text
         self._small_talk_text = small_talk_text
         self._image_analysis_text = image_analysis_text
+        self._identity_text = identity_text
         self._clarification_reply = clarification_reply or ClarificationReply(
             question="Which system do you mean?", options=["Muse", "Toast"]
         )
@@ -92,6 +104,7 @@ class _FakeGenerator:
         self.small_talk_called_with: list[str] = []
         self.image_analysis_called_with: list[tuple[str, tuple]] = []
         self.clarification_called_with: list[str] = []
+        self.identity_called_with: list[tuple[str, IdentityFacts]] = []
 
     def generate(self, query: str, evidence_block: str) -> str:
         self.called_with.append((query, evidence_block))
@@ -108,6 +121,10 @@ class _FakeGenerator:
     def generate_clarification(self, query: str) -> ClarificationReply:
         self.clarification_called_with.append(query)
         return self._clarification_reply
+
+    def generate_identity(self, query: str, facts: IdentityFacts) -> str:
+        self.identity_called_with.append((query, facts))
+        return self._identity_text
 
 
 class _FakeClassifier:
@@ -139,6 +156,9 @@ class _RaisingGenerator:
 
     def generate_clarification(self, query: str) -> ClarificationReply:
         raise AssertionError("generate_clarification must not be called for a non-ambiguous query")
+
+    def generate_identity(self, query: str, facts: IdentityFacts) -> str:
+        raise AssertionError("generate_identity must not be called for a non-identity question")
 
 
 class _FakeLog:
@@ -288,6 +308,60 @@ def test_no_candidates_refusal_emits_human_handoff_log(monkeypatch) -> None:
     assert handoff[0]["trace_id"] == "3"
     assert handoff[0]["raw_query"] == "q"
     assert handoff[0]["refusal_reason"] == "no_candidates"
+
+
+def test_off_topic_refusal_redirects_without_human_handoff(monkeypatch) -> None:
+    """2026-09-12 score-split: a candidate at/below `offtopic_max_rerank_score` is a genuinely
+    unrelated question — it refuses with reason `off_topic`, shows the softer redirect copy, and
+    emits an `off_topic_redirect` audit record, NOT `human_handoff` (so PLAN 9.7 fallback-rate
+    reporting can separate 'steered back to the docs' from 'sent to a human')."""
+    fake_log = _FakeLog()
+    monkeypatch.setattr(answer_service_module, "log", fake_log)
+    off_topic = RetrievalResult(hits=[RetrievedHit("101", 501, 0.02, "X", "u")], trace_id=4)
+    retriever = _FakeRetriever({"q": off_topic}, parent_texts={})
+    service, _ = _service(
+        retriever,
+        _FakeRewriter("q"),
+        _RaisingGenerator(),  # must never reach generation
+        refusal_min_rerank_score=0.05,
+        offtopic_max_rerank_score=0.035,
+    )
+
+    result = service.answer([ChatMessage(role="user", content="q")], general_only_context())
+
+    assert result.refused
+    assert result.refusal_reason == "off_topic"
+    assert result.text == _REFUSAL_COPY["off_topic"]
+    assert not [event for event, _ in fake_log.calls if event == "human_handoff"]
+    redirects = [fields for event, fields in fake_log.calls if event == "off_topic_redirect"]
+    assert len(redirects) == 1
+    assert redirects[0]["raw_query"] == "q"
+    assert redirects[0]["refusal_reason"] == "off_topic"
+
+
+def test_weak_score_refusal_still_emits_human_handoff(monkeypatch) -> None:
+    """A score between the off-topic and refusal thresholds plausibly belongs but couldn't be
+    grounded — it stays `weak_score` and keeps the human hand-off."""
+    fake_log = _FakeLog()
+    monkeypatch.setattr(answer_service_module, "log", fake_log)
+    weak = RetrievalResult(hits=[RetrievedHit("101", 501, 0.04, "X", "u")], trace_id=5)
+    retriever = _FakeRetriever({"q": weak}, parent_texts={})
+    service, _ = _service(
+        retriever,
+        _FakeRewriter("q"),
+        _RaisingGenerator(),
+        refusal_min_rerank_score=0.05,
+        offtopic_max_rerank_score=0.035,
+    )
+
+    result = service.answer([ChatMessage(role="user", content="q")], general_only_context())
+
+    assert result.refused
+    assert result.refusal_reason == "weak_score"
+    handoff = [fields for event, fields in fake_log.calls if event == "human_handoff"]
+    assert len(handoff) == 1
+    assert handoff[0]["refusal_reason"] == "weak_score"
+    assert not [event for event, _ in fake_log.calls if event == "off_topic_redirect"]
 
 
 def test_no_citations_refusal_emits_human_handoff_log_with_verbatim_original_query(
@@ -537,6 +611,94 @@ def test_real_question_that_merely_starts_with_a_greeting_still_runs_the_full_pi
     assert not result.refused
     assert generator.small_talk_called_with == []
     assert retriever.retrieve_calls == [("hi, how do I get access?", None, 5)]
+
+
+def test_identity_question_short_circuits_before_rewrite_or_retrieval() -> None:
+    """A basic identity question must never reach the rewriter or retriever — both raise/KeyError
+    if touched — and gets the dedicated identity reply with the verified facts, not a refusal."""
+    retriever = _FakeRetriever({}, {})  # any retrieve_with_context call -> KeyError
+    generator = _FakeGenerator("unused", identity_text="You're using Opera Cloud at Hotel Co.")
+    service, _ = _service(retriever, _RaisingRewriter(), generator)
+
+    auth = _auth(integration="opera-cloud", company_name="Hotel Co", company_id="42")
+    result = service.answer(
+        [ChatMessage(role="user", content="which integration do we use?")], auth
+    )
+
+    assert result.text == "You're using Opera Cloud at Hotel Co."
+    assert not result.refused
+    assert result.refusal_reason is None
+    assert result.citations == []
+    assert result.trace_id is None
+    # the verified facts (not the raw AuthContext) are what the generator receives
+    query, facts = generator.identity_called_with[0]
+    assert query == "which integration do we use?"
+    assert facts == IdentityFacts(
+        integration="opera-cloud", company_name="Hotel Co", company_id="42"
+    )
+    assert generator.called_with == []  # grounded generation never ran
+
+
+def test_identity_question_writes_no_query_trace_row() -> None:
+    retriever = _FakeRetriever({}, {})
+    generator = _FakeGenerator("unused")
+    row = _FakeTraceRow()
+    service, session = _service(retriever, _RaisingRewriter(), generator, row=row)
+
+    service.answer(
+        [ChatMessage(role="user", content="what company am I?")],
+        _auth(integration="mews", company_name="Inn Ltd", company_id="7"),
+    )
+
+    assert session is not None and not session.committed  # _persist never ran (trace_id is None)
+    assert row.answer is None
+
+
+def test_identity_question_on_tokenless_path_still_answers_with_empty_facts() -> None:
+    """No token -> no business identity; the identity path still runs (the generator answers from
+    the operator's static block), passing empty facts rather than refusing."""
+    retriever = _FakeRetriever({}, {})
+    generator = _FakeGenerator("unused", identity_text="I don't have your company on file.")
+    service, _ = _service(retriever, _RaisingRewriter(), generator)
+
+    result = service.answer([ChatMessage(role="user", content="who am I")], general_only_context())
+
+    assert not result.refused
+    _, facts = generator.identity_called_with[0]
+    assert facts == IdentityFacts(integration=None, company_name=None, company_id=None)
+
+
+def test_identity_question_checked_after_small_talk() -> None:
+    """small-talk's "who are you" is NOT an identity question and must still take the small-talk
+    path — the two closed sets don't overlap."""
+    retriever = _FakeRetriever({}, {})
+    generator = _FakeGenerator("unused")
+    service, _ = _service(retriever, _RaisingRewriter(), generator)
+
+    service.answer([ChatMessage(role="user", content="who are you")], _auth())
+
+    assert generator.small_talk_called_with == ["who are you"]
+    assert generator.identity_called_with == []
+
+
+def test_real_question_sharing_words_with_identity_still_runs_full_pipeline() -> None:
+    """A real documentation question that merely shares words with an identity phrase must run the
+    full grounded pipeline, never the identity short-circuit."""
+    retriever = _FakeRetriever(
+        {"how do I set up the mews integration?": RetrievalResult(hits=[_HIT_A], trace_id=5)},
+        parent_texts={501: "Configure the integration in settings."},
+    )
+    generator = _FakeGenerator("Configure it in settings [1].")
+    service, _ = _service(
+        retriever, _FakeRewriter("how do I set up the mews integration?"), generator
+    )
+
+    history = [ChatMessage(role="user", content="how do I set up the mews integration?")]
+    result = service.answer(history, _auth(integration="mews", company_name="Inn Ltd"))
+
+    assert not result.refused
+    assert generator.identity_called_with == []
+    assert retriever.retrieve_calls == [("how do I set up the mews integration?", None, 5)]
 
 
 def test_rejects_empty_history() -> None:
