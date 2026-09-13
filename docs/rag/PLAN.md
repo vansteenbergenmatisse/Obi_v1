@@ -16,7 +16,7 @@
 > Newest-first. The dated SESSION LOG below keeps the fuller build-session detail; this block is the
 > single source of "where things actually stand right now."
 
-### 🔭 NEXT UP — forward-looking roadmap (as of 2026-09-13 — ★ NEW headline: per-user identity in a variable system prompt DONE + the multi-user test page (`/test-hosts/multi`, random-switch across Mews/Toast/Opera Cloud + `Obi.destroy()`/idempotent `init`) DONE (both uncommitted, see below); NEXT STEP = live in-browser proof of the identity feature via that page, then real-platform onboarding. Phase 11.1c Obi embed + JWT edge binding DONE, migrations 0010+0011 LIVE on Supabase (head 0011), scope isolation PROVEN end-to-end)
+### 🔭 NEXT UP — forward-looking roadmap (as of 2026-09-13 — ★ NEW headline: per-user identity + the multi-user test page (`/test-hosts/multi`, random-switch across Mews/Toast/Opera Cloud + `Obi.destroy()`/idempotent `init`) DONE, COMMITTED `59385f4`, and LIVE-PROVEN in-browser (opera-cloud→Test Resort, mews→Test Hotel, no conversation bleed on switch); NEXT STEP = real-platform onboarding. Phase 11.1c Obi embed + JWT edge binding DONE, migrations 0010+0011 LIVE on Supabase (head 0011), scope isolation PROVEN end-to-end)
 
 > The single prioritized "what's next" list. Each item says who it needs. Phase-13 sub-items and the
 > Phase 5.4/12.4 eval remainder are the detail below; this is the ordered pointer.
@@ -44,10 +44,23 @@
 >   re-init + 4 multi-user-content tests) and `pnpm typecheck` clean. (`next lint` is not configured in
 >   this repo — it prompts interactively; the configured web gate is test + typecheck.) Docs:
 >   `docs/rag/retrieval/phase-4.md` Identity short-circuit section gained a "Live proof surface" note.
-> - **⚠️ Uncommitted; live in-browser proof still pending** (green suite + typecheck only). To prove:
->   run backend with the identity feature + the 2026-09-12 run-config (`PLATFORMS_PATH` in root `.env`,
->   test signing keys in `apps/web/.env.local`), open `/test-hosts/multi`, switch through all three, ask
->   "what company am I?" → expect Test Hotel / Test Restaurant / Test Resort respectively.
+> - **✅ COMMITTED `59385f4` + LIVE-PROVEN (2026-09-13).** Committed together with the accumulated
+>   feat/rag-phase-3.5 "DONE (uncommitted)" items (identity short-circuit, DEV auto-propagate poll,
+>   refusal 0.10→0.05, suggested-chip small-talk, chat-UI touch-ups). Backend `make check` = **594
+>   passed** (local docker DSN `postgresql+psycopg://rag:rag@localhost:5434/omniboost_rag` — the
+>   fixture provisions roles as superuser, so it can't run against the Supabase pooler DSN in `.env`);
+>   `apps/web` `pnpm test` = **196** + typecheck clean. **Live browser proof done** on
+>   `/test-hosts/multi` (backend restarted with `--reload` to pick up the identity code): switching
+>   to opera-cloud → widget answered *"You're signed in with Test Resort (company ID: c_test_3), using
+>   the opera-cloud integration."*; switching to mews → *"You're signed in under Test Hotel (using the
+>   Mews integration)."*; the switch tore down + re-created the widget (DOM stayed at exactly 1
+>   launcher + 1 iframe) and the re-opened conversation was fresh (no bleed). API proof across all
+>   three users green too. Open item unchanged: `integration` still renders as the raw key
+>   (`opera-cloud`) — no friendly-name map in v1.
+> - **⚠️ Note for the next backend gate:** whole-repo pyright shows **52** errors (CLAUDE.md's
+>   "Pyright 34/1" baseline note is stale — predates phases 6/10-13); no Python changed in the
+>   frontend part of this work, and `make check` (the enforced gate) is green. Reconcile the baseline
+>   note when convenient.
 >
 > #### Original scoping (kept for history — now built)
 >
