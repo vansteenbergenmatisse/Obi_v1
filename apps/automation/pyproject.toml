@@ -26,6 +26,8 @@ dev = [
     "pytest-asyncio>=0.24",
     "ruff>=0.7",
     "pyright>=1.1.380",
+    # tools/brief.py parses the design HTML into the markdown brief.
+    "beautifulsoup4>=4.12",
 ]
 # Accurate OpenAI token counting for chunk sizing (falls back to a heuristic when absent).
 tokenizers = ["tiktoken>=0.8"]

@@ -4,8 +4,8 @@ delete/deactivate."""
 from __future__ import annotations
 
 from app.features.confluence_sync.application.worker import run_once
-from app.platform.db.enums import PageStatus
-from app.platform.db.models import PageSource
+from app.platform.db.enums import DocState, PageStatus
+from app.platform.db.models import DocumentVersion, PageSource
 
 from ._helpers import (
     active_child_chunks,
@@ -149,3 +149,19 @@ def test_delete_deactivates_page(gateway, settings):
     assert active_child_chunks(1001) == []
     with read() as s:
         assert s.get(PageSource, 1001).page_status == PageStatus.trashed
+
+
+def test_delete_marks_the_active_version_superseded(gateway, settings):
+    """panel tg-deactivate · substep 2.5
+    Does: page_status updated, active version superseded, chunks inactive — deactivate_page must
+    flip the deactivated page's DocumentVersion.state, not only the page and its chunks."""
+    index_page(gateway, settings, 1001, version=3)
+    deactivated_version_id = active_version(1001).id
+
+    enqueue_delete(1001, "trashed", key="del:1001:supersede")
+    result = run_once(gateway, settings, owner="test")
+
+    assert result.outcome.action == "deactivated"
+    with read() as s:
+        dv = s.get(DocumentVersion, deactivated_version_id)
+        assert dv.state == DocState.superseded

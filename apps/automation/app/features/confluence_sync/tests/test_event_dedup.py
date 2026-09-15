@@ -6,7 +6,9 @@ from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 
+from app.features.confluence_sync.application import event_service
 from app.features.confluence_sync.application.event_service import ingest_event
+from app.features.confluence_sync.infrastructure import event_repo
 from app.features.confluence_sync.schemas.events import EventEnvelope
 from app.platform.db.engine import session_scope
 from app.platform.db.models import EventLedger, Job
@@ -34,6 +36,25 @@ def test_duplicate_delivery_is_idempotent(session, settings):
     with session_scope() as s:
         assert s.execute(select(func.count(EventLedger.id))).scalar_one() == 1
         assert s.execute(select(func.count(Job.id))).scalar_one() == 1
+
+
+def test_in1_duplicate_result_stops_before_enqueue(monkeypatch, settings):
+    """panel i1-ledger · substep 0.5.2
+    None from record_event means duplicate: ingest_event marks it and stops, never enqueuing a
+    job or reaching the self-generated check."""
+    monkeypatch.setattr(event_repo, "record_event", lambda *args, **kwargs: None)
+
+    def _must_not_enqueue(*args, **kwargs):
+        raise AssertionError("must not enqueue a job for a duplicate event")
+
+    monkeypatch.setattr(event_service, "enqueue_job", _must_not_enqueue)
+
+    result = ingest_event(object(), _envelope(), settings)
+
+    assert result.accepted is True
+    assert result.duplicate is True
+    assert result.job_id is None
+    assert result.self_generated is False
 
 
 def test_same_delivery_id_different_payload_dedupes_gracefully_not_500(session, settings):

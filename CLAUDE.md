@@ -1,113 +1,107 @@
-# Omniboost RAG — Project Standard
+# Obi · project instructions
 
-Accuracy-first, Confluence-native RAG chatbot. This file is the project's governing
-architecture standard; where it is silent, the global `~/.claude/CLAUDE.md` applies.
-Durable decisions live in `docs/adr/`; per-feature contracts in
-`apps/automation/app/features/FEATURES.md`.
+Obi is an accuracy-first RAG chatbot over Omniboost's Confluence pages. It answers with citations or refuses with a reason. Two workflows: **ingestion** (a published page becomes chunks with vectors) and **retrieval** (a question becomes a cited answer). One Postgres on Supabase with pgvector is both the relational store and the vector store. Seven to nine seconds per answer is accepted; a wrong answer is not.
 
-## Layout
+## Where the truth lives
 
-```
-apps/
-  automation/   Python 3.12 FastAPI RAG service (uv + Hatchling). The backend.
-  web/          Next.js frontend (pnpm). The chat UI.
-packages/       Shared TS packages (design-tokens, contracts).
-docs/adr/       Architecture Decision Records.
-infra/          Docker compose for local Postgres + pgvector.
-```
+- The design page *Obi, part by part* (HTML) in `docs/design/` is the source of truth for what every stage must do. Every box on it is a panel with a `today` line, a target, and tests. When code, plan or this file disagree with it, the design page wins and the other one gets fixed.
+- The action plan (HTML) in `docs/design/` is the only work list. Work on exactly one substep at a time.
+- `docs/plan/` holds the decisions the owner made, the delta between code and design, and the status ledger. The ledger is the honest record of progress: one entry per finished substep with commit, test count and deviations.
+- `docs/adr/` holds decisions of record. Changing one needs a new ADR.
+- Everything else under `docs/` is archived in Phase 0 and is not authoritative until reviewed.
 
-Package managers do not mix: `uv` for `apps/automation`, `pnpm` for the JS/TS
-workspace (driven by `pnpm-workspace.yaml` — there is no npm `workspaces` array).
+## Commands
 
-## Backend structure (`apps/automation/app`)
-
-The backend is a runnable service and uses three of the five standard folders:
+Run backend commands from the backend folder with `uv run`. Package managers do not mix: `uv` for Python, `pnpm` for the JS workspace.
 
 ```
-app/
-  main.py        FastAPI entrypoint — wiring only, no business rules.
-  features/      Business capabilities, each behind one public root.
-  platform/      Technical capabilities: db, clients, config, jobs, logging.
-  shared/        Stable cross-feature primitives (e.g. hashing).
+make up          # local Postgres with pgvector on :5434
+make migrate     # alembic upgrade head
+make test        # backend suite: unit and database tests, hermetic settings, test database
+make eval        # gold-set runner, per stage
+make boundaries  # architecture gate, must exit 0
+make check       # boundaries + tests, the enforced gate before any commit
+make web-dev     # Next.js dev server
+uv run ruff check . && uv run ruff format --check . && uv run pyright
 ```
 
-There is no `components/` — that folder is UI-only and belongs to `apps/web`. Backend
-primitives with no clearer owner go in `shared/`, not `platform/` (ADR-0003).
+Secrets come from the root `.env` (gitignored). Tests never read it. `/obi-verify` runs every level and prints one table.
 
-## Feature boundaries (machine-enforced)
+## Where things go
 
-Every feature (`confluence_sync`, `ingestion`, `retrieval`, `evaluation`) and the
-`platform/clients` capability expose one public root (`__init__.py`) that re-exports
-the symbols crossing their boundary. `tools/check_feature_boundaries.py` fails the
-build on four rules:
+Backend (Python, FastAPI):
+- The entrypoint module is wiring only: settings, engines, services, routers, scheduler. No business rules.
+- `features/confluence_sync/` owns ingestion stages 1 and 2: webhook, event ledger, job queue and worker, sweeps, change classification, labels to scope state.
+- `features/ingestion/` owns stages 3 and 4: normalize, chunk, contextualize, attachments, embed, version, swap, garbage collection, rollback.
+- `features/retrieval/` owns retrieval stages 2 to 4: hybrid search, fusion, page permissions, rerank wiring, trace writes.
+- `features/rag_agent/` owns stages 1 and 5: the chat endpoint, token and key checks, limits, small talk, rewrite, refusal, generation, citations, the support check, prompts, curated knowledge.
+- `features/evaluation/` owns the eval runner, metrics and datasets.
+- `platform/` owns technical capabilities: database models, roles and policies, API clients, settings, the job queue, logging.
+- `shared/` owns small cross-feature primitives with no clearer owner (hashing, rate limiter, TTL cache). A primitive goes here, not in `platform/`.
+- Every prompt lives in the rag_agent domain layer. No prompt text anywhere else.
+- Migrations are numbered, each has a downgrade, and every schema change on the design page lives in one migration.
+- Operator tools (Supabase setup and isolation check, seeds, sweeps, backfill and readiness gate, key rotation) live in `scripts/`.
 
-1. Code **outside** a feature imports it at its root (`app.features.<f>`) — never deeper.
-2. Code **inside** `<f>` may deep-import `<f>`, but reaches **other** features at their root.
-3. Code inside `<f>` must not import its own root (importing a half-built package raises
-   ImportError at init — the self-facade trap).
-4. `platform/**` and `shared/**` import no features; `shared/**` imports no `platform/**`.
+Frontend (Next.js): the widget UI, the proxy route that adds the host key, the embed frame, the loader script, i18n, the generated scope list. UI components exist only here.
 
-`platform/db` is the one deliberate exception: its ~40 ORM classes and enums are a large
-namespaced vocabulary imported by full path, not through a facade (ADR-0003 D5).
+Config is data: the tag map and the platform list are JSON under `config/`. Nothing else may define a tag or a platform.
 
-When adding a symbol other code needs, export it from the feature's `__init__.py` — do
-not deep-import. Run `make boundaries` before you commit.
+Tests: unit tests with fakes and database tests next to the feature they cover; browser tests in the frontend; eval datasets in `features/evaluation/`. Names: `test_<stage>_<behavior>`. Every regression test names the design panel it protects.
 
-## Phase documentation (`docs/rag/ingestion/`, `docs/rag/retrieval/`)
+<!-- Phase 1 of the plan moves apps/web → frontend/, apps/automation → backend/, and db models + migrations + config + seeds + local compose → knowledge-base/. Same placement rules, new top folders. Rewrite this section then and delete this note. -->
 
-The write path (`confluence_sync` + `ingestion`) and the read/answer path (`retrieval` +
-`rag_agent`) each have a folder of per-phase docs: one file per project phase that actually
-touched that side (`phase-0.md`, `phase-1.md`, `phase-3.5.md`, …), stating what happens in that
-phase and exactly which files/folders it uses. A phase only gets a file in a folder if it actually
-touched that side — no filler stubs. A phase that touches both sides (e.g. 3.5, 4.6) gets a file in
-both, each scoped to that side only and cross-linking to its counterpart. `docs/rag/
-how_this_works.md` stays the short end-to-end index — the 60-second picture, data model, and one
-worked example — and points into these folders instead of repeating their detail.
+After the Phase 1 move, the same rules hold under three top folders: `frontend/`, `backend/`, `knowledge-base/` (schema, migrations, config, seed, local). `backend` imports `knowledge-base/schema`; `knowledge-base` imports nothing from `backend`; `frontend` imports neither and reads config as JSON at build time.
 
-**Keep both folders in sync with every future change to ingestion or retrieval code:** when a task
-edits, adds, or removes ingestion/retrieval behavior, update the matching phase file (or add a new
-one for a new phase; delete/merge one if a phase is reverted or superseded) as part of that same
-change — do not let this drift the way `how_this_works.md` did before PLAN 4.6.14. `docs/rag/
-PLAN.md` §0 remains the authoritative status ledger; these folders are the reader-facing map of
-"what runs and where," not a second ledger.
+## Boundaries (enforced by `make boundaries`)
 
-## Gate
+Every feature and `platform/clients` expose one public root that re-exports what crosses its boundary. Four rules fail the build:
 
-Run from `apps/automation` (everything via `uv run`); `make check` bundles the enforced subset.
+1. Code outside a feature imports it at its root, never deeper.
+2. Code inside a feature may deep-import itself, but reaches other features at their root.
+3. Code inside a feature never imports its own root (a half-built package raises at init).
+4. `platform/` and `shared/` import no feature; `shared/` imports no `platform/`.
 
-```
-make boundaries   # architecture gate — must exit 0
-make check        # boundaries + tests (the enforced gate)
-uv run pytest -q  # 401 passing
-uv run ruff check .        uv run ruff format --check .        uv run pyright
-```
+Exception: database models and enums are imported by full path, not through a facade (ADR-0003). When another module needs a symbol, export it from the feature root.
 
-Ruff and Pyright are tracked at **no-regression**, not zero: a known baseline of dirt
-predates this standard (Ruff 2 errors / 15 unformatted, Pyright 34/1 — reconciled from the
-original 31/1 at PLAN 4.6.9, see ADR-0003 D1 amendment). Do not reformat files you did not
-otherwise touch, and do not let the whole-repo counts rise. Files you edit are brought
-clean.
+## Rules that never bend
 
-## Run
+1. Never disable row security on any Supabase table. Never run the 0009 downgrade on Supabase. Both expose the corpus through the public REST roles.
+2. The request body never decides access. Scope, company, integration and identity come from the verified token. A body scope is checked for shape and membership only: unknown is a 400 before any search; a known value that disagrees with the token is ignored and logged.
+3. One authorization context per request, built at the gate. Every database read (search, rerank text, curated lookup, parent expansion) sets both scope settings from it. No read runs under looser rules than the search.
+4. A rebuild embeds the whole page. No vector is reused from an old version.
+5. A page is in the index for one reason: it is published and carries a tag from the tag map. Losing the last tag deactivates it; `classified` deletes it. Folder roots decide nothing.
+6. The exact chunk that matched is what the reranker scores and what expands to a parent. Never a stand-in from the same page.
+7. Nothing is sent before every sentence cites a real source and every cited source backs its sentence. Refuse with a reason rather than guess.
+8. At most two extra reads per question: the thin-results refetch and the weak-score fallback. Never a loop.
+9. Non-English questions are translated to English before search; the checked English answer is translated back before the replay. Citations, markers and the trace stay English.
+10. No secret in the repository, a log line, a trace row, a URL, a cookie or web storage. Never interpolate a secret into SQL. The user token lives in memory only.
+11. No change without its test. No retrieval change without a before-and-after number on the held-out gold set. Migrations are reversible.
+12. Never invent connection strings, keys, scaling or latency numbers. Ask, and record the blocker in the ledger.
 
-```
-make up        # start Postgres (pgvector) on :5434
-make migrate   # alembic upgrade head
-make test      # automation suite
-make eval      # retrieval evaluation baseline
-make web-dev   # Next.js dev server
-uvicorn app.main:app   # serve (enable_background_jobs=true adds scheduler + worker)
-```
+## How work happens
 
-Secrets load from the root `.env` (gitignored). Tests use a hermetic settings fixture
-and the `omniboost_rag_test` database, independent of `.env` contents.
+- Take one substep from the action plan. Read it and the design panels it names. Run `/obi-change`. Stop when its test is green and the ledger entry is written.
+- Failing test first, with `/obi-test-writer`. Tests are deterministic: fakes for Confluence, embeddings, the reranker and Claude; database tests roll back; no sleeps.
+- Files you touch are brought clean under ruff and pyright. Files you did not touch are not reformatted. Whole-repo counts never rise above the recorded baseline (ADR-0003 D1).
+- When a substep is done: flip the panel status and its `today` line on the design page, regenerate the brief from it, update the ingestion or retrieval phase docs, append the ledger entry.
+- Anything marked "Decision needed" is built to the default in `docs/plan/` and named as such in the pull request.
+- Stop after every substep. Hand back a short summary and ask for `/compact-ultra`. Do not start the next substep without a go-ahead.
+- Before starting a substep, verify the previous one: security review with `securing-http-and-llm-endpoints` for anything touching an endpoint, an LLM call or outbound network; every acceptance line has an assertion; `make check` green; migrations reversible. A failure becomes the next ledger task and is fixed first.
+- Blockers only the owner can clear (connection strings, keys, tokens, a platform's public key, a product decision) go into the ledger under "need from you". Ask before doing other work.
+- Subagents: `obi-auditor` reads and reports, never edits; `obi-implementer` runs `/obi-change`; `obi-tester` runs tests and reports. They do not discover skills on their own; their definitions preload the ones they need.
 
-## Testing & Regression Safety
+## Test levels
 
-For every new feature, component, or meaningful behavior change, add appropriately scoped automated tests covering its public behavior, critical business rules, edge cases, failure paths, and integrations where relevant. Tests MUST protect existing contracts and core behavior so future changes can be made confidently without unintentionally breaking, removing, or altering established features, components, or system invariants. Prefer maintainable tests at the lowest effective level—unit, integration, contract, or end-to-end—based on the risk and responsibility of the code being changed.
+| Level | Means | Runs with |
+|---|---|---|
+| unit | fakes, no network | `make test` |
+| database | local pgvector Postgres, migrations to head, both roles, all policies, row security on, rolled back per test | `make test` |
+| live | a script against staging or production (isolation check, live label check, freshness proof); output goes in the pull request | by hand |
+| browser | Playwright against a stub host page | `pnpm test:e2e` |
+| eval | the gold-set runner, per stage, before and after | `make eval` |
 
-# Phase Gates & Compaction
+## Words with one meaning
 
-For every multi-phase implementation, **stop completely after each phase and never begin the next phase automatically**. Before stopping, verify the phase against its requirements, fix gaps or incomplete work, ensure appropriate tests exist and pass, and run all relevant validation. Update `plan.md` and `design.md` after every phase to accurately document what was completed, what remains, implementation/design changes, decisions made, and any instructions or corrections I gave during execution. Then explicitly stop so I can perform **Ultra compaction**.
-
-After compaction, before starting the next phase, re-read `plan.md`, `design.md`, the implementation, and tests, and independently audit the previous phase again. Fix anything missing or incorrect, add any tests that should have existed, run them, and reconcile the documentation with the actual repository state. **Only when the previous phase is fully implemented, tested, validated, and documented may the next phase begin.**
+- **Implemented**: deployed and tested on the live store. **Implemented, needs changing**: runs today, the target changes it. **Planned**: not in code. **Unverified**: coded, not applied or not proven live. **Decision needed**: blocked on the owner.
+- **Priority 1**: the exact chunk from search to answer. **Priority 2**: the batched support check before send.
+- **Parent** (about 1200 tokens) is what the answer model reads; **child** (about 400) is what search matches. **Knowledge scope**: a tag from the tag map. **Authorization context**: the one object built at the gate. **The note**: the signed JWT a platform hands the widget. **Locks 0 to 3**: the edge, source row security, scope row security, page permissions.

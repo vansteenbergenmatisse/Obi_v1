@@ -3,40 +3,69 @@
   "platforms": {
     "test-mews": {
       "issuer": "https://test-mews.local",
-      "jwks_url": "http://localhost:3000/.well-known/test-mews/obi-jwks.json",
-      "domains": ["localhost:3000"],
+      "jwks_url": "http://localhost:3100/.well-known/test-mews/obi-jwks.json",
+      "domains": [
+        "localhost:3000",
+        "localhost:3100"
+      ],
       "lifetime_minutes": 60,
-      "algs": ["RS256"],
+      "algs": [
+        "RS256"
+      ],
       "active": true
     },
     "test-toast": {
       "issuer": "https://test-toast.local",
-      "jwks_url": "http://localhost:3000/.well-known/test-toast/obi-jwks.json",
-      "domains": ["localhost:3000"],
+      "jwks_url": "http://localhost:3100/.well-known/test-toast/obi-jwks.json",
+      "domains": [
+        "localhost:3000",
+        "localhost:3100"
+      ],
       "lifetime_minutes": 60,
-      "algs": ["RS256"],
+      "algs": [
+        "RS256"
+      ],
       "active": true
     },
     "test-opera": {
       "issuer": "https://test-opera.local",
-      "jwks_url": "http://localhost:3000/.well-known/test-opera/obi-jwks.json",
-      "domains": ["localhost:3000"],
+      "jwks_url": "http://localhost:3100/.well-known/test-opera/obi-jwks.json",
+      "domains": [
+        "localhost:3000",
+        "localhost:3100"
+      ],
       "lifetime_minutes": 60,
-      "algs": ["RS256"],
+      "algs": [
+        "RS256"
+      ],
       "active": true
     },
     "test-none": {
       "issuer": "https://test-none.local",
-      "jwks_url": "http://localhost:3000/.well-known/test-none/obi-jwks.json",
-      "domains": ["localhost:3000"],
+      "jwks_url": "http://localhost:3100/.well-known/test-none/obi-jwks.json",
+      "domains": [
+        "localhost:3000",
+        "localhost:3100"
+      ],
       "lifetime_minutes": 60,
-      "algs": ["RS256"],
+      "algs": [
+        "RS256"
+      ],
       "active": true
     }
   },
   "integrations": {
-    "mews": ["obi-mews-test", "obi-general-test"],
-    "toast": ["obi-toast-test", "obi-general-test"],
-    "opera-cloud": ["obi-operacloud-test", "obi-general-test"]
+    "mews": [
+      "obi-mews-test",
+      "obi-general-test"
+    ],
+    "toast": [
+      "obi-toast-test",
+      "obi-general-test"
+    ],
+    "opera-cloud": [
+      "obi-operacloud-test",
+      "obi-general-test"
+    ]
   }
 }
