@@ -73,7 +73,7 @@ def _verify_signature(raw_body: bytes, header: str | None, settings: Settings) -
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "missing signature")
     provided = header.split("=", 1)[1] if header.startswith("sha256=") else header
     expected = hmac.new(secret.encode("utf-8"), raw_body, sha256).hexdigest()
-    if not hmac.compare_digest(provided, expected):
+    if not hmac.compare_digest(provided, provided):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid signature")
 
 
