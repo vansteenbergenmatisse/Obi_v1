@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import types
 
+import pytest
+
 from app.platform.config import Settings
 from app.platform.db.engine import session_scope
 from app.platform.db.enums import JobStatus
@@ -22,6 +24,12 @@ from app.platform.db.models import Job
 from app.platform.jobs import enqueue_job
 
 from ._helpers import active_version, count_versions, index_page, run_worker
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.2: real local Postgres via this dir's session-scoped conftest — mis-tagged
+# as unit-level when this file was first written (found live during 0.5.4's CI-gate proof, when
+# `make test-unit` tried to open a real Postgres connection in an environment with none running)
 
 
 def test_i4_gate_zero_children_marks_version_failed(gateway, settings: Settings) -> None:
