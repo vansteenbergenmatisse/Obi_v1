@@ -9,12 +9,18 @@ pages 1001/1002 plus placeholder binaries for the pdf/xlsx parser paths.
 
 from __future__ import annotations
 
+import pytest
+
 from app.features.confluence_sync.application.sync_service import handle_sync_page
 from app.platform.clients.fixture_confluence_client import FixtureConfluenceGateway
 from app.platform.config import Settings
 from app.platform.db.engine import session_scope
 
 from ._helpers import active_child_chunks, index_page
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 
 def _texts(page_id: int) -> list[str]:
@@ -31,6 +37,23 @@ def test_text_attachment_content_is_indexed_and_searchable(
     # "Alice"/"team-onboarding", which the page body also happens to mention) — an unambiguous
     # proof the CSV attachment's own content was indexed, not just body text that overlaps it.
     assert "Carol" in blob and "HR Lead" in blob  # team-roster.csv, flattened
+
+
+def test_i2_tobuild_body_and_attachment_blocks_both_reach_chunker(
+    gateway: FixtureConfluenceGateway, settings: Settings
+) -> None:
+    """panel i2-tobuild · substep 0.5.2
+    On a rebuild, the body blocks AND the attachment blocks are unioned before being handed to
+    ingestion stage 3's chunker (sync_service.py: ``blocks=blocks + attachment_blocks``) — neither
+    set silently drops the other. Proven here by a phrase found only in page 1001's v1 body
+    ("Approvals take up to three business days", from the Getting Access section) and a phrase
+    found only in its welcome-checklist.txt attachment ("Sign the code of conduct"), both landing
+    in the same page's active chunk set from a single sync.
+    """
+    index_page(gateway, settings, 1001, 1)
+    blob = " ".join(_texts(1001))
+    assert "Approvals take up to three business days" in blob  # body-derived
+    assert "Sign the code of conduct" in blob  # attachment-derived
 
 
 def test_markdown_attachment_content_is_indexed(

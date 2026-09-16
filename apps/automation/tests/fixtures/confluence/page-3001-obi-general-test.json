@@ -1,0 +1,22 @@
+{
+  "id": "3001",
+  "spaceId": "300",
+  "parentId": null,
+  "status": "current",
+  "title": "Password Reset Policy",
+  "version": {
+    "number": 1,
+    "createdAt": "2026-07-01T09:00:00.000Z",
+    "message": "Initial publish",
+    "authorId": "acct-alice"
+  },
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": "<h1>Password Reset Policy</h1><p>Applies to every customer and every integrated platform.</p><h2>Self-Service Reset</h2><p>Use the account settings page to request a reset link. Links expire after one hour.</p><h2>Locked Accounts</h2><p>Three failed attempts locks the account for fifteen minutes. Contact support to unlock sooner.</p>"
+    }
+  },
+  "_links": {
+    "webui": "/spaces/KB/pages/3001/Password+Reset+Policy"
+  }
+}

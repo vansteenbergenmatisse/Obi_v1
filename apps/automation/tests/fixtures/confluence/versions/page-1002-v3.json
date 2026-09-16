@@ -1,0 +1,22 @@
+{
+  "id": "1002",
+  "spaceId": "100",
+  "parentId": "1001",
+  "status": "current",
+  "title": "Deployment Runbook",
+  "version": {
+    "number": 3,
+    "createdAt": "2026-05-15T08:00:00.000Z",
+    "message": "Added deploy steps",
+    "authorId": "acct-bob"
+  },
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": "<h1>Deployment Runbook</h1><p>How to ship a release to production safely.</p><h2>Pre-flight Checklist</h2><ul><li>All tests green on main</li><li>Changelog updated</li><li>On-call engineer notified</li></ul><h2>Deploy Steps</h2><ac:structured-macro ac:name=\"code\" ac:schema-version=\"1\"><ac:parameter ac:name=\"language\">bash</ac:parameter><ac:plain-text-body><![CDATA[make release TAG=v1.2.3\nmake deploy ENV=production]]></ac:plain-text-body></ac:structured-macro>"
+    }
+  },
+  "_links": {
+    "webui": "/spaces/ENG/pages/1002/Deployment+Runbook"
+  }
+}

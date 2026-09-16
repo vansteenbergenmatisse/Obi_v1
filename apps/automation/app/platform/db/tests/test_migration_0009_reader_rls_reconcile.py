@@ -26,6 +26,8 @@ from app.platform.config import get_settings
 from app.platform.db import engine as engine_mod
 
 _AUTOMATION_ROOT = Path(__file__).resolve().parents[4]
+
+pytestmark = pytest.mark.db  # substep 0.5.1: real local Postgres, Alembic chain
 _BELOW_0009 = "0008_drop_force_rls"
 _ENSURE_READER = (
     "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'rag_reader') THEN "

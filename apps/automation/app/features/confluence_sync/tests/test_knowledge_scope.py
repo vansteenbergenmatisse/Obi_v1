@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.features.confluence_sync.domain.knowledge_scope import resolve_knowledge_scope_tags
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 RECOGNIZED = frozenset(
     {"obi-general-test", "obi-mews-test", "obi-operacloud-test", "obi-toast-test"}

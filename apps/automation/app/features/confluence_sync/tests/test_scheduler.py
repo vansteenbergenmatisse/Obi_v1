@@ -9,9 +9,14 @@ scheduler is inspected without being started, so no ``shutdown`` is needed.
 
 from __future__ import annotations
 
+import pytest
 from apscheduler.triggers.interval import IntervalTrigger
 
 from app.main import _build_scheduler
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 _BASELINE_JOB_IDS = {"lightweight_reconcile", "complete_reconcile", "worker_tick"}
 _DEV_JOB_ID = "dev_lightweight_reconcile"

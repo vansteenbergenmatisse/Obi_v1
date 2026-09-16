@@ -3,6 +3,8 @@ enqueues drift that the worker then repairs."""
 
 from __future__ import annotations
 
+import pytest
+
 from app.features.confluence_sync.application.reconciliation import (
     KIND_COMPLETE,
     KIND_LIGHTWEIGHT,
@@ -17,6 +19,10 @@ from ._helpers import (
     index_page,
     run_worker,
 )
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 
 def _add_scope_root(root_type: str, root_id: str, *, tags: list[str] | None = None) -> int:

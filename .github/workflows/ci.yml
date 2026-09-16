@@ -1,0 +1,63 @@
+# Obi's four commit-gating levels (substep 0.5.1, docs/Final_docs/0.5-regression-tests/harness.md).
+# One job, four steps that mirror the root Makefile's test-unit / test-db / test-ui / eval targets
+# exactly, plus a coverage-floor guard. Runs on every pull request, to any branch — there was no
+# CI in this repo before this substep; GitHub Actions is the default absent a competing tool.
+name: CI
+
+on:
+  pull_request:
+
+jobs:
+  obi-checks:
+    name: obi four-level check (0.5.1)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.9.x"
+
+      - name: Set up the automation venv (README Quickstart)
+        run: cd apps/automation && uv venv --python 3.12 && uv pip install -e ".[dev]"
+
+      # The coverage floor from harness.md: pytest must collect at least this many tests
+      # (test-unit + test-db combined). A drop below it means a test file silently stopped
+      # being collected (e.g. a marker typo, since --strict-markers only catches unknown
+      # marks, not missing ones).
+      - name: Coverage floor (>= 621 tests collected)
+        run: |
+          cd apps/automation
+          count=$(uv run pytest --collect-only -q | tail -1 | grep -oE '^[0-9]+')
+          echo "pytest collected: $count"
+          if [ -z "$count" ] || [ "$count" -lt 621 ]; then
+            echo "::error::pytest collected $count tests, below the substep 0.5.1 coverage floor of 621 (harness.md)"
+            exit 1
+          fi
+
+      - name: make test-unit
+        run: make test-unit
+
+      - name: make test-db
+        run: make test-db
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: "10.33.2"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: make test-ui
+        run: make test-ui
+
+      - name: make eval
+        run: make eval

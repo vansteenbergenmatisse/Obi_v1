@@ -1,0 +1,22 @@
+{
+  "id": "3004",
+  "spaceId": "300",
+  "parentId": null,
+  "status": "current",
+  "title": "Toast POS Menu Sync",
+  "version": {
+    "number": 1,
+    "createdAt": "2026-07-04T09:00:00.000Z",
+    "message": "Initial publish",
+    "authorId": "acct-bob"
+  },
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": "<h1>Toast POS Menu Sync</h1><p>Covers the Toast point-of-sale integration questions Obi answers for restaurant customers.</p><h2>Menu Import</h2><p>Menus import from the Toast Menus API on publish and cache for fifteen minutes.</p><h2>Order Webhooks</h2><p>Toast pushes order-status webhooks; a missed webhook is caught by the hourly reconciliation sweep.</p>"
+    }
+  },
+  "_links": {
+    "webui": "/spaces/KB/pages/3004/Toast+POS+Menu+Sync"
+  }
+}

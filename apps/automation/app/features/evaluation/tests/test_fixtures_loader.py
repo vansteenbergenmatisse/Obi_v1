@@ -18,7 +18,27 @@ def test_fixtures_dir_exists() -> None:
 def test_list_pages_expected_ids() -> None:
     loader = _loader()
     ids = {p["id"] for p in loader.list_pages()}
-    assert ids == {"1001", "1002", "1003", "2001", "2002", "2003"}
+    # 1001-2003: the original ENG/HR corpus. 3001-3010: the substep 0.5.1 additions
+    # (one page per knowledge-scope tag, two-label, classified, unlabeled, attachment,
+    # group-restricted, empty) — see this directory's README.md page-mapping table.
+    assert ids == {
+        "1001",
+        "1002",
+        "1003",
+        "2001",
+        "2002",
+        "2003",
+        "3001",
+        "3002",
+        "3003",
+        "3004",
+        "3005",
+        "3006",
+        "3007",
+        "3008",
+        "3009",
+        "3010",
+    }
 
 
 def test_status_coverage() -> None:
@@ -65,9 +85,7 @@ def test_labels_restrictions_attachments() -> None:
 
     restrictions = loader.load_restrictions("1002")
     assert restrictions is not None
-    account_ids = {
-        u["accountId"] for u in restrictions["restrictions"]["user"]["results"]
-    }
+    account_ids = {u["accountId"] for u in restrictions["restrictions"]["user"]["results"]}
     assert account_ids == {"acct-alice", "acct-bob"}
 
     attachments = loader.load_attachments("1001")
@@ -86,3 +104,89 @@ def test_attachment_files_present() -> None:
     assert loader.attachment_path("welcome-checklist.txt").is_file()
     assert loader.attachment_path("team-roster.csv").is_file()
     assert loader.attachment_path("rollback-notes.md").is_file()
+
+
+def test_tag_fixture_pages_carry_exactly_one_recognized_scope_label() -> None:
+    """panel n/a · substep 0.5.1
+    One fixture page per config/knowledge_scopes.json entry, each carrying exactly that
+    scope's label — loaded through loader.py, not read from disk directly."""
+    loader = _loader()
+    by_tag = {
+        "3001": "obi-general-test",
+        "3002": "obi-mews-test",
+        "3003": "obi-operacloud-test",
+        "3004": "obi-toast-test",
+    }
+    for page_id, tag in by_tag.items():
+        page = loader.load_page(page_id)
+        assert page["id"] == page_id
+        labels = loader.load_labels(page_id)
+        assert labels is not None
+        assert {lbl["name"] for lbl in labels["results"]} == {tag}
+
+
+def test_two_label_fixture_page_carries_two_ordinary_labels() -> None:
+    """panel n/a · substep 0.5.1
+    The two-label fixture page carries two ordinary Confluence labels, neither a
+    knowledge-scope tag (the two-tag case is a documented conflict, tested elsewhere)."""
+    loader = _loader()
+    labels = loader.load_labels("3005")
+    assert labels is not None
+    names = {lbl["name"] for lbl in labels["results"]}
+    assert names == {"changelog", "internal"}
+    recognized = {"obi-general-test", "obi-mews-test", "obi-operacloud-test", "obi-toast-test"}
+    assert names.isdisjoint(recognized)
+
+
+def test_classified_fixture_page_carries_the_reserved_label() -> None:
+    """panel n/a · substep 0.5.1
+    The classified fixture page carries exactly the reserved 'classified' label."""
+    loader = _loader()
+    labels = loader.load_labels("3006")
+    assert labels is not None
+    assert {lbl["name"] for lbl in labels["results"]} == {"classified"}
+
+
+def test_unlabeled_fixture_page_has_no_labels() -> None:
+    """panel n/a · substep 0.5.1
+    The unlabeled fixture page carries zero labels."""
+    loader = _loader()
+    assert loader.load_labels("3007") is None
+
+
+def test_attachment_fixture_page_has_one_real_parseable_attachment() -> None:
+    """panel n/a · substep 0.5.1
+    The attachment fixture page has exactly one attachment, resolvable to a real,
+    non-empty file on disk."""
+    loader = _loader()
+    attachments = loader.load_attachments("3008")
+    assert attachments is not None
+    assert len(attachments["results"]) == 1
+    file_name = attachments["results"][0]["file"]
+    path = loader.attachment_path(file_name)
+    assert path.is_file()
+    assert path.read_text(encoding="utf-8").strip() != ""
+
+
+def test_group_restricted_fixture_page_has_no_named_users() -> None:
+    """panel n/a · substep 0.5.1
+    The group-restricted fixture page names a group and zero individual users on its
+    read restriction — the one category the original 1001-2003 corpus never covered."""
+    loader = _loader()
+    restrictions = loader.load_restrictions("3009")
+    assert restrictions is not None
+    restriction = restrictions["restrictions"]
+    assert restriction["user"]["results"] == []
+    assert len(restriction["group"]["results"]) == 1
+    assert restriction["group"]["results"][0]["name"] == "security"
+
+
+def test_empty_fixture_page_has_no_body_labels_restrictions_or_attachments() -> None:
+    """panel n/a · substep 0.5.1
+    The empty fixture page has an empty body, no labels, no restrictions, no attachments."""
+    loader = _loader()
+    page = loader.load_page("3010")
+    assert page["body"]["storage"]["value"] == ""
+    assert loader.load_labels("3010") is None
+    assert loader.load_restrictions("3010") is None
+    assert loader.load_attachments("3010") is None

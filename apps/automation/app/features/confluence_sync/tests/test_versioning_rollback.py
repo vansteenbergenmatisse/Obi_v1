@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import select
 
 from app.features.confluence_sync.application.sync_service import target_versions
@@ -25,6 +26,10 @@ from ._helpers import (
     index_page,
     read,
 )
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 
 def test_rollback_restores_prior_version(gateway, settings):

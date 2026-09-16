@@ -11,6 +11,7 @@ predicate alone. Also proves the flag-off default is a true no-op, and that the 
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import text
 
 from app.features.retrieval import HybridRetriever, PrincipalPermissionPolicy
@@ -20,6 +21,10 @@ from app.platform.db.engine import get_reader_sessionmaker, get_sessionmaker
 from app.platform.db.models import QueryTrace
 
 from ._helpers import index_page
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 _ONBOARDING_PAGE = 1001  # space 100, unrestricted
 _EXPENSE_PAGE = 2001  # space 200, unrestricted

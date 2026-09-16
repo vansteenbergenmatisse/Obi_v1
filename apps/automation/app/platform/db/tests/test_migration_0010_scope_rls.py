@@ -28,6 +28,8 @@ from app.platform.config import get_settings
 from app.platform.db import engine as engine_mod
 
 _AUTOMATION_ROOT = Path(__file__).resolve().parents[4]
+
+pytestmark = pytest.mark.db  # substep 0.5.1: real local Postgres, Alembic chain
 _BELOW_0010 = "0009_reconcile_non_chunk_rls"
 _CHUNK_SCOPE_POLICY = "chunk_scope_read"
 _CURATED_SCOPE_POLICY = "curated_knowledge_entry_scope_read"

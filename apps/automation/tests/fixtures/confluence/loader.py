@@ -39,18 +39,33 @@ def list_page_ids() -> list[str]:
     return [page["id"] for page in load_manifest()["pages"]]
 
 
+def _manifest_file_override(page_id: str) -> str | None:
+    """The manifest's optional ``file`` key for a page's current-version fixture.
+
+    Lets a fixture file's name encode both the page id and its labels (e.g.
+    ``page-3002-obi-mews-test.json``, substep 0.5.1) instead of the default
+    ``page-<id>.json``. Legacy pages carry no ``file`` key and are unaffected.
+    """
+    for page in load_manifest()["pages"]:
+        if page["id"] == page_id:
+            return page.get("file")
+    return None
+
+
 def load_page(page_id: str, version: int | None = None) -> dict[str, Any]:
     """Load a page fixture.
 
-    When ``version`` is None, the current page fixture (``page-<id>.json``) is
-    returned. When a version number is given, the snapshot from the ``versions/``
-    subfolder (``versions/page-<id>-v<version>.json``) is returned. Raises
-    FileNotFoundError if the requested fixture does not exist.
+    When ``version`` is None, the current page fixture is returned: the manifest's
+    per-page ``file`` override when set, else ``page-<id>.json``. When a version
+    number is given, the snapshot from the ``versions/`` subfolder
+    (``versions/page-<id>-v<version>.json``) is returned. Raises FileNotFoundError
+    if the requested fixture does not exist.
     """
     page_id = str(page_id)
     base = fixtures_dir()
     if version is None:
-        path = base / f"page-{page_id}.json"
+        override = _manifest_file_override(page_id)
+        path = base / override if override else base / f"page-{page_id}.json"
     else:
         path = base / "versions" / f"page-{page_id}-v{version}.json"
     if not path.exists():

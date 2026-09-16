@@ -1,0 +1,6 @@
+Vendor Contract Summary
+=======================
+- Vendor: Acme Linens Co.
+- Term: 12 months, auto-renews unless cancelled 30 days prior
+- Payment: net-30, monthly invoice
+- Contact: procurement@omniboost.example

@@ -1,0 +1,22 @@
+{
+  "id": "3010",
+  "spaceId": "300",
+  "parentId": null,
+  "status": "current",
+  "title": "Untitled Draft",
+  "version": {
+    "number": 1,
+    "createdAt": "2026-07-10T09:00:00.000Z",
+    "message": "Initial publish",
+    "authorId": "acct-dave"
+  },
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": ""
+    }
+  },
+  "_links": {
+    "webui": "/spaces/KB/pages/3010/Untitled+Draft"
+  }
+}

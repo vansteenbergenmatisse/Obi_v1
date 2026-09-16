@@ -1,0 +1,22 @@
+{
+  "id": "3008",
+  "spaceId": "300",
+  "parentId": null,
+  "status": "current",
+  "title": "Vendor Contract Summary",
+  "version": {
+    "number": 1,
+    "createdAt": "2026-07-08T09:00:00.000Z",
+    "message": "Initial publish",
+    "authorId": "acct-carol"
+  },
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": "<h1>Vendor Contract Summary</h1><p>One real, small, parseable attachment: <code>vendor-contract-summary.txt</code>.</p>"
+    }
+  },
+  "_links": {
+    "webui": "/spaces/KB/pages/3008/Vendor+Contract+Summary"
+  }
+}

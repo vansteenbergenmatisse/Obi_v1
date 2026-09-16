@@ -1,0 +1,22 @@
+{
+  "id": "3005",
+  "spaceId": "300",
+  "parentId": null,
+  "status": "current",
+  "title": "Q3 Release Notes",
+  "version": {
+    "number": 1,
+    "createdAt": "2026-07-05T09:00:00.000Z",
+    "message": "Initial publish",
+    "authorId": "acct-carol"
+  },
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": "<h1>Q3 Release Notes</h1><p>Internal changelog, not a knowledge-scope tag: two ordinary descriptive labels, no provider tag.</p><h2>Shipped</h2><ul><li>Faster reconciliation sweeps</li><li>New admin dashboard filters</li></ul>"
+    }
+  },
+  "_links": {
+    "webui": "/spaces/KB/pages/3005/Q3+Release+Notes"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "id": "3002",
+  "spaceId": "300",
+  "parentId": null,
+  "status": "current",
+  "title": "Mews PMS Sync Setup",
+  "version": {
+    "number": 1,
+    "createdAt": "2026-07-02T09:00:00.000Z",
+    "message": "Initial publish",
+    "authorId": "acct-bob"
+  },
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": "<h1>Mews PMS Sync Setup</h1><p>How Obi answers Mews-specific questions for hotel customers on the Mews PMS integration.</p><h2>Connecting</h2><p>Generate a Mews Connector API key from the Mews back office and paste it into the integration settings.</p><h2>Reservation Sync</h2><p>Reservations sync every five minutes. A failed sync retries automatically up to three times.</p>"
+    }
+  },
+  "_links": {
+    "webui": "/spaces/KB/pages/3002/Mews+PMS+Sync+Setup"
+  }
+}

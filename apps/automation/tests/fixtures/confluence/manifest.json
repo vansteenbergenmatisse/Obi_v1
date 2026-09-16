@@ -3,7 +3,8 @@
   "description": "Representative Confluence Cloud REST v2 fixture corpus for the omniboost-rag ingestion and eval pipelines.",
   "spaces": [
     { "id": "100", "key": "ENG", "name": "Engineering" },
-    { "id": "200", "key": "HR", "name": "People Operations" }
+    { "id": "200", "key": "HR", "name": "People Operations" },
+    { "id": "300", "key": "KB", "name": "Knowledge Base Fixtures" }
   ],
   "pages": [
     {
@@ -77,12 +78,153 @@
       "hasLabels": false,
       "hasRestrictions": false,
       "hasAttachments": false
+    },
+    {
+      "id": "3001",
+      "spaceId": "300",
+      "title": "Password Reset Policy",
+      "parentId": null,
+      "currentStatus": "current",
+      "currentVersion": 1,
+      "versionsAvailable": [1],
+      "hasLabels": true,
+      "hasRestrictions": false,
+      "hasAttachments": false,
+      "file": "page-3001-obi-general-test.json",
+      "_fixtureCategory": "one page per knowledge-scope tag: obi-general-test (substep 0.5.1)"
+    },
+    {
+      "id": "3002",
+      "spaceId": "300",
+      "title": "Mews PMS Sync Setup",
+      "parentId": null,
+      "currentStatus": "current",
+      "currentVersion": 1,
+      "versionsAvailable": [1],
+      "hasLabels": true,
+      "hasRestrictions": false,
+      "hasAttachments": false,
+      "file": "page-3002-obi-mews-test.json",
+      "_fixtureCategory": "one page per knowledge-scope tag: obi-mews-test (substep 0.5.1)"
+    },
+    {
+      "id": "3003",
+      "spaceId": "300",
+      "title": "Opera Cloud Connector Notes",
+      "parentId": null,
+      "currentStatus": "current",
+      "currentVersion": 1,
+      "versionsAvailable": [1],
+      "hasLabels": true,
+      "hasRestrictions": false,
+      "hasAttachments": false,
+      "file": "page-3003-obi-operacloud-test.json",
+      "_fixtureCategory": "one page per knowledge-scope tag: obi-operacloud-test (substep 0.5.1)"
+    },
+    {
+      "id": "3004",
+      "spaceId": "300",
+      "title": "Toast POS Menu Sync",
+      "parentId": null,
+      "currentStatus": "current",
+      "currentVersion": 1,
+      "versionsAvailable": [1],
+      "hasLabels": true,
+      "hasRestrictions": false,
+      "hasAttachments": false,
+      "file": "page-3004-obi-toast-test.json",
+      "_fixtureCategory": "one page per knowledge-scope tag: obi-toast-test (substep 0.5.1)"
+    },
+    {
+      "id": "3005",
+      "spaceId": "300",
+      "title": "Q3 Release Notes",
+      "parentId": null,
+      "currentStatus": "current",
+      "currentVersion": 1,
+      "versionsAvailable": [1],
+      "hasLabels": true,
+      "hasRestrictions": false,
+      "hasAttachments": false,
+      "file": "page-3005-changelog-internal.json",
+      "_fixtureCategory": "two-label page: ordinary non-scope labels (substep 0.5.1)"
+    },
+    {
+      "id": "3006",
+      "spaceId": "300",
+      "title": "Incident Postmortem — Data Access Review",
+      "parentId": null,
+      "currentStatus": "current",
+      "currentVersion": 1,
+      "versionsAvailable": [1],
+      "hasLabels": true,
+      "hasRestrictions": false,
+      "hasAttachments": false,
+      "file": "page-3006-classified.json",
+      "_fixtureCategory": "classified page: the reserved label, never mappable (substep 0.5.1)"
+    },
+    {
+      "id": "3007",
+      "spaceId": "300",
+      "title": "Office Parking Guide",
+      "parentId": null,
+      "currentStatus": "current",
+      "currentVersion": 1,
+      "versionsAvailable": [1],
+      "hasLabels": false,
+      "hasRestrictions": false,
+      "hasAttachments": false,
+      "file": "page-3007-unlabeled.json",
+      "_fixtureCategory": "unlabeled page: zero labels (substep 0.5.1)"
+    },
+    {
+      "id": "3008",
+      "spaceId": "300",
+      "title": "Vendor Contract Summary",
+      "parentId": null,
+      "currentStatus": "current",
+      "currentVersion": 1,
+      "versionsAvailable": [1],
+      "hasLabels": false,
+      "hasRestrictions": false,
+      "hasAttachments": true,
+      "file": "page-3008-attachment.json",
+      "_fixtureCategory": "attachment page: one real, parseable attachment (substep 0.5.1)"
+    },
+    {
+      "id": "3009",
+      "spaceId": "300",
+      "title": "Security Runbook — Leads Only",
+      "parentId": null,
+      "currentStatus": "current",
+      "currentVersion": 1,
+      "versionsAvailable": [1],
+      "hasLabels": false,
+      "hasRestrictions": true,
+      "hasAttachments": false,
+      "file": "page-3009-group-restricted.json",
+      "_fixtureCategory": "group-restricted page: non-empty group, empty user list (substep 0.5.1)"
+    },
+    {
+      "id": "3010",
+      "spaceId": "300",
+      "title": "Untitled Draft",
+      "parentId": null,
+      "currentStatus": "current",
+      "currentVersion": 1,
+      "versionsAvailable": [1],
+      "hasLabels": false,
+      "hasRestrictions": false,
+      "hasAttachments": false,
+      "file": "page-3010-empty.json",
+      "_fixtureCategory": "empty page: empty body, no labels, no restrictions, no attachments (substep 0.5.1)"
     }
   ],
   "attachmentFiles": [
     "attachments/welcome-checklist.txt",
     "attachments/team-roster.csv",
     "attachments/rollback-notes.md",
-    "attachments/PLACEHOLDER-BINARIES.txt"
+    "attachments/PLACEHOLDER-BINARIES.txt",
+    "attachments/vendor-contract-summary.txt"
   ]
 }

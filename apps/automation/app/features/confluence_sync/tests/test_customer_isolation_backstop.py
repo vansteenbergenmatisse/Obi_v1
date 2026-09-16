@@ -22,6 +22,7 @@ enforces the boundary on its own. Mirrors ``test_force_rls_managed_postgres.py``
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import text
 
 from app.platform.config import Settings
@@ -30,6 +31,10 @@ from app.platform.db import schema
 from app.platform.db.engine import get_reader_sessionmaker
 
 from ._helpers import index_page
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 _MEWS_PAGE = 1001  # space 100, unrestricted
 _OPERA_PAGE = 2001  # space 200, unrestricted

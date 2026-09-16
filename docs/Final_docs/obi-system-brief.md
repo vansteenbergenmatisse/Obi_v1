@@ -1,6 +1,6 @@
 # Obi, part by part — the complete brief, A to Z
 
-Generated on 12 September 2026 from `obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
+Generated on 2026-09-16 from `../../docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
 
 ## 0 · How to read this brief
 
@@ -171,10 +171,10 @@ _Workflow label shown in the drawer: System overview_
   4. Swap the pointer in one transaction. Stamp source, tags, scope state.
 - Target and notes: Change in the target: the version's uniqueness key becomes the index fingerprint, so a file-only change may build.
 
-##### Panel `ov-auth` · The auth host: the host backend or an agreed auth service · [Planned]
+##### Panel `ov-auth` · The auth host: the host backend or an agreed auth service · [Implemented]
 - Kind: Outside system
 - In plain words: Hands each person a signed card that says which company they belong to, which integration they use, and who they are. Today this is the host's own server.
-- Today: Does not exist. A shared invite token gates the pilot widget, and one server key gates the backend.
+- Today: Built: the host issues a signed per-user JWT (iss, aud, sub, iat, exp, company_id, company_name, integration), verified before any search — live-proven for test hosts (commit 59385f4).
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -195,7 +195,7 @@ _Workflow label shown in the drawer: System overview_
 ##### Panel `ov-corpus` · The Postgres corpus · [Implemented]
 - Kind: Data
 - In plain words: The one storage box: tables for pages and pieces, plus the meaning codes for search. It hides rows a person may not see.
-- Today: Supabase Cloud (AWS eu-west-1), Postgres with pgvector 0.8.2. Alembic head 0009 live; 0010 (scope policy) coded, not yet applied.
+- Today: Supabase Cloud (AWS eu-west-1), Postgres with pgvector 0.8.2. Alembic head 0012 live.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -214,7 +214,7 @@ _Workflow label shown in the drawer: System overview_
 ##### Panel `ov-eval` · The evaluation set · [Planned]
 - Kind: Evaluation
 - In plain words: A list of test questions with known right answers, used to check Obi after every change.
-- Today: No gold set exists. make eval runs a 14-document synthetic fixture.
+- Today: No gold set exists. make eval runs a synthetic fixture of 6 current pages.
 - Steps:
   1. Write 150 to 250 reviewed cases.
   2. Split dev and held-out.
@@ -224,7 +224,7 @@ _Workflow label shown in the drawer: System overview_
 ##### Panel `ov-widget` · The Obi widget · [Implemented]
 - Kind: The widget
 - In plain words: The chat window inside Mews or Toast where a person types a question and gets a cited answer.
-- Today: Built in apps/web. Launcher, teaser, panel, composer, images, screenshot, six locales, dev-only scope switcher. Shared invite token for the pilot.
+- Today: Built in apps/web. Launcher, teaser, panel, composer, images, screenshot, six locales, dev-only scope switcher. Per-user JWT from the host; the shared pilot invite token is retired.
 - Steps:
   1. The widget is embedded in a platform's page with a scope from its config.
   2. The user asks. The widget calls its own proxy route.
@@ -580,7 +580,7 @@ _Workflow label shown in the drawer: Separation of concerns_
 ##### Panel `sc-frontend` · One frontend · [Implemented]
 - Kind: Part
 - In plain words: The chat window a person types in, plus the small server route that adds the secret key. It shows answers. It never decides who may see what.
-- Today: apps/web: a Next.js app with the widget UI and its proxy route. Embedded in a platform page with a scope from its config. A shared pilot token gates it.
+- Today: apps/web: a Next.js app with the widget UI, its proxy route, and a built iframe bridge holding the token in memory. Embedded in a platform page with a scope from its config. A per-user JWT from the host gates it; the shared pilot token is retired.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -614,7 +614,7 @@ _Workflow label shown in the drawer: Separation of concerns_
 ##### Panel `sc-kb` · One knowledge base · [Implemented, needs changing]
 - Kind: Part
 - In plain words: One Postgres database holds every page in pieces with its tags. The database itself hides rows a person may not see. The folder next to it holds the schema, the tags and the seed data, never the pages.
-- Today: Supabase Postgres with pgvector. Schema and policies in platform/db, migrations in alembic/versions, the tag list in config/knowledge_scopes.json, curated seeds in scripts/, a local compose file in infra/foundation.
+- Today: Supabase Postgres with pgvector. Schema and policies in platform/db, migrations in alembic/versions (12 files through 0012), the tag list in config/knowledge_scopes.json, curated seeds in scripts/, a local compose file in infra/foundation.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -718,7 +718,7 @@ _Workflow label shown in the drawer: Code map_
 ##### Panel `cm-ingest` · features/ingestion · [Implemented]
 - Kind: Feature
 - In plain words: The code that cuts pages into pieces, makes meaning codes, and swaps the new version live.
-- Today: Owns chunking, contextualization, embedding reuse, attachment extraction, and versioning. Writes document, document_version, chunk.
+- Today: Owns chunking, contextualization, embedding reuse, attachment extraction, and versioning. Writes document, document_version, chunk, page_source.
 - Where in the code:
   - `domain/chunking.py` — parents and children
   - `application/contextualizer.py` — title, path, LLM note
@@ -729,7 +729,7 @@ _Workflow label shown in the drawer: Code map_
 ##### Panel `cm-retrieval` · features/retrieval · [Implemented]
 - Kind: Feature
 - In plain words: The code that searches, merges results, checks page permissions, and calls the reranker.
-- Today: Owns search, fusion, the page ACL, rerank wiring, and the retrieval half of query_trace. Runs as rag_reader.
+- Today: Owns search, fusion, the page ACL, rerank wiring, and the retrieval half of query_trace. The rag_reader binding itself lives in platform/db/engine.py; this folder only comments on it.
 - Where in the code:
   - `application/retriever.py` — HybridRetriever: the search transaction
   - `infrastructure/search_repo.py` — dense_search, keyword_search, GUCs, rerank texts, parents
@@ -787,7 +787,7 @@ _Workflow label shown in the drawer: Code map_
 ##### Panel `cm-alembic` · alembic/versions: the migrations · [Unverified]
 - Kind: Folder
 - In plain words: The numbered history of every database change.
-- Today: 0001 core schema, 0002 provider tags and RLS, 0003 query_trace, 0004 source_scope, 0005 page_restriction, 0006 dedupe check constraints, 0007 knowledge scope, 0008 drop FORCE RLS, 0009 reader policies, 0010 scope RLS. Live head on Supabase: 0009.
+- Today: 0001 core schema, 0002 provider tags and RLS, 0003 query_trace, 0004 source_scope, 0005 page_restriction, 0006 dedupe check constraints, 0007 knowledge scope, 0008 drop FORCE RLS, 0009 reader policies, 0010 scope RLS. Live head on Supabase: 0012.
 - Steps:
   1. Every migration has a downgrade.
   2. 0010 must be applied live before any public deploy.
@@ -859,7 +859,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ##### Panel `cm-config` · config/knowledge_scopes.json: the scope list · [Implemented, needs changing]
 - Kind: File
 - In plain words: The tag list. A Confluence label in this file is a knowledge scope; add a name to add a tag.
-- Today: Holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test. Loaded at startup; startup fails if the general scope is missing.
+- Today: Holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test. Loaded at startup; startup fails if the general scope is missing. The widget's scope list is a hand-written copy of this file, guarded by a runtime drift test, not generated at build time.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -899,6 +899,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ##### Panel `cm-web` · apps/web: the widget · [Implemented]
 - Kind: App
 - In plain words: The chat widget's code.
+- Today: server/auth.ts has been deleted; the proxy no longer uses it. The iframe bridge (src/features/embed/) is built and tested, not planned.
 - Where in the code:
   - `src/features/chat/ui/` — launcher, teaser, panel, composer, bubbles, menus
   - `src/features/chat/api/chat-client.ts` — SSE parsing
@@ -910,6 +911,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ##### Panel `cm-contracts` · packages/contracts · [Implemented]
 - Kind: Package
 - In plain words: The shared shape of a request and an answer, so widget and backend agree.
+- Today: token-claims.json and iframe-messages.ts already exist and are wired, not planned.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -1169,10 +1171,10 @@ Still to decide: which platform goes first, whether embedded users need per-pers
 
 _Workflow label shown in the drawer: Embedding Obi in another application_
 
-##### Panel `em-token` · The signed note (JWT) · [Planned]
+##### Panel `em-token` · The signed note (JWT) · [Implemented]
 - Kind: Contract
 - In plain words: A short signed note from the platform's server. By default it carries no values. With values it carries an id, the company name and the integration. obi.js fetches it at the click and renews it silently. Obi checks the signature before it reads a word of it.
-- Today: Does not exist. The pilot uses one shared invite token with no company, integration or person on it.
+- Today: Built: a short signed JWT per user carrying company_id, company_name and integration, verified before any search — live-proven for test hosts (commit 59385f4).
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -1203,10 +1205,10 @@ _Workflow label shown in the drawer: Embedding Obi in another application_
   - A valid mews note and a body scope of toast: scoped to mews.
 - Target and notes: The issuer URL, the key id and the sub format are placeholders. Nothing is configured until the decisions in section 11 are made.
 
-##### Panel `em-loader` · obi.js: one script tag · [Planned]
+##### Panel `em-loader` · obi.js: one script tag · [Implemented]
 - Kind: Frontend
 - In plain words: One line on the platform's page loads our script. The script draws the round button, opens the chat window in a frame from our domain, fetches the note, renews it and talks to the frame. The platform writes none of that.
-- Today: Does not exist. The widget is embedded straight into a platform page and reads a shared pilot token from the URL.
+- Today: Built and unit-tested: draws the round button, opens the chat window in a frame from our domain, fetches the note and renews it. Obi.clear() forgets the note and closes the panel, degrading to general-only rather than blocking sending, until a new note arrives. Replaces the earlier straight-embed pilot flow that read a shared token from the URL.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -1247,10 +1249,10 @@ _Workflow label shown in the drawer: Embedding Obi in another application_
   - A call without a session gets nothing.
 - Target and notes: The one thing the platform builds. Decision needed: the platform signs directly, or an auth service the two teams agree on does.
 
-##### Panel `em-backend` · Obi checks the note and picks the pages · [Planned]
+##### Panel `em-backend` · Obi checks the note and picks the pages · [Implemented]
 - Kind: Backend
 - In plain words: Obi's server checks the note is real, meant for Obi and not expired. Then it reads the values and writes one note of its own that every later step obeys: which company, which integration, which tags.
-- Today: One shared CHAT_API_KEY is compared in constant time. principal and knowledge_scope come from the request body. No per-user identity.
+- Today: One shared CHAT_API_KEY is compared in constant time, plus per-user JWT verification (issuer, signature, audience, expiry) that builds the AuthContext; principal comes from the token, not the request body — live-proven for test hosts (commit 59385f4).
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -1307,9 +1309,10 @@ class AuthContext:
   | One database | tags separate the integrations, never separate databases |
 - Target and notes: The rows and policies do not change for this work. The note only changes where the tags come from.
 
-##### Panel `em-button` · The frame: the round button and the chat window · [Planned]
+##### Panel `em-button` · The frame: the round button and the chat window · [Implemented]
 - Kind: Frontend
 - In plain words: What obi.js draws: a round button at the top of the screen, and the chat window that pops up when it is clicked. Both come from our domain inside one frame.
+- Today: apps/web/src/app/embed/page.tsx is built and unit-tested, not planned.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -1770,6 +1773,7 @@ def resolve(labels, recognized):
 ##### Panel `i2-gone` · Gone, classified, or unlabeled: deactivate · [Implemented, needs changing]
 - Kind: Outcome
 - In plain words: The page was deleted, lost its tag, or got the classified tag. It leaves search now.
+- Today: Only status trashed/archived/deleted and missing metadata trigger deactivation today; the classified-label and last-recognized-label-removed triggers do not exist yet.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2068,7 +2072,7 @@ _Workflow label shown in the drawer: Ingestion, stage 4 \u00b7 Activate_
 ##### Panel `i4-staging` · Create the version in staging · [Implemented, needs changing]
 - Kind: Step
 - In plain words: Creates a new version row marked as waiting, with every hash it was built with.
-- Today: Uniqueness is (document_id, cf_version, retrieval_schema_version, embedding_model). A second build at one page version collides.
+- Today: Migration 0012 already widened uniqueness to a 7-column key by a different mechanism; neither this 4-column description nor the target's 2-column (document_id, index_fingerprint) key matches the live schema.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2154,6 +2158,7 @@ CREATE UNIQUE INDEX ux_document_version_one_active
 ##### Panel `i4-failed` · A failed version never activates · [Implemented]
 - Kind: Fail path
 - In plain words: A failed build never goes live. It stays as a record of what went wrong.
+- Today: GC only reaps versions in state=superseded; a failed-state version is never garbage-collected.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2273,6 +2278,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `tg-config` · The scope list file · [Implemented, needs changing]
 - Kind: Config
 - In plain words: The list of tag names in one small file. A name here is a tag; a name not here is ignored.
+- Today: apps/web/src/features/chat/model/knowledge-scopes.ts is a hand-written copy of this file's list, checked by a runtime drift test, not generated at build time.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2289,7 +2295,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `ks-edit` · Edit knowledge_scopes.json · [Implemented, needs changing]
 - Kind: Knowledge scopes
 - In plain words: The tag list is one small file. Add a tag's name to the file to create the tag.
-- Today: The file holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test. Loaded at startup by both apps.
+- Today: The file holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test as an object {scopes:[{name,description}]}, not a plain list of slugs. Loaded at startup by both apps.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2323,6 +2329,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `ks-deploy` · Deploy · [Implemented, needs changing]
 - Kind: Knowledge scopes
 - In plain words: Ship the new file. The backend and the widget both read it.
+- Today: The widget's scope list is a hand-written copy, not generated at build time; a runtime drift test guards it against this file.
 - Steps:
   1. The backend restarts and reads the new list.
   2. The widget build imports the same file and generates its scope list, without classified.
@@ -2351,6 +2358,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `ks-widget` · A widget uses the same slug · [Implemented, needs changing]
 - Kind: Knowledge scopes
 - In plain words: A widget uses the same tag name as its scope, so it only sees pages with that tag.
+- Today: The live /embed frame does not set a knowledgeScope prop; only the dev-only scope switcher sets it client-side today. The token-driven scope in step 3 is target, not current.
 - Steps:
   1. The embed config sets knowledgeScope to the slug, for example toast.
   2. The gate validates the slug against the list.
@@ -2504,6 +2512,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `tg-state` · scope_state · [Planned]
 - Kind: Data
 - In plain words: One word per page: ok, conflict, classified, or unlabeled. Only ok pages are ever shown.
+- Today: Does not exist yet: no scope_state enum, no chunk/page_source columns, and no consumer reads it.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2522,7 +2531,7 @@ ALTER TABLE page_source ADD COLUMN scope_state scope_state NOT NULL DEFAULT 'unl
 ##### Panel `tg-filter` · The filter that uses tags · [Implemented, needs changing]
 - Kind: Step
 - In plain words: The database rule that shows a piece only when its tag matches the widget's scope and its state is ok.
-- Today: App predicate tags && :scopes behind a flag, plus the 0010 RESTRICTIVE policy: wildcard OR empty tags OR overlap.
+- Today: App predicate tags && :scopes behind a flag, default off, plus the 0010 RESTRICTIVE policy — coded and tested, not yet applied to Supabase.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2691,10 +2700,10 @@ class AuthContext:
   - `apps/web/src/features/chat/server/validation.ts` — shape checks only
   - `apps/web/src/platform/automation-api/client.ts` — the backend client
 
-##### Panel `r1-auth` · Verify who is asking · [Implemented, needs changing]
+##### Panel `r1-auth` · Verify who is asking · [Implemented]
 - Kind: Gate
 - In plain words: Checks the widget's key and the person's signed card. Company, integration, and identity come from the card, never from what was typed.
-- Today: One CHAT_API_KEY per deployment, compared in constant time against the current and the previous key (rotation window). No per-user identity.
+- Today: One CHAT_API_KEY per deployment, compared in constant time against the current and previous key (rotation window), plus a per-user RS256 JWT verified before any search — live-proven for test hosts (commit 59385f4).
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2762,6 +2771,7 @@ class AuthContext:
 ##### Panel `r1-idem` · Idempotency replay · [Implemented]
 - Kind: Data
 - In plain words: Returns the same answer if the same request arrives twice, without a second search.
+- Today: The cache key already binds sha256(key, history, token_subject, knowledge_scope) — token subject, not body principal.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2783,7 +2793,7 @@ class AuthContext:
 ##### Panel `r1-rewrite` · Rewrite into one standalone question · [Implemented, needs changing]
 - Kind: Step
 - In plain words: Turns the chat so far into one clear question and lists its parts, so we can later check each part was answered.
-- Today: Haiku turns the history into a standalone query, 200 tokens. Single-turn history skips the call. Fails open to the raw text. Stored on the trace.
+- Today: Haiku turns the history into a standalone query, 200 tokens, plain text only — not yet the {query, parts} JSON. Single-turn history skips the call. Fails open to the raw text. Stored on the trace.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -3101,7 +3111,7 @@ _Workflow label shown in the drawer: Retrieval, stage 3 \u00b7 Filter_
 ##### Panel `r3-scope` · Scope row security · [Unverified]
 - Kind: Lock 2
 - In plain words: Lock 2: the database shows only pieces whose tag matches this person's integration (or general) and whose state is ok.
-- Today: Migration 0010 adds chunk_scope_read and curated_knowledge_entry_scope_read as RESTRICTIVE policies: wildcard OR cardinality(tags) = 0 OR overlap. Coded and tested (502 tests), not applied to Supabase yet. The app predicate is flag-gated and on.
+- Today: Migration 0010 adds chunk_scope_read and curated_knowledge_entry_scope_read as RESTRICTIVE policies: wildcard OR cardinality(tags) = 0 OR overlap. Coded and tested (502 tests), not applied to Supabase yet. The app predicate is flag-gated and off by default in code.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -3198,6 +3208,7 @@ CREATE POLICY chunk_source_read ON chunk FOR SELECT
 ##### Panel `r3-classified` · Conflict and classified are never served · [Planned]
 - Kind: Fail closed
 - In plain words: Pages marked classified or conflict are hidden by the database rule even if pieces remain.
+- Today: Does not exist yet: scope_state (the enum, the columns, and every consumer) is entirely unbuilt.
 - Steps:
   1. Ingestion stage 2 marks the state.
   2. Classified chunks are deleted outright.
@@ -3299,6 +3310,7 @@ _Workflow label shown in the drawer: Retrieval, stage 4 \u00b7 Rerank and judge_
 ##### Panel `r4-weak` · Is the best passage too weak? · [Implemented]
 - Kind: Gate
 - In plain words: Checks whether even the best piece scores low. If so, we do not trust the result yet.
+- Today: refusal_min_rerank_score is 0.05, recalibrated 2026-09-12 from the earlier 0.10 provisional value.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -3327,6 +3339,7 @@ _Workflow label shown in the drawer: Retrieval, stage 4 \u00b7 Rerank and judge_
 ##### Panel `r4-union` · Rerank the union once · [Planned]
 - Kind: Step
 - In plain words: Merges both result sets and scores them again against one question, so all scores are on one scale.
+- Today: The two result sets are not merged and reranked together; the code picks whichever run had the higher top score, though those scores come from different queries and are not on one scale.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -3345,6 +3358,7 @@ _Workflow label shown in the drawer: Retrieval, stage 4 \u00b7 Rerank and judge_
 ##### Panel `r4-refuse` · Refuse and hand off · [Implemented, needs changing]
 - Kind: Outcome
 - In plain words: Says Obi cannot answer this and offers a human, with one of four clear reasons logged.
+- Today: Four reasons: no_candidates, weak_score, no_citations, and off_topic (added 2026-09-12).
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -3571,6 +3585,7 @@ def decide_coverage(parts, parents, rerank, judge, t, band):
 ##### Panel `r5-partial` · Partial answer · [Planned]
 - Kind: Retrieval stage 5
 - In plain words: Answers the parts that are documented and names the part that is not.
+- Today: Does not exist; partial answers naming an uncovered part are not produced.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -3583,6 +3598,7 @@ def decide_coverage(parts, parents, rerank, judge, t, band):
 ##### Panel `r5-nocite` · Refuse: nothing survived the checks · [Implemented]
 - Kind: Fail path
 - In plain words: Every sentence lost its source, or none of them was backed by its source. Obi refuses instead of showing an unsupported answer.
+- Today: Only no_citations exists today; unsupported is not a defined RefusalReason and no support-check module exists yet.
 - Steps:
   1. The model wrote something, but no sentence cited a valid marker, or no sentence survived the support check.
   2. Refuse with no_citations or unsupported. The user sees the honest copy and a hand-off link.
@@ -3740,6 +3756,7 @@ _Workflow label shown in the drawer: The widget_
 ##### Panel `w-composer` · The composer · [Implemented]
 - Kind: UI
 - In plain words: Where the person types, pastes, or attaches a picture.
+- Today: 4 images per turn; no size check exists anywhere in apps/web — the 5 MB figure below is not enforced.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -3750,9 +3767,10 @@ _Workflow label shown in the drawer: The widget_
 - Where in the code:
   - `apps/web/src/features/chat/ui/composer.tsx, attachment-strip.tsx, image-lightbox.tsx` — input and previews
 
-##### Panel `w-scope` · Which platform is this widget in? · [Implemented]
+##### Panel `w-scope` · Which platform is this widget in? · [Implemented, needs changing]
 - Kind: Config
 - In plain words: The widget knows which integration it lives in, and that becomes its scope on every question.
+- Today: The live /embed frame never sets a knowledgeScope prop; the dev-only scope switcher is the only client-side way scope is chosen today. The token, not this prop, will decide scope in the target.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -3764,10 +3782,10 @@ _Workflow label shown in the drawer: The widget_
   - `apps/web/src/features/chat/ui/scope-menu.tsx` — the dev switcher
   - `apps/web/src/features/chat/model/knowledge-scopes.ts` — generated from knowledge_scopes.json at build time
 
-##### Panel `w-token` · The user token · [Planned]
+##### Panel `w-token` · The user token · [Implemented]
 - Kind: Auth
 - In plain words: The card that says who the person is. Today a shared pilot token; in the target a signed card per person.
-- Today: A shared invite token per pilot: captured from ?access_token= in the URL, kept in sessionStorage, sent as x-widget-access-token, compared in constant time by the proxy.
+- Today: The host issues a per-user JWT (iss, aud, sub, iat, exp, company_id, company_name, integration) delivered to the iframe by postMessage and held in memory — live-proven for test hosts (commit 59385f4); the ?access_token= pilot path is retired.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4021,6 +4039,7 @@ _Workflow label shown in the drawer: The relational database_
 ##### Panel `d-document_version` · document_version · [Implemented, needs changing]
 - Kind: Table
 - In plain words: One row per build of a page, written once and never edited, with every hash it was built with.
+- Today: Migration 0012 already widened the uniqueness constraint to a 7-column key; the 'today' and 'target' unique-key rows below no longer match the live schema.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4036,6 +4055,7 @@ _Workflow label shown in the drawer: The relational database_
 ##### Panel `d-chunk` · chunk · [Implemented, needs changing]
 - Kind: Table
 - In plain words: The pieces: big parents and small children in one table. Children carry the meaning code and the word index.
+- Today: scope_state does not exist yet; chunk carries only the columns listed below.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4091,6 +4111,7 @@ _Workflow label shown in the drawer: The relational database_
 ##### Panel `d-query_trace` · query_trace · [Implemented, needs changing]
 - Kind: Table
 - In plain words: One row per question: what was asked, what was found, the scores, the decision, and the answer.
+- Today: subject_hash (token subject, hashed) already shipped via migration 0011; candidate_chunk_ids and decision remain target-only.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4106,7 +4127,7 @@ _Workflow label shown in the drawer: The relational database_
 ##### Panel `d-curated` · curated_knowledge_entry · [Implemented, needs changing]
 - Kind: Table
 - In plain words: Facts written by an admin by hand, searched like any other piece.
-- Today: Empty on the live store. Columns: tags, title, body, is_active. RESTRICTIVE scope policy in 0010 (not applied live); reader policy from 0009 live.
+- Today: Empty on the live store. Columns: tags, title, body, is_active. RESTRICTIVE scope policy in 0010 (not applied live); reader policy from 0009 live. No migration through 0012 adds embedding, tsv, or scope_state to this table.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4167,7 +4188,7 @@ _Workflow label shown in the drawer: The vector database_
 ##### Panel `vd-model` · The embedding model · [Decision needed]
 - Kind: Vector database
 - In plain words: The model that turns text into 3072 numbers. Texts with the same meaning get similar numbers.
-- Today: OpenAI text-embedding-3-large at 3072 dims from the root .env. Code default is Voyage voyage-3-large at 1024.
+- Today: The root .env may override to OpenAI text-embedding-3-large at 3072 dims, but this cannot be verified from source (root .env is gitignored). Code default is Voyage voyage-3-large at 1024.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4179,6 +4200,7 @@ _Workflow label shown in the drawer: The vector database_
 ##### Panel `vd-column` · chunk.embedding · [Implemented]
 - Kind: Vector database
 - In plain words: The 3072 numbers are stored on the piece's own row, next to its text and tags.
+- Today: Column type is vector(3072); the code's embedding-model default is Voyage voyage-3-large at 1024 dims, so the deployed dimension depends on an unverifiable .env override.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4218,6 +4240,7 @@ _Workflow label shown in the drawer: The vector database_
 ##### Panel `vd-question` · The question vector · [Implemented]
 - Kind: Vector database
 - In plain words: The question is turned into numbers with the same model, so it can be compared with the pieces.
+- Today: Code default is Voyage voyage-3-large at 1024 dims; whether a .env override makes the question vector 3072 dims is unverifiable from source.
 - Steps:
   1. The rewritten question goes through the same embedding model.
   2. One vector, 3072 numbers.
@@ -4329,10 +4352,10 @@ _Workflow label shown in the drawer: Security_
   | Cannot | bypass policies, write, create |
   | Verify | scripts/setup_supabase.py verify-isolation: owner count, reader no-GUC 0, scoped count, bogus 0, halfvec resolves, non-chunk reads, anon denied, scope axis |
 
-##### Panel `s-edge` · The edge · [Planned]
+##### Panel `s-edge` · The edge · [Implemented]
 - Kind: Lock 0
 - In plain words: Lock 0, the front door: check the widget's key and the person's signed card before anything else.
-- Today: One server key per deployment (CHAT_API_KEY, with a previous-key overlap for rotation) and one shared invite token for the pilot widget. No per-user identity reaches the backend.
+- Today: One server key per deployment (CHAT_API_KEY, with rotation overlap), plus a per-user RS256 JWT verified before any search; per-user identity now reaches the backend — live-proven for test hosts (commit 59385f4).
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4364,6 +4387,7 @@ _Workflow label shown in the drawer: Security_
 ##### Panel `s-scope` · Scope row security · [Unverified]
 - Kind: Lock 2
 - In plain words: Lock 2: the database shows only pieces whose tag matches this person's integration.
+- Today: Migration 0010 is coded and tested but not applied to Supabase; the app predicate defaults to off in code.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4405,6 +4429,7 @@ _Workflow label shown in the drawer: Security_
 ##### Panel `s-classified` · classified is never served · [Planned]
 - Kind: Rule
 - In plain words: Pages tagged classified are deleted from the index, and the scope lock hides them a second time.
+- Today: Does not exist yet: scope_state is unbuilt, so nothing below enforces this rule today.
 - Steps:
   1. The label sets state = classified in ingestion stage 2.
   2. The page is deactivated and its chunk rows deleted.
@@ -4416,6 +4441,7 @@ _Workflow label shown in the drawer: Security_
 ##### Panel `s-audit` · The audit trail · [Implemented]
 - Kind: Data
 - In plain words: The logs that show who asked what and what they were allowed to see.
+- Today: subject_hash (the token subject, hashed) already shipped via migration 0011 and is written per query; decision stays target-only.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4486,7 +4512,7 @@ _Workflow label shown in the drawer: Evaluation_
 ##### Panel `e-gold` · The gold set · [Planned]
 - Kind: Dataset
 - In plain words: 150 to 250 real questions with checked right answers: the ruler we measure Obi with.
-- Today: Does not exist. Current datasets: retrieval_smoke, permission, ambiguity, out_of_corpus over a 14-document fixture, a few cases each.
+- Today: Does not exist. Current datasets: retrieval_smoke, permission, ambiguity, out_of_corpus over a 6-page fixture (list_pages() returns 6 ids), a few cases each.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4533,6 +4559,7 @@ _Workflow label shown in the drawer: Evaluation_
 ##### Panel `e-stage3` · Context assembly: did the model get it? · [Planned]
 - Kind: Metric
 - In plain words: Did the answer model receive the right pieces after the budget cut?
+- Today: Does not exist; no coverage check runs after the budget cut.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4542,6 +4569,7 @@ _Workflow label shown in the drawer: Evaluation_
 ##### Panel `e-stage4` · Generation: correct, complete, cited · [Planned]
 - Kind: Metric
 - In plain words: Was the answer right, complete, and cited, and did it refuse when it should?
+- Today: Does not exist; generation is not yet scored for correctness, citation support or refusal as a distinct eval stage.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4618,7 +4646,7 @@ _Section id: `open`_
 | `ov-decide` | fit | Decide what changed | Implemented, needs changing |
 | `ov-build` | fit | Build the chunks | Implemented, needs changing |
 | `ov-activate` | fit | Activate | Implemented, needs changing |
-| `ov-auth` | fit | The auth host: the host backend or an agreed auth service | Planned |
+| `ov-auth` | fit | The auth host: the host backend or an agreed auth service | Implemented |
 | `ov-corpus` | fit | The Postgres corpus | Implemented |
 | `ov-eval` | fit | The evaluation set | Planned |
 | `ov-widget` | fit | The Obi widget | Implemented |
@@ -4631,7 +4659,7 @@ _Section id: `open`_
 | `sc-backend` | concerns | One backend | Implemented |
 | `sc-kb` | concerns | One knowledge base | Implemented, needs changing |
 | `sc-user` | concerns | A Mews user | Planned |
-| `em-token` | embed | The signed note (JWT) | Planned |
+| `em-token` | embed | The signed note (JWT) | Implemented |
 | `r1-ctx` | rt1 | Build the authorization context: company, integration, person | Planned |
 | `r3-scope` | rt3 | Scope row security | Unverified |
 | `r3-acl` | rt3 | Page-level access list | Implemented |
@@ -4652,9 +4680,9 @@ _Section id: `open`_
 | `cm-contracts` | code | packages/contracts | Implemented |
 | `cm-tokens` | code | packages/design-tokens | Implemented |
 | `cm-infra` | code | infra/foundation: local Postgres | Implemented |
-| `em-loader` | embed | obi.js: one script tag | Planned |
+| `em-loader` | embed | obi.js: one script tag | Implemented |
 | `em-hostbackend` | embed | The platform's note endpoint | Decision needed |
-| `em-backend` | embed | Obi checks the note and picks the pages | Planned |
+| `em-backend` | embed | Obi checks the note and picks the pages | Implemented |
 | `em-kb` | embed | Obi picks the pages: the shared knowledge base | Implemented, needs changing |
 | `tg-config` | tags | The scope list file | Implemented, needs changing |
 | `i1-sweep` | in1 | Sweeps: the safety net | Implemented, needs changing |
@@ -4718,7 +4746,7 @@ _Section id: `open`_
 | `tg-filter` | tags | The filter that uses tags | Implemented, needs changing |
 | `s-reader` | security | rag_reader | Implemented |
 | `r1-proxy` | rt1 | The widget's proxy route | Implemented |
-| `r1-auth` | rt1 | Verify who is asking | Implemented, needs changing |
+| `r1-auth` | rt1 | Verify who is asking | Implemented |
 | `r1-limits` | rt1 | Limits and validation | Implemented |
 | `r1-small` | rt1 | Small talk short-circuit | Implemented |
 | `r1-clarify` | rt1 | Too vague to search? | Implemented |
@@ -4761,8 +4789,8 @@ _Section id: `open`_
 | `w-launcher` | widget | Launcher and teaser | Implemented |
 | `w-panel` | widget | The panel | Implemented |
 | `w-composer` | widget | The composer | Implemented |
-| `w-scope` | widget | Which platform is this widget in? | Implemented |
-| `w-token` | widget | The user token | Planned |
+| `w-scope` | widget | Which platform is this widget in? | Implemented, needs changing |
+| `w-token` | widget | The user token | Implemented |
 | `w-proxy` | widget | The proxy route | Implemented |
 | `w-i18n` | widget | Six locales | Implemented |
 | `w-screenshot` | widget | Screenshot of the page behind the widget | Implemented |
@@ -4787,7 +4815,7 @@ _Section id: `open`_
 | `vd-question` | vector | The question vector | Implemented |
 | `vd-keyword` | vector | The keyword side | Implemented |
 | `vd-swap` | vector | Vectors swap with the page | Implemented |
-| `s-edge` | security | The edge | Planned |
+| `s-edge` | security | The edge | Implemented |
 | `s-source` | security | Source row security | Implemented |
 | `s-scope` | security | Scope row security | Unverified |
 | `s-acl` | security | Page access list | Implemented |
@@ -4804,4 +4832,4 @@ _Section id: `open`_
 | `e-ops` | eval | Latency and cost | Planned |
 | `e-monitor` | eval | Freshness and recall telemetry | Planned |
 | `e-judge` | eval | An LLM as judge | Planned |
-| `em-button` | embed | The frame: the round button and the chat window | Planned |
+| `em-button` | embed | The frame: the round button and the chat window | Implemented |

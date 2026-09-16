@@ -4,12 +4,17 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import pytest
 from sqlalchemy import select
 
 from app.platform.db.engine import get_sessionmaker, session_scope
 from app.platform.db.enums import JobStatus
 from app.platform.db.models import Job
 from app.platform.jobs import claim_job, enqueue_job, fail_job, reap_expired
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 
 def _enqueue(key: str) -> None:

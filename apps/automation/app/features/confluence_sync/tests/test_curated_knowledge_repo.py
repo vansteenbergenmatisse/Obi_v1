@@ -9,9 +9,15 @@ separate, one-off CLI).
 
 from __future__ import annotations
 
+import pytest
+
 from app.features.rag_agent import fetch_curated_entries
 from app.platform.db.engine import get_sessionmaker
 from app.platform.db.models import CuratedKnowledgeEntry
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 
 def _seed(*, title: str, body: str, tags: list[str], is_active: bool = True) -> int:

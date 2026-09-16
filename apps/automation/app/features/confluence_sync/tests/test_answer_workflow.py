@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 
+import pytest
 from sqlalchemy import text
 
 from app.features.rag_agent import AnswerService, AuthContext, ChatMessage
@@ -18,6 +19,10 @@ from app.platform.config import Settings
 from app.platform.db.engine import get_reader_sessionmaker, get_sessionmaker
 
 from .test_retrieval_eval import _build_policy, _index_corpus
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 
 def _auth(

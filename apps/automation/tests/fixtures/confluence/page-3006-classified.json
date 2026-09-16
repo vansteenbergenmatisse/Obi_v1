@@ -1,0 +1,22 @@
+{
+  "id": "3006",
+  "spaceId": "300",
+  "parentId": null,
+  "status": "current",
+  "title": "Incident Postmortem — Data Access Review",
+  "version": {
+    "number": 1,
+    "createdAt": "2026-07-06T09:00:00.000Z",
+    "message": "Initial publish",
+    "authorId": "acct-erin"
+  },
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": "<h1>Incident Postmortem — Data Access Review</h1><p>Carries the reserved 'classified' label, which is never mappable to a platform or a knowledge scope.</p>"
+    }
+  },
+  "_links": {
+    "webui": "/spaces/KB/pages/3006/Incident+Postmortem"
+  }
+}

@@ -20,12 +20,17 @@ connection is ever blocked on it.
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import text
 
 from app.platform.config import Settings
 from app.platform.db import engine as engine_mod
 
 from ._helpers import index_page
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 _PAGE = 1001  # space 100, unrestricted (same fixture page the other RLS tests use)
 _MANAGED_WRITER = "mp_writer_test"  # a non-superuser owner, mimicking Supabase/RDS' `postgres`

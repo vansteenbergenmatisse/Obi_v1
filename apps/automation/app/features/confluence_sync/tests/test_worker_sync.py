@@ -3,7 +3,11 @@ delete/deactivate."""
 
 from __future__ import annotations
 
+import pytest
+
+from app.features.confluence_sync.application.sync_service import target_versions
 from app.features.confluence_sync.application.worker import run_once
+from app.features.ingestion import build_ingestion_services, decide_body_fetch, get_local_state
 from app.platform.db.enums import DocState, PageStatus
 from app.platform.db.models import DocumentVersion, PageSource
 
@@ -18,6 +22,10 @@ from ._helpers import (
     read,
     restricted_principals,
 )
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 
 def test_first_index_creates_active_version_and_chunks(gateway, settings):
@@ -91,6 +99,28 @@ def test_version_guard_drops_stale_update(gateway, settings):
     assert count_versions(1001) == 1  # no downgrade, no new version
 
 
+def test_in2_body_fetch_skipped_when_unchanged_required_on_version_bump(gateway, settings):
+    """panel i2-fetch · substep 0.5.2
+    decide_body_fetch must skip the body fetch when the served version has not moved past what
+    is already indexed (and the pipeline config is unchanged), and must require it once a newer
+    revision exists -- asserted against the real decision function, not a re-implementation."""
+    index_page(gateway, settings, 1001, version=3)
+
+    services = build_ingestion_services(settings)
+    target = target_versions(settings, embedding_model=services.embedding_model)
+    with read() as s:
+        local = get_local_state(s, 1001)
+    assert local is not None and local.current_cf_version == 3
+
+    meta = gateway.get_page_meta(1001)
+    assert meta is not None and meta.version_number == 3
+
+    assert decide_body_fetch(local, meta, target) is False  # same version served again
+
+    newer_meta = meta.model_copy(update={"version_number": 4})
+    assert decide_body_fetch(local, newer_meta, target) is True  # a newer revision exists
+
+
 def test_first_index_persists_restrictions(gateway, settings):
     """PLAN 4.3: the real principal list, not just its hash, lands in page_restriction.
 
@@ -151,6 +181,7 @@ def test_delete_deactivates_page(gateway, settings):
         assert s.get(PageSource, 1001).page_status == PageStatus.trashed
 
 
+@pytest.mark.xfail(strict=True, reason="tg-deactivate is Planned; built in 2.2.4")
 def test_delete_marks_the_active_version_superseded(gateway, settings):
     """panel tg-deactivate · substep 2.5
     Does: page_status updated, active version superseded, chunks inactive — deactivate_page must

@@ -1,0 +1,22 @@
+{
+  "id": "3009",
+  "spaceId": "300",
+  "parentId": null,
+  "status": "current",
+  "title": "Security Runbook — Leads Only",
+  "version": {
+    "number": 1,
+    "createdAt": "2026-07-09T09:00:00.000Z",
+    "message": "Initial publish",
+    "authorId": "acct-erin"
+  },
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": "<h1>Security Runbook — Leads Only</h1><p>Restricted to the security-leads group only — no individual users named on the restriction, exercising the group-only path.</p>"
+    }
+  },
+  "_links": {
+    "webui": "/spaces/KB/pages/3009/Security+Runbook"
+  }
+}

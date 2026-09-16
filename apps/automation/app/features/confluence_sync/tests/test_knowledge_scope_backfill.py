@@ -21,6 +21,10 @@ from app.platform.db.engine import get_sessionmaker
 
 from ._helpers import index_page
 
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
+
 _ONBOARDING_PAGE = 1001  # space 100, unrestricted
 _EXPENSE_PAGE = 2001  # space 200, unrestricted
 

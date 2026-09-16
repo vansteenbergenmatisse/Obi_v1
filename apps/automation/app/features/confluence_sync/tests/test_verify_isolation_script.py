@@ -12,6 +12,7 @@ role), where the reader's positive read-path holds and the anon check is a docum
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import text
 
 import scripts.setup_supabase as setup_supabase
@@ -19,6 +20,10 @@ from app.platform.config import Settings
 from app.platform.db.engine import get_sessionmaker
 
 from ._helpers import index_page
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 _PAGE = 1001  # space 100, unrestricted — the fixture page the sibling RLS tests seed
 

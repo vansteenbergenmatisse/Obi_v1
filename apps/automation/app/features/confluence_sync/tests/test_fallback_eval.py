@@ -9,6 +9,8 @@ network-free and deterministic.
 
 from __future__ import annotations
 
+import pytest
+
 from app.features.evaluation import (
     citation_grounding_rate,
     datasets_dir,
@@ -21,6 +23,10 @@ from app.platform.db.engine import get_sessionmaker
 
 from .test_answer_workflow import _build_retriever, _CitingGenerator, _EchoRewriter
 from .test_retrieval_eval import _index_corpus
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 
 def _auth(principal: str | None = None) -> AuthContext:

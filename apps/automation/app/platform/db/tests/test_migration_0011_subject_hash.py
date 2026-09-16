@@ -23,6 +23,8 @@ from app.platform.db import engine as engine_mod
 
 _AUTOMATION_ROOT = Path(__file__).resolve().parents[4]
 
+pytestmark = pytest.mark.db  # substep 0.5.1: real local Postgres, Alembic chain
+
 
 def _ensure_database(admin_url: str, dbname: str) -> None:
     admin = create_engine(admin_url, isolation_level="AUTOCOMMIT")

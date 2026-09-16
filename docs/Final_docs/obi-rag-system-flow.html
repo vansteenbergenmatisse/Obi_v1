@@ -2523,8 +2523,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "ov-auth": {
 "n": "Outside system",
 "h": "The auth host: the host backend or an agreed auth service",
-"st": "build",
-"today": "Does not exist. A shared invite token gates the pilot widget, and one server key gates the backend.",
+"st": "built",
+"today": "Built: the host issues a signed per-user JWT (iss, aud, sub, iat, exp, company_id, company_name, integration), verified before any search — live-proven for test hosts (commit 59385f4).",
 "f": [
 [
 "Issues",
@@ -2557,7 +2557,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "Data",
 "h": "The Postgres corpus",
 "st": "built",
-"today": "Supabase Cloud (AWS eu-west-1), Postgres with pgvector 0.8.2. Alembic head 0009 live; 0010 (scope policy) coded, not yet applied.",
+"today": "Supabase Cloud (AWS eu-west-1), Postgres with pgvector 0.8.2. Alembic head 0012 live.",
 "f": [
 [
 "Engine",
@@ -2605,7 +2605,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "Evaluation",
 "h": "The evaluation set",
 "st": "build",
-"today": "No gold set exists. make eval runs a 14-document synthetic fixture.",
+"today": "No gold set exists. make eval runs a synthetic fixture of 6 current pages.",
 "s": [
 "Write 150 to 250 reviewed cases.",
 "Split dev and held-out.",
@@ -2618,7 +2618,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "The widget",
 "h": "The Obi widget",
 "st": "built",
-"today": "Built in apps/web. Launcher, teaser, panel, composer, images, screenshot, six locales, dev-only scope switcher. Shared invite token for the pilot.",
+"today": "Built in apps/web. Launcher, teaser, panel, composer, images, screenshot, six locales, dev-only scope switcher. Per-user JWT from the host; the shared pilot invite token is retired.",
 "s": [
 "The widget is embedded in a platform's page with a scope from its config.",
 "The user asks. The widget calls its own proxy route.",
@@ -2765,7 +2765,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "Feature",
 "h": "features/ingestion",
 "st": "built",
-"today": "Owns chunking, contextualization, embedding reuse, attachment extraction, and versioning. Writes document, document_version, chunk.",
+"today": "Owns chunking, contextualization, embedding reuse, attachment extraction, and versioning. Writes document, document_version, chunk, page_source.",
 "files": [
 [
 "domain/chunking.py",
@@ -2794,7 +2794,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "Feature",
 "h": "features/retrieval",
 "st": "built",
-"today": "Owns search, fusion, the page ACL, rerank wiring, and the retrieval half of query_trace. Runs as rag_reader.",
+"today": "Owns search, fusion, the page ACL, rerank wiring, and the retrieval half of query_trace. The rag_reader binding itself lives in platform/db/engine.py; this folder only comments on it.",
 "files": [
 [
 "application/retriever.py",
@@ -2954,7 +2954,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "Folder",
 "h": "alembic/versions: the migrations",
 "st": "unverified",
-"today": "0001 core schema, 0002 provider tags and RLS, 0003 query_trace, 0004 source_scope, 0005 page_restriction, 0006 dedupe check constraints, 0007 knowledge scope, 0008 drop FORCE RLS, 0009 reader policies, 0010 scope RLS. Live head on Supabase: 0009.",
+"today": "0001 core schema, 0002 provider tags and RLS, 0003 query_trace, 0004 source_scope, 0005 page_restriction, 0006 dedupe check constraints, 0007 knowledge scope, 0008 drop FORCE RLS, 0009 reader policies, 0010 scope RLS. Live head on Supabase: 0012.",
 "s": [
 "Every migration has a downgrade.",
 "0010 must be applied live before any public deploy.",
@@ -3004,7 +3004,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "File",
 "h": "config/knowledge_scopes.json: the scope list",
 "st": "change",
-"today": "Holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test. Loaded at startup; startup fails if the general scope is missing.",
+"today": "Holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test. Loaded at startup; startup fails if the general scope is missing. The widget's scope list is a hand-written copy of this file, guarded by a runtime drift test, not generated at build time.",
 "f": [
 [
 "Target list",
@@ -3119,7 +3119,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "iframe bridge, token store (planned, section 03.2)"
 ]
 ],
-"simple": "The chat widget's code."
+"simple": "The chat widget's code.",
+"today": "server/auth.ts has been deleted; the proxy no longer uses it. The iframe bridge (src/features/embed/) is built and tested, not planned."
 },
 "cm-contracts": {
 "n": "Package",
@@ -3140,7 +3141,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ]
 ],
 "note": "The backend hand-writes matching Pydantic models. A drift test between the two is a cheap safeguard worth adding.",
-"simple": "The shared shape of a request and an answer, so widget and backend agree."
+"simple": "The shared shape of a request and an answer, so widget and backend agree.",
+"today": "token-claims.json and iframe-messages.ts already exist and are wired, not planned."
 },
 "cm-tokens": {
 "n": "Package",
@@ -3700,7 +3702,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "Trash a page: its chunks stop appearing in every scope within the freshness target.",
 "Add classified: chunks gone from the table, not only inactive."
 ],
-"simple": "The page was deleted, lost its tag, or got the classified tag. It leaves search now."
+"simple": "The page was deleted, lost its tag, or got the classified tag. It leaves search now.",
+"today": "Only status trashed/archived/deleted and missing metadata trigger deactivation today; the classified-label and last-recognized-label-removed triggers do not exist yet."
 },
 "i2-rebuild": {
 "n": "Outcome",
@@ -4081,7 +4084,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "Step",
 "h": "Create the version in staging",
 "st": "change",
-"today": "Uniqueness is (document_id, cf_version, retrieval_schema_version, embedding_model). A second build at one page version collides.",
+"today": "Migration 0012 already widened uniqueness to a 7-column key by a different mechanism; neither this 4-column description nor the target's 2-column (document_id, index_fingerprint) key matches the live schema.",
 "f": [
 [
 "Records",
@@ -4242,7 +4245,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "GC deletes failed versions later; chunks cascade"
 ]
 ],
-"simple": "A failed build never goes live. It stays as a record of what went wrong."
+"simple": "A failed build never goes live. It stays as a record of what went wrong.",
+"today": "GC only reaps versions in state=superseded; a failed-state version is never garbage-collected."
 },
 "i4-gc": {
 "n": "Housekeeping",
@@ -4536,7 +4540,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "generated from the JSON at build time"
 ]
 ],
-"simple": "The list of tag names in one small file. A name here is a tag; a name not here is ignored."
+"simple": "The list of tag names in one small file. A name here is a tag; a name not here is ignored.",
+"today": "apps/web/src/features/chat/model/knowledge-scopes.ts is a hand-written copy of this file's list, checked by a runtime drift test, not generated at build time."
 },
 "tg-state": {
 "n": "Data",
@@ -4562,13 +4567,14 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 "c": "CREATE TYPE scope_state AS ENUM ('ok','conflict','classified','unlabeled');\nALTER TABLE chunk ADD COLUMN scope_state scope_state NOT NULL DEFAULT 'unlabeled';\nALTER TABLE page_source ADD COLUMN scope_state scope_state NOT NULL DEFAULT 'unlabeled';",
 "note": "Backfill: every active chunk with a recognized tag becomes ok. The readiness gate (verify_knowledge_scope_backfill.py) must report zero rows in any other state before the new policy goes live.",
-"simple": "One word per page: ok, conflict, classified, or unlabeled. Only ok pages are ever shown."
+"simple": "One word per page: ok, conflict, classified, or unlabeled. Only ok pages are ever shown.",
+"today": "Does not exist yet: no scope_state enum, no chunk/page_source columns, and no consumer reads it."
 },
 "tg-filter": {
 "n": "Step",
 "h": "The filter that uses tags",
 "st": "change",
-"today": "App predicate tags && :scopes behind a flag, plus the 0010 RESTRICTIVE policy: wildcard OR empty tags OR overlap.",
+"today": "App predicate tags && :scopes behind a flag, default off, plus the 0010 RESTRICTIVE policy — coded and tested, not yet applied to Supabase.",
 "f": [
 [
 "Target policy",
@@ -4641,8 +4647,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "r1-auth": {
 "n": "Gate",
 "h": "Verify who is asking",
-"st": "change",
-"today": "One CHAT_API_KEY per deployment, compared in constant time against the current and the previous key (rotation window). No per-user identity.",
+"st": "built",
+"today": "One CHAT_API_KEY per deployment, compared in constant time against the current and previous key (rotation window), plus a per-user RS256 JWT verified before any search — live-proven for test hosts (commit 59385f4).",
 "f": [
 [
 "Host key",
@@ -4886,7 +4892,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "the TTL cache"
 ]
 ],
-"simple": "Returns the same answer if the same request arrives twice, without a second search."
+"simple": "Returns the same answer if the same request arrives twice, without a second search.",
+"today": "The cache key already binds sha256(key, history, token_subject, knowledge_scope) — token subject, not body principal."
 },
 "r1-short": {
 "n": "Outcome",
@@ -4903,7 +4910,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "Step",
 "h": "Rewrite into one standalone question",
 "st": "change",
-"today": "Haiku turns the history into a standalone query, 200 tokens. Single-turn history skips the call. Fails open to the raw text. Stored on the trace.",
+"today": "Haiku turns the history into a standalone query, 200 tokens, plain text only — not yet the {query, parts} JSON. Single-turn history skips the call. Fails open to the raw text. Stored on the trace.",
 "f": [
 [
 "Target output",
@@ -5268,7 +5275,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "Lock 2",
 "h": "Scope row security",
 "st": "unverified",
-"today": "Migration 0010 adds chunk_scope_read and curated_knowledge_entry_scope_read as RESTRICTIVE policies: wildcard OR cardinality(tags) = 0 OR overlap. Coded and tested (502 tests), not applied to Supabase yet. The app predicate is flag-gated and on.",
+"today": "Migration 0010 adds chunk_scope_read and curated_knowledge_entry_scope_read as RESTRICTIVE policies: wildcard OR cardinality(tags) = 0 OR overlap. Coded and tested (502 tests), not applied to Supabase yet. The app predicate is flag-gated and off by default in code.",
 "f": [
 [
 "Target predicate",
@@ -5386,7 +5393,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "Conflict chunks stay stored but the policy hides them.",
 "Fixing the labels restores a conflict page without a rebuild."
 ],
-"simple": "Pages marked classified or conflict are hidden by the database rule even if pieces remain."
+"simple": "Pages marked classified or conflict are hidden by the database rule even if pieces remain.",
+"today": "Does not exist yet: scope_state (the enum, the columns, and every consumer) is entirely unbuilt."
 },
 "r3-groups": {
 "n": "Data",
@@ -5510,7 +5518,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "the threshold"
 ]
 ],
-"simple": "Checks whether even the best piece scores low. If so, we do not trust the result yet."
+"simple": "Checks whether even the best piece scores low. If so, we do not trust the result yet.",
+"today": "refusal_min_rerank_score is 0.05, recalibrated 2026-09-12 from the earlier 0.10 provisional value."
 },
 "r4-fallback": {
 "n": "Step",
@@ -5565,7 +5574,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "t": [
 "A rewrite that hurts retrieval: the union still contains the right passage and it ranks first."
 ],
-"simple": "Merges both result sets and scores them again against one question, so all scores are on one scale."
+"simple": "Merges both result sets and scores them again against one question, so all scores are on one scale.",
+"today": "The two result sets are not merged and reranked together; the code picks whichever run had the higher top score, though those scores come from different queries and are not on one scale."
 },
 "r5-coverage": {
 "n": "Retrieval stage 5",
@@ -5683,7 +5693,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "_REFUSAL_COPY"
 ]
 ],
-"simple": "Says Obi cannot answer this and offers a human, with one of four clear reasons logged."
+"simple": "Says Obi cannot answer this and offers a human, with one of four clear reasons logged.",
+"today": "Four reasons: no_candidates, weak_score, no_citations, and off_topic (added 2026-09-12)."
 },
 "r5-partial": {
 "n": "Retrieval stage 5",
@@ -5706,7 +5717,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "t": [
 "The generated text never claims the missing part; forbidden-claim checks in the gold set catch it."
 ],
-"simple": "Answers the parts that are documented and names the part that is not."
+"simple": "Answers the parts that are documented and names the part that is not.",
+"today": "Does not exist; partial answers naming an uncovered part are not produced."
 },
 "r4-proceed": {
 "n": "Hand-off",
@@ -5930,7 +5942,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "The model wrote something, but no sentence cited a valid marker, or no sentence survived the support check.",
 "Refuse with no_citations or unsupported. The user sees the honest copy and a hand-off link."
 ],
-"simple": "Every sentence lost its source, or none of them was backed by its source. Obi refuses instead of showing an unsupported answer."
+"simple": "Every sentence lost its source, or none of them was backed by its source. Obi refuses instead of showing an unsupported answer.",
+"today": "Only no_citations exists today; unsupported is not a defined RefusalReason and no support-check module exists yet."
 },
 "r5-image": {
 "n": "Outside tool",
@@ -6154,12 +6167,13 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "input and previews"
 ]
 ],
-"simple": "Where the person types, pastes, or attaches a picture."
+"simple": "Where the person types, pastes, or attaches a picture.",
+"today": "4 images per turn; no size check exists anywhere in apps/web — the 5 MB figure below is not enforced."
 },
 "w-scope": {
 "n": "Config",
 "h": "Which platform is this widget in?",
-"st": "built",
+"st": "change",
 "f": [
 [
 "Set",
@@ -6188,13 +6202,14 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "generated from knowledge_scopes.json at build time"
 ]
 ],
-"simple": "The widget knows which integration it lives in, and that becomes its scope on every question."
+"simple": "The widget knows which integration it lives in, and that becomes its scope on every question.",
+"today": "The live /embed frame never sets a knowledgeScope prop; the dev-only scope switcher is the only client-side way scope is chosen today. The token, not this prop, will decide scope in the target."
 },
 "w-token": {
 "n": "Auth",
 "h": "The user token",
-"st": "build",
-"today": "A shared invite token per pilot: captured from ?access_token= in the URL, kept in sessionStorage, sent as x-widget-access-token, compared in constant time by the proxy.",
+"st": "built",
+"today": "The host issues a per-user JWT (iss, aud, sub, iat, exp, company_id, company_name, integration) delivered to the iframe by postMessage and held in memory — live-proven for test hosts (commit 59385f4); the ?access_token= pilot path is retired.",
 "f": [
 [
 "Target",
@@ -6512,7 +6527,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "DocumentVersion"
 ]
 ],
-"simple": "One row per build of a page, written once and never edited, with every hash it was built with."
+"simple": "One row per build of a page, written once and never edited, with every hash it was built with.",
+"today": "Migration 0012 already widened the uniqueness constraint to a 7-column key; the 'today' and 'target' unique-key rows below no longer match the live schema."
 },
 "d-chunk": {
 "n": "Table",
@@ -6555,7 +6571,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ]
 ],
 "note": "Target: + scope_state. The stable_key reuse column stops being read. embedding_input_hash is not added.",
-"simple": "The pieces: big parents and small children in one table. Children carry the meaning code and the word index."
+"simple": "The pieces: big parents and small children in one table. Children carry the meaning code and the word index.",
+"today": "scope_state does not exist yet; chunk carries only the columns listed below."
 },
 "d-reconciliation_run": {
 "n": "Table",
@@ -6676,13 +6693,14 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "writers"
 ]
 ],
-"simple": "One row per question: what was asked, what was found, the scores, the decision, and the answer."
+"simple": "One row per question: what was asked, what was found, the scores, the decision, and the answer.",
+"today": "subject_hash (token subject, hashed) already shipped via migration 0011; candidate_chunk_ids and decision remain target-only."
 },
 "d-curated": {
 "n": "Table",
 "h": "curated_knowledge_entry",
 "st": "change",
-"today": "Empty on the live store. Columns: tags, title, body, is_active. RESTRICTIVE scope policy in 0010 (not applied live); reader policy from 0009 live.",
+"today": "Empty on the live store. Columns: tags, title, body, is_active. RESTRICTIVE scope policy in 0010 (not applied live); reader policy from 0009 live. No migration through 0012 adds embedding, tsv, or scope_state to this table.",
 "f": [
 [
 "Target adds",
@@ -6708,8 +6726,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "s-edge": {
 "n": "Lock 0",
 "h": "The edge",
-"st": "build",
-"today": "One server key per deployment (CHAT_API_KEY, with a previous-key overlap for rotation) and one shared invite token for the pilot widget. No per-user identity reaches the backend.",
+"st": "built",
+"today": "One server key per deployment (CHAT_API_KEY, with rotation overlap), plus a per-user RS256 JWT verified before any search; per-user identity now reaches the backend — live-proven for test hosts (commit 59385f4).",
 "f": [
 [
 "Host key",
@@ -6790,7 +6808,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "chunk and curated_knowledge_entry"
 ]
 ],
-"simple": "Lock 2: the database shows only pieces whose tag matches this person's integration."
+"simple": "Lock 2: the database shows only pieces whose tag matches this person's integration.",
+"today": "Migration 0010 is coded and tested but not applied to Supabase; the app predicate defaults to off in code."
 },
 "s-acl": {
 "n": "Lock 3",
@@ -6915,7 +6934,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "t": [
 "A classified page: zero rows for every scope, every token, and the eval wildcard."
 ],
-"simple": "Pages tagged classified are deleted from the index, and the scope lock hides them a second time."
+"simple": "Pages tagged classified are deleted from the index, and the scope lock hides them a second time.",
+"today": "Does not exist yet: scope_state is unbuilt, so nothing below enforces this rule today."
 },
 "s-audit": {
 "n": "Data",
@@ -6939,13 +6959,14 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "never logged; the audit line for /chat carries ids and counts, not the message"
 ]
 ],
-"simple": "The logs that show who asked what and what they were allowed to see."
+"simple": "The logs that show who asked what and what they were allowed to see.",
+"today": "subject_hash (the token subject, hashed) already shipped via migration 0011 and is written per query; decision stays target-only."
 },
 "e-gold": {
 "n": "Dataset",
 "h": "The gold set",
 "st": "build",
-"today": "Does not exist. Current datasets: retrieval_smoke, permission, ambiguity, out_of_corpus over a 14-document fixture, a few cases each.",
+"today": "Does not exist. Current datasets: retrieval_smoke, permission, ambiguity, out_of_corpus over a 6-page fixture (list_pages() returns 6 ids), a few cases each.",
 "f": [
 [
 "Size",
@@ -7050,7 +7071,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "k, the token budget, or the dedupe rule"
 ]
 ],
-"simple": "Did the answer model receive the right pieces after the budget cut?"
+"simple": "Did the answer model receive the right pieces after the budget cut?",
+"today": "Does not exist; no coverage check runs after the budget cut."
 },
 "e-stage4": {
 "n": "Metric",
@@ -7070,7 +7092,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "the prompt, the model, or the coverage rule"
 ]
 ],
-"simple": "Was the answer right, complete, and cited, and did it refuse when it should?"
+"simple": "Was the answer right, complete, and cited, and did it refuse when it should?",
+"today": "Does not exist; generation is not yet scored for correctness, citation support or refusal as a distinct eval stage."
 },
 "e-ops": {
 "n": "Metric",
@@ -7147,7 +7170,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "Knowledge scopes",
 "h": "Edit knowledge_scopes.json",
 "st": "change",
-"today": "The file holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test. Loaded at startup by both apps.",
+"today": "The file holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test as an object {scopes:[{name,description}]}, not a plain list of slugs. Loaded at startup by both apps.",
 "f": [
 [
 "Path",
@@ -7211,7 +7234,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "Until both are deployed the old list is in force."
 ],
 "note": "Deploy the backend first. A widget sending a scope the backend does not know gets a 400.",
-"simple": "Ship the new file. The backend and the widget both read it."
+"simple": "Ship the new file. The backend and the widget both read it.",
+"today": "The widget's scope list is a hand-written copy, not generated at build time; a runtime drift test guards it against this file."
 },
 "ks-sweep": {
 "n": "Knowledge scopes",
@@ -7248,7 +7272,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "The gate validates the slug against the list.",
 "In the target the token decides the scope. A known slug that disagrees with the token is ignored and logged. An unknown slug is still a 400 before any search."
 ],
-"simple": "A widget uses the same tag name as its scope, so it only sees pages with that tag."
+"simple": "A widget uses the same tag name as its scope, so it only sees pages with that tag.",
+"today": "The live /embed frame does not set a knowledgeScope prop; only the dev-only scope switcher sets it client-side today. The token-driven scope in step 3 is target, not current."
 },
 "ks-remove": {
 "n": "Knowledge scopes",
@@ -7299,7 +7324,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "Vector database",
 "h": "The embedding model",
 "st": "discuss",
-"today": "OpenAI text-embedding-3-large at 3072 dims from the root .env. Code default is Voyage voyage-3-large at 1024.",
+"today": "The root .env may override to OpenAI text-embedding-3-large at 3072 dims, but this cannot be verified from source (root .env is gitignored). Code default is Voyage voyage-3-large at 1024.",
 "f": [
 [
 "Batch",
@@ -7335,7 +7360,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "text, tags, scope_state, tsv"
 ]
 ],
-"simple": "The 3072 numbers are stored on the piece's own row, next to its text and tags."
+"simple": "The 3072 numbers are stored on the piece's own row, next to its text and tags.",
+"today": "Column type is vector(3072); the code's embedding-model default is Voyage voyage-3-large at 1024 dims, so the deployed dimension depends on an unverifiable .env override."
 },
 "vd-hnsw": {
 "n": "Vector database",
@@ -7397,7 +7423,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "One vector, 3072 numbers.",
 "It is compared with the child vectors by cosine distance."
 ],
-"simple": "The question is turned into numbers with the same model, so it can be compared with the pieces."
+"simple": "The question is turned into numbers with the same model, so it can be compared with the pieces.",
+"today": "Code default is Voyage voyage-3-large at 1024 dims; whether a .env override makes the question vector 3072 dims is unverifiable from source."
 },
 "vd-keyword": {
 "n": "Vector database",
@@ -7475,7 +7502,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "h": "One frontend",
 "st": "built",
 "simple": "The chat window a person types in, plus the small server route that adds the secret key. It shows answers. It never decides who may see what.",
-"today": "apps/web: a Next.js app with the widget UI and its proxy route. Embedded in a platform page with a scope from its config. A shared pilot token gates it.",
+"today": "apps/web: a Next.js app with the widget UI, its proxy route, and a built iframe bridge holding the token in memory. Embedded in a platform page with a scope from its config. A per-user JWT from the host gates it; the shared pilot token is retired.",
 "f": [
 [
 "Owns",
@@ -7555,7 +7582,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "h": "One knowledge base",
 "st": "change",
 "simple": "One Postgres database holds every page in pieces with its tags. The database itself hides rows a person may not see. The folder next to it holds the schema, the tags and the seed data, never the pages.",
-"today": "Supabase Postgres with pgvector. Schema and policies in platform/db, migrations in alembic/versions, the tag list in config/knowledge_scopes.json, curated seeds in scripts/, a local compose file in infra/foundation.",
+"today": "Supabase Postgres with pgvector. Schema and policies in platform/db, migrations in alembic/versions (12 files through 0012), the tag list in config/knowledge_scopes.json, curated seeds in scripts/, a local compose file in infra/foundation.",
 "f": [
 [
 "Holds in Postgres",
@@ -7622,9 +7649,9 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "em-token": {
 "n": "Contract",
 "h": "The signed note (JWT)",
-"st": "build",
+"st": "built",
 "simple": "A short signed note from the platform's server. By default it carries no values. With values it carries an id, the company name and the integration. obi.js fetches it at the click and renews it silently. Obi checks the signature before it reads a word of it.",
-"today": "Does not exist. The pilot uses one shared invite token with no company, integration or person on it.",
+"today": "Built: a short signed JWT per user carrying company_id, company_name and integration, verified before any search — live-proven for test hosts (commit 59385f4).",
 "f": [
 [
 "Default",
@@ -7709,9 +7736,9 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "em-backend": {
 "n": "Backend",
 "h": "Obi checks the note and picks the pages",
-"st": "build",
+"st": "built",
 "simple": "Obi's server checks the note is real, meant for Obi and not expired. Then it reads the values and writes one note of its own that every later step obeys: which company, which integration, which tags.",
-"today": "One shared CHAT_API_KEY is compared in constant time. principal and knowledge_scope come from the request body. No per-user identity.",
+"today": "One shared CHAT_API_KEY is compared in constant time, plus per-user JWT verification (issuer, signature, audience, expiry) that builds the AuthContext; principal comes from the token, not the request body — live-proven for test hosts (commit 59385f4).",
 "s": [
 "Check the host key.",
 "Read iss from the note; find the platform's entry in platforms.json. No entry: refused.",
@@ -7810,7 +7837,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "em-button": {
 "n": "Frontend",
 "h": "The frame: the round button and the chat window",
-"st": "build",
+"st": "built",
 "simple": "What obi.js draws: a round button at the top of the screen, and the chat window that pops up when it is clicked. Both come from our domain inside one frame.",
 "f": [
 [
@@ -7847,14 +7874,15 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "t": [
 "The frame refuses a message from any other window or domain.",
 "The note never appears in the frame's URL, cookies or storage."
-]
+],
+"today": "apps/web/src/app/embed/page.tsx is built and unit-tested, not planned."
 },
 "em-loader": {
 "n": "Frontend",
 "h": "obi.js: one script tag",
-"st": "build",
+"st": "built",
 "simple": "One line on the platform's page loads our script. The script draws the round button, opens the chat window in a frame from our domain, fetches the note, renews it and talks to the frame. The platform writes none of that.",
-"today": "Does not exist. The widget is embedded straight into a platform page and reads a shared pilot token from the URL.",
+"today": "Built and unit-tested: draws the round button, opens the chat window in a frame from our domain, fetches the note and renews it. Obi.clear() forgets the note and closes the panel, degrading to general-only rather than blocking sending, until a new note arrives. Replaces the earlier straight-embed pilot flow that read a shared token from the URL.",
 "f": [
 [
 "Loads from",

@@ -9,9 +9,10 @@ Run from the repository root. The Makefile is at the repository root and its tar
 
 | level | command | pass rule |
 |---|---|---|
-| unit + database | make up && make check | exit 0 (boundaries + pytest against the test database) |
+| unit | make test-unit | exit 0 (every test NOT marked `db`) |
+| database | make test-db | exit 0 (every `db`-marked test, against the local pgvector Postgres, migrated to head, both roles and all policies applied) |
 | lint + types | cd apps/automation && uv run ruff check . ; uv run ruff format --check . ; uv run pyright | counts not above the baseline in docs/plan/baseline.md; if that file is missing or says "no baseline yet", PASS with note "no baseline yet" |
-| browser | pnpm --filter web test:e2e | exit 0; if the target does not exist print "not wired yet" |
+| browser | make test-ui | exit 0; if the target does not exist print "not wired yet" |
 | eval | make eval | prints recall@75, P@5, NDCG@10, refusal rate; none below docs/plan/baseline.md; if that file is missing or says "no baseline yet", PASS with note "no baseline yet" |
 | live (only if STAGING_DATABASE_URL is set) | cd apps/automation && uv run python scripts/setup_supabase.py verify-isolation && uv run python scripts/verify_knowledge_scope_backfill.py | both exit 0; if the var is unset print "skipped" |
 

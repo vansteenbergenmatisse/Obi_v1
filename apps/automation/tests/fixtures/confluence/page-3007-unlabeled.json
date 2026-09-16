@@ -1,0 +1,22 @@
+{
+  "id": "3007",
+  "spaceId": "300",
+  "parentId": null,
+  "status": "current",
+  "title": "Office Parking Guide",
+  "version": {
+    "number": 1,
+    "createdAt": "2026-07-07T09:00:00.000Z",
+    "message": "Initial publish",
+    "authorId": "acct-dave"
+  },
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": "<h1>Office Parking Guide</h1><p>No labels of any kind — a page with zero recognized or ordinary labels, testing the unlabeled path.</p><p>Visitor spots are on level 1; staff badges open the level 2 gate.</p>"
+    }
+  },
+  "_links": {
+    "webui": "/spaces/KB/pages/3007/Office+Parking+Guide"
+  }
+}

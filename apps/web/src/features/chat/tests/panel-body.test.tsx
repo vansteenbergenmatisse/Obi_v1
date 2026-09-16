@@ -13,6 +13,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import type { ChatStreamEvent } from "@omniboost/contracts";
+
+// panel w-screenshot: `handleScreenshot` dynamically imports `html-to-image`'s `toBlob` — mock
+// the module itself (works for a dynamic `import()` the same way it does for a static one) rather
+// than the composer ref, since this file already renders the real `Composer` via `PanelBody`.
+const { toBlobMock } = vi.hoisted(() => ({
+  toBlobMock: vi.fn(),
+}));
+vi.mock("html-to-image", () => ({
+  toBlob: toBlobMock,
+}));
+
 import { ChatSessionProvider } from "../ui/chat-session-provider";
 import { PanelBody } from "../ui/panel-body";
 
@@ -195,5 +206,85 @@ describe("PanelBody", () => {
     unmount();
 
     expect(capturedSignal?.aborted).toBe(true);
+  });
+});
+
+describe("handleScreenshot (panel w-screenshot)", () => {
+  // The real `data-obi-widget-root` marker lives on `floating-frame.tsx`, which this file's
+  // `renderPanel()` doesn't render — add the same wrapper here so `document.querySelector`
+  // finds it, same as it would in the real widget tree.
+  function renderWithWidgetRoot() {
+    render(
+      <div data-obi-widget-root="">
+        <ChatSessionProvider>
+          <PanelBody onClose={vi.fn()} />
+        </ChatSessionProvider>
+      </div>,
+    );
+    return document.querySelector<HTMLElement>("[data-obi-widget-root]")!;
+  }
+
+  async function clickScreenshotButton() {
+    await userEvent.click(screen.getByRole("button", { name: /screenshot/i }));
+  }
+
+  beforeEach(() => {
+    toBlobMock.mockReset();
+  });
+
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("hides the widget root during capture and restores it after a successful capture", async () => {
+    let visibilityDuringCapture: string | undefined;
+    toBlobMock.mockImplementation(async () => {
+      const widgetRoot = document.querySelector<HTMLElement>("[data-obi-widget-root]");
+      visibilityDuringCapture = widgetRoot?.style.visibility;
+      return new Blob(["fake-bytes"], { type: "image/png" });
+    });
+
+    const widgetRoot = renderWithWidgetRoot();
+    expect(widgetRoot.style.visibility).toBe("");
+
+    await clickScreenshotButton();
+
+    await waitFor(() => expect(visibilityDuringCapture).toBe("hidden"));
+    await waitFor(() => expect(widgetRoot.style.visibility).toBe(""));
+  });
+
+  it("restores the widget root's visibility even when the capture fails", async () => {
+    toBlobMock.mockRejectedValue(new Error("capture failed"));
+
+    const widgetRoot = renderWithWidgetRoot();
+
+    await clickScreenshotButton();
+
+    await waitFor(() => expect(toBlobMock).toHaveBeenCalled());
+    await waitFor(() => expect(widgetRoot.style.visibility).toBe(""));
+  });
+
+  it("calls html-to-image's toBlob with document.body and a white background", async () => {
+    toBlobMock.mockResolvedValue(new Blob(["fake-bytes"], { type: "image/png" }));
+
+    renderWithWidgetRoot();
+    await clickScreenshotButton();
+
+    await waitFor(() =>
+      expect(toBlobMock).toHaveBeenCalledWith(document.body, { backgroundColor: "#ffffff" }),
+    );
+  });
+
+  it("wraps the captured blob into a PNG file and lands it in the attachment strip", async () => {
+    toBlobMock.mockResolvedValue(new Blob(["fake-bytes"], { type: "image/png" }));
+
+    renderWithWidgetRoot();
+    await clickScreenshotButton();
+
+    // The composer's attachment strip renders each attachment's `File.name` as alt text (same
+    // assertion style `composer.test.tsx` uses for file-picker/paste attachments) — its presence
+    // here proves the wrapped `File` reached `composerRef.current.addAttachmentFile(...)`.
+    const thumbnail = await screen.findByAltText(/^Screenshot .*\.png$/);
+    expect(thumbnail).toBeInTheDocument();
   });
 });

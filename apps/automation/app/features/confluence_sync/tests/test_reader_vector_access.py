@@ -15,10 +15,15 @@ where the owner can grant, and a rolled-back transaction keeps the shared sessio
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import text
 
 from app.platform.db import engine as engine_mod
 from app.platform.db import schema
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 _READER_ROLE = "rag_reader"
 

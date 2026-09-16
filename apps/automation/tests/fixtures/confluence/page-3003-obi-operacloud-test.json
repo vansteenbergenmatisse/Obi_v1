@@ -1,0 +1,22 @@
+{
+  "id": "3003",
+  "spaceId": "300",
+  "parentId": null,
+  "status": "current",
+  "title": "Opera Cloud Connector Notes",
+  "version": {
+    "number": 1,
+    "createdAt": "2026-07-03T09:00:00.000Z",
+    "message": "Initial publish",
+    "authorId": "acct-alice"
+  },
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": "<h1>Opera Cloud Connector Notes</h1><p>Covers the Oracle Opera Cloud PMS integration questions Obi answers for hotel customers.</p><h2>OHIP Credentials</h2><p>The connector authenticates against the Opera Hospitality Integration Platform (OHIP) with a client id and secret issued per property.</p><h2>Nightly Reconciliation</h2><p>A nightly job reconciles room and rate data; discrepancies raise an alert in the ops channel.</p>"
+    }
+  },
+  "_links": {
+    "webui": "/spaces/KB/pages/3003/Opera+Cloud+Connector+Notes"
+  }
+}

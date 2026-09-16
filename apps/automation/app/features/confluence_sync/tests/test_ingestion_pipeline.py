@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import text
 
 from app.features.confluence_sync.application.sync_service import target_versions
@@ -11,6 +12,10 @@ from app.platform.db.enums import DocState
 from app.platform.db.models import Chunk, DocumentVersion
 
 from ._helpers import active_child_chunks, active_version, active_versions_count, index_page, read
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 
 def test_children_have_embeddings_and_tsv(gateway, settings: Settings) -> None:

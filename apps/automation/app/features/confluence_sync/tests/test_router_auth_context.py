@@ -18,6 +18,10 @@ from app.platform.config import Settings
 
 from .test_chat_endpoint import _auth, _chat_settings, _StubTokenVerifier
 
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
+
 
 class _Recorder:
     """Captures the AuthContext /chat forwarded. `last_auth` stays None if the service is never

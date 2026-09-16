@@ -18,6 +18,7 @@ RLS state survives ``TRUNCATE``, so each test resets ``_READER_READ_TABLES`` to 
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import text
 
 from app.platform.config import Settings
@@ -25,6 +26,10 @@ from app.platform.db import engine as engine_mod
 from app.platform.db import schema
 
 from ._helpers import index_page
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 _PAGE = 1001  # space 100, unrestricted (the fixture page the other RLS tests use)
 _ANON = "anon_like_test"  # mirrors Supabase's public `anon`: SELECT grant, no BYPASSRLS

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 
+import pytest
 from sqlalchemy import text
 
 from app.features.evaluation import (
@@ -35,7 +36,11 @@ from app.platform.clients import Reranker, build_embedding_provider, build_reran
 from app.platform.config import Settings
 from app.platform.db.engine import get_reader_sessionmaker, get_sessionmaker
 
-from ._helpers import index_page
+from ._helpers import index_page, restricted_principals
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 _DATASETS = datasets_dir()
 
@@ -155,6 +160,49 @@ def test_permission_enforcement_is_db_backed_not_fixture_fed(gateway, settings: 
 
     # space-level trust also comes from the DB (page_source.space_id), not the empty policy
     assert retr.retrieve("How do I request access to core systems when I join?", "100", k=5)
+
+
+def test_s_acl_no_restriction_recorded_is_open_to_everyone(gateway, settings: Settings) -> None:
+    """panel s-acl · substep 0.5.3
+    ADR-0005: a page with zero ``page_restriction`` rows (no principal recorded) is open to
+    everyone — absence of restriction is never treated as deny. Indexed alone, so it is the only
+    candidate any query can surface: if the permission filter ever flipped "no restriction" to
+    closed, none of these callers would get anything back.
+    """
+    index_page(gateway, settings, 1001, 3)
+    assert restricted_principals(1001) == set()  # no page_restriction rows persisted
+
+    retr = _retriever(gateway, settings)
+    question = "How do I request access to core systems when I join?"
+    for principal in ("acct-alice", "someone-with-no-claims-at-all", "unauthorized-user"):
+        assert "1001" in retr.retrieve(question, principal, k=5), (
+            f"unrestricted page 1001 was withheld from {principal!r}"
+        )
+
+
+def test_s_acl_unexpandable_group_denies_everyone(gateway, settings: Settings) -> None:
+    """panel s-acl · substep 0.5.3
+    ADR-0005: a page whose only restriction is an unresolvable group is excluded from candidates
+    for every caller at retrieval time — including one whose real claims happen to match the
+    group's membership, since that membership could not be verified when access was checked.
+    """
+    # Force the group resolver to find nobody, as if the live lookup failed or the group has no
+    # visible members — the same fail-closed path `_resolve_read_restriction` takes with no
+    # resolver at all (covered at sync time by test_confluence_client.py; this proves the
+    # persisted sentinel is actually honored at retrieval time, not just written correctly).
+    gateway.set_group_members("grp-security", [])
+    index_page(gateway, settings, 3009, 1)
+    # "__unresolved_group_restriction__" is confluence_client.GROUP_RESTRICTED_SENTINEL.
+    assert restricted_principals(3009) == {"__unresolved_group_restriction__"}
+
+    retr = _retriever(gateway, settings)
+    question = "Security Runbook restricted to leads only"
+    # acct-frank/acct-grace are grp-security's real members per the group_members.json fixture —
+    # unresolved here, so they must be denied exactly like a total outsider.
+    for principal in ("acct-frank", "acct-grace", "acct-alice", "unauthorized-user"):
+        assert "3009" not in retr.retrieve(question, principal, k=5), (
+            f"unresolvable-group page 3009 leaked to {principal!r}"
+        )
 
 
 def test_rls_default_deny_on_reader_role(gateway, settings: Settings) -> None:

@@ -1,0 +1,14 @@
+{
+  "pageId": "3009",
+  "operation": "read",
+  "restrictions": {
+    "user": {
+      "results": []
+    },
+    "group": {
+      "results": [
+        { "id": "grp-security", "name": "security" }
+      ]
+    }
+  }
+}

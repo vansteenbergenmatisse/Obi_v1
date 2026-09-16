@@ -1,0 +1,22 @@
+{
+  "id": "1002",
+  "spaceId": "100",
+  "parentId": "1001",
+  "status": "current",
+  "title": "Deployment Runbook",
+  "version": {
+    "number": 2,
+    "createdAt": "2026-05-08T08:00:00.000Z",
+    "message": "Added pre-flight checklist",
+    "authorId": "acct-bob"
+  },
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": "<h1>Deployment Runbook</h1><p>How to ship a release to production safely.</p><h2>Pre-flight Checklist</h2><ul><li>All tests green on main</li><li>Changelog updated</li><li>On-call engineer notified</li></ul>"
+    }
+  },
+  "_links": {
+    "webui": "/spaces/ENG/pages/1002/Deployment+Runbook"
+  }
+}

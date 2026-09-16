@@ -1,0 +1,14 @@
+{
+  "pageId": "3008",
+  "results": [
+    {
+      "id": "att-3008-1",
+      "title": "vendor-contract-summary.txt",
+      "mediaType": "text/plain",
+      "fileSize": 168,
+      "version": { "number": 1, "createdAt": "2026-07-08T09:05:00.000Z" },
+      "file": "vendor-contract-summary.txt",
+      "_links": { "download": "/download/attachments/3008/vendor-contract-summary.txt" }
+    }
+  ]
+}

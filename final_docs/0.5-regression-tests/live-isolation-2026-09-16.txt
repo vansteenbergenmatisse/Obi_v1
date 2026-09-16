@@ -1,0 +1,24 @@
+Date: 2026-09-16
+Commit: 2ac7e7a7590ea7f0de5c011f77a72771e271f114
+Staging host: aws-1-eu-west-1.pooler.supabase.com (Supabase, owner-confirmed staging project — not production)
+Command: uv run python scripts/setup_supabase.py verify-isolation   (run from apps/automation)
+
+--- output ---
+owner sees        : 107 chunks across sources ['confluence:default']
+reader, no GUC    : 0  (expect 0 — default-deny)
+reader, 'confluence:default': 107  (expect > 0 — scoped access)
+reader, bogus src : 0  (expect 0 — non-matching source excluded)
+reader halfvec    : reader resolves halfvec (dense-query path OK)
+reader non-chunk  : reader reads its non-chunk tables (page_source=13, page_restriction=0, curated_knowledge_entry=0)
+anon role         : anon stays default-denied — anon sees chunk=0 page_source=0 (expect 0/0)
+scope axis        : scope backstop holds — tag 'base': in-scope=85 (expect > 0), out-of-scope=0 (expect 0)
+OK: ADR-0004 read-path isolation + reader read-access hold on this instance.
+--- end output ---
+
+Exit code: 0 (all checks passed)
+
+Note: this run happened immediately after same-day remediation of a stray test-run incident on this
+same staging project (docs/plan/ledger.md, "Need from you" — rag_reader password rotated,
+postgres_test dropped, owner-confirmed). This run's own "reader, no GUC" / "anon role" / "scope axis"
+lines directly re-prove the reader role's isolation guarantees hold post-rotation, on top of being
+this substep's required live-isolation proof.

@@ -9,26 +9,32 @@ without a database. Everything here is pure files plus `loader.py`.
 
 ```
 confluence/
-  page-<id>.json            current version of each page
-  versions/                 historical snapshots for change-detection tests
+  page-<id>.json             current version of each page (or, for the substep 0.5.1
+                              additions, the manifest's per-page "file" override, e.g.
+                              page-3002-obi-mews-test.json — id and labels in the name)
+  versions/                  historical snapshots for change-detection tests
     page-1001-v1.json
     page-1001-v2.json
-    page-1001-v3.json       identical to current page-1001.json
-  labels/page-<id>.json     page -> labels (for labels_hash)
+    page-1001-v3.json        identical to current page-1001.json
+  labels/page-<id>.json      page -> labels (for labels_hash)
   restrictions/page-<id>.json   page -> read restrictions (for access_scope_hash)
   attachments/
-    page-<id>.json          per-page attachment manifest
-    *.txt / *.csv / *.md    tiny real attachment files
+    page-<id>.json           per-page attachment manifest
+    *.txt / *.csv / *.md     tiny real attachment files
     PLACEHOLDER-BINARIES.txt binary formats the parser must degrade gracefully on, not shipped as real binaries
-  manifest.json             machine-readable index of the whole corpus
-  loader.py                 pure filesystem + json access
-  README.md                 this file
+  manifest.json              machine-readable index of the whole corpus; a page's optional
+                              "file" key overrides loader.py's default page-<id>.json lookup
+  group_members.json         group id/name -> member accountIds (fixture-backed group expansion)
+  loader.py                  pure filesystem + json access
+  README.md                  this file
 ```
 
 ## Spaces
 
 - Space `100` (ENG, Engineering) — pages 1001, 1002, 1003
 - Space `200` (HR, People Operations) — pages 2001, 2002, 2003
+- Space `300` (KB, Knowledge Base Fixtures) — pages 3001-3010 (substep 0.5.1's test-harness
+  additions, below)
 
 ## Page mapping table
 
@@ -40,6 +46,27 @@ confluence/
 | 2001 | HR    | none   | current  | 4        | no     | no           | none        | Second space root; policy content with note macro and table |
 | 2002 | HR    | 2001   | current  | 1        | yes    | yes          | none        | Restricted child in second space; both labels_hash and access_scope_hash on one page; code macro |
 | 2003 | HR    | none   | trashed  | 1        | no     | no           | none        | Trashed status must be skipped entirely by ingestion |
+
+### Substep 0.5.1 additions (the test-harness fixture set)
+
+One page per `config/knowledge_scopes.json` tag, plus the two-label, classified, unlabeled,
+attachment, group-restricted and empty categories the original 1001-2003 set didn't cover. Each
+page's content file is named with its id and its label(s) (`page-<id>-<label>.json`), resolved
+through the manifest's per-page `file` key (`loader.py`'s `load_page`, falling back to
+`page-<id>.json` for every page above that carries no `file` key).
+
+| Page | Space | Label(s) | Restrictions | Attachments | What it tests |
+|------|-------|----------|--------------|-------------|---------------|
+| 3001 | KB    | `obi-general-test`    | no  | no  | One page per knowledge-scope tag: the always-included base scope |
+| 3002 | KB    | `obi-mews-test`       | no  | no  | One page per knowledge-scope tag: Mews PMS |
+| 3003 | KB    | `obi-operacloud-test` | no  | no  | One page per knowledge-scope tag: Opera Cloud PMS |
+| 3004 | KB    | `obi-toast-test`      | no  | no  | One page per knowledge-scope tag: Toast POS |
+| 3005 | KB    | `changelog`, `internal` | no | no | Two-label page: two ordinary Confluence labels, not a two-provider-tag conflict |
+| 3006 | KB    | `classified`          | no  | no  | Classified page: the reserved label, never mappable to a platform or a knowledge scope |
+| 3007 | KB    | none                  | no  | no  | Unlabeled page: zero labels |
+| 3008 | KB    | none                  | no  | yes (`vendor-contract-summary.txt`) | Attachment page: one real, small, parseable attachment |
+| 3009 | KB    | none                  | yes (group only) | no | Group-restricted page: non-empty `group` list, empty `user` list — the one category 1001-2003 never covered |
+| 3010 | KB    | none                  | no  | no  | Empty page: `body.storage.value` is empty, no labels, no restrictions, no attachments |
 
 ## Version history of page 1001 (change detection)
 
@@ -63,9 +90,10 @@ hashes per version.
 
 ## Attachments
 
-Real, parseable files: `welcome-checklist.txt`, `team-roster.csv`,
-`rollback-notes.md` — these are indexed end-to-end (downloaded, extracted, chunked, embedded,
-searchable; `test_attachment_wiring.py`) via `FixtureConfluenceGateway.download_attachment`
+Real, parseable files: `welcome-checklist.txt`, `team-roster.csv`, `rollback-notes.md`,
+`vendor-contract-summary.txt` (page 3008) — these are indexed end-to-end (downloaded, extracted,
+chunked, embedded, searchable; `test_attachment_wiring.py`) via
+`FixtureConfluenceGateway.download_attachment`
 resolving the manifest's `file` field to a real on-disk fixture. Binary formats (PDF, XLSX) appear
 in the manifests as placeholders pointing at `PLACEHOLDER-BINARIES.txt` instead of a real binary —
 this exercises the "attachment present, parser invoked, gracefully degrades to no chunk" path
@@ -80,11 +108,11 @@ binary anywhere in this fixture corpus, a disclosed gap, not an unimplemented on
 ```python
 from tests.fixtures.confluence import loader
 
-loader.list_pages()                 # manifest page index
-loader.load_page("1001")            # current version
-loader.load_page("1001", version=1) # historical snapshot
-loader.load_labels("1001")          # or None
-loader.load_restrictions("1002")    # or None
-loader.load_attachments("1001")     # or None
-loader.fixtures_dir()               # Path to this directory
+loader.list_pages()  # manifest page index
+loader.load_page("1001")  # current version
+loader.load_page("1001", version=1)  # historical snapshot
+loader.load_labels("1001")  # or None
+loader.load_restrictions("1002")  # or None
+loader.load_attachments("1001")  # or None
+loader.fixtures_dir()  # Path to this directory
 ```

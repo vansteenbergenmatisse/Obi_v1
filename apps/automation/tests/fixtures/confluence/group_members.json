@@ -1,4 +1,5 @@
 {
   "grp-hr": ["acct-dave"],
-  "grp-finance": ["acct-erin"]
+  "grp-finance": ["acct-erin"],
+  "grp-security": ["acct-frank", "acct-grace"]
 }

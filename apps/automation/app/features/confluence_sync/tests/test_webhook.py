@@ -6,6 +6,7 @@ import hmac
 import json
 from hashlib import sha256
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 
@@ -14,6 +15,10 @@ from app.main import create_app
 from app.platform.config import Settings
 from app.platform.db.engine import session_scope
 from app.platform.db.models import Job
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 _SECRET = "test-webhook-secret"
 

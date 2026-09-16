@@ -4,12 +4,18 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import pytest
+
 from app.features.confluence_sync.domain.scope_resolver import (
     resolve_scope_roots,
     resolve_space_scope,
 )
 from app.platform.clients import ConfluencePageMeta
 from app.platform.db.models import SourceScope
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 
 def _meta(page_id: int, parent_id: int | None) -> ConfluencePageMeta:

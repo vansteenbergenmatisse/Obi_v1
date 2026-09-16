@@ -14,12 +14,13 @@ It answers a single question for every part of the system:
 **does the code do what the design page claims — and if not, exactly how does it differ?**
 
 Nothing here changes code. Nothing here is edited after substep 0.3 closed — it is a frozen
-snapshot. To audit a *later* commit, make a new sibling folder (e.g. `0.9-synopsis-of-...`),
-don't overwrite this one.
+snapshot. To audit a *later* commit, make a new sibling folder named with the substep and the
+date (e.g. `0.9-code-vs-design-audit-2026-10-01`), don't overwrite this one and don't use a
+relative name like "today" — it goes stale the moment it's read later.
 
 ## Why it exists
 
-The design page (`docs/Final_docs/obi-rag-system-flow (3).html`, 192 "panels") is the source
+The design page (`docs/Final_docs/obi-rag-system-flow.html`, 192 "panels") is the source
 of truth for what each stage *should* do. Code drifts from it over time. Before planning any
 implementation work, you need an honest, evidence-backed map of the gap. These ten files are
 that map — the input to the delta list and the work plan (`docs/plan/delta.md`).
@@ -77,7 +78,7 @@ Each design claim carries exactly one of four verdicts:
 - **Commit:** `bf7fece829e3ce1e9757e1bdb5fa538fbd6456ae`
 - **git describe:** `green-baseline-151-gbf7fece`
 - **Date:** 2026-09-14
-- **Design page:** `docs/Final_docs/obi-rag-system-flow (3).html` (read via `tools/panel.py`; 192 panels)
+- **Design page:** `docs/Final_docs/obi-rag-system-flow.html` (read via `tools/panel.py`; 192 panels)
 - **Produced by:** ten `obi-auditor` subagents (substep 0.3.1), one per folder, run in parallel then reconciled.
 
 ## Assignments

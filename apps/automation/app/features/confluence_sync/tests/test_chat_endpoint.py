@@ -35,6 +35,10 @@ from .test_answer_workflow import (
 )
 from .test_retrieval_eval import _index_corpus
 
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
+
 _API_KEY = "test-chat-key"
 
 
@@ -725,3 +729,62 @@ def test_feedback_rejects_invalid_value(gateway, settings: Settings) -> None:
     client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
     resp = client.patch("/chat/1/feedback", json={"feedback": 2}, headers=_auth())
     assert resp.status_code == 422
+
+
+def _query_trace_row_count() -> int:
+    with get_sessionmaker()() as s:
+        return s.execute(text("SELECT COUNT(*) FROM query_trace")).scalar_one()
+
+
+def test_r1_short_small_talk_writes_no_query_trace_row(gateway, settings: Settings) -> None:
+    """panel r1-short · substep 0.5.3
+    A short reply without search: small talk never writes a query_trace row (scenario 3 of the
+    panel — scenarios 1/2 are already covered by test_small_talk.py and test_clarification.py)."""
+    chat_settings = _chat_settings(settings)
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+    before = _query_trace_row_count()
+
+    resp = client.post(
+        "/chat", json={"history": [{"role": "user", "content": "hi"}]}, headers=_auth()
+    )
+
+    assert resp.status_code == 200
+    done = _parse_sse(resp.text)[-1]
+    assert done["type"] == "done"
+    assert done["refused"] is False
+    assert done["citations"] == []  # a greeting reply, not a search-backed answer
+    assert done["traceId"] is None
+    assert _query_trace_row_count() == before  # no new query_trace row
+
+
+def test_r1_short_vague_question_writes_no_query_trace_row(gateway, settings: Settings) -> None:
+    """panel r1-short · substep 0.5.3
+    A short reply without search: a too-vague question never writes a query_trace row (scenario 3
+    of the panel — scenarios 1/2 are already covered by test_small_talk.py and
+    test_clarification.py)."""
+    chat_settings = _chat_settings(settings)
+    service = AnswerService(
+        _build_retriever(gateway, chat_settings),
+        _EchoRewriter(),
+        _LeakyClarifyingGenerator(),
+        get_sessionmaker(),
+        clarification_classifier=_AlwaysAmbiguousClassifier(),
+        enable_clarification_branch=True,
+    )
+    client = _client_with_service(chat_settings, service)
+    before = _query_trace_row_count()
+
+    resp = client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": "what are the limits?"}]},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 200
+    done = _parse_sse(resp.text)[-1]
+    assert done["type"] == "done"
+    assert done["needsClarification"] is True  # a clarifying question, not a search-backed answer
+    assert done["refused"] is False
+    assert done["citations"] == []
+    assert done["traceId"] is None
+    assert _query_trace_row_count() == before  # no new query_trace row

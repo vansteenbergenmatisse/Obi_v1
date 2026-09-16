@@ -57,6 +57,10 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 asyncio_mode = "auto"
 testpaths = ["app", "tests"]
 python_files = ["test_*.py", "*_test.py"]
+addopts = "--strict-markers"
+markers = [
+    "db: requires a real local Postgres with migrations applied (substep 0.5.1, harness.md)",
+]
 
 [tool.pyright]
 include = ["app"]

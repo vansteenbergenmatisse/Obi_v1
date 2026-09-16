@@ -8,6 +8,7 @@ Obi is an accuracy-first RAG chatbot over Omniboost's Confluence pages. It answe
 - The action plan (HTML) in `docs/design/` is the only work list. Work on exactly one substep at a time.
 - `docs/plan/` holds the decisions the owner made, the delta between code and design, and the status ledger. The ledger is the honest record of progress: one entry per finished substep with commit, test count and deviations.
 - `docs/adr/` holds decisions of record. Changing one needs a new ADR.
+- `docs/future-ideas.md` holds deferred ideas: what each is, why it is deferred, where in this plan it would land, and the date added. Not scheduled work.
 - Everything else under `docs/` is archived in Phase 0 and is not authoritative until reviewed.
 
 ## Commands

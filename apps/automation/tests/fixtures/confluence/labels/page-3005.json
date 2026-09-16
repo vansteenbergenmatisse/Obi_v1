@@ -1,0 +1,7 @@
+{
+  "pageId": "3005",
+  "results": [
+    { "id": "l-changelog", "name": "changelog", "prefix": "global" },
+    { "id": "l-internal", "name": "internal", "prefix": "global" }
+  ]
+}

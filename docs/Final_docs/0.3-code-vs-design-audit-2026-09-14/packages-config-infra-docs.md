@@ -45,7 +45,7 @@ No test file lives under `packages/`, `config/`, or `infra/` itself; every test 
 - `docs/plan/ledger.md:10-16` has **zero entries** ("`<!-- append finished substeps here, one per line -->`") despite the repo being at `green-baseline-151-gbf7fece` with many finished, committed substeps (e.g. `bf7fece`, `59385f4`, `f86fe1a` in recent git log) — the ledger is not the honest record `CLAUDE.md` requires it to be, today.
 - `docs/plan/delta.md:14` and `docs/plan/decisions.md:15` both still read `_pending_` — no delta/decision rows have been populated yet, though several panels below already show drift.
 - `docs/plan/baseline.md:10-19` records "no baseline yet" for every lint/type/eval number — `make check`'s no-regression floor (`CLAUDE.md` §Rules 11) has nothing to compare against yet.
-- `CLAUDE.md:11` ("project instructions") names `docs/design/` as where the design page and action plan live; no `docs/design/` directory exists in the repository (`ls docs/design` → No such file or directory). The actual design-page source used by `panel.py` is `docs/Final_docs/obi-rag-system-flow (3).html` per `docs/Final_docs/0.3-code-vs-design-audit-2026-09-14/README.md`.
+- `CLAUDE.md:11` ("project instructions") names `docs/design/` as where the design page and action plan live; no `docs/design/` directory exists in the repository (`ls docs/design` → No such file or directory). The actual design-page source used by `panel.py` is `docs/Final_docs/obi-rag-system-flow.html` per `docs/Final_docs/0.3-code-vs-design-audit-2026-09-14/README.md`.
 - `config/obi_identity.md` is not referenced by any of the 22 assigned panel ids — see "Not on the design page" below.
 
 ## Claims from the design

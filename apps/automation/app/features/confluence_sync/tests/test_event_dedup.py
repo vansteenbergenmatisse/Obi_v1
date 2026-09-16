@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
 from sqlalchemy import func, select
 
 from app.features.confluence_sync.application import event_service
@@ -12,6 +13,10 @@ from app.features.confluence_sync.infrastructure import event_repo
 from app.features.confluence_sync.schemas.events import EventEnvelope
 from app.platform.db.engine import session_scope
 from app.platform.db.models import EventLedger, Job
+
+pytestmark = (
+    pytest.mark.db
+)  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 
 def _envelope() -> EventEnvelope:
