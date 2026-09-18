@@ -122,16 +122,28 @@ describe("Composer", () => {
       expect(screen.queryByAltText("screenshot.png")).not.toBeInTheDocument();
     });
 
-    it("caps attachments at 4 and ignores extras", async () => {
+    it("caps attachments at 3 and shows the limit error", async () => {
       renderComposer({ onSend: vi.fn() });
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-      const files = ["a.png", "b.png", "c.png", "d.png", "e.png"].map((name) => pngFile(name));
+      const files = ["a.png", "b.png", "c.png", "d.png"].map((name) => pngFile(name));
 
       await userEvent.upload(fileInput, files);
 
       expect(screen.getByAltText("a.png")).toBeInTheDocument();
-      expect(screen.getByAltText("d.png")).toBeInTheDocument();
-      expect(screen.queryByAltText("e.png")).not.toBeInTheDocument();
+      expect(screen.getByAltText("c.png")).toBeInTheDocument();
+      expect(screen.queryByAltText("d.png")).not.toBeInTheDocument();
+      expect(screen.getByText(/image limit/i)).toBeInTheDocument();
+    });
+
+    it("rejects an image over 3 MB with the too-large error and does not attach it", async () => {
+      renderComposer({ onSend: vi.fn() });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const oversized = new File([new Uint8Array(3_000_001)], "big.png", { type: "image/png" });
+
+      await userEvent.upload(fileInput, oversized);
+
+      expect(screen.queryByAltText("big.png")).not.toBeInTheDocument();
+      expect(screen.getByText(/compress/i)).toBeInTheDocument();
     });
 
     it("shows the PII disclosure while an image is staged, and clears it once removed", async () => {

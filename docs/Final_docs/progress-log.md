@@ -739,3 +739,17 @@ should be corrected in a dedicated pass.
 Verification: `make boundaries` clean, `make test-unit` 535 passed (up from 533 by the two new
 tests), `make test-ui` 1 passed, and ruff/format/pyright clean on every touched backend file.
 `make test-db` was not re-run because no database-level code changed. Nothing is committed yet.
+
+## p4-s4_2-7 · 4.2.7 · The composer image cap (2026-09-18)
+
+The owner confirmed decision w-composer-images and asked to build it now, so the composer's image cap moved from the old 4-images / 5 MB limit to at most 3 images per turn, each at most 3 MB. There was no build substep for it — the composer already exists and Phase 4's 4.2.x batch covers the frame/loader/bridge, not the composer's caps — so a new substep p4-s4_2-7 ("The composer image cap") was added to the action plan and pulled forward from Phase 4 during the 0.5 freeze, with the owner's go-ahead.
+
+Backend: the two Settings defaults dropped to 3 and 3_000_000 (decimal 3 MB), with the comment updated to cite the decision. The /chat endpoint already rejected over-limit turns with a 400 on every turn (not just the newest), and the widget proxy already forwards that 400 as-is, so no endpoint or proxy code changed — only the cap values did.
+
+Frontend: composer.tsx now caps at 3 and adds a per-image byte check (MAX_IMAGE_BYTES = 3_000_000) that refuses an oversized image before it is ever attached or sent, and it shows a user-facing error instead of silently dropping extras. Two new i18n strings (imageTooLarge, imageTooMany) were added across all six locales; the error renders as an accessible alert line using the semantic text-danger token.
+
+Tests were written first and failed for the right reason: a new backend settings-default test (asserting 3 / 3_000_000, which failed at 4) and two composer tests (the old "caps at 4 and ignores extras" test rewritten to expect cap 3 plus the limit error, and a new oversized-image test). After the change all passed: composer 17/17, settings 8/8, the full backend unit suite 536 passed, the full web suite 237 passed, tsc exit 0, boundaries clean, ruff/pyright clean on the touched backend files.
+
+Security: this is an LLM-CALL surface (the vision call's abuse control). The change strengthens C3 (input validation — tighter caps, still enforced server-side on every turn with a 400) and C10 (cost/abuse — a smaller cost surface). C6 image-byte PII redaction remains the pre-existing, disclosed gap (ADR-0009; the composer shows the imageDisclosure). The new client-side byte check is a UX nicety, not a security control — the authoritative enforcement stays the backend 400, which was preserved as defense in depth.
+
+Deviations worth naming: the per-panel Playwright browser test is deferred to Phase 4 proper (widget-test-level decision), so coverage here is jsdom component plus backend unit; next lint cannot run headlessly in this environment (interactive prompt), a pre-existing condition, so lint was not re-run (tsc and vitest both pass); brief.py was run under the automation venv python because bs4 is absent from the system python3; and the hardcoded color and px literals the fe token-lint flags in composer.tsx are the file's pre-existing pixel-exact styling, untouched by this change. Nothing is committed yet.

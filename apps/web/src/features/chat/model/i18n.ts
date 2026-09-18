@@ -45,6 +45,12 @@ export interface WidgetCopy {
   imageDisclosure: string;
   /** Label introducing an assistant turn's vision-analysis block (ADR-0009 decision 5). */
   imageAnalysisLabel: string;
+  /** Composer error shown when a chosen image exceeds the per-image byte cap (w-composer /
+   * decision w-composer-images): the image is not attached and the person is told to compress it. */
+  imageTooLarge: string;
+  /** Composer error shown when more images are chosen than the per-turn cap allows (w-composer):
+   * the extra images are not attached. */
+  imageTooMany: string;
   teaser: string;
   docs: string;
   support: string;
@@ -71,6 +77,8 @@ const COPY: Record<Locale, WidgetCopy> = {
     footer: "AI may make mistakes. Verify important information.",
     imageDisclosure: "We don't check images for personal info. Skip sensitive screenshots.",
     imageAnalysisLabel: "Obi looked at your image",
+    imageTooLarge: "Too large — compress your image and try again.",
+    imageTooMany: "You've reached the image limit for this message.",
     teaser: "Hey, I'm Obi. Need help with onboarding or support?",
     docs: "Developer docs",
     support: "Support articles",
@@ -95,6 +103,8 @@ const COPY: Record<Locale, WidgetCopy> = {
     footer: "AI kan fouten maken. Controleer belangrijke informatie.",
     imageDisclosure: "We checken afbeeldingen niet op persoonlijke info. Vermijd gevoelige screenshots.",
     imageAnalysisLabel: "Obi bekeek je afbeelding",
+    imageTooLarge: "Te groot — verklein je afbeelding en probeer opnieuw.",
+    imageTooMany: "Je hebt de limiet voor afbeeldingen in dit bericht bereikt.",
     teaser: "Hé, ik ben Obi. Hulp nodig bij onboarding of support?",
     docs: "Developer docs",
     support: "Supportartikelen",
@@ -119,6 +129,8 @@ const COPY: Record<Locale, WidgetCopy> = {
     footer: "KI kann Fehler machen. Überprüfe wichtige Informationen.",
     imageDisclosure: "Wir prüfen Bilder nicht auf persönliche Daten. Vermeide sensible Screenshots.",
     imageAnalysisLabel: "Obi hat sich dein Bild angesehen",
+    imageTooLarge: "Zu groß — komprimiere dein Bild und versuche es erneut.",
+    imageTooMany: "Du hast das Bildlimit für diese Nachricht erreicht.",
     teaser: "Hey, ich bin Obi. Hilfe bei Onboarding oder Support?",
     docs: "Entwickler-Docs",
     support: "Support-Artikel",
@@ -143,6 +155,8 @@ const COPY: Record<Locale, WidgetCopy> = {
     footer: "L’IA peut faire des erreurs. Vérifiez les informations importantes.",
     imageDisclosure: "Nous ne vérifions pas les infos personnelles dans les images. Évitez les captures sensibles.",
     imageAnalysisLabel: "Obi a regardé votre image",
+    imageTooLarge: "Trop volumineuse — compressez votre image et réessayez.",
+    imageTooMany: "Vous avez atteint la limite d’images pour ce message.",
     teaser: "Bonjour, je suis Obi. Besoin d’aide pour l’onboarding ou le support ?",
     docs: "Docs développeur",
     support: "Articles d’aide",
@@ -167,6 +181,8 @@ const COPY: Record<Locale, WidgetCopy> = {
     footer: "La IA puede cometer errores. Verifica la información importante.",
     imageDisclosure: "No revisamos las imágenes en busca de información personal. Evita capturas sensibles.",
     imageAnalysisLabel: "Obi miró tu imagen",
+    imageTooLarge: "Demasiado grande — comprime tu imagen e inténtalo de nuevo.",
+    imageTooMany: "Has alcanzado el límite de imágenes de este mensaje.",
     teaser: "Hola, soy Obi. ¿Ayuda con onboarding o soporte?",
     docs: "Docs para desarrolladores",
     support: "Artículos de soporte",
@@ -191,6 +207,8 @@ const COPY: Record<Locale, WidgetCopy> = {
     footer: "L’IA può commettere errori. Verifica le informazioni importanti.",
     imageDisclosure: "Non controlliamo le immagini per dati personali. Evita screenshot sensibili.",
     imageAnalysisLabel: "Obi ha guardato la tua immagine",
+    imageTooLarge: "Troppo grande — comprimi la tua immagine e riprova.",
+    imageTooMany: "Hai raggiunto il limite di immagini per questo messaggio.",
     teaser: "Ciao, sono Obi. Serve aiuto con onboarding o supporto?",
     docs: "Docs per sviluppatori",
     support: "Articoli di supporto",

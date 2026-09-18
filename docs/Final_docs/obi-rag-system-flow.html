@@ -6142,7 +6142,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "w-composer": {
 "n": "UI",
 "h": "The composer",
-"st": "change",
+"st": "built",
 "f": [
 [
 "Inputs",
@@ -6168,7 +6168,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ]
 ],
 "simple": "Where the person types, pastes, or attaches a picture.",
-"today": "4 images per turn; no size check exists anywhere in apps/web — the 5 MB figure below is not enforced."
+"today": "≤ 3 images per turn, each ≤ 3 MB; over either limit the composer shows a user-facing error and does not attach, and the backend rejects an over-limit request with a 400 the proxy forwards (decision w-composer-images)."
 },
 "w-scope": {
 "n": "Config",

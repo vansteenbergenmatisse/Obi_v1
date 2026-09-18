@@ -1,6 +1,6 @@
 # Obi, part by part — the complete brief, A to Z
 
-Generated on 2026-09-17 from `docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
+Generated on 2026-09-18 from `docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
 
 ## 0 · How to read this brief
 
@@ -115,7 +115,7 @@ _Workflow label shown in the drawer: System overview_
   | Setting | Value |
   |---|---|
   | What we read | page meta, body (storage format), labels, read restrictions, attachments |
-  | APIs used | v2 pages and spaces; v1 for labels, restrictions, group members, attachment download |
+  | APIs used | v2 pages, spaces and labels; v1 for restrictions, group members, attachment download |
   | Client | HttpConfluenceClient: timeout, retry on 5xx, circuit breaker after 5 failures |
   | Test double | FixtureConfluenceGateway reads tests/fixtures/confluence, so CI never calls the network |
 - Where in the code:
@@ -2726,7 +2726,7 @@ class AuthContext:
 - Settings and rules:
   | Setting | Value |
   |---|---|
-  | Rate | 20 per minute; keyed on the token subject in the target; on the client IP today and for any request without a token (trusted-proxy X-Forwarded-For) |
+  | Rate | 20 per minute; keyed on the token subject when there is a token, otherwise on request.client.host. No X-Forwarded-For parsing today: TRUSTED_PROXY_HOPS defaults to 0, set per environment in 7.1.1 once the browser→proxy→API chain is known (decision r1-limits-ipkey, 2026-09-18) |
   | History | 1 to 20 turns, must end on a user turn, 4000 chars per turn |
   | Images | 4 per turn, 5 MB each, checked on every turn |
   | Scope slug | ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$ |
@@ -3756,12 +3756,12 @@ _Workflow label shown in the drawer: The widget_
 ##### Panel `w-composer` · The composer · [Implemented]
 - Kind: UI
 - In plain words: Where the person types, pastes, or attaches a picture.
-- Today: 4 images per turn; no size check exists anywhere in apps/web — the 5 MB figure below is not enforced.
+- Today: ≤ 3 images per turn, each ≤ 3 MB; over either limit the composer shows a user-facing error and does not attach, and the backend rejects an over-limit request with a 400 the proxy forwards (decision w-composer-images).
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | Inputs | text, file picker, clipboard paste, the header's screenshot button |
-  | Images | base64 on the newest turn only, 4 per turn, 5 MB each |
+  | Images | base64 on the newest turn only, never stored; target ≤ 3 per turn, each ≤ 3 MB; over the limit shows a user-facing error (compress the image). Today (needs change, decision w-composer-images 2026-09-18): 4 per turn, no byte-size check |
   | Empty text plus image | allowed; the backend skips search and still analyzes the image |
   | Disclosure | we do not check images for personal info; skip sensitive screenshots |
 - Where in the code:
@@ -4364,7 +4364,7 @@ _Workflow label shown in the drawer: Security_
   |---|---|
   | Host key | per widget host, server to server, never in the browser |
   | User token | signed by the trusted issuer (host backend or agreed auth service): iss, aud, sub, iat, exp, company_id, company_name, integration; reaches the iframe by postMessage only |
-  | Rate limit key | the token subject; client IP only on the pre-token path, with trusted-proxy X-Forwarded-For parsing |
+  | Rate limit key | the token subject; request.client.host on the pre-token path. No X-Forwarded-For parsing today (TRUSTED_PROXY_HOPS=0, set in 7.1.1) — see decision r1-limits-ipkey |
   | Network | the backend stays private to the proxy; only the proxy holds the host key |
 - Where in the code:
   - `rag_agent/server/router.py:254-267` — _verify_api_key

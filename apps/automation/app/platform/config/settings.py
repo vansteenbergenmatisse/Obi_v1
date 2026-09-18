@@ -160,14 +160,14 @@ class Settings(BaseSettings):
     # in alongside 7.3's LLM-call wiring rather than shipped separately — an uncapped image input
     # reaching a real vision call is a live cost/abuse surface the moment `images` exists, and
     # securing-http-and-llm-endpoints has no "add caps later" opt-out for an LLM-CALL surface.
-    # chat_max_images_per_turn mirrors `apps/web/src/features/chat/ui/composer.tsx`'s existing,
-    # already-shipped MAX_ATTACHMENTS=4 — a real cross-referenced value, not invented.
-    # chat_max_image_bytes is a provisional ceiling under Anthropic's own documented ~5MB
-    # per-image API limit (an external technical constraint, not an invented cost/scaling
-    # number) — ADR-0009 explicitly leaves the *real*, usage-tuned value undecided; re-tune once
-    # real image traffic exists.
-    chat_max_images_per_turn: int = 4
-    chat_max_image_bytes: int = 5_000_000
+    # chat_max_images_per_turn and chat_max_image_bytes are the caps the composer mirrors
+    # (`apps/web/src/features/chat/ui/composer.tsx`: MAX_ATTACHMENTS / MAX_IMAGE_BYTES) and the
+    # /chat endpoint enforces with a 400. Decision w-composer-images (2026-09-18, panel w-composer):
+    # at most 3 images per turn, each <= 3 MB (3_000_000 bytes — decimal MB, matching the composer's
+    # own byte check). Both stay under Anthropic's documented ~5MB per-image API limit; ADR-0009
+    # leaves the *real*, usage-tuned value undecided, so re-tune once real image traffic exists.
+    chat_max_images_per_turn: int = 3
+    chat_max_image_bytes: int = 3_000_000
     chat_output_max_answer_chars: int = 8000  # C5: defensive cap on the streamed answer size
     chat_token_chunk_chars: int = 40  # C5: SSE token-event chunk size (paces bytes/sec streamed)
     chat_stream_interval_ms: int = 15  # C5: delay between SSE token events
