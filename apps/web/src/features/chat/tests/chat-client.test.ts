@@ -51,6 +51,17 @@ describe("streamChat", () => {
     vi.unstubAllGlobals();
   });
 
+  // panel r1-proxy · substep p0-s0_5-reg-retrieval-stage-1
+  // The browser must call POST /api/chat on the widget's own origin, not the backend directly.
+  it("r1_proxy_calls_the_widgets_own_origin_api_chat_route", async () => {
+    fetchMock.mockResolvedValue(okStreamResponse([sse({ type: "start", conversationId: "c" })]));
+
+    await streamChat({ history: [{ role: "user", content: "hi" }] }, {});
+
+    const [url] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/chat");
+  });
+
   it("attaches the Authorization bearer header when a token is present", async () => {
     getTokenMock.mockReturnValue("jwt-abc123");
     fetchMock.mockResolvedValue(okStreamResponse([sse({ type: "start", conversationId: "c" })]));

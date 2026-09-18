@@ -25,6 +25,7 @@ vi.mock("html-to-image", () => ({
 }));
 
 import { ChatSessionProvider } from "../ui/chat-session-provider";
+import { FloatingFrame } from "../ui/floating-frame";
 import { PanelBody } from "../ui/panel-body";
 
 function renderPanel() {
@@ -286,5 +287,85 @@ describe("handleScreenshot (panel w-screenshot)", () => {
     // here proves the wrapped `File` reached `composerRef.current.addAttachmentFile(...)`.
     const thumbnail = await screen.findByAltText(/^Screenshot .*\.png$/);
     expect(thumbnail).toBeInTheDocument();
+  });
+
+  // panel w-screenshot · substep p0-s0_5-reg-the-widget: literal-naming re-proofs of the three
+  // checks above (Library, Hides, Then), each a thin restatement of an existing test in this
+  // block using the same html-to-image `toBlob` mocking technique.
+
+  it("w_screenshot_uses_html_to_image_toBlob", async () => {
+    toBlobMock.mockResolvedValue(new Blob(["fake-bytes"], { type: "image/png" }));
+
+    renderWithWidgetRoot();
+    await clickScreenshotButton();
+
+    await waitFor(() =>
+      expect(toBlobMock).toHaveBeenCalledWith(document.body, { backgroundColor: "#ffffff" }),
+    );
+  });
+
+  it("w_screenshot_hides_widget_root_during_capture_and_restores_it", async () => {
+    let visibilityDuringCapture: string | undefined;
+    toBlobMock.mockImplementation(async () => {
+      const widgetRoot = document.querySelector<HTMLElement>("[data-obi-widget-root]");
+      visibilityDuringCapture = widgetRoot?.style.visibility;
+      return new Blob(["fake-bytes"], { type: "image/png" });
+    });
+
+    const widgetRoot = renderWithWidgetRoot();
+    expect(widgetRoot.style.visibility).toBe("");
+
+    await clickScreenshotButton();
+
+    await waitFor(() => expect(visibilityDuringCapture).toBe("hidden"));
+    await waitFor(() => expect(widgetRoot.style.visibility).toBe(""));
+  });
+
+  it("w_screenshot_captured_image_lands_in_the_attachment_strip", async () => {
+    toBlobMock.mockResolvedValue(new Blob(["fake-bytes"], { type: "image/png" }));
+
+    renderWithWidgetRoot();
+    await clickScreenshotButton();
+
+    const thumbnail = await screen.findByAltText(/^Screenshot .*\.png$/);
+    expect(thumbnail).toBeInTheDocument();
+  });
+});
+
+describe("FloatingFrame layout (panel w-panel · Layout)", () => {
+  afterEach(() => cleanup());
+
+  it("w_panel_layout_is_fixed_right_edge_full_height_clamped_width", () => {
+    const { container } = render(
+      <FloatingFrame>
+        <div>content</div>
+      </FloatingFrame>,
+    );
+
+    // The widget's own root, also the element `handleScreenshot` above hides during capture
+    // (see `[data-obi-widget-root]` in the tests above) — same element, its layout classes.
+    const root = container.querySelector<HTMLElement>("[data-obi-widget-root]");
+    expect(root).toBeInTheDocument();
+    // fixed + inset-y-0 + right-0: a fixed overlay pinned to the right edge, spanning full height.
+    expect(root).toHaveClass("fixed", "inset-y-0", "right-0");
+    // clamp(360px, 29%, 440px) wide, exactly as the design panel's Settings table states it.
+    expect(root).toHaveClass("w-[clamp(360px,29%,440px)]");
+  });
+});
+
+describe("PanelBody parts (panel w-panel · Parts)", () => {
+  afterEach(() => cleanup());
+
+  it("w_panel_parts_renders_header_contour_background_message_list_and_composer_together", () => {
+    const { container } = renderPanel();
+
+    // panel-header: the chrome bar with the assistant name.
+    expect(container.querySelector("header")).toBeInTheDocument();
+    // contour-background: the ambient wavy-line SVG decoration behind the message thread.
+    expect(container.querySelector('svg[viewBox="0 0 430 900"]')).toBeInTheDocument();
+    // message-list: renders the empty-state greeting when there is no conversation yet.
+    expect(screen.getByText(/Hi there, how can I help you with/)).toBeInTheDocument();
+    // composer: the message textbox.
+    expect(screen.getByRole("textbox", { name: /message/i })).toBeInTheDocument();
   });
 });
