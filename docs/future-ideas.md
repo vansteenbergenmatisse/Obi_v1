@@ -233,14 +233,17 @@ Where it would go: the harness/make targets, near substep 0.5.4 (the CI gate).
 Added: 2026-09-18 (moved here from the 0.5 owner-actions section); resolved 2026-09-18.
 
 ## Configure a git remote so CI runs for real (deferred)
-What: `git remote -v` is empty, so no pull request has ever exercised `.github/workflows/ci.yml`. The
-four underlying commands were verified locally and the gate mechanism was proven historically (PR #1
-red→green in ci-gate-proof.md), but the real CI path on this repo is unproven end-to-end. Configure a
-remote (the GitHub repo) and a branch push + PR proves CI live.
-Why not now: deferred at the owner's request (2026-09-18); no remote exists yet. Not a failing test —
-the local suite is green and the gate logic is proven; only the live-on-remote proof is outstanding.
-Where it would go: substep 0.5.1 / 0.5.4 (the CI gate), once a remote exists.
-Added: 2026-09-18 (moved here from the 0.5 owner-actions section)
+What: no pull request had ever exercised `.github/workflows/ci.yml`. The four underlying commands were
+verified locally and the gate mechanism was proven historically (PR #1 red→green in ci-gate-proof.md),
+but the real CI path on this repo was unproven end-to-end.
+**RESOLVED 2026-09-18:** the earlier "`git remote -v` is empty" premise was stale — a remote (`origin`
+→ `github.com/vansteenbergenmatisse/Obi_v1`) already exists. The `feat/rag-phase-3.5` branch was pushed
+and a PR opened against `main`, which fires the PR-triggered CI end-to-end for the first time. Watch the
+PR's checks; if the run is green, capture the proof under `final_docs/0.5-regression-tests/` and this
+item is fully closed. (Separately flagged: CI and the Makefile cite `docs/Final_docs/0.5-regression-tests/harness.md`
+while that dir actually lives at repo-root `final_docs/0.5-regression-tests/` — a path inconsistency to fix.)
+Where it would go: substep 0.5.1 / 0.5.4 (the CI gate).
+Added: 2026-09-18 (moved here from the 0.5 owner-actions section); resolved 2026-09-18.
 
 ## Read-only staging DB URL for the live isolation run (pre-production)
 What: a read-only staging connection string (`DATABASE_READER_URL` for staging) so the live isolation
