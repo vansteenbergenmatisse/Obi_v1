@@ -1,7 +1,7 @@
 # Coverage map — substep 0.5.2 (built from substep 0.5.1's test-suite-inventory.md)
 
 Date: 2026-09-16
-Source: `docs/Final_docs/0.3-synopsis-2026-09-16/test-suite-inventory.md` (the current, authoritative
+Source: `docs/Final_docs/0.3-code-vs-design-audit-2026-09-14/test-suite-inventory.md` (the current, authoritative
 "tests.md" for this repo — the older `docs/Final_docs/0.3-code-vs-design-audit-2026-09-14/tests.md`
 audited against a stale 101-`built`-panel snapshot; 0.4.2 corrected 52 panels' status fields since
 then, and the panel set is now 108 `built`). One row per currently-`built` panel: panel id, title,
