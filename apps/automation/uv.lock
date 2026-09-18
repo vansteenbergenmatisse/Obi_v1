@@ -836,6 +836,7 @@ dependencies = [
     { name = "sqlalchemy" },
     { name = "structlog" },
     { name = "tenacity" },
+    { name = "tiktoken" },
     { name = "uvicorn", extra = ["standard"] },
 ]
 
@@ -883,6 +884,7 @@ requires-dist = [
     { name = "sqlalchemy", specifier = ">=2.0.35" },
     { name = "structlog", specifier = ">=24.4" },
     { name = "tenacity", specifier = ">=9.0" },
+    { name = "tiktoken", specifier = ">=0.8" },
     { name = "tiktoken", marker = "extra == 'tokenizers'", specifier = ">=0.8" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },
 ]

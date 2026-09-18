@@ -18,6 +18,11 @@ dependencies = [
     "structlog>=24.4",
     "python-dotenv>=1.0",
     "pyjwt[crypto]>=2.14.0",
+    # tiktoken is a core dependency: chunk sizing is defined in tokens and the regression suite
+    # asserts exact token counts, so accurate counting must be present in prod and CI — not optional.
+    # (Was the optional `tokenizers` extra; the 0.5.1 Makefile/CI split dropped `--extra tokenizers`,
+    # so a fresh env like CI fell back to the char heuristic and 4 chunk tests failed.)
+    "tiktoken>=0.8",
 ]
 
 [project.optional-dependencies]
@@ -29,7 +34,8 @@ dev = [
     # tools/brief.py parses the design HTML into the markdown brief.
     "beautifulsoup4>=4.12",
 ]
-# Accurate OpenAI token counting for chunk sizing (falls back to a heuristic when absent).
+# tiktoken is now a core dependency (see [project].dependencies); this extra is retained, redundant
+# but harmless, so the documented `--extra tokenizers` command keeps working.
 tokenizers = ["tiktoken>=0.8"]
 # Native attachment parsers; lazily imported, degrade to "skipped" when not installed.
 attachments = ["pypdf>=5.0", "python-docx>=1.1", "openpyxl>=3.1"]
