@@ -104,3 +104,20 @@ widens that same exposure instead of closing it.
 Where it would go: nowhere planned — stays rejected unless a cache-invalidation story for 3.2.7 is
 designed first; panel cm-agent.
 Added: 2026-09-16
+
+## Gate "Protect" regression batches on retrieval quality, not just plumbing
+What: after a "Protect" batch (e.g. the vector-database or relational-database panels) adds its
+structural regression tests, also run features/evaluation's gold-set runner (make eval) and record
+a before-and-after row — so a change that keeps every new structural test green (index exists, RLS
+still hides a forbidden row, the embedding provider is still shared, etc.) but silently degrades
+precision@k, recall@k, or faithfulness still gets caught before it ships.
+Why not now: today's "Protect" tests are deliberately narrow — they prove the plumbing a panel
+describes still behaves exactly as documented, nothing about whether retrieval is *good*. Gold-set
+evaluation is a slower, separate harness (features/evaluation/, make eval) built for that question;
+folding a full eval run into every fast structural-regression batch would blow up what is meant to
+be a quick gate. Two related gaps are already tracked elsewhere, not duplicated here: the embedding
+model/dimension itself is a live, unresolved choice (vd-model in docs/plan/decisions.md), and
+reranking (r4-rerank) already has its own dedicated regression tests from an earlier batch.
+Where it would go: features/evaluation/; likely paired with the CI-gate substep (0.5.4) or
+whichever substep next extends the "Protect" batch pattern.
+Added: 2026-09-17

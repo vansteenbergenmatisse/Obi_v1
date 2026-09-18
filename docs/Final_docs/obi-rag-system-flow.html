@@ -7390,7 +7390,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ]
 ],
 "note": "halfvec because pgvector indexes cap plain vectors at 2000 dimensions. Half precision costs almost no recall at this size.",
-"simple": "A fast lookup map over all the number codes that finds the closest ones without checking every row."
+"simple": "A fast lookup map over all the number codes that finds the closest ones without checking every row.",
+"today": "Regression-tested: dedicated tests pin the index's name, its halfvec/cosine shape above the 2000-dim cap (vector_cosine_ops at or below it, disclosed), and its m=16/ef_construction=200 build params."
 },
 "vd-nearest": {
 "n": "Vector database",
@@ -7412,7 +7413,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "The source and scope policies apply to every SELECT on chunk.",
 "So a nearest-neighbor hit from a forbidden row is never returned."
 ],
-"simple": "The row locks apply to the numbers too, so a hidden row never comes out of a vector search."
+"simple": "The row locks apply to the numbers too, so a hidden row never comes out of a vector search.",
+"today": "Regression-tested: dedicated tests pin that embedding lives on chunk, that both the source and knowledge-scope SELECT policies are registered on chunk, and that a raw nearest-neighbor query as the reader never returns a row on a forbidden source even when it is the closest match."
 },
 "vd-question": {
 "n": "Vector database",
@@ -7445,7 +7447,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ]
 ],
 "note": "Not a vector, but it lives next to one and runs in the same transaction. It catches exact strings like an error code.",
-"simple": "Next to the numbers, each piece has a word index that finds exact words the numbers might miss."
+"simple": "Next to the numbers, each piece has a word index that finds exact words the numbers might miss.",
+"today": "The keyword-search tsv column, its GIN index and the OR-joined/ts_rank query are each pinned by a dedicated panel-id-named regression test."
 },
 "vd-swap": {
 "n": "Vector database",

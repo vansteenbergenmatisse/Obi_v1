@@ -1,6 +1,6 @@
 # Obi, part by part — the complete brief, A to Z
 
-Generated on 2026-09-16 from `../../docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
+Generated on 2026-09-17 from `docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
 
 ## 0 · How to read this brief
 
@@ -4211,6 +4211,7 @@ _Workflow label shown in the drawer: The vector database_
 ##### Panel `vd-hnsw` · The HNSW index · [Implemented]
 - Kind: Vector database
 - In plain words: A fast lookup map over all the number codes that finds the closest ones without checking every row.
+- Today: Regression-tested: dedicated tests pin the index's name, its halfvec/cosine shape above the 2000-dim cap (vector_cosine_ops at or below it, disclosed), and its m=16/ef_construction=200 build params.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4232,6 +4233,7 @@ _Workflow label shown in the drawer: The vector database_
 ##### Panel `vd-rls` · Row security covers vectors too · [Implemented]
 - Kind: Vector database
 - In plain words: The row locks apply to the numbers too, so a hidden row never comes out of a vector search.
+- Today: Regression-tested: dedicated tests pin that embedding lives on chunk, that both the source and knowledge-scope SELECT policies are registered on chunk, and that a raw nearest-neighbor query as the reader never returns a row on a forbidden source even when it is the closest match.
 - Steps:
   1. The vector sits on the chunk row.
   2. The source and scope policies apply to every SELECT on chunk.
@@ -4249,6 +4251,7 @@ _Workflow label shown in the drawer: The vector database_
 ##### Panel `vd-keyword` · The keyword side · [Implemented]
 - Kind: Vector database
 - In plain words: Next to the numbers, each piece has a word index that finds exact words the numbers might miss.
+- Today: The keyword-search tsv column, its GIN index and the OR-joined/ts_rank query are each pinned by a dedicated panel-id-named regression test.
 - Settings and rules:
   | Setting | Value |
   |---|---|
