@@ -7,8 +7,9 @@ clause that precedes ``ORDER BY``/``LIMIT`` in one SQL statement. That shape str
 row security is applied *before* the limit truncates, and that ties break on ascending ``page_id`` —
 but no existing test proves either behaviorally against a real Postgres connection
 (``test_search_repo_knowledge_scope.py`` and ``test_search_repo_gucs.py`` only assert the emitted
-SQL text/params against a spy session). These two tests seed real chunk rows and real RLS state to
-prove it.
+SQL text/params against a spy session, and neither seeds more than a handful of rows, so nothing
+proves the ``LIMIT 75`` actually truncates a result set behaviorally). These tests seed real chunk
+rows and real RLS state to prove it.
 
 ``app/features/retrieval/tests/`` has no ``conftest.py`` of its own (its sibling tests are pure-fake
 unit tests with no database need), so this file wires its own module-local harness — reusing the
@@ -250,6 +251,32 @@ def test_vd_nearest_orders_by_distance_then_page_id_on_ties(session: Session) ->
 
     assert ordered_page_ids[0] == 300
     assert ordered_page_ids[1:3] == [100, 500]
+
+
+def test_vd_nearest_limit_caps_the_result_at_75_nearest(session: Session) -> None:
+    """panel vd-nearest · substep p0-s0_5-reg-the-vector-database
+    ``LIMIT 75`` behaviorally caps the returned rows at 75 and keeps only the 75 nearest: 80
+    chunks are seeded at 80 distinct cosine distances (a plain ``LIMIT`` with no ``ORDER BY``
+    could just as easily keep the 5 farthest), so getting back exactly the 75 closest — with the
+    single nearest chunk first — proves the query orders by distance ASC before truncating at 75,
+    not the other way round."""
+    dim = get_settings().embedding_dim
+    base_page_id = 40000
+    n = 80
+    for i in range(n):
+        # cos_sim strictly increasing with i -> distance (1 - cos_sim) strictly decreasing with i,
+        # so higher page_id == nearer chunk. Page ids 40005..40079 (75 of them) are the 75 nearest;
+        # 40000..40004 (the 5 farthest) must be excluded by the LIMIT.
+        cos_sim = 0.10 + i * 0.01
+        _seed_chunk(session, page_id=base_page_id + i, cos_sim=cos_sim, dim=dim)
+    session.commit()
+
+    rows = dense_search(session, _query_vector(dim), None, 75, dim)
+    ordered_page_ids = [pid for pid, _ in rows]
+
+    assert len(rows) == 75
+    assert set(ordered_page_ids) == {base_page_id + i for i in range(5, n)}
+    assert ordered_page_ids[0] == base_page_id + (n - 1)  # highest cos_sim == nearest, ranks first
 
 
 def test_vd_nearest_row_security_filters_before_the_limit_not_after(session: Session) -> None:

@@ -1,7 +1,8 @@
+import { createRef } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { Composer, type ComposerProps } from "../ui/composer";
+import { Composer, type ComposerHandle, type ComposerProps } from "../ui/composer";
 import { ChatSessionProvider } from "../ui/chat-session-provider";
 
 afterEach(() => cleanup());
@@ -121,16 +122,28 @@ describe("Composer", () => {
       expect(screen.queryByAltText("screenshot.png")).not.toBeInTheDocument();
     });
 
-    it("caps attachments at 4 and ignores extras", async () => {
+    it("caps attachments at 3 and shows the limit error", async () => {
       renderComposer({ onSend: vi.fn() });
       const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
-      const files = ["a.png", "b.png", "c.png", "d.png", "e.png"].map((name) => pngFile(name));
+      const files = ["a.png", "b.png", "c.png", "d.png"].map((name) => pngFile(name));
 
       await userEvent.upload(fileInput, files);
 
       expect(screen.getByAltText("a.png")).toBeInTheDocument();
-      expect(screen.getByAltText("d.png")).toBeInTheDocument();
-      expect(screen.queryByAltText("e.png")).not.toBeInTheDocument();
+      expect(screen.getByAltText("c.png")).toBeInTheDocument();
+      expect(screen.queryByAltText("d.png")).not.toBeInTheDocument();
+      expect(screen.getByText(/image limit/i)).toBeInTheDocument();
+    });
+
+    it("rejects an image over 3 MB with the too-large error and does not attach it", async () => {
+      renderComposer({ onSend: vi.fn() });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const oversized = new File([new Uint8Array(3_000_001)], "big.png", { type: "image/png" });
+
+      await userEvent.upload(fileInput, oversized);
+
+      expect(screen.queryByAltText("big.png")).not.toBeInTheDocument();
+      expect(screen.getByText(/compress/i)).toBeInTheDocument();
     });
 
     it("shows the PII disclosure while an image is staged, and clears it once removed", async () => {
@@ -173,6 +186,29 @@ describe("Composer", () => {
       expect(screen.queryByAltText("screenshot.png")).not.toBeInTheDocument();
     });
 
+    it("w_composer_empty_text_plus_image_is_allowed", async () => {
+      // panel w-composer · substep p0-s0_5-reg-the-widget
+      // Empty text plus image: allowed; the backend skips search and still analyzes the image.
+      // The frontend's half of that contract is that Send stays enabled with only an image staged,
+      // and firing it hands onSend an empty string alongside the image attachment.
+      const onSend = vi.fn();
+      renderComposer({ onSend });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+      const sendButton = screen.getByRole("button", { name: "Send" });
+      expect(sendButton).toBeDisabled();
+
+      await userEvent.upload(fileInput, pngFile());
+      expect(sendButton).not.toBeDisabled();
+
+      await userEvent.click(sendButton);
+
+      await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+      const [text, images] = onSend.mock.calls[0];
+      expect(text).toBe("");
+      expect(images).toHaveLength(1);
+      expect(images[0]).toMatchObject({ mediaType: "image/png", alt: "screenshot.png" });
+    });
+
     it("sends both the text and the image attachment when both are present", async () => {
       const onSend = vi.fn();
       renderComposer({ onSend });
@@ -188,6 +224,56 @@ describe("Composer", () => {
       expect(text).toBe("what is in this image?");
       expect(images).toHaveLength(1);
       expect(images[0]).toMatchObject({ mediaType: "image/png", alt: "screenshot.png" });
+    });
+
+    it("w_composer_screenshot_button_reaches_the_same_attachment_state_as_file_picker_and_paste", async () => {
+      // panel w-composer · substep p0-s0_5-reg-the-widget
+      // The header's screenshot button feeds the composer through `ComposerHandle.addAttachmentFile`
+      // (see the ref hookup in composer.tsx) rather than the file input or a paste event. Prove that
+      // path lands in the exact same attachment/text state — a visible preview by filename and an
+      // enabled Send button — as the other three input paths already proven above.
+      const onSend = vi.fn();
+      const ref = createRef<ComposerHandle>();
+      render(
+        <ChatSessionProvider>
+          <Composer ref={ref} onSend={onSend} />
+        </ChatSessionProvider>,
+      );
+      const sendButton = screen.getByRole("button", { name: "Send" });
+      expect(sendButton).toBeDisabled();
+
+      ref.current?.addAttachmentFile(pngFile("captured.png"));
+
+      expect(await screen.findByAltText("captured.png")).toBeInTheDocument();
+      expect(sendButton).not.toBeDisabled();
+
+      await userEvent.click(sendButton);
+      await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+      const [text, images] = onSend.mock.calls[0];
+      expect(text).toBe("");
+      expect(images).toHaveLength(1);
+      expect(images[0]).toMatchObject({ mediaType: "image/png", alt: "captured.png" });
+    });
+
+    it("w_composer_base64_images_are_scoped_to_the_newest_turn_only", async () => {
+      // panel w-composer · substep p0-s0_5-reg-the-widget
+      // "base64 on the newest turn only" — a second turn's onSend call must carry only the image
+      // staged for that turn, never an image already sent (and cleared) on a prior turn.
+      const onSend = vi.fn();
+      renderComposer({ onSend });
+      const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+
+      await userEvent.upload(fileInput, pngFile("first-turn.png"));
+      await userEvent.click(screen.getByRole("button", { name: "Send" }));
+      await waitFor(() => expect(onSend).toHaveBeenCalledTimes(1));
+
+      await userEvent.upload(fileInput, pngFile("second-turn.png"));
+      await userEvent.click(screen.getByRole("button", { name: "Send" }));
+      await waitFor(() => expect(onSend).toHaveBeenCalledTimes(2));
+
+      const [, secondTurnImages] = onSend.mock.calls[1];
+      expect(secondTurnImages).toHaveLength(1);
+      expect(secondTurnImages[0]).toMatchObject({ alt: "second-turn.png" });
     });
   });
 });

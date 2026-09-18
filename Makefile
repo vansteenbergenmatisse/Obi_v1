@@ -22,13 +22,18 @@ up:
 down:
 	docker compose -f $(COMPOSE) down
 
-## migrate: apply Alembic migrations to head.
+## migrate: apply Alembic migrations to head on the LOCAL pgvector Postgres.
+## Pinned to the local URL (like test-db) so a bare `make migrate` can never migrate a
+## live Supabase project via a developer's root .env DATABASE_URL. Migrating a live
+## project is a deliberate act: run alembic directly with an explicit DATABASE_URL.
 migrate:
-	cd $(AUTOMATION) && uv run alembic upgrade head
+	cd $(AUTOMATION) && DATABASE_URL=$(DB_URL_LOCAL) uv run alembic upgrade head
 
 ## test: run the automation test suite (the pre-0.5.1 umbrella; kept working as-is).
+## Pinned to the local URL (like test-db) so db-marked tests can never run against a live
+## Supabase project via the root .env DATABASE_URL. Run `make up` first for the db tests.
 test:
-	cd $(AUTOMATION) && uv run pytest
+	cd $(AUTOMATION) && DATABASE_URL=$(DB_URL_LOCAL) uv run pytest
 
 ## test-unit: fakes only, no database, no live marker (substep 0.5.1 / harness.md).
 ## Every test NOT marked `db` — the reranker, embedder, Claude client and Confluence

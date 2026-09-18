@@ -79,6 +79,14 @@ describe("PanelHeader — knowledge-scope switcher (PLAN 10.8, dev/verification 
     expect(screen.queryByRole("button", { name: "Knowledge scope" })).not.toBeInTheDocument();
   });
 
+  it("w_scope_dev_switcher_hidden_unless_show_scope_switcher_flag_set", () => {
+    // panel w-scope · substep p0-s0_5-reg-the-widget
+    // Dev switcher: behind NEXT_PUBLIC_SHOW_SCOPE_SWITCHER = true; never rendered in real embeds.
+    vi.stubEnv("NEXT_PUBLIC_SHOW_SCOPE_SWITCHER", "false");
+    renderHeader({ onRestart: vi.fn() });
+    expect(screen.queryByRole("button", { name: "Knowledge scope" })).not.toBeInTheDocument();
+  });
+
   it("shows the switcher and applies a picked scope back into the session", async () => {
     vi.stubEnv("NEXT_PUBLIC_SHOW_SCOPE_SWITCHER", "true");
     renderHeader({ onRestart: vi.fn() });

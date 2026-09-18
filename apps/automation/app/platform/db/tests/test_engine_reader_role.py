@@ -56,3 +56,18 @@ def test_reader_url_set_never_fails_regardless_of_env(monkeypatch, env) -> None:
     eng = engine_mod.get_reader_engine()
 
     assert eng.url.render_as_string(hide_password=False) == reader_url
+
+
+def test_r3_reader_engine_binds_to_database_reader_url_not_the_writer_url(monkeypatch) -> None:
+    """panel r3-reader · substep p0-s0_5-reg-retrieval-stage-3
+    get_reader_engine() is bound to DATABASE_READER_URL, not DATABASE_URL, whenever the reader
+    URL is configured -- the panel's third check, distinct from the writer engine."""
+    reader_url = "postgresql+psycopg://r:r@localhost:1/reader_db"
+    settings = _settings(database_reader_url=reader_url)
+    writer_url = settings.database_url
+    monkeypatch.setattr(engine_mod, "get_settings", lambda: settings)
+
+    eng = engine_mod.get_reader_engine()
+
+    assert eng.url.render_as_string(hide_password=False) == reader_url
+    assert eng.url.render_as_string(hide_password=False) != writer_url

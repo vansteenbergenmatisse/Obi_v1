@@ -91,10 +91,8 @@ reranker settings, `DATABASE_URL`, retrieval budgets, and reconciliation schedul
 
 ## Phase status
 
-This section predates `docs/rag/PLAN.md`'s phase numbering and tracking, which superseded it.
-**`docs/rag/PLAN.md` §0 (status ledger) is the single source of truth for current progress** —
-see it for what's shipped, what's next, and open blockers. As of this writing: Confluence sync,
-ingestion, hybrid retrieval + reranking + RLS isolation (PLAN Phase 3.5), and the grounded,
-cited, streaming chat runtime with a web UI (PLAN Phase 4, through 4.5) are implemented and
-tested; optimization/proof (Phase 5) and the Supabase deploy migration (Phase 6) are not yet
-started.
+**`docs/Final_docs/ledger.md` is the single source of truth for current progress** — one line
+per finished substep with commit, tests, and deviations. `docs/Final_docs/obi-action-plan.html`
+is the work list; `docs/plan/decisions.md` and `docs/plan/delta.md` hold open decisions and the
+design-vs-code gap. The pre-Phase-0 `docs/rag/PLAN.md` this section used to point to is archived
+under `docs/_archive/rag-legacy-pre-phase0/` and is no longer authoritative.

@@ -34,6 +34,22 @@ describe("MessageBubble", () => {
     expect(screen.getByTestId("typing-word")).toBeInTheDocument();
   });
 
+  // panel w-render · substep p0-s0_5-reg-the-widget
+  // "Tokens: appended as they stream" — as the streaming turn's text grows (each token appended
+  // by the session provider), the bubble shows the full accumulated text, not just the newest
+  // delta, and drops the typing indicator once the first token has arrived.
+  it("w_render_appends_streamed_tokens_as_they_arrive", () => {
+    const { rerender } = render(
+      <MessageBubble message={assistantMessage({ text: "Hel", status: "streaming" })} />,
+    );
+    expect(screen.getByText("Hel")).toBeInTheDocument();
+    expect(screen.queryByTestId("typing-word")).not.toBeInTheDocument();
+
+    rerender(<MessageBubble message={assistantMessage({ text: "Hello", status: "streaming" })} />);
+    expect(screen.getByText("Hello")).toBeInTheDocument();
+    expect(screen.queryByText("Hel")).not.toBeInTheDocument();
+  });
+
   describe("refusal + human hand-off (PLAN 9.6, ADR-0008 decision 6)", () => {
     it("shows the refusal banner and a mailto hand-off CTA for a refused turn", () => {
       render(
@@ -59,6 +75,28 @@ describe("MessageBubble", () => {
       );
       expect(screen.getByText(/routed to a human/i)).toBeInTheDocument();
       expect(screen.getByRole("link", { name: "test@gmail.com" })).toBeInTheDocument();
+    });
+
+    // panel w-render · substep p0-s0_5-reg-the-widget
+    // "Refusal: red banner, hand-off email link, feedback thumbs" — all three must appear
+    // together on a refused turn that carries a traceId (the standalone refusal tests above
+    // never pass a traceId, so they never exercise the feedback thumbs half of this bullet).
+    it("w_render_refusal_shows_red_banner_handoff_link_and_feedback_thumbs", () => {
+      render(
+        <ChatSessionProvider>
+          <MessageBubble message={assistantMessage({ status: "refused", traceId: "trace-1" })} />
+        </ChatSessionProvider>,
+      );
+
+      const banner = screen.getByText(/routed to a human/i);
+      expect(banner.className).toMatch(/text-danger\b/);
+      expect(banner.className).toMatch(/bg-danger-bg\b/);
+
+      const handoffLink = screen.getByRole("link", { name: "test@gmail.com" });
+      expect(handoffLink).toHaveAttribute("href", "mailto:test@gmail.com");
+
+      expect(screen.getByRole("button", { name: "Helpful" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Not helpful" })).toBeInTheDocument();
     });
 
     it("shows NO banner and NO hand-off CTA for an off_topic redirect — just the softer body", () => {
@@ -168,6 +206,24 @@ describe("MessageBubble", () => {
       />,
     );
     expect(screen.getByText(/source unavailable/i)).toBeInTheDocument();
+  });
+
+  // panel w-render · substep p0-s0_5-reg-the-widget
+  // "Citations: chips with a link; no URL renders as a span marked unavailable" — a citation
+  // without a url must render as a non-interactive <span> carrying an "unavailable" mark, never
+  // as a clickable link.
+  it("w_render_citation_without_url_renders_unavailable_span", () => {
+    render(
+      <MessageBubble
+        message={assistantMessage({
+          citations: [{ id: "1", pageId: "p1", title: "Runbook", url: "" }],
+        })}
+      />,
+    );
+    const badge = screen.getByTitle("Source link unavailable");
+    expect(badge.tagName).toBe("SPAN");
+    expect(badge).toHaveTextContent(/source unavailable/i);
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
   it("shows thumbs feedback controls for a complete turn with a traceId", async () => {

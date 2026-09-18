@@ -66,6 +66,34 @@ def test_short_but_specific_query_can_still_be_judged_not_ambiguous() -> None:
     assert classifier.called_with == ["How do I reset my password?"]
 
 
+def test_r1_clarify_twelve_words_is_the_heuristic_boundary() -> None:
+    """panel r1-clarify, check (b): the heuristic boundary is exactly 12 words — 11 or fewer falls
+    through to the classifier, 12 or more never does."""
+    eleven_words = "how do I configure single sign on for our enterprise Okta"
+    assert len(eleven_words.split()) == 11
+    classifier = _FakeClassifier(verdict=True)
+    decision = decide_clarification(eleven_words, [], classifier)
+    assert classifier.called_with == [eleven_words]
+    assert decision.is_ambiguous is True
+
+    twelve_words = eleven_words + " tenant"
+    assert len(twelve_words.split()) == 12
+    decision = decide_clarification(twelve_words, [], _RaisingClassifier())
+    assert decision.is_ambiguous is False
+    assert "heuristic" in decision.reason
+
+
+def test_r1_clarify_otherwise_exactly_one_classifier_call() -> None:
+    """panel r1-clarify, check (c): when the heuristic is inconclusive, the classifier is called
+    exactly once, and its verdict alone decides."""
+    classifier = _FakeClassifier(verdict=False)
+
+    decision = decide_clarification("What are the limits?", [], classifier)
+
+    assert classifier.called_with == ["What are the limits?"]
+    assert decision.is_ambiguous is False
+
+
 def test_history_is_accepted_but_not_required_to_be_non_empty() -> None:
     """Signature compatibility (ADR-0008 decision 1) — history isn't consulted yet (see module
     docstring), but passing a real one must not raise or change the outcome."""

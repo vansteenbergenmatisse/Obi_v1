@@ -4,12 +4,15 @@ Obi is an accuracy-first RAG chatbot over Omniboost's Confluence pages. It answe
 
 ## Where the truth lives
 
-- The design page *Obi, part by part* (HTML) in `docs/design/` is the source of truth for what every stage must do. Every box on it is a panel with a `today` line, a target, and tests. When code, plan or this file disagree with it, the design page wins and the other one gets fixed.
-- The action plan (HTML) in `docs/design/` is the only work list. Work on exactly one substep at a time.
-- `docs/plan/` holds the decisions the owner made, the delta between code and design, and the status ledger. The ledger is the honest record of progress: one entry per finished substep with commit, test count and deviations.
+- The design page *Obi, part by part* (HTML) in `docs/Final_docs/` is the source of truth for what every stage must do. Every box on it is a panel with a `today` line, a target, and tests. When code, plan or this file disagree with it, the design page wins and the other one gets fixed.
+- The action plan (HTML) in `docs/Final_docs/` is the only work list. Work on exactly one substep at a time.
+- `docs/Final_docs/ledger.md` is the honest record of progress: one entry per finished substep with commit, test count and deviations. Append-only; never edited to reflect anything except what was actually done and tested. Every entry names the substep by its title from the action plan, not just its id (e.g. `0.5.4 · The regression suite runs in CI as a gate`), so the entry reads standalone without opening the plan. Whenever an entry closes out something less than the full substep — a step skipped, re-run instead of run fresh, a proof not reproduced — say so and say why in one line, unprompted. Don't wait to be asked.
+- `docs/Final_docs/progress-log.md` is the ledger's plain-English companion: one 2-to-20-sentence entry per finished substep — what was done, why, which tests ran, what happened — for scanning the whole history at a glance without the ledger's technical density. Same append-only rule as the ledger: a new entry never edits an old one; a correction is always a new entry that says so.
+- `docs/plan/` holds the decisions the owner made (`decisions.md`) and the delta between code and design (`delta.md`), plus the lint/type/eval baseline (`baseline.md`). The owner's settled defaults themselves now live with the regression evidence (see below); `decisions.md` points there and keeps only the open/decision-needed tracking rows.
+- `final_docs/0.5-regression-tests/` is the single home for everything about the 0.5 regression phase — what was done and its proof. Start at its `README.md`, the index to every evidence file: the harness, the per-panel coverage map, the CI gate proof, the live isolation run, the release audit, and `regression-decisions.md` (the owner's settled calls the regression panels build their defaults to). Anything about regression goes here; look here first.
 - `docs/adr/` holds decisions of record. Changing one needs a new ADR.
 - `docs/future-ideas.md` holds deferred ideas: what each is, why it is deferred, where in this plan it would land, and the date added. Not scheduled work.
-- Everything else under `docs/` is archived in Phase 0 and is not authoritative until reviewed.
+- `docs/_archive/` holds superseded docs (pre-Phase-0 legacy, a frozen design snapshot). Not authoritative, never edited. Everything else under `docs/` is archived in Phase 0 and is not authoritative until reviewed.
 
 ## Commands
 

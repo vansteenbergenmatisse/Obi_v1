@@ -96,8 +96,15 @@ def test_vd_column_only_child_chunks_carry_an_embedding(gateway, settings):
 
 def test_vd_column_embedding_colocated_with_tags_and_tsv_on_same_row(gateway, settings):
     """panel vd-column · substep 0.5.3
-    Same row: an active child Chunk row's embedding, tags, and tsv all live on the one row, not
-    split across tables — a single row simultaneously carries all three, non-empty/non-null.
+    Same row: an active child Chunk row's embedding, text, tags, scope_state and tsv all live on
+    the one row, not split across tables — a single row simultaneously carries all five,
+    non-empty/non-null.
+
+    "text" is the child's own ``retrieval_content``/``display_content`` columns (panel vd-text:
+    "the verbatim child text, for citations"). "scope_state" has no separate column in the
+    schema — it is the same tags/labels state materialized on ``chunk.tags``, per
+    ``test_scope_tagging_retag.py``'s own disclosure for the identical claim; asserting
+    ``row.tags`` proves both names at once, not two independent surfaces.
 
     Page 1001 carries no recognized label, so its chunks' ``tags`` are empty; page 3001
     (fixture label ``obi-general-test``) is used here instead, since a non-empty ``tags`` list is
@@ -110,5 +117,7 @@ def test_vd_column_embedding_colocated_with_tags_and_tsv_on_same_row(gateway, se
     row = children[0]
     assert row.embedding is not None
     assert len(row.embedding) == dim
-    assert row.tags
+    assert row.retrieval_content
+    assert row.display_content
+    assert row.tags  # tags == scope_state, no separate column
     assert row.tsv

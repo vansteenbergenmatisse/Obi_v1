@@ -96,6 +96,54 @@ def test_reader_freed_but_anon_stays_denied(gateway, settings: Settings) -> None
             conn.commit()
 
 
+def test_s_anon_denied_by_rls_despite_grant_independent_of_reader_policy(
+    gateway, settings: Settings
+) -> None:
+    """panel s-anon · substep 0.5 regression
+    Duplicates test_reader_freed_but_anon_stays_denied's two anon-side assertions under this
+    panel's own name (established precedent: every check should be provable by a test literally
+    named for its own panel). The anon-like role holds GRANT SELECT on page_source throughout, yet
+    reads zero rows both before AND after rag_reader gets its own FOR SELECT TO rag_reader policy
+    -- proving RLS-with-no-matching-policy denies it despite the grant, and that the denial does
+    not depend on whatever policy exists (or doesn't) for rag_reader.
+    """
+    index_page(gateway, settings, _PAGE, 3)  # commits >=1 page_source row
+
+    eng = engine_mod.get_engine()
+    try:
+        # Reproduce the live Supabase posture: RLS enabled (no policy) + anon holds SELECT.
+        with eng.connect() as conn:
+            conn.execute(text(_ENSURE_ANON))
+            conn.execute(text(f"GRANT SELECT ON page_source TO {_ANON}"))
+            conn.execute(text("ALTER TABLE page_source ENABLE ROW LEVEL SECURITY"))
+            conn.commit()
+
+        with eng.connect() as conn:
+            anon_before = _count_as_anon(conn, "page_source")
+        assert anon_before == 0, (
+            "anon-like role read rows despite GRANT SELECT + no matching policy -> denial failed"
+        )
+
+        # rag_reader now gets its own policy; anon's denial must not depend on this either way.
+        with eng.connect() as conn:
+            schema.apply_reader_rls(conn)
+            conn.commit()
+
+        with eng.connect() as conn:
+            anon_after = _count_as_anon(conn, "page_source")
+        assert anon_after == 0, (
+            "anon-like role can read page_source once rag_reader has its own policy -> "
+            "denial was not independent of rag_reader's policy state"
+        )
+    finally:
+        with eng.connect() as conn:
+            schema.drop_reader_rls(conn)
+            for table in _READ_TABLES:
+                conn.execute(text(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY"))
+            conn.execute(text(f"REVOKE SELECT ON page_source FROM {_ANON}"))
+            conn.commit()
+
+
 def test_apply_reader_rls_leaves_chunk_source_isolation_intact(gateway, settings: Settings) -> None:
     """The reconcile must not touch ``chunk`` — its source-keyed default-deny policy still bites."""
     index_page(gateway, settings, _PAGE, 3)  # chunks land under source_id 'confluence:default'

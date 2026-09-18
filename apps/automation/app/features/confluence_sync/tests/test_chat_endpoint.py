@@ -22,9 +22,11 @@ from app.features.rag_agent import (
     VerifiedClaims,
     chat_router_module,
 )
+from app.features.retrieval import HybridRetriever
 from app.main import create_app
+from app.platform.clients import build_embedding_provider, build_reranker
 from app.platform.config import Settings
-from app.platform.db.engine import get_sessionmaker
+from app.platform.db.engine import get_reader_sessionmaker, get_sessionmaker
 
 from .test_answer_workflow import (
     _build_retriever,
@@ -33,7 +35,7 @@ from .test_answer_workflow import (
     _ImageAnalyzingGenerator,
     _SilentGenerator,
 )
-from .test_retrieval_eval import _index_corpus
+from .test_retrieval_eval import _build_policy, _index_corpus
 
 pytestmark = (
     pytest.mark.db
@@ -170,6 +172,30 @@ def test_history_must_end_on_user_turn(gateway, settings: Settings) -> None:
     assert resp.status_code == 400
 
 
+def test_r1_limits_history_must_end_on_a_user_turn(gateway, settings: Settings) -> None:
+    """panel r1-limits, check (b): history 1-20 turns, must end on a user turn."""
+    chat_settings = _chat_settings(settings)
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+    resp = client.post(
+        "/chat",
+        json={"history": [{"role": "assistant", "content": "hi"}]},
+        headers=_auth(),
+    )
+    assert resp.status_code == 400
+
+
+def test_r1_limits_empty_history_is_rejected(gateway, settings: Settings) -> None:
+    """panel r1-limits · substep p0-s0_5-reg-retrieval-stage-1
+    History must be 1 to 20 turns: zero turns is below the lower bound and is rejected
+    (enforced by `ChatRequestBody.history`'s `Field(min_length=1)`, not `_validate_history`,
+    so this is a distinct code path from the other history/message/image limit checks below).
+    """
+    chat_settings = _chat_settings(settings)
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+    resp = client.post("/chat", json={"history": []}, headers=_auth())
+    assert resp.status_code in (400, 422)
+
+
 def test_history_too_long_is_rejected(gateway, settings: Settings) -> None:
     chat_settings = _chat_settings(settings, chat_max_history_turns=2)
     client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
@@ -232,11 +258,45 @@ def test_oversized_image_is_rejected(gateway, settings: Settings) -> None:
     assert resp.status_code == 400
 
 
+def test_r1_limits_image_caps_enforced_on_every_turn_not_only_the_last(
+    gateway, settings: Settings
+) -> None:
+    """panel r1-limits · substep p0-s0_5-reg-retrieval-stage-1
+    Images are checked on every turn, not just the newest: a too-many-images violation on an
+    older, non-final turn is still rejected even though the final turn is itself within caps.
+    """
+    chat_settings = _chat_settings(settings, chat_max_images_per_turn=1)
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+    resp = client.post(
+        "/chat",
+        json={
+            "history": [
+                {
+                    "role": "user",
+                    "content": "what were in the earlier ones?",
+                    "images": [
+                        {"mediaType": "image/png", "data": "YQ=="},
+                        {"mediaType": "image/png", "data": "Yg=="},
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": "what's in this one?",
+                },
+            ]
+        },
+        headers=_auth(),
+    )
+    assert resp.status_code == 400
+
+
 def test_image_within_caps_is_accepted_and_analysis_reaches_the_done_event(
     gateway, settings: Settings
 ) -> None:
-    """PLAN 7.3/7.4, ADR-0009: an image-bearing turn is accepted, the vision-analysis call runs,
-    and its text arrives on the SSE `done` event's `imageAnalysis` field, distinct from `answer`."""
+    """panel r5-stream · substep p0-s0_5-reg-retrieval-stage-5
+    PLAN 7.3/7.4, ADR-0009: an image-bearing turn is accepted, the vision-analysis call runs,
+    and its text arrives on the SSE `done` event's `imageAnalysis` field, distinct from `answer`
+    (the `done (with imageAnalysis)` half of the Events check)."""
     _index_corpus(gateway, settings)
     chat_settings = _chat_settings(settings)
     service = AnswerService(
@@ -377,6 +437,30 @@ def test_numeric_principal_is_rejected_not_treated_as_space_wide_trust(
     assert resp.status_code == 422
 
 
+def test_r1_limits_rate_limit_keyed_on_token_subject_when_tokened(
+    gateway, settings: Settings
+) -> None:
+    """panel r1-limits, check (a): rate limiting is keyed on the verified token subject, not the
+    client IP, once a request carries a token — two different token subjects hitting the same
+    client each get their own bucket, and a subject that reuses its own bucket gets rate-limited."""
+    chat_settings = _chat_settings(settings, chat_rate_limit_per_minute=1)
+    service = _grounded_service(gateway, chat_settings)
+    app = create_app(settings=chat_settings, start_scheduler=False)
+    app.state.answer_service = service
+    app.state.token_verifier = _StubTokenVerifier()  # default: subject == the header value
+    client = TestClient(app)
+
+    body = {"history": [{"role": "user", "content": "hi"}]}
+    headers = _auth()
+    first_alice = client.post("/chat", json=body, headers={**headers, "x-obi-token": "alice"})
+    second_alice = client.post("/chat", json=body, headers={**headers, "x-obi-token": "alice"})
+    first_bob = client.post("/chat", json=body, headers={**headers, "x-obi-token": "bob"})
+
+    assert first_alice.status_code == 200
+    assert second_alice.status_code == 429
+    assert first_bob.status_code == 200
+
+
 def test_rate_limit_returns_429(gateway, settings: Settings) -> None:
     chat_settings = _chat_settings(settings, chat_rate_limit_per_minute=1)
     client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
@@ -432,6 +516,12 @@ def test_idempotency_cache_evicts_the_oldest_key_once_max_entries_exceeded(
 
 
 def test_grounded_answer_streams_start_token_citations_done(gateway, settings: Settings) -> None:
+    """panel r5-stream · substep p0-s0_5-reg-retrieval-stage-5
+    Events/format: a grounded turn streams `start`, at least one `token`, `citations`, then
+    `done`, each as its own `data: {json}` block followed by a blank line (`_parse_sse` enforces
+    the `data: ` prefix and blank-line separation on every block it parses) — and the
+    reassembled `token` deltas equal `done.answer` verbatim.
+    """
     _index_corpus(gateway, settings)
     chat_settings = _chat_settings(settings)
     client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
@@ -460,6 +550,225 @@ def test_grounded_answer_streams_start_token_citations_done(gateway, settings: S
     # the reassembled token stream matches the done answer
     tokens = "".join(e["delta"] for e in events if e["type"] == "token")
     assert tokens == done["answer"]
+
+
+def test_r5_stream_tokens_are_paced_at_the_configured_chunk_size_and_interval(
+    gateway, settings: Settings, monkeypatch
+) -> None:
+    """panel r5-stream · substep p0-s0_5-reg-retrieval-stage-5
+    Events: `token` deltas are exactly `chat_token_chunk_chars` characters (the panel's "40 chars"
+    default) except possibly the last, and each token event is paced by one
+    `asyncio.sleep(chat_stream_interval_ms / 1000)` call (the panel's "every 15 ms") — proven
+    without a real wall-clock wait by recording `asyncio.sleep` calls instead of awaiting them.
+    Deliberately does NOT use `_chat_settings` (which overrides both knobs for test speed): this
+    test pins the panel's actual defaults, not the fast-test override every other test here uses.
+    """
+    _index_corpus(gateway, settings)
+    chat_settings = settings.model_copy(
+        update={"chat_api_key": _API_KEY, "chat_rate_limit_per_minute": 100}
+    )
+    assert chat_settings.chat_token_chunk_chars == 40
+    assert chat_settings.chat_stream_interval_ms == 15
+    sleep_calls: list[float] = []
+
+    async def _fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr(chat_router_module.asyncio, "sleep", _fake_sleep)
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+
+    resp = client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": "How do I request access to core systems?"}]},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 200
+    events = _parse_sse(resp.text)
+    token_events = [e for e in events if e["type"] == "token"]
+    done = next(e for e in events if e["type"] == "done")
+    # this corpus/generator combination produces an answer longer than one chunk — otherwise the
+    # chunk-size assertion below would pass trivially on a single, short chunk.
+    assert len(token_events) >= 2
+    for event in token_events[:-1]:
+        assert len(event["delta"]) == 40
+    assert len(token_events[-1]["delta"]) <= 40
+    assert "".join(e["delta"] for e in token_events) == done["answer"]
+    # one sleep call per emitted token event, each for the configured interval
+    assert sleep_calls == [0.015] * len(token_events)
+
+
+def test_r5_stream_generation_failure_after_200_emits_sse_error_not_a_5xx(
+    gateway, settings: Settings
+) -> None:
+    """panel r5-stream · substep p0-s0_5-reg-retrieval-stage-5
+    Error after 200: the response has already committed to a 200 status (StreamingResponse starts
+    sending as soon as the generator yields its first `start` event) by the time an unexpected
+    failure inside `service.answer` can happen, so that failure must surface as an SSE `type:
+    error` event on the still-200 stream, never an HTTP 5xx."""
+    chat_settings = _chat_settings(settings)
+
+    class _RaisingService:
+        def answer(self, history, auth: AuthContext) -> Answer:
+            raise RuntimeError("boom")
+
+    client = _client_with_service(chat_settings, _RaisingService())
+
+    resp = client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": "How do I request access?"}]},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 200  # not a 5xx
+    events = _parse_sse(resp.text)
+    assert events[0]["type"] == "start"
+    assert events[-1]["type"] == "error"
+    assert events[-1]["error"]
+
+
+class _CitingGeneratorFullProtocol(_CitingGenerator):
+    """`_CitingGenerator` (test_answer_workflow.py) predates `generate_identity` being added to
+    the `AnswerGenerator` protocol, so pyright flags every existing call site — a pre-existing
+    gap out of scope here. Rather than adding one more instance of that same error, this local
+    subclass completes the protocol for this file's one new use (never called: no test turn here
+    is an identity question)."""
+
+    def generate_identity(self, query: str, facts) -> str:
+        raise AssertionError(
+            "generate_identity must not be called: no test turn is an identity question"
+        )
+
+
+def test_r5_stream_trace_row_records_raw_query_candidates_scores_scopes_latency_answer_citations(
+    gateway, settings: Settings
+) -> None:
+    """panel r5-stream · substep p0-s0_5-reg-retrieval-stage-5
+    Trace: one `query_trace` row on the writer engine carries raw/rewritten query, retrieved
+    candidates (page ids + chunk ids), rerank scores, allowed sources, allowed knowledge scopes,
+    latency, the final answer, and citations — the full column set the panel names, not just the
+    answer/rewritten_query/citations subset `test_answer_workflow.py` already checks.
+
+    `allowed_knowledge_scopes` is only ever non-null when the PLAN 10.4 rollout flag
+    (`enable_knowledge_scope_filtering`) is on (off by default, see `Settings` and
+    `test_retrieval_knowledge_scope.py`), so this builds its own retriever with the flag enabled
+    rather than reusing `_build_retriever`/`_grounded_service`, which leave it at the off
+    default."""
+    _index_corpus(gateway, settings)
+    chat_settings = _chat_settings(settings)
+    retriever = HybridRetriever(
+        get_reader_sessionmaker(),
+        build_embedding_provider(chat_settings),
+        _build_policy(gateway),
+        build_reranker(chat_settings),
+        enable_knowledge_scope_filtering=True,
+        trace_sessionmaker=get_sessionmaker(),
+    )
+    service = AnswerService(
+        retriever, _EchoRewriter(), _CitingGeneratorFullProtocol(), get_sessionmaker()
+    )
+    client = _client_with_service(chat_settings, service)
+    question = "How do I request access to core systems?"
+
+    resp = client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": question}]},
+        headers=_auth(),
+    )
+    assert resp.status_code == 200
+    done = _parse_sse(resp.text)[-1]
+    trace_id = int(done["traceId"])
+
+    with get_sessionmaker()() as s:
+        row = s.execute(
+            text(
+                "SELECT raw_query, rewritten_query, retrieved_page_ids, retrieved_chunk_ids, "
+                "rerank_scores, allowed_sources, allowed_knowledge_scopes, latency_ms, answer, "
+                "citations FROM query_trace WHERE id = :id"
+            ),
+            {"id": trace_id},
+        ).one()
+
+    assert row.raw_query == question  # _EchoRewriter echoes verbatim, so raw == rewritten here
+    assert row.rewritten_query == question
+    assert row.retrieved_page_ids  # candidates
+    assert row.retrieved_chunk_ids
+    assert row.rerank_scores  # scores
+    assert row.allowed_sources == ["confluence:default"]
+    assert row.allowed_knowledge_scopes == ["obi-general-test"]
+    assert isinstance(row.latency_ms, int) and row.latency_ms >= 0
+    assert row.answer == done["answer"]
+    assert row.citations["markers"]
+
+
+def test_s_audit_query_trace_persists_every_named_field_plus_subject_and_feedback(
+    gateway, settings: Settings
+) -> None:
+    """panel s-audit · substep p0-s0_5-reg-security (Protect)
+    Duplicates, under this panel's own name, the full per-query column set already proven by
+    `test_r5_stream_...` (allowed_sources, allowed_knowledge_scopes, candidates, scores, answer,
+    citations) plus `test_subject_hash_persisted_is_the_hash_not_the_raw_subject`'s subject-hash
+    proof (test_answer_service.py) and `test_feedback_updates_trace_row`'s feedback proof — one
+    end-to-end request through the real `/chat` and `PATCH /chat/{id}/feedback` endpoints, so the
+    audit trail's own panel has a single test covering every field it names (decision excluded:
+    the panel's own `today` line says that column stays target-only until it is built)."""
+    from app.shared.hashing import sha256_text
+
+    _index_corpus(gateway, settings)
+    chat_settings = _chat_settings(settings)
+    retriever = HybridRetriever(
+        get_reader_sessionmaker(),
+        build_embedding_provider(chat_settings),
+        _build_policy(gateway),
+        build_reranker(chat_settings),
+        enable_knowledge_scope_filtering=True,
+        trace_sessionmaker=get_sessionmaker(),
+    )
+    service = AnswerService(
+        retriever, _EchoRewriter(), _CitingGeneratorFullProtocol(), get_sessionmaker()
+    )
+    app = create_app(settings=chat_settings, start_scheduler=False)
+    app.state.answer_service = service
+    app.state.token_verifier = _StubTokenVerifier()  # default: subject == the header value
+    client = TestClient(app)
+    question = "How do I request access to core systems?"
+
+    resp = client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": question}]},
+        headers={**_auth(), "x-obi-token": "user-s-audit"},
+    )
+    assert resp.status_code == 200
+    done = _parse_sse(resp.text)[-1]
+    trace_id = int(done["traceId"])
+
+    patch_resp = client.patch(
+        f"/chat/{trace_id}/feedback",
+        json={"feedback": 1},
+        headers={**_auth(), "x-obi-token": "user-s-audit"},
+    )
+    assert patch_resp.status_code == 200
+
+    with get_sessionmaker()() as s:
+        row = s.execute(
+            text(
+                "SELECT retrieved_page_ids, retrieved_chunk_ids, rerank_scores, allowed_sources, "
+                "allowed_knowledge_scopes, answer, citations, feedback, subject_hash "
+                "FROM query_trace WHERE id = :id"
+            ),
+            {"id": trace_id},
+        ).one()
+
+    assert row.retrieved_page_ids  # candidates
+    assert row.retrieved_chunk_ids
+    assert row.rerank_scores  # scores
+    assert row.allowed_sources == ["confluence:default"]
+    assert row.allowed_knowledge_scopes == ["obi-general-test"]
+    assert row.answer == done["answer"]
+    assert row.citations["markers"]
+    assert row.feedback == 1
+    assert row.subject_hash == sha256_text("user-s-audit").hex()
+    assert row.subject_hash != "user-s-audit"
 
 
 def test_refusal_streams_done_with_refused_true(gateway, settings: Settings) -> None:
@@ -626,6 +935,39 @@ def test_chat_request_log_has_no_refusal_reason_when_not_refused(
     assert chat_request_logs[0]["refusal_reason"] is None
 
 
+def test_r1_idem_header_is_optional(gateway, settings: Settings) -> None:
+    """panel r1-idem, check (a): the `Idempotency-Key` header is optional — a request that omits
+    it entirely still gets a normal, successful response."""
+    _index_corpus(gateway, settings)
+    chat_settings = _chat_settings(settings)
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+    body = {"history": [{"role": "user", "content": "How do I request access?"}]}
+
+    resp = client.post("/chat", json=body, headers=_auth())
+
+    assert resp.status_code == 200
+
+
+def test_r1_idem_cache_entries_are_bounded(gateway, settings: Settings) -> None:
+    """panel r1-idem, check (c): entries are bounded — once `max_entries` is exceeded, the oldest
+    key stops being a cache hit rather than growing the cache forever."""
+    _index_corpus(gateway, settings)
+    chat_settings = _chat_settings(settings, chat_idempotency_cache_max_entries=2)
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+    body = {"history": [{"role": "user", "content": "How do I request access?"}]}
+
+    first = _parse_sse(
+        client.post("/chat", json=body, headers={**_auth(), "idempotency-key": "k1"}).text
+    )
+    client.post("/chat", json=body, headers={**_auth(), "idempotency-key": "k2"})
+    client.post("/chat", json=body, headers={**_auth(), "idempotency-key": "k3"})  # evicts k1
+
+    replay = _parse_sse(
+        client.post("/chat", json=body, headers={**_auth(), "idempotency-key": "k1"}).text
+    )
+    assert first[-1]["traceId"] != replay[-1]["traceId"]  # k1 was evicted, not replayed
+
+
 def test_idempotency_key_replays_cached_answer_without_rerunning(
     gateway, settings: Settings
 ) -> None:
@@ -643,6 +985,39 @@ def test_idempotency_key_replays_cached_answer_without_rerunning(
     first_trace = first[-1]["traceId"]
     second_trace = second[-1]["traceId"]
     assert first_trace == second_trace  # replayed, not a fresh trace row
+
+
+def test_r1_idem_cache_key_is_scoped_to_token_subject_not_body_principal(
+    gateway, settings: Settings
+) -> None:
+    """panel r1-idem, check (b):
+    Cache key: sha256(key | history | principal | knowledge_scope), target: token subject instead
+    of body principal. `_idempotency_cache_key` (router.py) binds the `Idempotency-Key` header to
+    the verified `AuthContext.token_subject`, not any body-supplied principal. This is the HTTP-
+    level proof the audit found missing: `test_answer_cache_does_not_cross_token_subject_boundary`
+    only exercises the OTHER cache (`CachingAnswerService`/`answer_cache._cache_key`) with no
+    Idempotency-Key header at all, so it proves nothing about this path. Two different token
+    subjects sending the identical Idempotency-Key header, same history, must never share a
+    cached answer."""
+    _index_corpus(gateway, settings)
+    chat_settings = _chat_settings(settings)
+    service = _grounded_service(gateway, chat_settings)
+    app = create_app(settings=chat_settings, start_scheduler=False)
+    app.state.answer_service = service
+    app.state.token_verifier = _StubTokenVerifier()  # default: subject == the header value
+    client = TestClient(app)
+
+    body = {"history": [{"role": "user", "content": "How do I request access?"}]}
+    headers = {**_auth(), "idempotency-key": "shared-key"}
+
+    user_a = _parse_sse(
+        client.post("/chat", json=body, headers={**headers, "x-obi-token": "user-a"}).text
+    )
+    user_b = _parse_sse(
+        client.post("/chat", json=body, headers={**headers, "x-obi-token": "user-b"}).text
+    )
+
+    assert user_a[-1]["traceId"] != user_b[-1]["traceId"]
 
 
 def test_answer_cache_replays_without_rerunning_retrieval(gateway, settings: Settings) -> None:
@@ -696,6 +1071,9 @@ def test_create_app_wires_the_answer_cache_by_default(settings: Settings) -> Non
 
 
 def test_feedback_updates_trace_row(gateway, settings: Settings) -> None:
+    """panel r5-feedback · substep p0-s0_5-reg-retrieval-stage-5
+    `PATCH /chat/{trace_id}/feedback` with `feedback: 1` writes `query_trace.feedback` on the
+    writer engine."""
     _index_corpus(gateway, settings)
     chat_settings = _chat_settings(settings)
     client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
@@ -718,13 +1096,34 @@ def test_feedback_updates_trace_row(gateway, settings: Settings) -> None:
 
 
 def test_feedback_requires_auth(gateway, settings: Settings) -> None:
+    """panel r5-feedback · substep p0-s0_5-reg-retrieval-stage-5
+    Auth same as /chat: a request with no `Authorization` header at all is rejected."""
     chat_settings = _chat_settings(settings)
     client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
     resp = client.patch("/chat/1/feedback", json={"feedback": 1})
     assert resp.status_code == 401
 
 
+def test_r5_feedback_wrong_api_key_is_rejected(gateway, settings: Settings) -> None:
+    """panel r5-feedback · substep p0-s0_5-reg-retrieval-stage-5
+    Auth same as /chat: a *present but wrong* bearer token is rejected too — the pre-existing
+    `test_feedback_requires_auth` only proves a *missing* header 401s, which is a distinct branch
+    through `_verify_api_key` (empty token) from a wrong-but-well-formed one (mirrors `/chat`'s
+    own `test_key_outside_current_and_previous_is_rejected`, proving the same auth check both
+    endpoints share actually rejects a wrong key, not just an absent one)."""
+    chat_settings = _chat_settings(settings)
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+    resp = client.patch(
+        "/chat/1/feedback",
+        json={"feedback": 1},
+        headers={"authorization": "Bearer some-other-key"},
+    )
+    assert resp.status_code == 401
+
+
 def test_feedback_rejects_invalid_value(gateway, settings: Settings) -> None:
+    """panel r5-feedback · substep p0-s0_5-reg-retrieval-stage-5
+    Body `feedback` is restricted to `1 | -1`: any other value is a 422."""
     chat_settings = _chat_settings(settings)
     client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
     resp = client.patch("/chat/1/feedback", json={"feedback": 2}, headers=_auth())

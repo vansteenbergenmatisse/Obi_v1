@@ -35,7 +35,11 @@ const ATTACH_ICON_PATH =
   "M21 12.5l-8.5 8.5a6 6 0 0 1-8.5-8.5L12.5 4a4 4 0 0 1 5.7 5.7L9.7 18.2a2 2 0 0 1-2.9-2.9l8-8";
 const SEND_ICON_PATH = "M12 19V5M6 11l6-6 6 6";
 
-const MAX_ATTACHMENTS = 4;
+const MAX_ATTACHMENTS = 3;
+/** Per-image byte cap, mirroring the backend `chat_max_image_bytes` (decision w-composer-images:
+ * ≤ 3 MB, decimal). An image over this is refused here so it never reaches the proxy or the
+ * backend's 400 — the backend cap stays as defense in depth. */
+const MAX_IMAGE_BYTES = 3_000_000;
 
 /** Reads a `File` as base64 (no data-URI prefix, per `ImageAttachment`'s wire shape) without
  * releasing its still-live `previewUrl` — that URL keeps backing the message-list render. */
@@ -65,6 +69,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   const copy = getCopy(locale);
   const [value, setValue] = useState("");
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
+  const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const nextAttachmentId = useRef(0);
@@ -94,10 +99,25 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   function addAttachments(files: File[]) {
     const images = files.filter((file) => file.type.startsWith("image/"));
     if (images.length === 0) return;
+
+    // Refuse oversized images here so they never reach the proxy/backend (the backend's 400 is
+    // defense in depth). An over-limit count is capped and reported, not silently dropped.
+    const withinSize = images.filter((file) => file.size <= MAX_IMAGE_BYTES);
+    const anyOversized = withinSize.length < images.length;
+    const room = Math.max(0, MAX_ATTACHMENTS - attachments.length);
+    const accepted = withinSize.slice(0, room);
+
+    if (anyOversized) {
+      setError(copy.imageTooLarge);
+    } else if (withinSize.length > room) {
+      setError(copy.imageTooMany);
+    } else {
+      setError(null);
+    }
+
+    if (accepted.length === 0) return;
     setAttachments((current) => {
-      const room = MAX_ATTACHMENTS - current.length;
-      if (room <= 0) return current;
-      const additions = images.slice(0, room).map((file) => {
+      const additions = accepted.map((file) => {
         nextAttachmentId.current += 1;
         return {
           id: `attachment-${nextAttachmentId.current}`,
@@ -110,6 +130,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
   }
 
   function removeAttachment(id: string) {
+    setError(null);
     setAttachments((current) => {
       const target = current.find((attachment) => attachment.id === id);
       if (target) URL.revokeObjectURL(target.previewUrl);
@@ -151,6 +172,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     const pendingAttachments = attachments;
     setAttachments([]);
     setValue("");
+    setError(null);
 
     let images: SentImage[] = [];
     try {
@@ -229,6 +251,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
           </button>
         </div>
       </div>
+      {error && (
+        <p role="alert" className="text-center text-xs text-danger">
+          {error}
+        </p>
+      )}
       {attachments.length > 0 && (
         <p className="text-center text-xs text-text-muted">{copy.imageDisclosure}</p>
       )}

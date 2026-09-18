@@ -5,6 +5,9 @@
  * specifically — the one genuinely new piece of behavior this extraction adds; streaming/
  * citation/feedback/abort behavior is already locked in by `chat-panel.test.tsx`.
  */
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -168,6 +171,38 @@ describe("ChatSessionProvider", () => {
     expect((requestBody as { knowledgeScope?: string }).knowledgeScope).toBe("obi-mews-test");
   });
 
+  it("ov_widget_embedded_with_scope_from_its_mount_config", async () => {
+    // panel ov-widget · substep p0-s0_5-reg-system-overview
+    // System-overview step 1: "The widget is embedded in a platform's page with a scope from its
+    // config." The embedding page declares its platform scope once as the mount config
+    // (`knowledgeScope` prop); when the user asks, that configured scope is what the widget's own
+    // proxy request carries — the scope comes from the mount config, not from anything the user typed.
+    let requestUrl: unknown;
+    let requestBody: unknown;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      requestUrl = url;
+      requestBody = init?.body ? JSON.parse(init.body as string) : undefined;
+      return Promise.resolve(
+        okStreamResponse([
+          sse({ type: "start", conversationId: "conv-1" }),
+          sse({ type: "done", answer: "hi", citations: [], traceId: "trace-1", refused: false }),
+        ]),
+      );
+    });
+
+    render(
+      <ChatSessionProvider knowledgeScope="obi-mews-test">
+        <Harness />
+      </ChatSessionProvider>,
+    );
+
+    await userEvent.click(screen.getByText("send"));
+    await waitFor(() => expect(requestBody).toBeDefined());
+
+    expect(requestUrl).toBe("/api/chat");
+    expect((requestBody as { knowledgeScope?: string }).knowledgeScope).toBe("obi-mews-test");
+  });
+
   it("applies a runtime scope change (the PLAN 10.8 switcher) to the next outgoing request", async () => {
     let requestBody: unknown;
     fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
@@ -229,6 +264,74 @@ describe("ChatSessionProvider", () => {
     await waitFor(() => expect(requestBody).toBeDefined());
 
     expect((requestBody as { knowledgeScope?: string }).knowledgeScope).toBeUndefined();
+  });
+
+  it("w_scope_set_once_from_mount_prop_ignores_later_prop_changes", async () => {
+    // panel w-scope · substep p0-s0_5-reg-the-widget
+    // "Set: once, by the embedding page, as the knowledgeScope prop" — the session seeds its scope
+    // from the prop only at mount (`useState(initialKnowledgeScope)`), it is never re-read from the
+    // prop afterward. Prove that a later re-render with a *different* prop value does not change
+    // what the next outgoing request carries; only the 10.8 dev switcher (`setKnowledgeScope`,
+    // covered separately) can change it after mount.
+    let requestBody: unknown;
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+      requestBody = init?.body ? JSON.parse(init.body as string) : undefined;
+      return Promise.resolve(
+        okStreamResponse([
+          sse({ type: "start", conversationId: "conv-1" }),
+          sse({ type: "done", answer: "hi", citations: [], traceId: "trace-1", refused: false }),
+        ]),
+      );
+    });
+
+    const { rerender } = render(
+      <ChatSessionProvider knowledgeScope="obi-mews-test">
+        <Harness />
+      </ChatSessionProvider>,
+    );
+
+    // The embedding page re-renders with a different scope prop — this must NOT reach the session:
+    // a real embed only ever sets this once, and the session must behave the same way.
+    rerender(
+      <ChatSessionProvider knowledgeScope="obi-toast-test">
+        <Harness />
+      </ChatSessionProvider>,
+    );
+
+    await userEvent.click(screen.getByText("send"));
+    await waitFor(() => expect(requestBody).toBeDefined());
+
+    expect((requestBody as { knowledgeScope?: string }).knowledgeScope).toBe("obi-mews-test");
+  });
+
+  it("w_scope_sent_on_every_outgoing_request_not_just_the_first", async () => {
+    // panel w-scope · substep p0-s0_5-reg-the-widget
+    // "Sent: on every request as knowledgeScope" — send two separate turns in the same session and
+    // prove knowledgeScope rides on both request bodies, not only the first.
+    const requestBodies: unknown[] = [];
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+      requestBodies.push(init?.body ? JSON.parse(init.body as string) : undefined);
+      return Promise.resolve(
+        okStreamResponse([
+          sse({ type: "start", conversationId: "conv-1" }),
+          sse({ type: "done", answer: "hi", citations: [], traceId: "trace-1", refused: false }),
+        ]),
+      );
+    });
+
+    render(
+      <ChatSessionProvider knowledgeScope="obi-mews-test">
+        <Harness />
+      </ChatSessionProvider>,
+    );
+
+    await userEvent.click(screen.getByText("send"));
+    await waitFor(() => expect(requestBodies).toHaveLength(1));
+    await userEvent.click(screen.getByText("send"));
+    await waitFor(() => expect(requestBodies).toHaveLength(2));
+
+    expect((requestBodies[0] as { knowledgeScope?: string }).knowledgeScope).toBe("obi-mews-test");
+    expect((requestBodies[1] as { knowledgeScope?: string }).knowledgeScope).toBe("obi-mews-test");
   });
 
   it("attaches images to the newest history turn only, and reads imageAnalysis back off done", async () => {
@@ -366,5 +469,33 @@ describe("ChatSessionProvider", () => {
     const secondHistory = (requestBodies[1] as { history: Array<Record<string, unknown>> }).history;
     expect(secondHistory).toHaveLength(3);
     expect(secondHistory[1]).toMatchObject({ role: "assistant", content: "Which kind of limit?" });
+  });
+});
+
+describe("ChatSessionProvider mount (panel w-panel · State)", () => {
+  // Drift guard, same technique as `knowledge-scopes.test.ts`: rendering the real `(site)/layout.tsx`
+  // (an `<html>`/`<body>` root layout) through Testing Library isn't representative of how Next
+  // mounts it, so this asserts the actual source instead — deterministic, no DOM involved.
+  const here = dirname(fileURLToPath(import.meta.url));
+  // apps/web/src/features/chat/tests → apps/web/src/app
+  const appDir = resolve(here, "../../../app");
+
+  it("w_panel_state_one_chat_session_provider_mounted_once_in_the_sites_root_layout", () => {
+    const siteLayoutSource = readFileSync(resolve(appDir, "(site)/layout.tsx"), "utf8");
+    const mountCount = (siteLayoutSource.match(/<ChatSessionProvider\b/g) ?? []).length;
+    expect(mountCount).toBe(1);
+  });
+
+  it("w_panel_state_other_root_layouts_do_not_mount_a_second_independent_session", () => {
+    // The `/embed` frame and `/test-hosts/*` fake host pages are Next's "multiple root layouts"
+    // siblings of `(site)/layout.tsx` (see its docstring) — neither may mount its own
+    // `ChatSessionProvider` at the layout level, or the widget/full-page surfaces would read two
+    // independent, contradictory conversations instead of the one PLAN 4.7.4 requires.
+    const embedLayoutSource = readFileSync(resolve(appDir, "embed/layout.tsx"), "utf8");
+    const testHostsLayoutSource = readFileSync(resolve(appDir, "test-hosts/layout.tsx"), "utf8");
+    // Match only a JSX mount (`<ChatSessionProvider`), not the surrounding docstrings' prose
+    // mentions of the name.
+    expect(embedLayoutSource).not.toMatch(/<ChatSessionProvider\b/);
+    expect(testHostsLayoutSource).not.toMatch(/<ChatSessionProvider\b/);
   });
 });

@@ -1,6 +1,6 @@
 # Obi, part by part — the complete brief, A to Z
 
-Generated on 2026-09-16 from `../../docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
+Generated on 2026-09-18 from `docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
 
 ## 0 · How to read this brief
 
@@ -115,7 +115,7 @@ _Workflow label shown in the drawer: System overview_
   | Setting | Value |
   |---|---|
   | What we read | page meta, body (storage format), labels, read restrictions, attachments |
-  | APIs used | v2 pages and spaces; v1 for labels, restrictions, group members, attachment download |
+  | APIs used | v2 pages, spaces and labels; v1 for restrictions, group members, attachment download |
   | Client | HttpConfluenceClient: timeout, retry on 5xx, circuit breaker after 5 failures |
   | Test double | FixtureConfluenceGateway reads tests/fixtures/confluence, so CI never calls the network |
 - Where in the code:
@@ -962,7 +962,7 @@ Each event carries the page id, the page version, the space id, the actor, a tim
 | Field | What it is | Limit |
 |---|---|---|
 | history | the turns so far, must end on a user turn | 20 turns, 4000 chars each |
-| images | base64 images on the newest turn only | 4 per turn, 5 MB each |
+| images | base64 images on the newest turn only | 3 per turn, 3 MB each (decision w-composer-images, substep 4.2.7) |
 | knowledgeScope | which platform the widget sits in, for example `mews` | a lowercase slug, checked for shape and against the list; unknown slug: 400. The token decides the scope. A known slug that disagrees with the token is ignored and logged [Implemented, needs changing] |
 | principal | who is asking, for page-level access | derived from the token's `sub` through the identity mapping, never from the body [Implemented, needs changing] |
 | Authorization header | one shared server key today; a key per widget host plus a signed user token from the host backend in the target (section 03.2) | fail closed if missing [Planned] |
@@ -2726,9 +2726,9 @@ class AuthContext:
 - Settings and rules:
   | Setting | Value |
   |---|---|
-  | Rate | 20 per minute; keyed on the token subject in the target; on the client IP today and for any request without a token (trusted-proxy X-Forwarded-For) |
+  | Rate | 20 per minute; keyed on the token subject when there is a token, otherwise on request.client.host. No X-Forwarded-For parsing today: TRUSTED_PROXY_HOPS defaults to 0, set per environment in 7.1.1 once the browser→proxy→API chain is known (decision r1-limits-ipkey, 2026-09-18) |
   | History | 1 to 20 turns, must end on a user turn, 4000 chars per turn |
-  | Images | 4 per turn, 5 MB each, checked on every turn |
+  | Images | 3 per turn, 3 MB each, checked on every turn (decision w-composer-images, substep 4.2.7) |
   | Scope slug | ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$ |
   | Principal | all-digit values rejected (they would read as space-wide trust) |
   | LLM calls | 30 s timeout, 2 retries, breaker after 5 |
@@ -3756,12 +3756,12 @@ _Workflow label shown in the drawer: The widget_
 ##### Panel `w-composer` · The composer · [Implemented]
 - Kind: UI
 - In plain words: Where the person types, pastes, or attaches a picture.
-- Today: 4 images per turn; no size check exists anywhere in apps/web — the 5 MB figure below is not enforced.
+- Today: ≤ 3 images per turn, each ≤ 3 MB; over either limit the composer shows a user-facing error and does not attach, and the backend rejects an over-limit request with a 400 the proxy forwards (decision w-composer-images).
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | Inputs | text, file picker, clipboard paste, the header's screenshot button |
-  | Images | base64 on the newest turn only, 4 per turn, 5 MB each |
+  | Images | base64 on the newest turn only, never stored; target ≤ 3 per turn, each ≤ 3 MB; over the limit shows a user-facing error (compress the image). Today (needs change, decision w-composer-images 2026-09-18): 4 per turn, no byte-size check |
   | Empty text plus image | allowed; the backend skips search and still analyzes the image |
   | Disclosure | we do not check images for personal info; skip sensitive screenshots |
 - Where in the code:
@@ -4211,6 +4211,7 @@ _Workflow label shown in the drawer: The vector database_
 ##### Panel `vd-hnsw` · The HNSW index · [Implemented]
 - Kind: Vector database
 - In plain words: A fast lookup map over all the number codes that finds the closest ones without checking every row.
+- Today: Regression-tested: dedicated tests pin the index's name, its halfvec/cosine shape above the 2000-dim cap (vector_cosine_ops at or below it, disclosed), and its m=16/ef_construction=200 build params.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4232,6 +4233,7 @@ _Workflow label shown in the drawer: The vector database_
 ##### Panel `vd-rls` · Row security covers vectors too · [Implemented]
 - Kind: Vector database
 - In plain words: The row locks apply to the numbers too, so a hidden row never comes out of a vector search.
+- Today: Regression-tested: dedicated tests pin that embedding lives on chunk, that both the source and knowledge-scope SELECT policies are registered on chunk, and that a raw nearest-neighbor query as the reader never returns a row on a forbidden source even when it is the closest match.
 - Steps:
   1. The vector sits on the chunk row.
   2. The source and scope policies apply to every SELECT on chunk.
@@ -4249,6 +4251,7 @@ _Workflow label shown in the drawer: The vector database_
 ##### Panel `vd-keyword` · The keyword side · [Implemented]
 - Kind: Vector database
 - In plain words: Next to the numbers, each piece has a word index that finds exact words the numbers might miss.
+- Today: The keyword-search tsv column, its GIN index and the OR-joined/ts_rank query are each pinned by a dedicated panel-id-named regression test.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4361,7 +4364,7 @@ _Workflow label shown in the drawer: Security_
   |---|---|
   | Host key | per widget host, server to server, never in the browser |
   | User token | signed by the trusted issuer (host backend or agreed auth service): iss, aud, sub, iat, exp, company_id, company_name, integration; reaches the iframe by postMessage only |
-  | Rate limit key | the token subject; client IP only on the pre-token path, with trusted-proxy X-Forwarded-For parsing |
+  | Rate limit key | the token subject; request.client.host on the pre-token path. No X-Forwarded-For parsing today (TRUSTED_PROXY_HOPS=0, set in 7.1.1) — see decision r1-limits-ipkey |
   | Network | the backend stays private to the proxy; only the proxy holds the host key |
 - Where in the code:
   - `rag_agent/server/router.py:254-267` — _verify_api_key

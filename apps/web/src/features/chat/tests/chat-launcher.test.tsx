@@ -37,4 +37,12 @@ describe("ChatLauncher", () => {
       "launcher-pulse",
     );
   });
+
+  it("w_launcher_panel_opens_from_either_the_launcher_or_the_teaser", async () => {
+    // panel w-launcher: the panel opens from the launcher button.
+    const onOpen = vi.fn();
+    renderLauncher({ onOpen, pulsing: false });
+    await userEvent.click(screen.getByRole("button", { name: "Open assistant" }));
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
 });

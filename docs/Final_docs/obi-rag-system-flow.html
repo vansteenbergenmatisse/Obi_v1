@@ -760,7 +760,7 @@ details.sec[open]>summary .show{display:none}
     <table>
       <tr><th>Field</th><th>What it is</th><th>Limit</th></tr>
       <tr><td>history</td><td>the turns so far, must end on a user turn</td><td>20 turns, 4000 chars each</td></tr>
-      <tr><td>images</td><td>base64 images on the newest turn only</td><td>4 per turn, 5 MB each</td></tr>
+      <tr><td>images</td><td>base64 images on the newest turn only</td><td>3 per turn, 3 MB each (decision w-composer-images, substep 4.2.7)</td></tr>
       <tr><td>knowledgeScope</td><td>which platform the widget sits in, for example <code>mews</code></td><td>a lowercase slug, checked for shape and against the list; unknown slug: 400. The token decides the scope. A known slug that disagrees with the token is ignored and logged <span class="tag t-bug">Implemented, needs changing</span></td></tr>
       <tr><td>principal</td><td>who is asking, for page-level access</td><td>derived from the token's <code>sub</code> through the identity mapping, never from the body <span class="tag t-bug">Implemented, needs changing</span></td></tr>
       <tr><td>Authorization header</td><td>one shared server key today; a key per widget host plus a signed user token from the host backend in the target (<a href="#embed">section 03.2</a>)</td><td>fail closed if missing <span class="tag t-new">Planned</span></td></tr>
@@ -2432,7 +2432,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 [
 "APIs used",
-"v2 pages and spaces; v1 for labels, restrictions, group members, attachment download"
+"v2 pages, spaces and labels; v1 for restrictions, group members, attachment download"
 ],
 [
 "Client",
@@ -4692,7 +4692,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "f": [
 [
 "Rate",
-"20 per minute; keyed on the token subject in the target; on the client IP today and for any request without a token (trusted-proxy X-Forwarded-For)"
+"20 per minute; keyed on the token subject when there is a token, otherwise on request.client.host. No X-Forwarded-For parsing today: TRUSTED_PROXY_HOPS defaults to 0, set per environment in 7.1.1 once the browser→proxy→API chain is known (decision r1-limits-ipkey, 2026-09-18)"
 ],
 [
 "History",
@@ -4700,7 +4700,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 [
 "Images",
-"4 per turn, 5 MB each, checked on every turn"
+"3 per turn, 3 MB each, checked on every turn (decision w-composer-images, substep 4.2.7)"
 ],
 [
 "Scope slug",
@@ -6150,7 +6150,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 [
 "Images",
-"base64 on the newest turn only, 4 per turn, 5 MB each"
+"base64 on the newest turn only, never stored; target ≤ 3 per turn, each ≤ 3 MB; over the limit shows a user-facing error (compress the image). Today (needs change, decision w-composer-images 2026-09-18): 4 per turn, no byte-size check"
 ],
 [
 "Empty text plus image",
@@ -6168,7 +6168,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ]
 ],
 "simple": "Where the person types, pastes, or attaches a picture.",
-"today": "4 images per turn; no size check exists anywhere in apps/web — the 5 MB figure below is not enforced."
+"today": "≤ 3 images per turn, each ≤ 3 MB; over either limit the composer shows a user-facing error and does not attach, and the backend rejects an over-limit request with a 400 the proxy forwards (decision w-composer-images)."
 },
 "w-scope": {
 "n": "Config",
@@ -6739,7 +6739,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 [
 "Rate limit key",
-"the token subject; client IP only on the pre-token path, with trusted-proxy X-Forwarded-For parsing"
+"the token subject; request.client.host on the pre-token path. No X-Forwarded-For parsing today (TRUSTED_PROXY_HOPS=0, set in 7.1.1) — see decision r1-limits-ipkey"
 ],
 [
 "Network",
@@ -7390,7 +7390,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ]
 ],
 "note": "halfvec because pgvector indexes cap plain vectors at 2000 dimensions. Half precision costs almost no recall at this size.",
-"simple": "A fast lookup map over all the number codes that finds the closest ones without checking every row."
+"simple": "A fast lookup map over all the number codes that finds the closest ones without checking every row.",
+"today": "Regression-tested: dedicated tests pin the index's name, its halfvec/cosine shape above the 2000-dim cap (vector_cosine_ops at or below it, disclosed), and its m=16/ef_construction=200 build params."
 },
 "vd-nearest": {
 "n": "Vector database",
@@ -7412,7 +7413,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "The source and scope policies apply to every SELECT on chunk.",
 "So a nearest-neighbor hit from a forbidden row is never returned."
 ],
-"simple": "The row locks apply to the numbers too, so a hidden row never comes out of a vector search."
+"simple": "The row locks apply to the numbers too, so a hidden row never comes out of a vector search.",
+"today": "Regression-tested: dedicated tests pin that embedding lives on chunk, that both the source and knowledge-scope SELECT policies are registered on chunk, and that a raw nearest-neighbor query as the reader never returns a row on a forbidden source even when it is the closest match."
 },
 "vd-question": {
 "n": "Vector database",
@@ -7445,7 +7447,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ]
 ],
 "note": "Not a vector, but it lives next to one and runs in the same transaction. It catches exact strings like an error code.",
-"simple": "Next to the numbers, each piece has a word index that finds exact words the numbers might miss."
+"simple": "Next to the numbers, each piece has a word index that finds exact words the numbers might miss.",
+"today": "The keyword-search tsv column, its GIN index and the OR-joined/ts_rank query are each pinned by a dedicated panel-id-named regression test."
 },
 "vd-swap": {
 "n": "Vector database",

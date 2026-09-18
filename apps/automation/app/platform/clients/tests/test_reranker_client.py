@@ -95,6 +95,31 @@ def test_cohere_breaker_opens_after_threshold() -> None:
     assert calls["n"] == 2
 
 
+def test_r4_rerank_retries_on_retryable_status_then_succeeds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 429 (in `_RETRYABLE_STATUS`) is retried with backoff, not raised on the first attempt."""
+    sleeps: list[float] = []
+    monkeypatch.setattr("app.platform.clients.reranker_client.time.sleep", sleeps.append)
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(429, json={"error": "rate limited"})
+        return httpx.Response(200, json={"results": [{"index": 0, "relevance_score": 0.7}]})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    settings = Settings(
+        reranker_provider="cohere", reranker_api_key="co-test", rerank_max_retries=2
+    )
+    ranked = CohereReranker(settings, client=client).rerank("q", _DOCS, top_k=2)
+
+    assert calls["n"] == 2  # first attempt failed, second succeeded
+    assert ranked == [(1001, 0.7)]
+    assert sleeps == [pytest.approx(0.3)]  # min(0.3 * 2**0, 4.0) between attempt 1 and 2
+
+
 def test_cohere_abuse_cap_rejects_oversized_call() -> None:
     settings = Settings(reranker_provider="cohere", reranker_api_key="k", rerank_max_docs=2)
     client = httpx.Client(

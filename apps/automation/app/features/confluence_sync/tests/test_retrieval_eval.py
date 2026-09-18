@@ -13,6 +13,7 @@ Phase 3 target, verified here:
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 
 import pytest
 from sqlalchemy import text
@@ -205,22 +206,230 @@ def test_s_acl_unexpandable_group_denies_everyone(gateway, settings: Settings) -
         )
 
 
-def test_rls_default_deny_on_reader_role(gateway, settings: Settings) -> None:
-    """RLS alone (bare SELECT, no app-level source filter) enforces default-deny on the reader.
+class _SpyReranker:
+    """Identity reranker (same contract as ``FakeReranker``) that also records every ``(page_id,
+    text)`` pair handed to ``rerank()`` — so a test can assert what the reranker actually saw,
+    not just the final output."""
 
-    Proves the policy, not just the explicit WHERE: an unset/empty or wrong scope returns zero
-    rows to the non-owner role; only the matching source_id makes the rows visible.
+    model = "fake"
+
+    def __init__(self) -> None:
+        self.seen_page_ids: list[int] = []
+
+    def rerank(
+        self, query: str, docs: Sequence[tuple[int, str]], top_k: int
+    ) -> list[tuple[int, float]]:
+        self.seen_page_ids.extend(pid for pid, _text in docs)
+        n = len(docs)
+        return [(pid, float(n - i)) for i, (pid, _text) in enumerate(docs[:top_k])]
+
+
+def test_s_acl_filter_runs_before_rerank_in_the_app_on_candidates(
+    gateway, settings: Settings
+) -> None:
+    """panel s-acl · substep p0-s0_5-reg-security (Protect)
+    The page ACL filter (ADR-0005) runs before rerank, in the application layer, on the fused
+    candidate set — not as a database-only filter (row security alone still lets the reader role
+    see the restricted page's chunks) and not after rerank (the reranker's input never includes
+    the restricted page's text at all).
     """
     _index_corpus(gateway, settings)
+    policy = _build_policy(gateway)
+    spy = _SpyReranker()
+    retr = HybridRetriever(
+        get_reader_sessionmaker(), build_embedding_provider(settings), policy, spy
+    )
+
+    question = "Show me the exact expense approval amounts."
+    result = retr.retrieve(question, "unauthorized-user", k=5)
+    assert "2002" not in result  # final output: page 2002 (HR/finance) is denied
+
+    # Not a database-only filter: page 2002's own chunk rows are visible to the reader role once
+    # only lock 0/1 (source-scope / knowledge-scope RLS) is applied -- row security alone does not
+    # exclude it. The exclusion above is therefore application-layer (lock 3), not the database.
+    with get_reader_sessionmaker()() as s:
+        s.execute(
+            text("SELECT set_config('app.allowed_sources', :v, true)"),
+            {"v": "confluence:default"},
+        )
+        s.execute(text("SELECT set_config('app.allowed_knowledge_scopes', '*', true)"))
+        raw_count = int(
+            s.execute(text("SELECT count(*) FROM chunk WHERE page_id = 2002")).scalar_one()
+        )
+    assert raw_count > 0
+
+    # Not after rerank: the restricted page's text never even reached the reranker's input --
+    # the filter ran on the candidate set before the rerank() call, not as a post-hoc drop.
+    assert 2002 not in spy.seen_page_ids
+
+
+def test_s_permitted_denied_row_text_never_reaches_reranker(gateway, settings: Settings) -> None:
+    """panel s-permitted · substep p0-s0_5-reg-security (Protect)
+    Only rows that passed every lock (source scope, knowledge scope, page ACL) are ever turned
+    into text for the reranker: a denied page's text is never fetched, so it can never leak into
+    the reranker's (or, downstream, the generator's) input -- proven by recording exactly which
+    page ids the reranker received.
+    """
+    _index_corpus(gateway, settings)
+    policy = _build_policy(gateway)
+    spy = _SpyReranker()
+    retr = HybridRetriever(
+        get_reader_sessionmaker(), build_embedding_provider(settings), policy, spy
+    )
+
+    # acct-alice is entitled to 1002 (grp-engineering/acct-alice/acct-bob) but not to 2002
+    # (grp-hr/grp-finance/acct-carol) -- both pages are indexed, so both are real candidates.
+    result = retr.retrieve("What are the production deploy steps?", "acct-alice", k=5)
+    assert "1002" in result
+
+    # the permitted page's text reached the reranker...
+    assert 1002 in spy.seen_page_ids
+    # ...but the denied page's text never did, in this or any other traced call so far.
+    assert 2002 not in spy.seen_page_ids
+
+    outsider_spy = _SpyReranker()
+    outsider = HybridRetriever(
+        get_reader_sessionmaker(), build_embedding_provider(settings), policy, outsider_spy
+    )
+    outsider.retrieve("Show me the exact expense approval amounts.", "unauthorized-user", k=5)
+    # confirmed again for a caller with zero entitlement to the restricted page: its text is
+    # never converted and never handed to the reranker, even when it is the best lexical match.
+    assert 2002 not in outsider_spy.seen_page_ids
+
+
+def test_s_permitted_trace_records_allowed_sources_and_knowledge_scopes(
+    gateway, settings: Settings
+) -> None:
+    """panel s-permitted · substep p0-s0_5-reg-security (Protect)
+    Duplicates test_retrieval_writes_one_query_trace_row's allowed_sources proof and
+    test_query_trace_records_allowed_knowledge_scopes's allowed_knowledge_scopes proof
+    (test_retrieval_knowledge_scope.py) under this panel's own name: the trace row for a scoped
+    query records exactly which sources and which knowledge scopes were allowed for it.
+    """
+    _index_corpus(gateway, settings)
+    with get_sessionmaker()() as s:
+        s.execute(text("UPDATE chunk SET tags = ARRAY['obi-permitted-test'] WHERE page_id = 1002"))
+        s.commit()
+
+    retr = HybridRetriever(
+        get_reader_sessionmaker(),
+        build_embedding_provider(settings),
+        _build_policy(gateway),
+        build_reranker(settings),
+        trace_sessionmaker=get_sessionmaker(),
+        enable_knowledge_scope_filtering=True,
+    )
+    result = retr.retrieve_with_context(
+        "What are the production deploy steps?",
+        "acct-alice",
+        k=5,
+        knowledge_scopes=["obi-permitted-test"],
+    )
+    assert result.trace_id is not None
+
+    with get_sessionmaker()() as s:
+        row = s.execute(
+            text(
+                "SELECT allowed_sources, allowed_knowledge_scopes FROM query_trace WHERE id = :id"
+            ),
+            {"id": result.trace_id},
+        ).one()
+
+    assert list(row.allowed_sources) == ["confluence:default"]
+    assert list(row.allowed_knowledge_scopes) == ["obi-permitted-test"]
+
+
+def test_rls_default_deny_on_reader_role(gateway, settings: Settings) -> None:
+    """panel r3-deny · substep p0-s0_5-reg-retrieval-stage-3
+    A forgotten scope leaks nothing: a bug that drops the ``set_config`` call leaves
+    ``current_setting('app.allowed_sources', true)`` NULL, ``string_to_array(NULL, ',')`` NULL,
+    and ``source_id = ANY(NULL)`` never true — zero rows, not every row. Proves the policy itself,
+    not just an explicit empty-string WHERE clause: a genuinely never-set GUC on a brand-new
+    reader-role session (the real "dropped the call" bug) returns zero rows, and so does an
+    explicit empty/wrong scope; only the matching source_id makes rows visible.
+    """
+    _index_corpus(gateway, settings)
+
+    # The literal bug the panel describes: nobody ever calls set_config in this transaction at
+    # all (not even with an empty string) — current_setting(..., true) is genuinely NULL.
+    with get_reader_sessionmaker()() as fresh:
+        never_set = int(fresh.execute(text("SELECT count(*) FROM chunk")).scalar_one())
+    assert never_set == 0  # forgotten call -> NULL GUC -> default-deny, not a leak
+
     with get_reader_sessionmaker()() as s:
 
         def count_with_scope(scope: str) -> int:
             s.execute(text("SELECT set_config('app.allowed_sources', :v, true)"), {"v": scope})
             return int(s.execute(text("SELECT count(*) FROM chunk")).scalar_one())
 
-        assert count_with_scope("") == 0  # unset/empty -> default-deny
+        assert count_with_scope("") == 0  # explicit empty -> default-deny
         assert count_with_scope("confluence:other") == 0  # wrong source -> zero
         assert count_with_scope("confluence:default") > 0  # matching source -> visible
+
+
+def test_s_source_fails_closed_with_no_guc_set(gateway, settings: Settings) -> None:
+    """panel s-source · substep p0-s0_5-reg-security
+    ADR-0004/0013 Lock 1 fails closed: with no ``app.allowed_sources`` set for this reader-role
+    transaction, the populated ``chunk`` table returns zero rows, never every row. A fresh
+    ``rag_reader`` session that never calls ``set_config`` sees ``current_setting(...)`` as NULL,
+    so ``source_id = ANY(NULL)`` is never true — default-deny, not a leak of the whole corpus."""
+    _index_corpus(gateway, settings)
+    with get_sessionmaker()() as owner:
+        total = int(owner.execute(text("SELECT count(*) FROM chunk")).scalar_one())
+    assert total > 0  # the corpus is genuinely populated, so a leak would be visible
+
+    with get_reader_sessionmaker()() as s:
+        no_guc = int(s.execute(text("SELECT count(*) FROM chunk")).scalar_one())
+    assert no_guc == 0
+
+
+def test_r3_source_no_guc_returns_zero_rows(gateway, settings: Settings) -> None:
+    """panel r3-source · substep p0-s0_5-reg-retrieval-stage-3
+    No GUC: 0 rows. A fresh reader-role session with ``app.allowed_sources`` never set reads
+    the ``chunk`` table under RLS and gets nothing back — the exact first check
+    ``verify-isolation`` runs live (``scripts/setup_supabase.py::verify_isolation``)."""
+    _index_corpus(gateway, settings)
+    with get_reader_sessionmaker()() as s:
+        no_guc = int(s.execute(text("SELECT count(*) FROM chunk")).scalar_one())
+    assert no_guc == 0
+
+
+def test_r3_source_real_source_returns_all_rows(gateway, settings: Settings) -> None:
+    """panel r3-source · substep p0-s0_5-reg-retrieval-stage-3
+    Real source: all rows. The reader's GUC set to the real, matching ``source_id`` reads back
+    every row the owner (writer, RLS-exempt by ownership) sees — the exact second check
+    ``verify-isolation`` runs live. The knowledge-scope GUC is opted out with the ``'*'``
+    sentinel (mirroring ``scripts/setup_supabase.py::verify_isolation``) so the separate,
+    RESTRICTIVE ``chunk_scope_read`` policy (ADR-0014, tested elsewhere under ``r3-deny``)
+    does not also filter this source-axis count."""
+    _index_corpus(gateway, settings)
+    with get_sessionmaker()() as owner:
+        total = int(owner.execute(text("SELECT count(*) FROM chunk")).scalar_one())
+    assert total > 0  # the fixture corpus actually indexed something
+
+    with get_reader_sessionmaker()() as s:
+        s.execute(
+            text("SELECT set_config('app.allowed_sources', :v, true)"),
+            {"v": "confluence:default"},
+        )
+        s.execute(text("SELECT set_config('app.allowed_knowledge_scopes', '*', true)"))
+        scoped = int(s.execute(text("SELECT count(*) FROM chunk")).scalar_one())
+    assert scoped == total  # matching source -> every row, not a subset
+
+
+def test_r3_source_bogus_source_returns_zero_rows(gateway, settings: Settings) -> None:
+    """panel r3-source · substep p0-s0_5-reg-retrieval-stage-3
+    Bogus source: 0 rows. The reader's GUC set to a non-matching ``source_id`` reads nothing
+    back, even though the corpus is populated — the exact third check ``verify-isolation``
+    runs live."""
+    _index_corpus(gateway, settings)
+    with get_reader_sessionmaker()() as s:
+        s.execute(
+            text("SELECT set_config('app.allowed_sources', :v, true)"),
+            {"v": "confluence:__nonexistent__"},
+        )
+        bogus = int(s.execute(text("SELECT count(*) FROM chunk")).scalar_one())
+    assert bogus == 0
 
 
 def test_retriever_wrong_source_scope_returns_zero(gateway, settings: Settings) -> None:

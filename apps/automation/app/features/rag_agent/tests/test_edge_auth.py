@@ -109,3 +109,19 @@ def test_s_edge_rate_limit_key_is_subject_hash_not_ip_when_tokened() -> None:
 
     tokenless_key = _rate_limit_key(same_ip_request, general_only_context())
     assert tokenless_key == "ip:198.51.100.7"
+
+
+def test_r1_limits_untokened_key_is_client_host_and_ignores_x_forwarded_for() -> None:
+    """panel r1-limits · substep 0.6.1 decision `r1-limits-ipkey` (2026-09-18).
+    The untokened fallback key is `request.client.host`; there is NO X-Forwarded-For parsing today
+    (TRUSTED_PROXY_HOPS defaults to 0, set for real in 7.1.1). A forged X-Forwarded-For header must
+    therefore change nothing — otherwise the limit would be trivially spoofable. This pins the code
+    to the corrected panel today-line so a silent XFF change shows up as a failing test."""
+    plain = _request(client_host="198.51.100.7")
+    forged = _request(
+        headers={"x-forwarded-for": "1.2.3.4, 5.6.7.8"}, client_host="198.51.100.7"
+    )
+
+    assert _rate_limit_key(plain, general_only_context()) == "ip:198.51.100.7"
+    # a spoofed X-Forwarded-For does not become the key: the bucket is still the real peer address
+    assert _rate_limit_key(forged, general_only_context()) == "ip:198.51.100.7"

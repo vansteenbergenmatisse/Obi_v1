@@ -66,4 +66,23 @@ describe("useWidgetVisibility", () => {
     act(() => vi.advanceTimersByTime(20000));
     expect(result.current.teaser).toBe(true);
   });
+
+  it("w_launcher_teaser_shows_3s_after_load_and_reschedules_20s_after_close_or_dismiss", () => {
+    // panel w-launcher: teaser shows 3s after load, then again 20s after each close or dismiss.
+    const { result } = renderHook(() => useWidgetVisibility());
+
+    act(() => vi.advanceTimersByTime(3000));
+    expect(result.current.teaser).toBe(true);
+
+    act(() => result.current.openWidget());
+    act(() => result.current.closeWidget());
+    expect(result.current.teaser).toBe(false);
+    act(() => vi.advanceTimersByTime(20000));
+    expect(result.current.teaser).toBe(true);
+
+    act(() => result.current.dismissTeaser());
+    expect(result.current.teaser).toBe(false);
+    act(() => vi.advanceTimersByTime(20000));
+    expect(result.current.teaser).toBe(true);
+  });
 });

@@ -54,6 +54,18 @@ def test_enable_knowledge_scope_filtering_defaults_to_false() -> None:
     assert Settings.model_fields["enable_knowledge_scope_filtering"].default is False
 
 
+# -- chat image caps: w-composer panel / decision w-composer-images (substep 4.2.7) ---------------
+
+
+def test_chat_image_caps_default_to_the_w_composer_images_decision() -> None:
+    """4.2.7 · The composer image cap (design panel w-composer). Decision w-composer-images
+    (2026-09-18): at most 3 images per turn, each <= 3 MB. These two defaults are what the
+    composer mirrors and the /chat endpoint enforces with a 400; asserting the field defaults
+    keeps that contract from silently drifting back to the old 4 / 5 MB caps."""
+    assert Settings.model_fields["chat_max_images_per_turn"].default == 3
+    assert Settings.model_fields["chat_max_image_bytes"].default == 3_000_000
+
+
 # -- obi_identity_text: operator-editable static identity block (config/obi_identity.md) ----------
 
 

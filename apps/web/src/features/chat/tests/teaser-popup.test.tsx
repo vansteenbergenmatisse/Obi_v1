@@ -30,4 +30,12 @@ describe("TeaserPopup", () => {
     expect(onDismiss).toHaveBeenCalledOnce();
     expect(onOpen).not.toHaveBeenCalled();
   });
+
+  it("w_launcher_panel_opens_from_either_the_launcher_or_the_teaser", async () => {
+    // panel w-launcher: the panel opens from the teaser card as well as the launcher.
+    const onOpen = vi.fn();
+    renderTeaser({ onOpen, onDismiss: vi.fn() });
+    await userEvent.click(screen.getByText(/Need help with onboarding/));
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
 });

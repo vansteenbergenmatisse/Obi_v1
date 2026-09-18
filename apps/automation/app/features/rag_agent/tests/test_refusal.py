@@ -59,6 +59,7 @@ def test_offtopic_when_candidate_at_or_below_offtopic_threshold() -> None:
 
 
 def test_weak_score_when_between_offtopic_and_refusal_threshold() -> None:
+    """panel r4-weak · top score below refusal_min_rerank_score refuses with weak_score."""
     d = _decide(0.05, threshold=0.10, offtopic=0.02)
     assert d.refuse is True
     assert d.reason == "weak_score"

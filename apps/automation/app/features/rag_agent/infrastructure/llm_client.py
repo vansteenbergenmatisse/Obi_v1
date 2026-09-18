@@ -143,10 +143,18 @@ class AnthropicAnswerGenerator:
     to a reply instead of a rewrite."""
 
     def __init__(
-        self, client: AnthropicMessagesClient, model: str, identity_static_facts: str = ""
+        self,
+        client: AnthropicMessagesClient,
+        model: str,
+        identity_static_facts: str = "",
+        small_talk_model: str | None = None,
     ) -> None:
         self._client = client
         self._model = model
+        # The small-talk greeting is ungrounded and carries no accuracy risk, so it runs on the
+        # cheap routing tier (Haiku) per the r1-small design panel, not the grounded answer model.
+        # Falls back to ``model`` when the caller does not wire a separate small-talk model.
+        self._small_talk_model = small_talk_model or model
         # Operator-editable static block (`settings.obi_identity_text`, from config/obi_identity.md)
         # baked into the cached identity system prompt. Constant per deployment, so it caches with
         # the persona; the per-user identity rides a separate, uncached block. "" -> base prompt.
@@ -163,7 +171,7 @@ class AnthropicAnswerGenerator:
     def generate_small_talk(self, query: str) -> str:
         try:
             out = self._client.create_message(
-                model=self._model,
+                model=self._small_talk_model,
                 user_text=redact_pii(query),
                 system_blocks=[cached_system_block(SMALL_TALK_SYSTEM_PROMPT)],
                 max_tokens=_SMALL_TALK_MAX_TOKENS,
