@@ -171,6 +171,38 @@ describe("ChatSessionProvider", () => {
     expect((requestBody as { knowledgeScope?: string }).knowledgeScope).toBe("obi-mews-test");
   });
 
+  it("ov_widget_embedded_with_scope_from_its_mount_config", async () => {
+    // panel ov-widget · substep p0-s0_5-reg-system-overview
+    // System-overview step 1: "The widget is embedded in a platform's page with a scope from its
+    // config." The embedding page declares its platform scope once as the mount config
+    // (`knowledgeScope` prop); when the user asks, that configured scope is what the widget's own
+    // proxy request carries — the scope comes from the mount config, not from anything the user typed.
+    let requestUrl: unknown;
+    let requestBody: unknown;
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      requestUrl = url;
+      requestBody = init?.body ? JSON.parse(init.body as string) : undefined;
+      return Promise.resolve(
+        okStreamResponse([
+          sse({ type: "start", conversationId: "conv-1" }),
+          sse({ type: "done", answer: "hi", citations: [], traceId: "trace-1", refused: false }),
+        ]),
+      );
+    });
+
+    render(
+      <ChatSessionProvider knowledgeScope="obi-mews-test">
+        <Harness />
+      </ChatSessionProvider>,
+    );
+
+    await userEvent.click(screen.getByText("send"));
+    await waitFor(() => expect(requestBody).toBeDefined());
+
+    expect(requestUrl).toBe("/api/chat");
+    expect((requestBody as { knowledgeScope?: string }).knowledgeScope).toBe("obi-mews-test");
+  });
+
   it("applies a runtime scope change (the PLAN 10.8 switcher) to the next outgoing request", async () => {
     let requestBody: unknown;
     fetchMock.mockImplementation((_url: string, init?: RequestInit) => {

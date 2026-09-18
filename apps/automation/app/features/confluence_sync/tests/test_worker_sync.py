@@ -267,6 +267,7 @@ def test_rt3_duplicate_restriction_principal_stores_one_row_per_account_id(gatew
 
 
 def test_permission_change_is_metadata_only(gateway, settings):
+    """panel i2-meta · a label/permission-only change updates in place, active version unchanged."""
     index_page(gateway, settings, 2002, version=1)
     before = active_child_chunks(2002)
     assert before, "expected active chunks after first index"

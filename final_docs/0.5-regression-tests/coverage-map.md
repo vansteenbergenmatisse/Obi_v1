@@ -25,10 +25,10 @@ for 0.5.2 and stay empty here for 0.5.3 or a later substep to fill.
 
 | panel | title | test file | test name | level | green |
 |---|---|---|---|---|---|
-| `ov-confluence` | Confluence, the source of truth | app/platform/clients/tests/test_confluence_client.py | test_http_client_group_only_restriction_fails_closed (+2 more) | unit | yes |
-| `ov-auth` | The auth host: the host backend or an agreed auth service |  |  |  |  |
-| `ov-corpus` | The Postgres corpus |  |  |  |  |
-| `ov-widget` | The Obi widget |  |  |  |  |
+| `ov-confluence` | Confluence, the source of truth | app/platform/clients/tests/test_confluence_client.py | test_ov_confluence_reads_page_meta_body_labels_restrictions_and_attachments (+2 more: test_ov_confluence_apis_used_v2_for_pages_v1_for_restrictions_members_and_download, test_ov_confluence_client_has_timeout_retries_5xx_and_breaks_after_five_failures) | unit | yes |
+| `ov-auth` | The auth host: the host backend or an agreed auth service | app/features/confluence_sync/tests/test_router_auth_context.py; app/features/rag_agent/tests/test_token_verifier.py | test_bad_token_is_401_before_search, test_body_scope_disagreeing_with_token_is_ignored (+ 7 verifier rejections: test_expired_rejected, test_unknown_issuer_rejected, test_wrong_audience_rejected, test_hs256_rejected, test_missing_iat_rejected, test_partial_business_claims_rejected, test_lifetime_over_platform_max_rejected) | database, unit | yes (in-repo checks) — live-key check tracked red under `ov-auth` step 5 in "needs live" |
+| `ov-corpus` | The Postgres corpus | app/platform/db/tests/test_models_indexes.py | test_ov_corpus_engine_is_postgres16_with_pgvector_and_fulltext_search (+2 more: test_ov_corpus_dense_index_is_hnsw_cosine_m16_ef200, test_ov_corpus_keyword_index_is_gin_over_tsvector) | database | yes |
+| `ov-widget` | The Obi widget | apps/web/src/features/chat/tests/chat-session-provider.test.tsx; chat-client.test.ts; route-handlers.test.ts | ov_widget_embedded_with_scope_from_its_mount_config (+2 more: ov_widget_user_asks_calls_its_own_proxy_route_not_the_backend_directly, ov_widget_proxy_adds_the_server_key_and_streams_the_answer_back) | jsdom | yes |
 | `cm-root` | app/main.py: the wiring | app/tests/test_cm_root_wiring.py | test_cm_root_reads_settings (+2 more) | unit | yes |
 | `cm-sync` | features/confluence_sync |  |  |  |  |
 | `cm-ingest` | features/ingestion |  |  |  |  |
@@ -70,10 +70,23 @@ for 0.5.2 and stay empty here for 0.5.3 or a later substep to fill.
 | `tg-change` | Change a label | app/features/confluence_sync/tests/test_scope_tagging_change.py | test_tg_change_label_swap_leaves_no_stale_double_tag (+1 more) | database | yes |
 | `tg-first` | The page is in the index | app/features/confluence_sync/tests/test_scope_tagging_first.py | test_tg_first_page_indexed_with_tags_already_resolved (+1 more) | database | yes |
 | `tg-retag` | Tags updated without a re-embed | app/features/confluence_sync/tests/test_scope_tagging_retag.py | test_tg_retag_metadata_only_touches_tags_and_scope_state_not_version_or_embeddings | database | yes |
-| `r1-proxy` | The widget's proxy route | apps/web/src/platform/automation-api/tests/client.test.ts | r1_proxy_forwards_chat_api_key_as_bearer_auth (+1 more) | component (jsdom, not a real browser) | yes |
+| `r1-proxy` | The widget's proxy route | apps/web/src/platform/automation-api/tests/client.test.ts | r1_proxy_forwards_chat_api_key_as_bearer_auth (+1 more) | jsdom | yes |
 | `r1-auth` | Verify who is asking | app/platform/config/tests/test_platforms.py | test_hs256_alg_is_forbidden (+15 more) | unit | yes |
-| `r1-limits` | Limits and validation | app/features/confluence_sync/tests/test_chat_endpoint.py | test_r1_limits_rate_limit_keyed_on_token_subject_when_tokened (+25 more) | unit, database | yes |
+| `r1-limits` | Limits and validation | app/features/confluence_sync/tests/test_chat_endpoint.py + app/features/rag_agent/tests/test_edge_auth.py | test_r1_limits_rate_limit_keyed_on_token_subject_when_tokened, test_r1_limits_untokened_key_is_client_host_and_ignores_x_forwarded_for (+25 more) | unit, database | yes |
+
+<!-- r1-limits · RESOLVED 2026-09-18 (decision r1-limits-ipkey): the panel today-line is corrected to
+     match the code — untokened requests key on request.client.host, NO X-Forwarded-For parsing.
+     test_r1_limits_untokened_key_is_client_host_and_ignores_x_forwarded_for pins that a forged XFF
+     header changes nothing. TRUSTED_PROXY_HOPS (default 0) is added by 3.2.6; 7.1.1 sets the real
+     count and makes the proxy forward XFF. Open follow-up: docs/plan/decisions.md `trusted-proxy-hops`. -->
+
 | `r1-small` | Small talk short-circuit | app/features/rag_agent/tests/test_small_talk.py | test_r1_small_match_is_the_whole_message_trailing_punct_stripped_whitespace_collapsed (+10 more) | unit | yes |
+
+<!-- r1-small · RESOLVED 2026-09-18 (decision r1-small-model): the greeting now comes from Haiku.
+     generate_small_talk uses small_talk_model, wired to settings.routing_model in main.py; the
+     grounded generate() keeps settings.answer_model. Pinned by
+     test_llm_client.py::test_r1_small_reply_uses_the_small_talk_model_not_the_answer_model. -->
+
 | `r1-clarify` | Too vague to search? | app/features/rag_agent/tests/test_clarification.py | test_r1_clarify_twelve_words_is_the_heuristic_boundary (+31 more) | unit | yes |
 | `r1-idem` | Idempotency replay | app/features/confluence_sync/tests/test_chat_endpoint.py | test_r1_idem_cache_key_is_scoped_to_token_subject_not_body_principal (+6 more) | database | yes |
 | `r1-short` | A short reply without search | app/features/confluence_sync/tests/test_chat_endpoint.py | test_r1_short_small_talk_writes_no_query_trace_row (+1 more) | database | yes |
@@ -98,15 +111,15 @@ for 0.5.2 and stay empty here for 0.5.3 or a later substep to fill.
 | `r5-nocite` | Refuse: nothing survived the checks | app/features/rag_agent/tests/test_answer_service.py | test_no_citations_refusal_emits_human_handoff_log_with_verbatim_original_query (+1 more) | unit | yes |
 | `r5-image` | Image analysis | app/features/rag_agent/tests/test_llm_client.py + test_answer_service.py | test_generate_image_analysis_redacts_query_and_sends_image_blocks (+6 more, incl. test_r5_image_only_the_newest_turns_image_triggers_analysis in test_answer_service.py) | unit | yes |
 | `r5-feedback` | Thumbs up or down | app/features/confluence_sync/tests/test_chat_endpoint.py | test_feedback_updates_trace_row (+3 more) | database | yes |
-| `w-launcher` | Launcher and teaser | use-widget-visibility.test.tsx | w_launcher_teaser_shows_3s_after_load_and_reschedules_20s_after_close_or_dismiss (+7 more) | component (jsdom, not a real browser) | yes |
-| `w-panel` | The panel | panel-body.test.tsx | w_panel_layout_is_fixed_right_edge_full_height_clamped_width (+3 more) | component (jsdom, not a real browser) | yes |
-| `w-composer` | The composer | composer.test.tsx | w_composer_screenshot_button_reaches_the_same_attachment_state_as_file_picker_and_paste (+6 more) | component (jsdom, not a real browser) | yes |
-| `w-scope` | Which platform is this widget in? | chat-session-provider.test.tsx | w_scope_set_once_from_mount_prop_ignores_later_prop_changes (+3 more) | component (jsdom, not a real browser) | yes |
-| `w-token` | The user token | iframe-bridge.test.ts | sets the token from obi:token when the origin is allowed and the source is the parent (+16 more) | component (jsdom, not a real browser) | yes |
-| `w-proxy` | The proxy route | route-handlers.test.ts | w_proxy_post_chat_route_wires_to_handle_post_chat (+5 more) | component (jsdom, not a real browser) | yes |
-| `w-i18n` | Six locales | i18n.test.ts | w_i18n_every_locale_has_every_required_copy_key (+4 more) | component (jsdom, not a real browser) | yes |
-| `w-screenshot` | Screenshot of the page behind the widget | panel-body.test.tsx | w_screenshot_uses_html_to_image_toBlob (+5 more) | component (jsdom, not a real browser) | yes |
-| `w-render` | Rendering the answer | message-bubble.test.tsx | w_render_appends_streamed_tokens_as_they_arrive (+4 more) | component (jsdom, not a real browser) | yes |
+| `w-launcher` | Launcher and teaser | use-widget-visibility.test.tsx | w_launcher_teaser_shows_3s_after_load_and_reschedules_20s_after_close_or_dismiss (+7 more) | jsdom | yes |
+| `w-panel` | The panel | panel-body.test.tsx | w_panel_layout_is_fixed_right_edge_full_height_clamped_width (+3 more) | jsdom | yes |
+| `w-composer` | The composer | composer.test.tsx | w_composer_screenshot_button_reaches_the_same_attachment_state_as_file_picker_and_paste (+6 more) | jsdom | yes |
+| `w-scope` _(status: `change`, not `built` — demoted in 0.4.2; left the 0.5.3 widget batch on 2026-09-18, so the batch is 7 panels. Tracked as a **Close item on the Phase 3 stage 1 list** (`python tools/panel.py w-scope`); substeps 1.2.2 and 3.2.2 do the work, the Close item only flips the status. See plan-corrections.md 2026-09-18.)_ | Which platform is this widget in? | chat-session-provider.test.tsx | w_scope_set_once_from_mount_prop_ignores_later_prop_changes (+3 more) | jsdom | change (not counted) |
+| `w-token` | The user token | iframe-bridge.test.ts | sets the token from obi:token when the origin is allowed and the source is the parent (+16 more) | jsdom | yes |
+| `w-proxy` | The proxy route | route-handlers.test.ts | w_proxy_post_chat_route_wires_to_handle_post_chat (+5 more) | jsdom | yes |
+| `w-i18n` | Six locales | i18n.test.ts | w_i18n_every_locale_has_every_required_copy_key (+4 more) | jsdom | yes |
+| `w-screenshot` | Screenshot of the page behind the widget | panel-body.test.tsx | w_screenshot_uses_html_to_image_toBlob (+5 more) | jsdom | yes |
+| `w-render` | Rendering the answer | message-bubble.test.tsx | w_render_appends_streamed_tokens_as_they_arrive (+4 more) | jsdom | yes |
 | `d-event_ledger` | event_ledger | app/features/confluence_sync/tests/test_event_ledger_constraints.py | test_d_event_ledger_payload_hash_is_unique (+2 more) | database | yes |
 | `d-document` | document | app/features/confluence_sync/tests/test_document_constraints.py | test_d_document_page_id_unique_constraint (+2 more, plus 2 in test_versioning_document.py) | database | yes |
 | `d-reconciliation_run` | reconciliation_run | app/features/confluence_sync/tests/test_reconciliation.py | test_d_reconciliation_run_persists_scope_kind_status_and_counts (+2 more, plus 4 pre-existing) | database | yes |
@@ -130,10 +143,10 @@ for 0.5.2 and stay empty here for 0.5.3 or a later substep to fill.
 | `vd-swap` | Vectors swap with the page | app/features/confluence_sync/tests/test_worker_sync.py | test_vd_swap_new_chunks_and_vectors_inserted_inactive (+2 more) | database | yes |
 | `sc-frontend` | One frontend |  |  |  |  |
 | `sc-backend` | One backend |  |  |  |  |
-| `em-token` | The signed note (JWT) | test-host-content.test.tsx | builds the per-name token endpoint for %s (+2 more) | component (jsdom, not a real browser) | yes |
+| `em-token` | The signed note (JWT) | test-host-content.test.tsx | builds the per-name token endpoint for %s (+2 more) | jsdom | yes |
 | `em-backend` | Obi checks the note and picks the pages | app/features/rag_agent/tests/test_token_verifier.py | test_valid_token (+20 more across test_token_verifier.py/test_auth_context.py/test_platforms.py) | unit | yes |
-| `em-button` | The frame: the round button and the chat window | frame-csp.test.ts | includes every active domain and never emits a wildcard (+8 more) | component (jsdom, not a real browser) | yes |
-| `em-loader` | obi.js: one script tag | loader.test.ts | Obi.init injects exactly one iframe pointed at the embed origin's /embed route (+2 more) | component (jsdom, not a real browser) | yes |
+| `em-button` | The frame: the round button and the chat window | frame-csp.test.ts | includes every active domain and never emits a wildcard (+8 more) | jsdom | yes |
+| `em-loader` | obi.js: one script tag | loader.test.ts | Obi.init injects exactly one iframe pointed at the embed origin's /embed route (+2 more) | jsdom | yes |
 
 ## 0.5.2 scope: ingestion stages 2–4 and the scope list (12 panels, 4 batches)
 
@@ -680,3 +693,87 @@ already true today; this batch only closed the gap in what proved it. All 5 pane
 now proven by a test literally named for its own panel: `cm-root` 3/3, `cm-docs` 3/3, `cm-contracts`
 3/3, `cm-tokens` 2/2, `cm-infra` 2 checks / 3 tests (the "production is Supabase" half proven as a
 documented-claim assertion, not an infra fact — disclosed above).
+
+## p0-s0_5-reg-system-overview — Protect: System overview (3 panels)
+
+Done 2026-09-18, one obi-implementer subagent per panel (`ov-confluence`, `ov-corpus`, `ov-widget` —
+none shared a test file, so all 3 subagents ran fully in parallel). Whole-batch verification run
+centrally after all three returned: `make test-unit` → 533 passed (289 deselected); `make test-db` →
+289 passed, 1 xfailed (pre-existing, unrelated). The ov-widget frontend suite is vitest+jsdom, not in
+the backend make targets — its own run was green (`Test Files 29 passed · Tests 236 passed`). All 3
+rows above updated to cite the panel-id-named test proving each check; no production code changed
+anywhere in this batch — every check was already true today, this batch only closed the gap in what
+proved it. Every check now has a dedicated test literally named for its own panel: `ov-confluence`
+3/3, `ov-corpus` 3/3, `ov-widget` 3/3.
+
+- `ov-confluence` (3 checks: What we read = page meta/body storage-format/labels/restrictions/
+  attachments; APIs used = v2 pages+spaces, v1 restrictions/group-members/attachment-download; Client
+  = timeout, retry on 5xx, circuit breaker after 5 failures) — 3 new unit tests in
+  `app/platform/clients/tests/test_confluence_client.py`
+  (`test_ov_confluence_reads_page_meta_body_labels_restrictions_and_attachments`,
+  `test_ov_confluence_apis_used_v2_for_pages_v1_for_restrictions_members_and_download`,
+  `test_ov_confluence_client_has_timeout_retries_5xx_and_breaks_after_five_failures`), each over an
+  `httpx.MockTransport`, asserting the storage `body-format` param, the version per endpoint, the 8.0s
+  settings timeout, a 503-then-200 retry, and the breaker opening after exactly 5 consecutive
+  whole-request failures (settings default threshold 5). Disclosed finding, not "red today": the
+  panel's "APIs used" row lists **labels under v1**, but the live client reads labels from the **v2**
+  pages endpoint (`/api/v2/pages/{id}/labels`); the test asserts the real v2 path and the drift is
+  flagged in the test docstring/comment. Only the attachment *download* link is a v1
+  `/rest/api/content/...` path (matches the panel); attachment *listing* is v2. Worth a future
+  design-review correction to the panel's "APIs used" line. Also: no prior test exercised the five
+  "what we read" calls as one set nor asserted the storage body-format param, and the breaker's "after
+  5" threshold had only ever been tested at a custom threshold of 2 — this pins the settings default.
+- `ov-corpus` (3 checks: Engine = PostgreSQL 16 + pgvector + full-text search; Dense index = HNSW
+  halfvec(3072) cosine m=16 ef_construction=200; Keyword index = GIN over tsvector) — 3 new database
+  tests in `app/platform/db/tests/test_models_indexes.py` (reusing that file's `indexed_engine`
+  fixture + `_index_shape` catalog helper, querying the live Postgres catalog, never `models.py`
+  text): `test_ov_corpus_engine_is_postgres16_with_pgvector_and_fulltext_search`,
+  `test_ov_corpus_dense_index_is_hnsw_cosine_m16_ef200`,
+  `test_ov_corpus_keyword_index_is_gin_over_tsvector`. Disclosed finding (already flagged identically
+  for `r2-indexes`/`vd-hnsw`, not "red today"): the suite conftest pins `EMBEDDING_DIM=256` (halfvec
+  HNSW is ~30× slower at 3072), so a stock `make test-db` builds the plain `vector_cosine_ops` branch,
+  not the `halfvec_cosine_ops(3072)` branch the panel names for production — the dense test branches on
+  the model's own `EMB_DIM` so it stays honest either way. The Engine check (PG16 + pgvector + FTS)
+  had no prior test at all and is newly covered; checks 2–3 overlap the finer-grained `r2-indexes`
+  tests but bundle method+opclass+storage per panel line, not verbatim duplicates. No design-vs-code
+  drift found (local image `pgvector/pgvector:pg16`).
+- `ov-widget` (3 steps: embedded with a scope from its mount config; the user asks and the widget
+  calls its OWN proxy route, not the automation backend; the proxy adds the server key and streams the
+  answer back, browser never sees the key) — 3 new vitest+jsdom tests in `apps/web/src/features/chat/
+  tests/` (`ov_widget_embedded_with_scope_from_its_mount_config` in `chat-session-provider.test.tsx`;
+  `ov_widget_user_asks_calls_its_own_proxy_route_not_the_backend_directly` in `chat-client.test.ts`;
+  `ov_widget_proxy_adds_the_server_key_and_streams_the_answer_back` in `route-handlers.test.ts`). The
+  third is a composite: the outbound call carries the server-side `CHAT_API_KEY`, the SSE body streams
+  back unbuffered, and the key never appears in the response headers. No design-vs-code drift found.
+  Coverage note (not a gap): all three steps were already indirectly proven under adjacent panel ids
+  (`w-scope`, `r1-proxy`, `w-proxy`); per the substep's "one test per check named after its panel id"
+  rule, dedicated `ov_widget_*` tests were added anyway, each a distinct composite, none a verbatim
+  duplicate. Frontend `pnpm lint` is not wired in this repo (`next lint` drops into an interactive
+  setup prompt, no committed eslint config) — pre-existing, not introduced here; `pnpm typecheck`
+  (tsc --noEmit) is clean on the touched files.
+
+9 new tests total across the batch (3 unit + 3 database + 3 component jsdom). No production code
+changed anywhere. ruff/pyright clean on both touched backend files (0 new errors vs baseline); tsc
+clean on the three touched frontend files.
+
+## Audit follow-up 2026-09-18 — two coverage-map corrections (no code, no new tests)
+
+The release audit (`release-audit-2026-09-18.md`, Test 2) found two defects in THIS table; both are
+corrected above as documentation only — no production code and no new tests were written, and no
+failing test was repaired (nothing was red).
+
+- **`ov-auth` row filled.** It was blank. The panel is an "Outside system" (the auth host) with two
+  in-repo checks — "a forged, modified or expired token is a 401" and "a body knowledge_scope that
+  disagrees with the token is ignored" — both already genuinely proven by existing, collected tests
+  that were simply never cited under `ov-auth`'s own row: `test_router_auth_context.py::test_bad_token_is_401_before_search`
+  and `::test_body_scope_disagreeing_with_token_is_ignored` (database, via the real `/chat` endpoint),
+  backed by seven verifier-level rejection tests in `test_token_verifier.py`. Verified collected +
+  green on 2026-09-18. The panel's third, live-only check (verifying against a *real* platform's
+  signing key) remains red under `ov-auth` step 5 in the "needs live" table — unchanged. Note:
+  `ov-auth` was never in any action-plan protect substep (`p0-s0_5-reg-system-overview` is scoped to
+  exactly `ov-confluence`/`ov-corpus`/`ov-widget`), so this is a classification of pre-existing
+  coverage, not a missed batch item.
+- **`w-scope` row flagged.** Its status was demoted `built → change` in 0.4.2 (`ledger.md`), so it
+  should not sit in a "one row per built panel" table. Rather than delete a row whose test is real
+  and green, it is now annotated inline as `change`-status / not one of the 108 built panels, which
+  reconciles the table's row count with its stated 108.

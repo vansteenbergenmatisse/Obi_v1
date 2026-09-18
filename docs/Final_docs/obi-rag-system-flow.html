@@ -4692,7 +4692,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "f": [
 [
 "Rate",
-"20 per minute; keyed on the token subject in the target; on the client IP today and for any request without a token (trusted-proxy X-Forwarded-For)"
+"20 per minute; keyed on the token subject when there is a token, otherwise on request.client.host. No X-Forwarded-For parsing today: TRUSTED_PROXY_HOPS defaults to 0, set per environment in 7.1.1 once the browser→proxy→API chain is known (decision r1-limits-ipkey, 2026-09-18)"
 ],
 [
 "History",
@@ -6739,7 +6739,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 [
 "Rate limit key",
-"the token subject; client IP only on the pre-token path, with trusted-proxy X-Forwarded-For parsing"
+"the token subject; request.client.host on the pre-token path. No X-Forwarded-For parsing today (TRUSTED_PROXY_HOPS=0, set in 7.1.1) — see decision r1-limits-ipkey"
 ],
 [
 "Network",

@@ -1,24 +1,61 @@
 # Decisions of record — the owner's calls and their defaults
 
-This file holds every choice the design page marks **Decision needed**, plus the
-default Obi builds to until the owner confirms otherwise. One row per decision.
+This file is the one place every settled call is written down with its default. Agents read
+it instead of stopping to ask, and nobody re-argues a settled point. Every later step that
+names a decision points at the row here (action plan substep **0.6.1**).
 
-- The authoritative list of open decisions is section 11 of the design page
-  (`docs/Final_docs/obi-rag-system-flow.html`) and the `Decision needed` panels in place.
-  Populate this table from that page; do not invent decisions here.
-- Until a decision is confirmed, `/obi-change` builds to the **Default** column and
-  names it as such in the hand-back and the pull request (CLAUDE.md, "How work happens").
 - A confirmed decision that changes an earlier one needs a new ADR under `docs/adr/`.
+- The still-open decisions carry status `open` and a default that Obi builds to until the
+  owner confirms otherwise; `/obi-change` names the default in its hand-back and pull request.
+- Regression view: `final_docs/0.5-regression-tests/regression-decisions.md` lists the
+  regression-relevant subset and defers here as canonical.
+
+## Settled calls
+
+Dated 2026-09-14 unless noted. The four rows dated 2026-09-18 were added after the questions
+raised during the 0.5 regression phase.
+
+| id | decision | value | status | date | note |
+|---|---|---|---|---|---|
+| vd-model | embedding model | the model in use today, 3072 dimensions; same model for questions and for children | confirmed | 2026-09-14 | the model bake-off is deferred to `docs/future-ideas.md` (vd-model) |
+| speed-vs-accuracy | accuracy before speed | a correct answer in 7–9 s per answer is acceptable; a wrong answer is not | confirmed | 2026-09-14 | |
+| folder-move | when the folder move happens | early — Phase 1 | confirmed | 2026-09-14 | frontend/ backend/ knowledge-base/ split |
+| embedded-scoping | scoping for embedded users | integration-level scoping; no per-person Confluence permissions in v1 | confirmed | 2026-09-14 | per-person permissions stay an open target on the design page (section 11) |
+| note-ttl | how long the note lives | 60 minutes per platform | confirmed | 2026-09-14 | |
+| note-empty | a note with no values | gives general pages only | confirmed | 2026-09-14 | |
+| note-fetch-timing | when the note is fetched | at the button click | confirmed | 2026-09-14 | |
+| platform-order | platform rollout order | Data Hub first; Mews and Toast follow; Opera Cloud stays inactive until confirmed | confirmed | 2026-09-14 | |
+| translation | non-English questions | translated to English before search; the checked answer translated back before replay | confirmed | 2026-09-14 | citations, markers and the trace stay English (rule 9) |
+| keyword-lang | the keyword index language | stays English | confirmed | 2026-09-14 | |
+| cost-per-q | cost per question | 3–6 cents per question is accepted for now | confirmed | 2026-09-14 | |
+| doc-gap-ownership | documentation-gap ownership | out of scope for now | confirmed | 2026-09-14 | |
+| support-judge | the support judge | fails closed | confirmed | 2026-09-14 | Priority 2, the batched support check before send |
+| hosting | where Obi is hosted | AWS, in the last phase | confirmed | 2026-09-14 | |
+| dev-webhook | a public webhook during development | runs through a tunnel | confirmed | 2026-09-14 | |
+| i2-fetch | when the page body is fetched | on a version change only; 2.2.2 owns the target | confirmed | 2026-09-18 | the panel's "or the attachment list moved" text overstates the code; body fetch is version-driven |
+| i4-failed | a gate-failed version | is never garbage collected; on the queue path the gate's rollback leaves no version row at all | confirmed | 2026-09-18 | 2.4.3 keeps the stage-4 regression tests green against this behavior |
+| widget-test-level | the level of the 0.5 widget regression tests | jsdom component tests (count as unit) plus the `widget-mounts.spec.ts` mount smoke; Playwright per panel arrives with Phase 4 | confirmed | 2026-09-18 | the Phase 4 substeps (4.2.x) change each widget panel at browser level and write the browser tests then |
+| r1-limits-ipkey | the untokened rate-limit IP key | stays `request.client.host`, no X-Forwarded-For parsing, until the trusted proxy hop count is set in 7.1.1 | confirmed | 2026-09-18 | 3.2.6 adds the `TRUSTED_PROXY_HOPS` setting (default 0) and its tests; 7.1.1 sets the real count and makes the proxy forward XFF. See open `trusted-proxy-hops` below |
+
+## Open — building to the default until the owner confirms
+
+| id | decision | default built to | status | date | note |
+|---|---|---|---|---|---|
+| freshness-target | the freshness target in seconds | — | open | 2026-09-14 | needs the owner's number |
+| latency-budget | the worst-case latency budget | — | open | 2026-09-14 | needs the owner's number |
+| rerank-depth | the rerank depth | 75 today | open | 2026-09-14 | recalibrate on the gold set |
+| trusted-proxy-hops | the trusted proxy hop count for the rate-limit IP key | `TRUSTED_PROXY_HOPS = 0`, meaning `request.client.host` | open | 2026-09-18 | set in 7.1.1 once the real chain from browser → widget proxy route → any load balancer → API is known. The widget's own proxy route (w-proxy) sits between browser and backend, so at 0 every browser behind one proxy instance shares one 20/min bucket — accepted for the pilot |
+
+## Open / decision-needed tracking rows (append-only; resolutions dated)
 
 | id | decision (panel) | default built to | status | confirmed by / date | note |
 |---|---|---|---|---|---|
-| _pending_ | _from design section 11_ | _the page's proposed default_ | awaiting confirmation | | populate once the design page is on this branch |
-| tg-deactivate-xfail | tg-deactivate (Planned, substep 2.2.4) | `@pytest.mark.xfail(strict=True, reason="tg-deactivate is Planned; built in 2.2.4")` on `test_delete_marks_the_active_version_superseded`, `apps/automation/app/features/confluence_sync/tests/test_worker_sync.py:160` | expected red until 2.2.4 | 0.5.1 · 2026-09-16 | Not a decision-needed row — an informational tracking line requested when closing 0.5.1. This test was not written by substep 0.2.8: it was already present, uncommitted, in the working tree before 0.2.8 started (`docs/Final_docs/0.2-agent-quality/test-writer-check.md:75`, "Pre-existing in the working tree, uncommitted, before this check started"); 0.2.8 exercised it (fail→stub-pass→fail cycle) but did not author it. `deactivate_page` (`versioning.py`) never flips `DocumentVersion.state` to `superseded` — substep 2.2.4 builds that. |
-| live-0.5.3-cm-infra | cm-infra: is production actually running on Supabase? | none — open | red, unconfirmed | 0.5.3 · 2026-09-16 | Not a decision-needed row — an open finding from the live isolation run. Only the confirmed staging Supabase project was connected to (per this substep's "never against production" rule); whether production also runs on Supabase, or where it actually points, was not and could not be checked from staging alone. See `final_docs/0.5-regression-tests/coverage-map.md`'s "needs live" table. |
-| live-0.5.3-cm-docs | cm-docs: does an ADR exist for fingerprint/scope_state/label-gated-ingestion/edge-token? | none — open | red, confirmed absent | 0.5.3 · 2026-09-16 | Not a decision-needed row. Checked all 13 ADRs on disk (0001-0014, no 0012); none covers these four topics. No fix applied — flagging only, per this substep's no-code-change scope. A future substep should either write the ADR(s) or correct the design page's implied claim that one exists. |
-| live-0.5.3-sc-user | sc-user: shape of a real per-person identity mapping | none — open | red, unconfirmable this session | 0.5.3 · 2026-09-16 | Not a decision-needed row. No real platform's per-person identity flow was available to check; only local test-host scaffolding exists. Per-person Confluence permissions for embedded users is already tracked as an open target in the design page's section 11. |
-| live-0.5.3-e-ops | e-ops: p50 5.9s / p95 7.4s / $0.23-per-run figures | none — open | red, unreproducible | 0.5.3 · 2026-09-16 | Not a decision-needed row. No code path in `features/evaluation` computes or stores these; the numbers are a one-off manual local run recorded in `docs/_archive/rag-legacy-pre-phase0/PLAN.md` (archived), not reproducible from wired code. A future substep needs to build a real gold-set-driven latency/cost pipeline before this can turn green. |
-| em-hostbackend | em-hostbackend: does the platform sign the note directly, or does an agreed auth service? | none — genuinely unresolved | blocked | | Cross-referenced, not duplicated: already an open `[Decision needed]` item in `docs/Final_docs/0.4-design-review/delta.md:206` and the design page's section 11. 0.5.3's live check confirms it stays red — no code in this repo implements or checks this panel; it describes a system outside the repo. Needs the owner's call on which team/system signs the note. |
-| live-0.5.3-ov-auth | ov-auth step 5: backend verifies alg/signature/issuer/audience/expiry against a real platform's key | none — open | red, unconfirmable this session | 0.5.3 · 2026-09-16 | Not a decision-needed row. Confirmed in code/tests against synthetic test-host keys only (`test_token_verifier.py` etc.); no real platform's live signing key was available to test end-to-end this session. |
-| r1-limits-xff | r1-limits: does untokened rate-limit keying trust X-Forwarded-For from a reverse proxy? | none — code uses `request.client.host` unconditionally today | red, open | p0-s0_5-reg-retrieval-stage-1 · 2026-09-17 | The panel's proof text names "client IP (trusted-proxy X-Forwarded-For)" as the untokened fallback key; no X-Forwarded-For parsing exists anywhere in `apps/automation/app` (`_rate_limit_key`, `router.py:333`, uses `request.client.host` directly). Trusting XFF without knowing which hop is the real proxy is itself a security decision (spoofable otherwise), so no default was assumed. Owner call: implement trusted-proxy XFF parsing (and which hop(s) to trust), or correct the panel to drop the claim. |
-| r1-small-model | r1-small: does the small-talk greeting come from Haiku (routing_model) or the answer model? | none — code uses `settings.answer_model` today, not `settings.routing_model` | red, open | p0-s0_5-reg-retrieval-stage-1 · 2026-09-17 | The panel's proof text says the greeting comes "from Haiku." `AnthropicAnswerGenerator.generate_small_talk` always uses the model it was constructed with, and `app/main.py:99-101` constructs it with `settings.answer_model` (default a Sonnet model) — `settings.routing_model` (Haiku) is only ever used for query rewrite and the clarification classifier. This is a real cost/latency choice, not just a doc gap, so no default was assumed. Owner call: rewire `generate_small_talk` to `routing_model` to match the panel and cut cost, or correct the panel to name the answer model. |
+| tg-deactivate-xfail | tg-deactivate (Planned, substep 2.2.4) | `@pytest.mark.xfail(strict=True, reason="tg-deactivate is Planned; built in 2.2.4")` on `test_delete_marks_the_active_version_superseded`, `apps/automation/app/features/confluence_sync/tests/test_worker_sync.py:160` | expected red until 2.2.4 | 0.5.1 · 2026-09-16 | Informational tracking line. This test was pre-existing/uncommitted before 0.2.8 (`docs/Final_docs/0.2-agent-quality/test-writer-check.md:75`); 0.2.8 exercised it but did not author it. `deactivate_page` (`versioning.py`) never flips `DocumentVersion.state` to `superseded` — substep 2.2.4 builds that. |
+| live-0.5.3-cm-infra | cm-infra: is production actually running on Supabase? | n/a | **resolved 2026-09-18** | owner · 2026-09-18 | Owner: production does not exist yet; everything is staging, running on Supabase. So there is no separate production store to isolate against today. The cm-infra regression row stays green for what it proves (docker-compose pin + where the "production is Supabase" claim is documented); the live "prod on Supabase" question is moot until a production environment is provisioned (7.1.1). |
+| live-0.5.3-cm-docs | cm-docs: does an ADR exist for fingerprint/scope_state/label-gated-ingestion/edge-token? | none — the four ADRs do not exist | **deferred 2026-09-18** | owner · 2026-09-18 | Owner: deferred. Writing the four missing ADRs is tracked in `docs/future-ideas.md` (cm-docs-adrs). Until written, the design page must not imply they exist; the coverage-map keeps this red under "needs live". |
+| live-0.5.3-sc-user | sc-user: shape of a real per-person identity mapping | none | **deferred 2026-09-18** | owner · 2026-09-18 | Owner: no real per-person identity flow to test against yet. Tracked in `docs/future-ideas.md` (sc-user-identity). Per-person Confluence permissions for embedded users stays a v1-deferred target (see `embedded-scoping`). |
+| live-0.5.3-e-ops | e-ops: p50 5.9s / p95 7.4s / $0.23-per-run figures | none — open | red, unreproducible | 0.5.3 · 2026-09-16 | No code path in `features/evaluation` computes or stores these; the numbers are a one-off manual local run recorded in `docs/_archive/rag-legacy-pre-phase0/PLAN.md` (archived). A future substep needs a real gold-set-driven latency/cost pipeline before this can turn green. |
+| em-hostbackend | em-hostbackend: does the platform sign the note directly, or does an agreed auth service? | the owner/platform signs the note directly for now | **partly resolved 2026-09-18** | owner · 2026-09-18 | Owner: "I sign the notes" — for now the platform/owner signs directly. Whether a shared, agreed auth service exists is undecided ("it depends") and is tracked in `docs/future-ideas.md` (em-auth-service). |
+| live-0.5.3-ov-auth | ov-auth step 5: backend verifies alg/signature/issuer/audience/expiry against a real platform's key | synthetic test-host keys only | **deferred 2026-09-18** | owner · 2026-09-18 | Owner: no real platform signing key to test end-to-end yet. Tracked in `docs/future-ideas.md` (ov-auth-key). Confirmed in code/tests against synthetic keys (`test_token_verifier.py`). |
+| r1-limits-xff | r1-limits: untokened rate-limit keying and X-Forwarded-For | `request.client.host`, no XFF parsing | **resolved 2026-09-18** | owner · 2026-09-18 | Owner: drop the XFF claim, keep `request.client.host`; do not build XFF parsing now — the hop count is a hosting fact fixed in 7.1.1, and a guessed count makes the limit spoofable. See settled `r1-limits-ipkey` and open `trusted-proxy-hops`. The r1-limits panel today-line is corrected to match the code; 3.2.6 adds the setting, 7.1.1 sets the real count. |
+| r1-small-model | r1-small: does the small-talk greeting come from Haiku or the answer model? | `routing_model` (Haiku) | **resolved 2026-09-18** | owner · 2026-09-18 | Owner: doesn't matter, could be Haiku → the design page wins (it says Haiku). `generate_small_talk` is rewired to `settings.routing_model`; a unit test asserts it. |

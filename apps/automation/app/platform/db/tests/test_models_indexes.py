@@ -216,3 +216,76 @@ def test_r2_indexes_gin_partial_predicate_is_active_and_kind(indexed_engine: Eng
 
     assert shape is not None, f"{_GIN_INDEX} does not exist on {_TABLE}"
     assert shape["predicate"] == "(is_active AND (kind = 1))"
+
+
+# --- panel ov-corpus (substep p0-s0_5-reg-system-overview): the storage box's three "Settings"
+# checks — Engine, Dense index, Keyword index — asserted against the live Postgres catalog of a
+# freshly migrated database, never against models.py text. Reuses the `indexed_engine` fixture and
+# `_index_shape` helper above. These are the System-overview panel's own framing of the storage
+# engine; the r2-indexes tests above protect the same two indexes at the retrieval panel's finer
+# grain (partial predicates, exact expression), so these panel-scoped tests deliberately assert the
+# ov-corpus wording (method + opclass + storage params bundled per line) and do not duplicate them
+# verbatim.
+
+
+def test_ov_corpus_engine_is_postgres16_with_pgvector_and_fulltext_search(
+    indexed_engine: Engine,
+) -> None:
+    """panel ov-corpus · substep p0-s0_5-reg-system-overview
+    Engine check: the store is PostgreSQL 16 with the pgvector extension installed and PostgreSQL
+    full-text search available — proven against the live server, not the model text."""
+    with indexed_engine.connect() as conn:
+        server_version_num = conn.execute(text("SHOW server_version_num")).scalar_one()
+        pgvector_version = conn.execute(
+            text("SELECT extversion FROM pg_extension WHERE extname = 'vector'")
+        ).scalar_one_or_none()
+        fts_matches = conn.execute(
+            text(
+                "SELECT to_tsvector('english', 'Obi answers with citations') "
+                "@@ to_tsquery('english', 'citation')"
+            )
+        ).scalar_one()
+        tsvector_type_exists = conn.execute(
+            text("SELECT 1 FROM pg_type WHERE typname = 'tsvector'")
+        ).scalar_one_or_none()
+
+    # PostgreSQL 16.x — server_version_num is MMmmpp, so the major version is the value // 10000.
+    assert int(server_version_num) // 10000 == 16
+    # pgvector present (any installed version); the corpus cannot store dense vectors without it.
+    assert pgvector_version is not None, "pgvector extension is not installed"
+    # Full-text search: the built-in tsvector type exists and a to_tsvector/to_tsquery match works.
+    assert tsvector_type_exists is not None, "tsvector type is not available"
+    assert fts_matches is True
+
+
+def test_ov_corpus_dense_index_is_hnsw_cosine_m16_ef200(indexed_engine: Engine) -> None:
+    """panel ov-corpus · substep p0-s0_5-reg-system-overview
+    Dense index check: the dense index is a genuine HNSW index using the cosine operator class
+    with storage params m=16, ef_construction=200. Above pgvector's 2000-dim cap it is built over
+    the halfvec cast (halfvec_cosine_ops); at or below it, over the raw vector (vector_cosine_ops).
+
+    The suite pins EMBEDDING_DIM low (see conftest), so a stock `make test-db` exercises the
+    plain-vector branch, not the halfvec(3072) branch the panel names for production. The assertion
+    branches on the model's own configured EMB_DIM so it stays honest under either dimension."""
+    shape = _index_shape(indexed_engine, _HNSW_INDEX)
+
+    assert shape is not None, f"{_HNSW_INDEX} does not exist on {_TABLE}"
+    assert shape["method"] == "hnsw"
+    if EMB_DIM > _HALFVEC_THRESHOLD_DIMS:
+        assert shape["expression"] == f"(embedding)::halfvec({EMB_DIM})"
+        assert shape["opclasses"] == ["halfvec_cosine_ops"]
+    else:
+        assert shape["expression"] is None
+        assert shape["opclasses"] == ["vector_cosine_ops"]
+    assert set(shape["storage_options"] or []) == {"m=16", "ef_construction=200"}
+
+
+def test_ov_corpus_keyword_index_is_gin_over_tsvector(indexed_engine: Engine) -> None:
+    """panel ov-corpus · substep p0-s0_5-reg-system-overview
+    Keyword index check: the keyword index is a genuine GIN index indexing a tsvector column
+    (tsvector_ops operator class) — the full-text-search shortcut the panel names."""
+    shape = _index_shape(indexed_engine, _GIN_INDEX)
+
+    assert shape is not None, f"{_GIN_INDEX} does not exist on {_TABLE}"
+    assert shape["method"] == "gin"
+    assert shape["opclasses"] == ["tsvector_ops"]

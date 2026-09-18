@@ -280,6 +280,53 @@ describe("handlePostChat", () => {
     expect(responseText).not.toContain(FAKE_CONFIG.apiKey);
   });
 
+  // panel ov-widget · substep p0-s0_5-reg-system-overview
+  // System-overview step 3: "The proxy adds the server key and streams the answer back." One
+  // composite proxy-hop assertion: (a) the outbound backend call is issued through the
+  // server-side-configured client that carries the host key (FAKE_CONFIG.apiKey — read only on the
+  // server, injected by callAutomationApi as its Bearer auth; see client.test.ts's
+  // r1_proxy_forwards_chat_api_key_as_bearer_auth for the header itself), (b) the backend's SSE
+  // body is streamed straight back to the browser, and (c) that host key never appears in anything
+  // the browser receives (headers or body).
+  it("ov_widget_proxy_adds_the_server_key_and_streams_the_answer_back", async () => {
+    let sourceController!: ReadableStreamDefaultController<Uint8Array>;
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        sourceController = controller;
+      },
+    });
+    callAutomationApiMock.mockResolvedValue(
+      new Response(stream, { status: 200, headers: { "content-type": "text/event-stream" } }),
+    );
+
+    const request = jsonRequest({ history: [{ role: "user", content: "how do I refund a folio?" }] });
+    const responsePromise = handlePostChat(request);
+
+    sourceController.enqueue(new TextEncoder().encode("data: {\"type\":\"token\",\"delta\":\"Go to\"}\n\n"));
+    const response = await responsePromise;
+
+    // (a) The outbound call went through the server-side client holding the host key.
+    expect(callAutomationApiMock).toHaveBeenCalledWith(
+      FAKE_CONFIG,
+      expect.objectContaining({ path: "/chat", method: "POST" }),
+    );
+    expect(FAKE_CONFIG.apiKey).toBe("secret");
+
+    // (b) The answer streams back — the first chunk is readable before the source stream closes.
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe("text/event-stream");
+    const reader = response.body!.getReader();
+    const { value, done } = await reader.read();
+    expect(done).toBe(false);
+    expect(new TextDecoder().decode(value)).toContain("Go to");
+
+    // (c) The browser never sees the host key — not in headers, not in the body.
+    const serializedHeaders = JSON.stringify([...response.headers.entries()]);
+    expect(serializedHeaders).not.toContain(FAKE_CONFIG.apiKey);
+
+    sourceController.close();
+  });
+
   it("returns 502 when the upstream call itself fails", async () => {
     callAutomationApiMock.mockRejectedValue(new Error("connection refused"));
 

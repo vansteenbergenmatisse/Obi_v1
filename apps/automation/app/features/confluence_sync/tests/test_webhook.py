@@ -62,6 +62,7 @@ def test_valid_signed_event_is_accepted_and_enqueued(webhook_settings):
 
 
 def test_missing_signature_is_rejected(webhook_settings):
+    """panel i1-checks · missing HMAC header is rejected with 401, no job enqueued."""
     client = make_client(webhook_settings)
     raw = json.dumps(event_body()).encode()
     resp = client.post("/confluence/events", content=raw)
@@ -78,6 +79,7 @@ def test_bad_signature_is_rejected(webhook_settings):
 
 
 def test_duplicate_delivery_is_deduped(webhook_settings):
+    """panel i1-ledger · same delivery dedupes quietly (duplicate flag), never a 500."""
     client = make_client(webhook_settings)
     raw = json.dumps(event_body()).encode()
     first = client.post("/confluence/events", content=raw, headers=sign(raw))

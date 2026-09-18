@@ -62,6 +62,23 @@ describe("streamChat", () => {
     expect(url).toBe("/api/chat");
   });
 
+  // panel ov-widget · substep p0-s0_5-reg-system-overview
+  // System-overview step 2: "The user asks. The widget calls its own proxy route." The browser
+  // must POST to the widget's OWN same-origin proxy route, never straight at the automation
+  // backend — the request target is a relative path, so it can carry no absolute backend host.
+  it("ov_widget_user_asks_calls_its_own_proxy_route_not_the_backend_directly", async () => {
+    fetchMock.mockResolvedValue(okStreamResponse([sse({ type: "start", conversationId: "c" })]));
+
+    await streamChat({ history: [{ role: "user", content: "how do I refund a folio?" }] }, {});
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/chat");
+    // A relative path (no scheme/host) proves the call stays on the widget's own origin and is not
+    // pointed at the Python automation backend directly.
+    expect(String(url)).not.toMatch(/^https?:\/\//);
+    expect((init as RequestInit).method).toBe("POST");
+  });
+
   it("attaches the Authorization bearer header when a token is present", async () => {
     getTokenMock.mockReturnValue("jwt-abc123");
     fetchMock.mockResolvedValue(okStreamResponse([sse({ type: "start", conversationId: "c" })]));

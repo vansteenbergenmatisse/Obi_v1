@@ -620,3 +620,201 @@ def test_fixture_gateway_set_restrictions_override_bypasses_resolution(monkeypat
     monkeypatch.setattr("app.platform.clients.fixture_confluence_client._loader", lambda: stub)
     gateway.set_restrictions(9001, ["acct-expanded-member"])
     assert gateway.get_restrictions(9001) == ["acct-expanded-member"]
+
+
+# -- ov-confluence regression net (design panel `ov-confluence`, System overview) --------
+#
+# substep p0-s0_5-reg-system-overview. One test per check the `ov-confluence` panel lists.
+# These lock the current, live-confirmed behaviour of the Confluence source-of-truth client so a
+# later phase touching nearby code can't silently change what Obi reads, which API version it
+# reads it from, or the client's resilience contract. Deterministic: httpx.MockTransport only,
+# never the network.
+
+
+def test_ov_confluence_reads_page_meta_body_labels_restrictions_and_attachments() -> None:
+    """panel ov-confluence · substep p0-s0_5-reg-system-overview
+    Check "What we read": the client reads page meta, body (storage format), labels, read
+    restrictions, and attachments -- the exact five facts the panel promises.
+    """
+    seen_body_format: dict[str, str | None] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path == "/wiki/api/v2/pages/9001":
+            body: dict = {}
+            fmt = request.url.params.get("body-format")
+            seen_body_format["fmt"] = fmt
+            if fmt == "storage":
+                body = {"body": {"storage": {"value": "<p>Stored body</p>"}}}
+            return httpx.Response(
+                200,
+                json={
+                    "id": "9001",
+                    "spaceId": "100",
+                    "title": "Welcome",
+                    "status": "current",
+                    "version": {"number": 3, "createdAt": "2026-01-02T00:00:00Z"},
+                    "_links": {"webui": "/spaces/X/pages/9001"},
+                    **body,
+                },
+            )
+        if path == "/wiki/api/v2/pages/9001/labels":
+            return httpx.Response(200, json={"results": [{"name": "obi-general-test"}]})
+        if path == "/wiki/api/v2/pages/9001/attachments":
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "id": "att1",
+                            "title": "notes.pdf",
+                            "mediaType": "application/pdf",
+                            "fileSize": 100,
+                            "version": {"number": 1},
+                            "downloadLink": "/rest/api/content/9001/child/attachment/att1/download",
+                        }
+                    ]
+                },
+            )
+        if path == "/wiki/rest/api/content/9001/restriction":
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "operation": "read",
+                            "restrictions": {"user": {"results": [{"accountId": "acct-alice"}]}},
+                        }
+                    ]
+                },
+            )
+        raise AssertionError(f"unexpected path {path}")
+
+    client = HttpConfluenceClient(
+        _settings(), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+
+    meta = client.get_page_meta(9001)
+    assert meta is not None
+    assert meta.page_id == 9001
+    assert meta.title == "Welcome"
+    assert meta.version_number == 3
+
+    page = client.get_page(9001)
+    assert page is not None
+    assert seen_body_format["fmt"] == "storage"  # body requested in storage format
+    assert page.body_storage == "<p>Stored body</p>"
+
+    assert client.get_labels(9001) == ["obi-general-test"]
+    assert client.get_restrictions(9001) == ["acct-alice"]
+
+    attachments = client.get_attachments(9001)
+    assert attachments[0]["title"] == "notes.pdf"
+    assert attachments[0]["mediaType"] == "application/pdf"
+
+
+def test_ov_confluence_apis_used_v2_for_pages_v1_for_restrictions_members_and_download() -> None:
+    """panel ov-confluence · substep p0-s0_5-reg-system-overview
+    Check "APIs used": pages/spaces read via REST v2; restrictions, group members, and attachment
+    download via REST v1. (Disclosed drift: the panel text lists labels under v1, but the live
+    client reads labels from the v2 pages endpoint -- this asserts the actual, working path.)
+    """
+    seen: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        seen.append(path)
+        if path.endswith("/restriction"):
+            return httpx.Response(
+                200,
+                json={
+                    "results": [
+                        {
+                            "operation": "read",
+                            "restrictions": {"group": {"results": [{"id": "grp-finance"}]}},
+                        }
+                    ]
+                },
+            )
+        if "/group/by-id/" in path:
+            return httpx.Response(200, json={"results": [{"accountId": "acct-erin"}], "_links": {}})
+        if path.endswith("/download"):
+            return httpx.Response(200, content=b"bytes")
+        # every v2 pages endpoint (meta, list, labels, attachments) shares one benign shape
+        return httpx.Response(
+            200,
+            json={
+                "id": "9001",
+                "spaceId": "100",
+                "title": "T",
+                "status": "current",
+                "version": {"number": 1},
+                "_links": {},
+                "results": [],
+            },
+        )
+
+    client = HttpConfluenceClient(
+        _settings(), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    client.get_page_meta(9001)
+    client.list_space_pages(100)
+    client.get_labels(9001)
+    client.get_restrictions(9001)  # a group restriction, so this also drives the member lookup
+    client.get_attachments(9001)
+    client.download_attachment(
+        "/rest/api/content/9001/child/attachment/att1/download", max_bytes=1_000
+    )
+
+    # v2 pages/spaces
+    assert "/wiki/api/v2/pages/9001" in seen
+    assert "/wiki/api/v2/pages" in seen
+    assert "/wiki/api/v2/pages/9001/labels" in seen  # v2 in code (panel says v1 -> disclosed)
+    assert "/wiki/api/v2/pages/9001/attachments" in seen
+    # v1 for restrictions, group members, attachment download
+    assert "/wiki/rest/api/content/9001/restriction" in seen
+    assert "/wiki/rest/api/group/by-id/grp-finance/member" in seen
+    assert "/wiki/rest/api/content/9001/child/attachment/att1/download" in seen
+
+
+def test_ov_confluence_client_has_timeout_retries_5xx_and_breaks_after_five_failures() -> None:
+    """panel ov-confluence · substep p0-s0_5-reg-system-overview
+    Check "Client": HttpConfluenceClient carries a request timeout, retries a 5xx, and trips its
+    circuit breaker after 5 consecutive whole-request failures.
+    """
+    # timeout: the default (uninjected) client is built with the settings request timeout.
+    default_client = HttpConfluenceClient(_settings())
+    assert default_client._client.timeout == httpx.Timeout(8.0)
+
+    # retry on 5xx: one 503 then a 200 -> a single successful result, the 503 was retried.
+    retried = {"n": 0}
+
+    def flaky(request: httpx.Request) -> httpx.Response:
+        retried["n"] += 1
+        if retried["n"] < 2:
+            return httpx.Response(503)
+        return httpx.Response(200, json={"results": []})
+
+    client = HttpConfluenceClient(
+        _settings(), client=httpx.Client(transport=httpx.MockTransport(flaky))
+    )
+    assert client.get_restrictions(9001) == []
+    assert retried["n"] == 2  # the first 503 was retried, not surfaced
+
+    # circuit breaker after 5 failures (the panel's stated threshold; settings default = 5).
+    always_5xx = {"n": 0}
+
+    def down(request: httpx.Request) -> httpx.Response:
+        always_5xx["n"] += 1
+        return httpx.Response(503)
+
+    breaker_client = HttpConfluenceClient(
+        _settings(), client=httpx.Client(transport=httpx.MockTransport(down))
+    )
+    for _ in range(5):
+        with pytest.raises(httpx.HTTPStatusError):
+            breaker_client.get_labels(9001)  # 5 consecutive whole-request failures
+    calls_before_open = always_5xx["n"]
+    with pytest.raises(ConfluenceCircuitBreakerOpenError):
+        breaker_client.get_labels(9001)  # breaker open -> rejected before any HTTP call
+    assert always_5xx["n"] == calls_before_open  # no new request attempted once open

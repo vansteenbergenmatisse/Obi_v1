@@ -644,3 +644,98 @@ tests), `make test-db` 286 passed + 1 xfailed (unchanged — every new test is u
 boundaries` clean. All five coverage-map rows are filled and ticked; cm-root and cm-contracts were
 repointed from real-but-not-panel-named tests to the new dedicated `test_cm_*` files so every
 citation is literally named for its own panel. Nothing is committed yet.
+
+## p0-s0_5-reg-system-overview · Protect: System overview — 3 panels (2026-09-18)
+
+Wrote the regression net for the three "System overview" panels that already work today —
+`ov-confluence` (Confluence, the source of truth), `ov-corpus` (the Postgres corpus), and
+`ov-widget` (the Obi widget) — so later phases that change code next to them can't silently break
+them. One obi-implementer subagent per panel ran in parallel, each writing to a different test file
+(the Confluence client tests, the db-index tests, and the frontend chat tests — no shared files, no
+collisions). The shared docs (the three coverage-map rows, the batch section, the ledger and this
+log) were written centrally afterward by a single writer to avoid a three-way write race. Every
+subagent read its panel's checks from `tools/panel.py` and added one deterministic test per check,
+named after the panel id.
+
+Nine new tests total, three per panel. `ov-confluence` got three unit tests over an `httpx`
+MockTransport: what the client reads (page meta, storage-format body, labels, restrictions,
+attachments), which API version each endpoint uses, and the client's timeout / 5xx-retry /
+circuit-breaker-after-five-failures behaviour. `ov-corpus` got three database tests that query the
+live Postgres catalog (never `models.py` text), reusing the index-test file's own disposable-engine
+fixture: the engine is PostgreSQL 16 with pgvector and full-text search, the dense index is HNSW
+cosine m=16/ef_construction=200, and the keyword index is GIN over tsvector. `ov-widget` got three
+vitest+jsdom tests: the widget takes its scope from the mount config, it calls its own same-origin
+`/api/chat` proxy route rather than the automation backend directly, and the proxy injects the
+server key and streams the answer back without the browser ever seeing the key. No production code
+was touched anywhere — every check was already true; this batch only proved it.
+
+Three honest disclosures came out of writing the tests, none of them a failing test. The
+`ov-confluence` panel's "APIs used" line lists labels under v1, but the live client actually reads
+labels from the v2 pages endpoint (`/api/v2/pages/{id}/labels`) — the test asserts the real v2 path
+and flags the drift for a future design-review pass (only the attachment *download* link is the v1
+path the panel names). The `ov-corpus` dense-index test branches on the model's configured dimension
+because the test suite pins `EMBEDDING_DIM=256`, under pgvector's halfvec threshold, so a stock
+`make test-db` builds the plain `vector_cosine_ops` branch rather than the production
+`halfvec_cosine_ops(3072)` branch — the same nuance already disclosed for `r2-indexes`/`vd-hnsw`.
+And the three `ov-widget` steps were already indirectly proven under adjacent panel ids
+(`w-scope`, `r1-proxy`, `w-proxy`); dedicated `ov_widget_*` tests were added anyway per the
+substep's "one test per check named after its panel id" rule, none a verbatim duplicate. Also noted:
+the frontend `pnpm lint` isn't wired in this repo (`next lint` drops into an interactive setup
+prompt), pre-existing and not introduced here; frontend typecheck is clean.
+
+Verified centrally after all three subagents returned: `make test-unit` 533 passed (289 deselected),
+`make test-db` 289 passed + 1 xfailed (pre-existing, unrelated), and the ov-widget frontend vitest
+suite green separately (29 files / 236 tests passed). ruff/pyright clean on both touched backend
+files, tsc clean on the three touched frontend files. All three coverage-map rows are now filled and
+ticked, `ov-confluence` repointed from its old group-restriction test to the new dedicated
+`test_ov_confluence_*` tests so every citation is literally named for its own panel. Nothing is
+committed yet.
+
+## 2026-09-18 · The 0.5 questions answered and the plan amendments implemented
+
+The owner amended the action plan (0.1.1, the 0.5.3 widget batch, 0.6.1, 2.4.3, 3.2.6, 7.1.1) and
+answered every open question the 0.5 regression phase had raised. This entry implements those
+answers. First the verification that prompted it: a panel-by-panel reconciliation of all 91 built
+panels found the net is real — every panel has a filled, green coverage-map row backed by a test
+that exists on disk, no missing tests and nothing faked green — with only smaller issues to fix.
+
+The freeze gate (0.1.1) was finally done, honestly and late. The plan's starting commit is
+`bf7fece` (2026-09-14); the tag and branch `pre-target-2026-09-14` were placed on that commit, not
+on today's HEAD, because a tag on today's commit would be a lie about where the plan began. The
+tag's test state was captured in a fresh worktree and written to `docs/snapshot/README.md`: 428
+tests pass and 166 database tests error for lack of a provisioned database — recorded as-is rather
+than spinning up Postgres to produce a prettier number. The tag and branch are local only; there is
+no git remote yet.
+
+Two design-page-vs-code drifts were closed the way the owner chose. For r1-limits, the design page
+claimed a trusted-proxy X-Forwarded-For rate-limit fallback that the code never had; the owner
+decided to drop the claim and keep `request.client.host`, since the real proxy hop count is a
+hosting fact fixed later in 7.1.1 and a guessed count would make the limit spoofable. The panel
+today-line was corrected and a regression test now pins that a forged X-Forwarded-For header changes
+nothing; the `TRUSTED_PROXY_HOPS` setting (default 0) belongs to substep 3.2.6. For r1-small, the
+design page said the small-talk greeting comes from Haiku while the code used the answer model; the
+owner said it does not matter and could be Haiku, so the design page wins — `generate_small_talk`
+now runs on `settings.routing_model` (Haiku) while grounded answers keep the answer model, with the
+test rewritten to assert the split.
+
+0.6.1 was implemented: `docs/plan/decisions.md` is now the one canonical decisions file, carrying
+the fifteen settled calls (2026-09-14), the four calls added on 2026-09-18 (the version-only body
+fetch, the never-garbage-collected failed version, the widget jsdom test level, and the r1-limits IP
+key), and four open lines including the new trusted-proxy-hops default. This reversed an
+earlier-in-session move of that list into the regression folder; the regression file now defers to
+the canonical one. The 0.5.3 widget batch dropped to seven panels because w-scope is `change`, not
+built — a Close item for it was added to the Phase 3 stage 1 close list, and the widget test level
+was relabelled jsdom, with `make test-ui` run once (the mount smoke passes). Four cited tests that
+protected a panel but named it nowhere gained a panel-id docstring, satisfying the naming rule.
+
+The questions the owner could not answer yet — a shared auth service to sign the note, a real
+platform signing key, a real per-person identity flow, and the four missing ADRs for cm-docs — were
+written into `docs/future-ideas.md` as deferred, blocked-on-owner items rather than left as silent
+gaps. One thing was re-verified and found still open: the `final_docs/` versus `docs/Final_docs/`
+path drift the owner thought was fixed is not — the action plan still points at
+`final_docs/0.3-synopsis-of-today/` and `docs/design/…` paths that do not exist on disk, which
+should be corrected in a dedicated pass.
+
+Verification: `make boundaries` clean, `make test-unit` 535 passed (up from 533 by the two new
+tests), `make test-ui` 1 passed, and ruff/format/pyright clean on every touched backend file.
+`make test-db` was not re-run because no database-level code changed. Nothing is committed yet.

@@ -97,7 +97,10 @@ def build_answer_service(settings: Settings) -> AnswerService:
         retriever,
         AnthropicQueryRewriter(client, settings.routing_model),
         AnthropicAnswerGenerator(
-            client, settings.answer_model, identity_static_facts=settings.obi_identity_text
+            client,
+            settings.answer_model,
+            identity_static_facts=settings.obi_identity_text,
+            small_talk_model=settings.routing_model,
         ),
         get_sessionmaker(),
         rewrite_enabled=settings.rewrite_enabled,

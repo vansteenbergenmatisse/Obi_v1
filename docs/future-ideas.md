@@ -6,6 +6,41 @@ is the substep-1.3.1 ideas file named by CLAUDE.md's "where the truth lives" —
 narrowly-scoped list of deferred *plan-adjacent* features, not the broader ad hoc backlog kept at
 `docs/future-ideas/IDEAS.md`.
 
+---
+
+# Owner decisions surfaced 2026-09-18 — page-vs-code drifts to rule on
+
+This holds design-page-vs-code drifts where the tests assert the real (code) behavior, so they are
+green today, but each is a latent red the moment anyone asserts the panel's stated claim. Each needs
+your one-word call: implement the behavior, or correct the page. (The two infra blockers found in the
+same pass — the local test-DB routing and the missing git remote — were moved to the deferred list
+below on 2026-09-18 at the owner's request. The safety caution on the DB-routing one still stands.)
+
+## DECISION · Four design-page-vs-code drifts: implement the behavior, or correct the page
+What: four panels where the design page claims behavior the code does not have. The regression
+tests assert the **real** (code) behavior, so they are green today — but each is a latent red the
+moment anyone asserts the panel's stated claim. For each, you decide: **build the missing behavior**
+or **fix the panel text**.
+- `ov-confluence`: the "APIs used" line lists labels under v1; the code reads labels from v2
+  (`/api/v2/pages/{id}/labels`). Likely a page-text fix.
+- `r1-limits`: ~~the panel claims an `X-Forwarded-For` client-IP rate-limit fallback for untokened
+  requests; no such code exists.~~ **RESOLVED 2026-09-18** (decision `r1-limits-ipkey`): drop the
+  claim, keep `request.client.host`; the panel today-line is corrected and a regression test pins
+  that a forged XFF header changes nothing. `TRUSTED_PROXY_HOPS` (default 0) is added by 3.2.6 and
+  set for real in 7.1.1. See `docs/plan/decisions.md` (`r1-limits-ipkey`, open `trusted-proxy-hops`).
+- `w-composer`: the panel claims a 5 MB per-image size cap; nothing enforces byte size (only
+  count = 4). Decide whether to enforce a size cap or correct the page.
+- `d-event_ledger`: the panel's Columns list names an `actor` column that does not exist (only
+  `actor_account_id`, and it's never persisted to `event_ledger`). Likely a page-text fix.
+**What you should do:** for each of the four, say "implement" or "correct the page." The
+correct-the-page ones I can batch into a single design-review pass; the implement ones become their
+own substeps with their own tests.
+Where it would go: a design-review pass (page-text fixes) plus per-panel substeps for any you want
+built; panels ov-confluence, r1-limits, w-composer, d-event_ledger.
+Added: 2026-09-18
+
+---
+
 ## Multilingual keyword index instead of translation
 What: Build the keyword-search index (r2-keyword) directly against each source language's own
 word forms — a per-language tsvector configuration or a genuinely multilingual index — instead of
@@ -121,3 +156,65 @@ reranking (r4-rerank) already has its own dedicated regression tests from an ear
 Where it would go: features/evaluation/; likely paired with the CI-gate substep (0.5.4) or
 whichever substep next extends the "Protect" batch pattern.
 Added: 2026-09-17
+
+## An agreed auth service to sign the note (em-hostbackend)
+What: a shared, agreed authentication service that signs the platform's note (the JWT the widget
+receives), instead of each platform/owner signing it directly.
+Why not now: the owner signs the notes directly for now ("I sign the notes", 2026-09-18); whether a
+separate agreed auth service should exist "depends" and cannot be decided yet. It describes a system
+outside this repo, so no code here implements or checks it.
+Where it would go: Phase 4 / the token contract; panels em-hostbackend, em-token, ov-auth.
+Added: 2026-09-18
+Blocked on: the owner's call on which team/system owns note-signing at scale.
+
+## A real platform signing key to verify the note end-to-end (ov-auth)
+What: verify the note's alg/signature/issuer/audience/expiry against a real platform's live signing
+key (ov-auth step 5), end-to-end, not just against synthetic test-host keys.
+Why not now: no real platform signing key exists to test against yet (2026-09-18). The verification
+code and its tests already run against synthetic keys (`test_token_verifier.py`); only the live-key
+proof is missing.
+Where it would go: Phase 7 (environments) live checks; panel ov-auth.
+Added: 2026-09-18
+Blocked on: a real platform (Data Hub first) issuing a signing key.
+
+## A real per-person identity flow to shape the identity mapping (sc-user)
+What: a real embedded end-user identity flow so the per-person identity mapping (sc-user) can be
+designed and tested against something concrete, not local test-host scaffolding.
+Why not now: no real per-person identity flow is available yet (2026-09-18). This is the same
+blocker as "Per-person Confluence permissions for embedded users" above — v1 uses integration-level
+scoping only (decision `embedded-scoping`), and the note carries no per-person Confluence identity.
+Where it would go: Phase 4; panels sc-user, em-token, r3-acl. See the per-person-permissions idea above.
+Added: 2026-09-18
+Blocked on: a platform providing a real per-person identity in the note.
+
+## Write the four missing ADRs (cm-docs)
+What: write the decisions-of-record ADRs the design page implies exist but do not, covering the
+fingerprint, scope_state, label-gated ingestion, and the edge token.
+Why not now: deferred doc-debt (owner, 2026-09-18). The four topics are real, implemented behavior;
+the gap is only that no ADR documents them. Until written, the design page must not imply they
+exist and the coverage-map keeps `cm-docs` red under "needs live" (`live-0.5.3-cm-docs`).
+Where it would go: `docs/adr/` — four new numbered ADRs; panel cm-docs.
+Added: 2026-09-18
+Note: I can draft these on request; each is a short ADR describing already-shipped behavior.
+
+## Route local/dev/test make targets away from live Supabase (deferred safety)
+What: the root `.env` sets `DATABASE_URL` to a live Supabase pooler, not the local `:5434` Postgres.
+`make test-db` is safe (it pins the local URL for its own two commands), but `make check`, `make test`
+and `make migrate` still resolve the old way. Two prior safety incidents came from a run connecting to
+live Supabase. The fix is one call: (a) `.env` stops setting `DATABASE_URL` for local dev, or (b) every
+db-touching make target pins the local URL the way `test-db` already does.
+Why not now: deferred at the owner's request (2026-09-18). **CAUTION while deferred:** do not run bare
+`make check` / `make test` / `make migrate` — they may hit live Supabase. Use `make test-db` (pinned)
+or set `DATABASE_URL` to the local instance explicitly for any db-touching command.
+Where it would go: the harness/make targets, near substep 0.5.4 (the CI gate).
+Added: 2026-09-18 (moved here from the 0.5 owner-actions section)
+
+## Configure a git remote so CI runs for real (deferred)
+What: `git remote -v` is empty, so no pull request has ever exercised `.github/workflows/ci.yml`. The
+four underlying commands were verified locally and the gate mechanism was proven historically (PR #1
+red→green in ci-gate-proof.md), but the real CI path on this repo is unproven end-to-end. Configure a
+remote (the GitHub repo) and a branch push + PR proves CI live.
+Why not now: deferred at the owner's request (2026-09-18); no remote exists yet. Not a failing test —
+the local suite is green and the gate logic is proven; only the live-on-remote proof is outstanding.
+Where it would go: substep 0.5.1 / 0.5.4 (the CI gate), once a remote exists.
+Added: 2026-09-18 (moved here from the 0.5 owner-actions section)

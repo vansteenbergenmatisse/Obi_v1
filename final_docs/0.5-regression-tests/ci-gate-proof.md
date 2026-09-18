@@ -104,3 +104,19 @@ Reverted with `git revert --no-edit <break-commit>` on the same branch (keeping 
 - Red run: https://github.com/vansteenbergenmatisse/Obi_v1/actions/runs/35151345624
 - Green run: https://github.com/vansteenbergenmatisse/Obi_v1/actions/runs/35151531728
 - Test name that caught the break: `test_bad_signature_is_rejected`
+
+## Re-verification — release audit 2026-09-18 (read-only, no new PR)
+
+The release audit did not re-run this proof (opening a new PR + pushing a deliberate break would be
+redundant outward activity on the real repo). Instead every recorded artifact was verified against
+the live GitHub API, read-only, on 2026-09-18 — all confirmed genuine:
+
+- `gh api repos/vansteenbergenmatisse/Obi_v1/branches/main/protection` → required contexts
+  `["obi four-level check (0.5.1)"]`, `strict: true`, `enforce_admins: true`. Matches §1.
+- Red run `35151345624` → status `completed`, conclusion **`failure`**.
+- Green run `35151531728` → status `completed`, conclusion **`success`**.
+- Temp branch `prove-gate-2026-09-16` → HTTP 404 (deleted).
+- PR #1 → state **`CLOSED`**, unmerged.
+
+Verdict: Test 5 (CI blocks regressions) PASS on the strength of this verified existing proof. See
+`release-audit-2026-09-18.md`.
