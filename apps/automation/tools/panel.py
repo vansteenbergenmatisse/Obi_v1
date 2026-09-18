@@ -44,11 +44,10 @@ def repo_root() -> Path:
 def find_design_file(root: Path) -> Path:
     """Locate the design flow HTML that carries the nodedata block.
 
-    Prefers the canonical `docs/design/obi-rag-system-flow.html`; falls back to
-    any `*rag-system-flow*.html` under `docs/` (the file is currently shipped in
-    docs/Final_docs/ with a suffixed name).
+    Prefers the canonical `docs/Final_docs/obi-rag-system-flow.html`; falls
+    back to any `*rag-system-flow*.html` under `docs/`.
     """
-    canonical = root / "docs" / "design" / "obi-rag-system-flow.html"
+    canonical = root / "docs" / "Final_docs" / "obi-rag-system-flow.html"
     if canonical.is_file():
         return canonical
     matches = sorted(root.glob("docs/**/*rag-system-flow*.html"))

@@ -4,14 +4,17 @@ enqueues drift that the worker then repairs."""
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import select
 
 from app.features.confluence_sync.application.reconciliation import (
     KIND_COMPLETE,
     KIND_LIGHTWEIGHT,
+    reconcile_space,
     run_reconciliation,
 )
 from app.platform.db.engine import session_scope
-from app.platform.db.models import PageSource, SourceScope
+from app.platform.db.enums import ReconStatus
+from app.platform.db.models import PageSource, ReconciliationRun, SourceScope
 
 from ._helpers import (
     active_child_chunks,
@@ -123,3 +126,101 @@ def test_deactivating_root_purges_previously_synced_now_uncovered_pages(gateway,
 
     assert active_child_chunks(1001) == []
     assert active_child_chunks(1002) == []
+
+
+def test_d_reconciliation_run_persists_scope_kind_status_and_counts(gateway, settings):
+    """panel d-reconciliation_run · substep p0-s0_5-reg-the-relational-database
+    Each sweep writes exactly one reconciliation_run row, and its scope, kind, status,
+    pages_scanned, drift_detected, jobs_enqueued, orphans_deleted, errors and report columns
+    all reflect what the sweep actually did — not just the orphan/job side effects."""
+    index_page(gateway, settings, 1001, version=3)  # 1002 stays unindexed -> new/drifted
+
+    with session_scope() as s:
+        run = run_reconciliation(
+            s, gateway=gateway, settings=settings, kind=KIND_COMPLETE, space_ids=[100]
+        )
+        run_id = run.id
+
+    with session_scope() as s:
+        rows = s.execute(select(ReconciliationRun)).scalars().all()
+        assert len(rows) == 1  # one row per sweep
+
+        row = s.get(ReconciliationRun, run_id)
+        assert row is not None
+        assert row.scope == "all"
+        assert row.kind == KIND_COMPLETE
+        assert row.status == ReconStatus.completed
+        assert row.pages_scanned == 2  # 1001 + 1002 both live in space 100 (1003 is archived)
+        assert row.drift_detected == 1  # only 1002 is new; 1001 already matches the registry
+        assert row.jobs_enqueued == 2  # complete sweep re-verifies every live page
+        assert row.orphans_deleted == 0
+        assert row.errors == 0
+        assert row.report == {
+            "spaces": [100],
+            "new_pages": [1002],
+            "drifted_pages": [],
+            "orphan_pages": [],
+        }
+
+
+def test_s_audit_reconciliation_run_row_persisted_per_sweep(gateway, settings):
+    """panel s-audit · substep p0-s0_5-reg-security (Protect)
+    Duplicates `d-reconciliation_run`'s "one row per sweep" proof under this panel's own name:
+    per sync sweep, a `reconciliation_run` row is persisted (the audit trail's per-sync half of
+    its check, alongside the `webhook_event`/`knowledge_scope_conflict` structured log lines
+    proven by their own dedicated `s-audit`-named tests)."""
+    index_page(gateway, settings, 1001, version=3)
+
+    with session_scope() as s:
+        run_reconciliation(
+            s, gateway=gateway, settings=settings, kind=KIND_COMPLETE, space_ids=[100]
+        )
+
+    with session_scope() as s:
+        rows = s.execute(select(ReconciliationRun)).scalars().all()
+
+    assert len(rows) == 1
+
+
+def test_d_reconciliation_run_scope_column_reflects_space_scoped_sweep(gateway, settings):
+    """panel d-reconciliation_run · substep p0-s0_5-reg-the-relational-database
+    reconcile_space records the space-scoped form ("space:<id>"), distinct from the "all"
+    scope run_reconciliation writes."""
+    with session_scope() as s:
+        run = reconcile_space(
+            s, space_id=100, gateway=gateway, settings=settings, kind=KIND_LIGHTWEIGHT
+        )
+        run_id = run.id
+
+    with session_scope() as s:
+        row = s.get(ReconciliationRun, run_id)
+        assert row is not None
+        assert row.scope == "space:100"
+        assert row.kind == KIND_LIGHTWEIGHT
+        assert row.status == ReconStatus.completed
+
+
+def test_d_reconciliation_run_records_errors_and_failed_status_on_sweep_exception(
+    gateway, settings, monkeypatch
+):
+    """panel d-reconciliation_run · substep p0-s0_5-reg-the-relational-database
+    A space that raises during its sweep is counted in errors and the row's status is
+    'failed' — one bad space is recorded honestly, never silently reported 'completed'."""
+
+    def _boom(space_id: int):
+        raise RuntimeError("simulated Confluence outage")
+
+    monkeypatch.setattr(gateway, "list_space_pages", _boom)
+
+    with session_scope() as s:
+        run = run_reconciliation(
+            s, gateway=gateway, settings=settings, kind=KIND_LIGHTWEIGHT, space_ids=[100]
+        )
+        run_id = run.id
+
+    with session_scope() as s:
+        row = s.get(ReconciliationRun, run_id)
+        assert row is not None
+        assert row.status == ReconStatus.failed
+        assert row.errors == 1
+        assert row.pages_scanned == 0

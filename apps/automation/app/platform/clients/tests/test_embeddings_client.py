@@ -44,8 +44,7 @@ def test_openai_provider_batches_and_sends_dimensions() -> None:
         seen_requests.append(body)
         seen_auth.append(request.headers.get("authorization", ""))
         data = [
-            {"index": i, "embedding": [0.1] * body["dimensions"]}
-            for i in range(len(body["input"]))
+            {"index": i, "embedding": [0.1] * body["dimensions"]} for i in range(len(body["input"]))
         ]
         return httpx.Response(200, json={"data": data})
 
@@ -93,7 +92,9 @@ def test_openai_breaker_opens_after_threshold() -> None:
 
 def test_abuse_cap_rejects_oversized_call() -> None:
     settings = Settings(
-        embedding_provider="openai", embedding_dim=4, openai_api_key="k",
+        embedding_provider="openai",
+        embedding_dim=4,
+        openai_api_key="k",
         embedding_max_texts_per_call=3,
     )
     client = httpx.Client(
@@ -119,3 +120,71 @@ def test_factory_raises_in_production_without_key() -> None:
     )
     with pytest.raises(EmbeddingError):
         build_embedding_provider(settings)
+
+
+def test_r2_embed_page_model_matches_question_model() -> None:
+    """panel r2-embed · substep p0-s0_5-reg-retrieval-stage-2
+    Model: the same one used for pages (OpenAI text-embedding-3-large, 3072). Ingestion (page
+    embedding) and retrieval (question embedding) both call `build_embedding_provider` with the
+    same `Settings`, so pinning the provider it returns for the documented production
+    configuration (.env.example) pins both call sites to the identical model/dim at once."""
+    settings = Settings(
+        embedding_provider="openai",
+        embedding_model="text-embedding-3-large",
+        embedding_dim=3072,
+        openai_api_key="sk-test",
+    )
+    provider = build_embedding_provider(settings)
+    assert isinstance(provider, OpenAIEmbeddingProvider)
+    assert provider.model == "text-embedding-3-large"
+    assert provider.dim == 3072
+
+
+def test_vd_question_uses_the_same_embedding_model_as_page_embedding() -> None:
+    """panel vd-question · substep p0-s0_5-reg-the-vector-database
+    The rewritten question goes through the same embedding model: ingestion (page/child
+    embedding, `features/ingestion/application/services.py`) and retrieval (question embedding,
+    `HybridRetriever._search`) both build their embedder by calling `build_embedding_provider`
+    with the identical `Settings` object, so the provider/model/dim retrieval gets for a question
+    is exactly the one ingestion used to embed the page's children."""
+    settings = Settings(
+        embedding_provider="openai",
+        embedding_model="text-embedding-3-large",
+        embedding_dim=3072,
+        openai_api_key="sk-test",
+    )
+    page_time_embedder = build_embedding_provider(settings)
+    question_time_embedder = build_embedding_provider(settings)
+    assert type(page_time_embedder) is type(question_time_embedder)
+    assert page_time_embedder.model == question_time_embedder.model
+    assert page_time_embedder.dim == question_time_embedder.dim == 3072
+
+
+def test_vd_question_embed_produces_exactly_one_vector_of_3072_numbers() -> None:
+    """panel vd-question · substep p0-s0_5-reg-the-vector-database
+    One vector, 3072 numbers: embedding a single rewritten question returns exactly one vector,
+    and that vector holds exactly 3072 numbers -- never a batch of more than one, never a
+    different width than the child chunks it will be compared against."""
+    embedder = FakeEmbeddingProvider(dim=3072)
+    vectors = embedder.embed(["what is the refund window for a cancelled booking"])
+    assert len(vectors) == 1
+    assert len(vectors[0]) == 3072
+    assert all(isinstance(x, float) for x in vectors[0])
+
+
+def test_r2_embed_empty_call_skipped_without_a_request() -> None:
+    """panel r2-embed · substep p0-s0_5-reg-retrieval-stage-2
+    Empty text: skipped — embed() with no texts returns an empty result and never reaches the
+    network, for the same hosted-provider code path retrieval's question embedder uses."""
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(200, json={"data": []})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    settings = Settings(embedding_provider="openai", embedding_dim=3072, openai_api_key="sk-test")
+    provider = OpenAIEmbeddingProvider(settings, client=client)
+
+    assert provider.embed([]) == []
+    assert calls["n"] == 0

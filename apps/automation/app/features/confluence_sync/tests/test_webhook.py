@@ -14,7 +14,8 @@ from app.features.confluence_sync.server.webhook import get_settings_dep
 from app.main import create_app
 from app.platform.config import Settings
 from app.platform.db.engine import session_scope
-from app.platform.db.models import Job
+from app.platform.db.enums import EventProcStatus
+from app.platform.db.models import EventLedger, Job
 
 pytestmark = (
     pytest.mark.db
@@ -98,6 +99,23 @@ def test_self_generated_event_enqueues_no_job(webhook_settings):
     assert _job_count() == 0
 
 
+def test_i1_self_ledger_row_marked_done_and_self_generated(webhook_settings):
+    """panel i1-self · substep p0-s0_5-reg-ingestion-stage-1
+    actor == confluence_service_account_id: the EventLedger row ends up marked
+    done and self_generated, no job created."""
+    client = make_client(webhook_settings)
+    raw = json.dumps(
+        event_body(actor={"accountId": webhook_settings.confluence_service_account_id})
+    ).encode()
+    resp = client.post("/confluence/events", content=raw, headers=sign(raw))
+    assert resp.status_code == 200
+
+    with session_scope() as s:
+        row = s.execute(select(EventLedger)).scalar_one()
+        assert row.proc_status == EventProcStatus.done
+        assert row.self_generated is True
+
+
 def test_oversized_body_is_rejected(webhook_settings):
     client = make_client(webhook_settings.model_copy(update={"webhook_max_body_bytes": 256}))
     raw = json.dumps(event_body(padding="x" * 1024)).encode()
@@ -121,3 +139,32 @@ def test_rate_limit_returns_429(webhook_settings):
         for _ in range(3)
     ]
     assert codes[-1] == 429
+
+
+def test_s_audit_webhook_event_log_line_carries_type_page_actor_and_outcome(
+    webhook_settings, monkeypatch
+) -> None:
+    """panel s-audit · substep p0-s0_5-reg-security
+    Per sync, the webhook receiver emits one structured `webhook_event` log line per delivery,
+    carrying the event type, page id, actor and outcome flags — the audit trail's other named
+    log event alongside `knowledge_scope_conflict` (already proven by
+    `test_ingestion_pipeline.py::test_conflicting_provider_labels_contribute_no_tag_and_log_conflict`)
+    and the `reconciliation_run` row (already proven by
+    `test_reconciliation.py::test_d_reconciliation_run_persists_scope_kind_status_and_counts`)."""
+    from app.features.confluence_sync.server import webhook as webhook_module
+
+    captured: list[tuple[str, dict]] = []
+    monkeypatch.setattr(
+        webhook_module.log, "info", lambda event, **kw: captured.append((event, kw))
+    )
+    client = make_client(webhook_settings)
+    raw = json.dumps(event_body()).encode()
+    resp = client.post("/confluence/events", content=raw, headers=sign(raw))
+    assert resp.status_code == 200
+
+    events = [fields for event, fields in captured if event == "webhook_event"]
+    assert len(events) == 1
+    assert events[0]["event_type"] == "page_updated"
+    assert events[0]["page_id"] == 1001
+    assert events[0]["actor"] == "acct-alice"
+    assert events[0]["accepted"] is True

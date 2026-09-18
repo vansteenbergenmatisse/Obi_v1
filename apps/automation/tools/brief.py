@@ -2,13 +2,13 @@
 """Regenerate the markdown brief from the design page. Needs beautifulsoup4.
 
 Usage: uv run python apps/automation/tools/brief.py [design.html] [brief.md]
-Defaults: docs/design/obi-rag-system-flow.html -> docs/design/obi-system-brief.md
+Defaults: docs/Final_docs/obi-rag-system-flow.html -> docs/Final_docs/obi-system-brief.md
 """
 import json, re, sys, datetime
 from bs4 import BeautifulSoup, NavigableString, Tag
 
-SRC = sys.argv[1] if len(sys.argv) > 1 else 'docs/design/obi-rag-system-flow.html'
-OUT = sys.argv[2] if len(sys.argv) > 2 else 'docs/design/obi-system-brief.md'
+SRC = sys.argv[1] if len(sys.argv) > 1 else 'docs/Final_docs/obi-rag-system-flow.html'
+OUT = sys.argv[2] if len(sys.argv) > 2 else 'docs/Final_docs/obi-system-brief.md'
 h = open(SRC, encoding='utf-8').read()
 soup = BeautifulSoup(h, 'html.parser')
 D = json.loads(soup.find('script', id='nodedata').string)

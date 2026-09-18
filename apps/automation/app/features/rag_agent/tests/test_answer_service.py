@@ -367,8 +367,12 @@ def test_weak_score_refusal_still_emits_human_handoff(monkeypatch) -> None:
 def test_no_citations_refusal_emits_human_handoff_log_with_verbatim_original_query(
     monkeypatch,
 ) -> None:
-    """`raw_query` is the user's verbatim original text, not the rewritten search string —
-    the human picking this up needs what the user actually asked, not the internal rewrite."""
+    """panel r5-nocite · substep p0-s0_5-reg-retrieval-stage-5
+    `no_citations` is one of the reasons that routes to a human hand-off (this log record is the
+    backend half of the panel's "hand-off link" — the widget's static CTA reads `refusalReason`
+    to decide whether to show it, off_topic being the one reason that does not). `raw_query` is
+    the user's verbatim original text, not the rewritten search string — the human picking this
+    up needs what the user actually asked, not the internal rewrite."""
     fake_log = _FakeLog()
     monkeypatch.setattr(answer_service_module, "log", fake_log)
     retriever = _FakeRetriever(
@@ -387,6 +391,40 @@ def test_no_citations_refusal_emits_human_handoff_log_with_verbatim_original_que
     assert handoff[0]["trace_id"] == "9"
     assert handoff[0]["raw_query"] == "original q"
     assert handoff[0]["refusal_reason"] == "no_citations"
+
+
+def test_s_audit_refusal_emits_human_handoff_log_with_trace_id_raw_query_and_reason(
+    monkeypatch,
+) -> None:
+    """panel s-audit · substep p0-s0_5-reg-security
+    Per refusal, one `human_handoff` structured log line carries the trace id, the raw
+    (verbatim, not rewritten) original query, and the refusal reason — the audit-trail panel's
+    own check, proven here from a `no_candidates` refusal so it stands independently of
+    `r5-nocite`'s test (`test_no_citations_refusal_emits_human_handoff_log_with_verbatim_
+    original_query`, above), which proves the same shape for the `no_citations` reason."""
+    fake_log = _FakeLog()
+    monkeypatch.setattr(answer_service_module, "log", fake_log)
+    retriever = _FakeRetriever(
+        {
+            "rewritten q": RetrievalResult(hits=[], trace_id=42),
+            # the CRAG retry (rewrite != original) re-queries with the verbatim original text
+            "original verbatim q": RetrievalResult(hits=[], trace_id=42),
+        },
+        parent_texts={},
+    )
+    service, _ = _service(retriever, _FakeRewriter("rewritten q"), _RaisingGenerator())
+
+    result = service.answer(
+        [ChatMessage(role="user", content="original verbatim q")], general_only_context()
+    )
+
+    assert result.refused
+    assert result.refusal_reason == "no_candidates"
+    handoff = [fields for event, fields in fake_log.calls if event == "human_handoff"]
+    assert len(handoff) == 1
+    assert handoff[0]["trace_id"] == "42"
+    assert handoff[0]["raw_query"] == "original verbatim q"
+    assert handoff[0]["refusal_reason"] == "no_candidates"
 
 
 def test_successful_answer_emits_no_human_handoff_log(monkeypatch) -> None:
@@ -460,6 +498,10 @@ def test_crag_max_retries_zero_never_retries() -> None:
 
 
 def test_no_surviving_citation_degrades_to_refusal() -> None:
+    """panel r5-nocite · substep p0-s0_5-reg-retrieval-stage-5
+    The model wrote something, but no sentence cited a valid marker (`enforce_citations` strips
+    every claim): Obi refuses with `no_citations`, and the user-visible text is the honest,
+    templated copy, not the model's raw ungrounded draft."""
     retriever = _FakeRetriever(
         {"q": RetrievalResult(hits=[_HIT_A], trace_id=9)}, parent_texts={501: "text"}
     )
@@ -592,6 +634,20 @@ def test_small_talk_writes_no_query_trace_row() -> None:
     service.answer([ChatMessage(role="user", content="thanks!")], general_only_context())
 
     assert session is not None and not session.committed  # _persist never ran (trace_id is None)
+    assert row.answer is None
+
+
+def test_r1_small_writes_no_query_trace_row() -> None:
+    """panel r1-small, check (c): the small-talk short-circuit persists no query_trace row."""
+    retriever = _FakeRetriever({}, {})
+    generator = _FakeGenerator("unused")
+    row = _FakeTraceRow()
+    service, session = _service(retriever, _RaisingRewriter(), generator, row=row)
+
+    result = service.answer([ChatMessage(role="user", content="hi")], general_only_context())
+
+    assert result.trace_id is None
+    assert session is not None and not session.committed
     assert row.answer is None
 
 
@@ -782,6 +838,27 @@ def test_image_only_turn_with_empty_content_skips_retrieval() -> None:
     assert generator.image_analysis_called_with == [("", (_IMAGE,))]
 
 
+def test_r5_image_only_the_newest_turns_image_triggers_analysis() -> None:
+    """panel r5-image · substep p0-s0_5-reg-retrieval-stage-5
+    Trigger: images on the newest turn — an image attached to an older turn must never trigger
+    image analysis; `answer()` reads `has_image` off `history[-1]` only."""
+    retriever = _FakeRetriever(
+        {"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, parent_texts={501: "text"}
+    )
+    generator = _FakeGenerator("Answer [1].")
+    service, _ = _service(retriever, _FakeRewriter("q"), generator)
+
+    history = [
+        ChatMessage(role="user", content="q", images=[_IMAGE]),
+        ChatMessage(role="assistant", content="a"),
+        ChatMessage(role="user", content="q"),
+    ]
+    result = service.answer(history, general_only_context())
+
+    assert generator.image_analysis_called_with == []
+    assert result.image_analysis is None
+
+
 def test_clarification_branch_disabled_by_default_never_calls_the_classifier() -> None:
     """PLAN 9.2: `enable_clarification_branch` defaults to False — the classifier must never be
     constructed-and-called just because a real question reaches the pipeline."""
@@ -796,6 +873,23 @@ def test_clarification_branch_disabled_by_default_never_calls_the_classifier() -
     result = service.answer([ChatMessage(role="user", content="q")], general_only_context())
 
     assert not result.refused
+
+
+def test_r1_clarify_flag_defaults_to_false() -> None:
+    """panel r1-clarify, check (a): `enable_clarification_branch` defaults False — a real question
+    never reaches the classifier unless the flag is explicitly turned on."""
+    retriever = _FakeRetriever(
+        {"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, parent_texts={501: "text"}
+    )
+    generator = _FakeGenerator("Answer [1].")
+    service, _ = _service(
+        retriever, _FakeRewriter("q"), generator, clarification_classifier=_RaisingClassifier()
+    )
+
+    result = service.answer([ChatMessage(role="user", content="q")], general_only_context())
+
+    assert not result.refused
+    assert result.text == "Answer [1]."
 
 
 def test_clarification_branch_with_non_ambiguous_verdict_runs_the_full_pipeline_unchanged() -> None:

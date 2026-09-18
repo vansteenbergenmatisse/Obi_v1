@@ -39,6 +39,24 @@ _TABLES = [
 _READER_ROLE = "rag_reader"
 _READER_PASSWORD = "rag_reader_test"
 
+# This fixture creates a database, drops/recreates schema, and resets _READER_ROLE's password on
+# whatever host DATABASE_URL resolves to. Two live incidents (2026-09-16, 2026-09-16) came from an
+# unpinned DATABASE_URL silently resolving to the live Supabase pooler instead of erroring. Refuse
+# to touch anything but a local Postgres, before the first connection is even opened.
+_ALLOWED_TEST_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def _require_local_host(url) -> None:
+    if url.host not in _ALLOWED_TEST_HOSTS:
+        raise RuntimeError(
+            f"Refusing to run the database test suite against host {url.host!r}. "
+            "DATABASE_URL must point at a local Postgres (localhost/127.0.0.1) before these "
+            "tests run — they create a database and reset the rag_reader role's password on "
+            "whatever host this resolves to. Run `make test-db` (pins this correctly), or "
+            "export DATABASE_URL yourself to the local compose instance before running pytest "
+            "directly. Never run a db-marked test with the root .env's DATABASE_URL as-is."
+        )
+
 
 def _ensure_database(url: str) -> None:
     u = make_url(url)
@@ -58,6 +76,7 @@ def _ensure_database(url: str) -> None:
 @pytest.fixture(scope="session", autouse=True)
 def _configure_test_engine() -> Iterator[None]:
     base = make_url(get_settings().database_url)
+    _require_local_host(base)
     test_url = base.set(database=f"{base.database}_test").render_as_string(hide_password=False)
     _ensure_database(test_url)
 

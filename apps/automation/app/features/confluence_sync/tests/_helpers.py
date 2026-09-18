@@ -89,6 +89,21 @@ def active_child_chunks(page_id: int) -> list[Chunk]:
         )
 
 
+def child_chunks_for_version(doc_version_id: int) -> list[Chunk]:
+    """Every child chunk row for one document_version, regardless of is_active (panel vd-swap:
+    a superseded version's rows persist, inactive, until i4-gc's retention window reaps them)."""
+    with read() as s:
+        return list(
+            s.execute(
+                select(Chunk).where(
+                    Chunk.doc_version_id == doc_version_id, Chunk.kind == KIND_CHILD
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+
 def restricted_principals(page_id: int) -> set[str]:
     """The persisted ACL for a page (PLAN 4.3); empty means unrestricted."""
     with read() as s:

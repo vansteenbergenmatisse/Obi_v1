@@ -15,6 +15,7 @@ from app.features.confluence_sync.application.sync_service import handle_sync_pa
 from app.platform.clients.fixture_confluence_client import FixtureConfluenceGateway
 from app.platform.config import Settings
 from app.platform.db.engine import session_scope
+from app.platform.db.models import PageSource
 
 from ._helpers import active_child_chunks, index_page
 
@@ -104,6 +105,28 @@ def test_resyncing_unchanged_page_is_a_true_no_change_not_a_spurious_rebuild(
     with session_scope() as s:
         outcome = handle_sync_page(s, page_id=1001, gateway=gateway, settings=settings)
     assert outcome.action == "no_change"
+
+
+def test_i2_nochange_no_change_resync_still_stamps_last_reconciled_at(
+    gateway: FixtureConfluenceGateway, settings: Settings
+) -> None:
+    """panel i2-nochange · substep 0.5.2
+    When the fingerprint equals the stored one, the no-change path still updates
+    last_reconciled_at before it stops -- it is a reconciliation touch, not a total no-op."""
+    index_page(gateway, settings, 1001, 1)
+    with session_scope() as s:
+        before = s.get(PageSource, 1001)
+        assert before is not None
+        assert before.last_reconciled_at is None  # untouched by the initial index
+
+    with session_scope() as s:
+        outcome = handle_sync_page(s, page_id=1001, gateway=gateway, settings=settings)
+    assert outcome.action == "no_change"
+
+    with session_scope() as s:
+        after = s.get(PageSource, 1001)
+        assert after is not None
+        assert after.last_reconciled_at is not None  # stamped by the no-change resync
 
 
 def test_unchanged_attachment_reuses_embedding_across_a_body_driven_rebuild(

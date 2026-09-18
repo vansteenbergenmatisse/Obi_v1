@@ -37,7 +37,9 @@ def test_rollback_restores_prior_version(gateway, settings):
     index_page(gateway, settings, 1001, version=2)
     index_page(gateway, settings, 1001, version=3)
 
-    assert active_version(1001).cf_version == 3
+    v3 = active_version(1001)
+    assert v3 is not None
+    assert v3.cf_version == 3
     assert count_versions(1001) == 3  # v1, v2 retained (retain=2) + active v3
 
     with read() as s:
@@ -50,7 +52,9 @@ def test_rollback_restores_prior_version(gateway, settings):
     with session_scope() as s:
         assert rollback_to(s, page_id=1001, target_version_id=v2_id) is True
 
-    assert active_version(1001).cf_version == 2
+    v2 = active_version(1001)
+    assert v2 is not None
+    assert v2.cf_version == 2
     assert active_versions_count(1001) == 1  # exactly one active after swap
     assert {c.doc_version_id for c in active_child_chunks(1001)} == {v2_id}
 
@@ -88,9 +92,11 @@ def test_rollback_restores_page_source_hashes_and_pipeline_stamps(gateway, setti
             assert getattr(ps, field) == expected, field
 
 
-def test_rollback_then_unchanged_sync_reports_no_change(gateway, settings):
-    """PLAN 4.6.5: after rollback, re-syncing the same (target) content must not be spuriously
-    flagged as a change just because a stale cached hash from the superseded version lingers."""
+def test_i4_rollback_same_content_sync_reports_no_change(gateway, settings):
+    """panel i4-rollback · substep p0-s0_5-reg-ingestion-stage-4
+    Roll back, then sync the same content: no_change. Re-syncing the same (target) content must
+    not be spuriously flagged as a change just because a stale cached hash from the superseded
+    version lingers."""
     index_page(gateway, settings, 1001, version=1)
     index_page(gateway, settings, 1001, version=2)
 
@@ -109,11 +115,13 @@ def test_rollback_then_unchanged_sync_reports_no_change(gateway, settings):
     assert not decision.meaningful
 
 
-def test_rollback_then_real_newer_revision_is_detected_not_masked(gateway, settings):
-    """PLAN 4.6.5: after rollback, the source revision that was active *before* the rollback (a
-    real newer revision from the rolled-back-to version's perspective) must still be detected as a
-    change on the next sync — not silently masked because a stale cached hash from that same
-    superseded version never got cleared off PageSource."""
+def test_i4_rollback_newer_edit_after_rollback_is_detected_not_masked(gateway, settings):
+    """panel i4-rollback · substep p0-s0_5-reg-ingestion-stage-4
+    Roll back, then a newer edit arrives: detected, not masked. The source revision that was
+    active *before* the rollback (a real newer revision from the rolled-back-to version's
+    perspective) must still be detected as a change on the next sync — not silently masked
+    because a stale cached hash from that same superseded version never got cleared off
+    PageSource."""
     index_page(gateway, settings, 1001, version=1)
     index_page(gateway, settings, 1001, version=2)
 

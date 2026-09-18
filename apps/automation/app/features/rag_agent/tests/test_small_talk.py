@@ -64,3 +64,12 @@ def test_recognizes_small_talk_phrases_case_and_whitespace_insensitively(text: s
 )
 def test_does_not_match_real_questions_even_when_they_start_with_a_greeting(text: str) -> None:
     assert not is_small_talk(text)
+
+
+def test_r1_small_match_is_the_whole_message_trailing_punct_stripped_whitespace_collapsed() -> None:
+    """panel r1-small, check (a): the match is the WHOLE normalized message against a closed set —
+    trailing `!.?` stripped, whitespace collapsed — not a substring or fuzzy match."""
+    assert is_small_talk("hey!!!")
+    assert is_small_talk("  Thank You.  ")
+    assert is_small_talk("what's\n up")
+    assert not is_small_talk("hi, how do I request access to core systems?")
