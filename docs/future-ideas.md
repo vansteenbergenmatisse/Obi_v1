@@ -218,3 +218,18 @@ Why not now: deferred at the owner's request (2026-09-18); no remote exists yet.
 the local suite is green and the gate logic is proven; only the live-on-remote proof is outstanding.
 Where it would go: substep 0.5.1 / 0.5.4 (the CI gate), once a remote exists.
 Added: 2026-09-18 (moved here from the 0.5 owner-actions section)
+
+## Read-only staging DB URL for the live isolation run (pre-production)
+What: a read-only staging connection string (`DATABASE_READER_URL` for staging) so the live isolation
+script (`scripts/setup_supabase.py verify-isolation`, substep 0.5.3 / the 7.1.1 live checks) can prove,
+against the real managed Postgres, that the reader role cannot write and RLS hides forbidden rows.
+Why not now: the isolation *logic* is already proven at the local DB level by the `-m db` tests (both
+roles, all policies, RLS on). The live run is an extra proof that only becomes necessary at 7.1.1, just
+before production, when a misconfigured reader role would expose real tenant data — and no production
+exists yet. The only Supabase URL in `.env` today is the writer/pooler tied to two prior stray-write
+incidents, so the run must NOT use it; it needs a genuinely read-only string.
+What you should do: when a staging reader credential exists, hand me `DATABASE_READER_URL` and confirm
+the host is staging (not production); I'll run the script and save the output to
+`final_docs/0.5-regression-tests/live-isolation-<date>.txt`.
+Where it would go: substep 0.5.3 (live isolation) and 7.1.1 (environments); panels r3-reader, s-reader.
+Added: 2026-09-18
