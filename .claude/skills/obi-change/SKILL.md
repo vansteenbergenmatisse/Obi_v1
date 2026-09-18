@@ -8,7 +8,7 @@ allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 Without a substep id: reply "Give me a substep id from the action plan" and do nothing — no marker, no files.
 
 1. Read and open the marker
-   - grep -n "<substep id>" docs/design/obi-action-plan.html and read that block: Must be true, Proof, refs. If the id is not in the plan, reply "substep <id> is not in the plan", write no marker, and stop.
+   - grep -n "<substep id>" docs/Final_docs/obi-action-plan.html and read that block: Must be true, Proof, refs. If the id is not in the plan, reply "substep <id> is not in the plan", write no marker, and stop.
    - Create the active-substep marker so the implementer's Write/Edit are permitted: `mkdir -p .obi && printf '%s\n' "<substep id>" > .obi/active-substep`. (The guard hook blocks every Write/Edit until this file exists.)
    - For every panel id in refs: `python3 apps/automation/tools/panel.py <id>`. Never open the design page or the brief in full.
    - Read docs/plan/decisions.md and the rows for those panels in docs/plan/delta.md.
@@ -24,8 +24,8 @@ Without a substep id: reply "Give me a substep id from the action plan" and do n
 5. Record
    - For each panel closed: `python3 apps/automation/tools/panel.py <id> --status <word> --today "<one sentence>"`.
    - Regenerate the brief: `python3 apps/automation/tools/brief.py`.
-   - Update the ingestion or retrieval phase doc for the stage touched.
-   - Append one line to docs/plan/ledger.md: `<substep id> · <date> · <commit> · tests: <count> (<names>) · levels: <list> · deviations: <text or none> · defaults built to: <list or none>`.
+   - Append one line to docs/Final_docs/ledger.md: `<substep id> · <substep title from the action plan> · <date> · <commit> · tests: <count> (<names>) · levels: <list> · deviations: <text or none> · defaults built to: <list or none>`. If anything named in the substep was skipped, re-used instead of re-run, or not reproduced fresh, say so and say why in the deviations — unprompted, don't wait to be asked.
+   - Append one entry (2 to 20 plain sentences: what, why, which tests, what happened) to docs/Final_docs/progress-log.md. Same append-only rule as the ledger — never edit a previous entry, even to correct it; a correction is a new entry.
 6. Hand back
    - Files changed, test names, the ledger entry, the verify table.
 7. Stop and close the marker
