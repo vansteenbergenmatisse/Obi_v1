@@ -4,10 +4,23 @@ Status: Accepted
 Date: 2026-09-18
 Governs: apps/automation (platform/db, ingestion, retrieval)
 
-> **Retroactive ADR.** This records a decision already shipped and covered by tests; it
+> **Retroactive ADR.** This records behavior already shipped and covered by tests; it
 > documents existing behavior, it does not change it. Written to close a documentation gap
-> (cm-docs). It narrows and complements ADR-0011, which governs how labels drive scope
-> tagging and retrieval filtering; this ADR records the *schema* decision underneath it.
+> (cm-docs). It relates to ADR-0011, which governs how labels drive scope tagging and retrieval
+> filtering; this ADR records the *schema* shape underneath it.
+
+> **Caveat — open code-vs-design reconciliation (added 2026-09-18).** The design page targets a
+> richer model than this ADR records: its schema section defines `CREATE TYPE scope_state AS ENUM
+> ('ok','conflict','classified','unlabeled')`, and panels `i2-labels` / `i2-gone` / `tg-classified`
+> describe writing that state and acting on it. **None of that enum, a `scope_state` column, or those
+> four state values exist in the code** (verified by grep) — the shipped code materializes only the
+> tag set (plus a transient conflict flag). No prior ADR, including ADR-0011, ratified using `tags`
+> *instead of* the enum, so this ADR documents an as-yet-**unratified divergence**, not a settled
+> superseding decision. It is the same code-vs-design delta as the (deliberately unwritten)
+> label-gated-ingestion ADR — logged in `docs/plan/delta.md` and tracked decision-needed in
+> `docs/plan/decisions.md` (`live-0.5.3-cm-docs`). Read the "Decision" below as a *description of
+> shipped behavior*, pending the owner's call to either build the enum model or amend the design page
+> + never-bend rule #5.
 
 ## Context
 

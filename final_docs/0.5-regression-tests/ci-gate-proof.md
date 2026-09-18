@@ -120,3 +120,27 @@ the live GitHub API, read-only, on 2026-09-18 — all confirmed genuine:
 
 Verdict: Test 5 (CI blocks regressions) PASS on the strength of this verified existing proof. See
 `release-audit-2026-09-18.md`.
+
+## Addendum — first real end-to-end CI run on a feature PR (2026-09-18)
+
+The proof above (§ up to here) verified the branch-protection *setting* and a historical
+prove-gate PR. On 2026-09-18 the actual `feat/rag-phase-3.5` branch was pushed and **PR #3** opened
+against `main`, exercising the required check on real feature work for the first time:
+
+- **Run `35345037971` → `failure`** (41 s). The failure was NOT in the changed feature (substep
+  4.2.7's settings/composer tests passed); it was 4 chunk/token tests in `test_chunking.py` /
+  `test_contextualizer.py` asserting tiktoken-exact counts. Root cause: CI installs only `.[dev]`
+  and the 0.5.1 Makefile/CI split had dropped `--extra tokenizers`, so the runner had no tiktoken
+  and `TokenCounter` fell back to its char heuristic. This is exactly the kind of environment
+  discrepancy the CI gate exists to catch, surfaced on the first real run.
+- **Fix:** moved `tiktoken>=0.8` into core dependencies (ledger `ci-tiktoken-core`), so prod, CI and
+  local all count tokens identically.
+- **Run `35345743740` → `success`** (2 m 27 s). The `obi four-level check (0.5.1)` required check is
+  green on PR #3.
+
+Branch protection re-verified live 2026-09-18 via `gh api .../branches/main/protection`:
+`required_status_checks.contexts = ["obi four-level check (0.5.1)"]`, `strict: true`,
+`enforce_admins: true` — unchanged from §1.
+
+Verdict: the CI gate now has a real red→green proof on feature work, not only the synthetic
+prove-gate PR.

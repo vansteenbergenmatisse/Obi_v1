@@ -760,7 +760,7 @@ details.sec[open]>summary .show{display:none}
     <table>
       <tr><th>Field</th><th>What it is</th><th>Limit</th></tr>
       <tr><td>history</td><td>the turns so far, must end on a user turn</td><td>20 turns, 4000 chars each</td></tr>
-      <tr><td>images</td><td>base64 images on the newest turn only</td><td>4 per turn, 5 MB each</td></tr>
+      <tr><td>images</td><td>base64 images on the newest turn only</td><td>3 per turn, 3 MB each (decision w-composer-images, substep 4.2.7)</td></tr>
       <tr><td>knowledgeScope</td><td>which platform the widget sits in, for example <code>mews</code></td><td>a lowercase slug, checked for shape and against the list; unknown slug: 400. The token decides the scope. A known slug that disagrees with the token is ignored and logged <span class="tag t-bug">Implemented, needs changing</span></td></tr>
       <tr><td>principal</td><td>who is asking, for page-level access</td><td>derived from the token's <code>sub</code> through the identity mapping, never from the body <span class="tag t-bug">Implemented, needs changing</span></td></tr>
       <tr><td>Authorization header</td><td>one shared server key today; a key per widget host plus a signed user token from the host backend in the target (<a href="#embed">section 03.2</a>)</td><td>fail closed if missing <span class="tag t-new">Planned</span></td></tr>
@@ -4700,7 +4700,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 [
 "Images",
-"4 per turn, 5 MB each, checked on every turn"
+"3 per turn, 3 MB each, checked on every turn (decision w-composer-images, substep 4.2.7)"
 ],
 [
 "Scope slug",

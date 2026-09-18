@@ -11,4 +11,14 @@ production).
 
 | panel | today line (design) | code file:line | verdict | delta to implement | substep |
 |---|---|---|---|---|---|
-| _pending_ | | | | | |
+| i2-labels | scope_state written as `ok`/`conflict`/`classified`/`unlabeled` (design schema defines `CREATE TYPE scope_state AS ENUM(...)`) | no `scope_state` enum, column, or those 4 state values exist anywhere (`grep` clean); state is the tag set on `chunk.tags`/`page_source.tags` + a transient conflict flag from `resolve_knowledge_scope_tags` (`confluence_sync/domain/knowledge_scope.py`) | drifted — enum model unbuilt | decision-needed: build the `scope_state` enum, OR ratify tags-only (amend rule #5 + design page, then ADR-0016) | decision-needed (owner 2026-09-18: "just note it") |
+| i2-gone / tg-classified | `classified` label → page deactivated + chunks deleted; losing the last tag → page out of index | deactivation is by Confluence status (trashed/deleted/archived, `_GONE_STATUSES`) + loss of source-scope root coverage (reconciliation purge); `classified` is a forbidden config slug (`platforms.py`), not a delete trigger; a label-only change that empties tags keeps the page active (`test_scope_tagging_retag.py`) | missing — tag-loss/classified rules not implemented | decision-needed: implement, OR amend rule #5 + design page | decision-needed (owner 2026-09-18) |
+| (index gate, rule #5) | a page is in the index only if published AND carries a tag from the tag map | no published+tag indexing gate; a page with zero recognized labels is still indexed with empty `tags` (merely invisible to scoped retrieval since `tags && ARRAY[...]` never matches empty) | missing | decision-needed: implement the gate, OR amend rule #5 + design page | decision-needed (owner 2026-09-18) |
+
+> Added 2026-09-18 during the cm-docs ADR work. These three rows are one cohesive code-vs-design
+> delta: the design's label→scope_state→classification model (rule #5 + the `scope_state` enum) is
+> only partially built (tags + a conflict flag + status-based deactivation). It is why ADR-0015
+> (fingerprints) and ADR-0017 (edge-token) are clean retroactive ADRs, ADR-0016 (scope_state as
+> tags) carries a divergence caveat, and the 4th ADR (label-gated ingestion) was not written. The
+> owner chose to just note it for now (see `docs/plan/decisions.md` `live-0.5.3-cm-docs` and
+> `docs/future-ideas.md` cm-docs-adrs).

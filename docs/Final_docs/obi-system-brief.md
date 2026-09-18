@@ -962,7 +962,7 @@ Each event carries the page id, the page version, the space id, the actor, a tim
 | Field | What it is | Limit |
 |---|---|---|
 | history | the turns so far, must end on a user turn | 20 turns, 4000 chars each |
-| images | base64 images on the newest turn only | 4 per turn, 5 MB each |
+| images | base64 images on the newest turn only | 3 per turn, 3 MB each (decision w-composer-images, substep 4.2.7) |
 | knowledgeScope | which platform the widget sits in, for example `mews` | a lowercase slug, checked for shape and against the list; unknown slug: 400. The token decides the scope. A known slug that disagrees with the token is ignored and logged [Implemented, needs changing] |
 | principal | who is asking, for page-level access | derived from the token's `sub` through the identity mapping, never from the body [Implemented, needs changing] |
 | Authorization header | one shared server key today; a key per widget host plus a signed user token from the host backend in the target (section 03.2) | fail closed if missing [Planned] |
@@ -2728,7 +2728,7 @@ class AuthContext:
   |---|---|
   | Rate | 20 per minute; keyed on the token subject when there is a token, otherwise on request.client.host. No X-Forwarded-For parsing today: TRUSTED_PROXY_HOPS defaults to 0, set per environment in 7.1.1 once the browser→proxy→API chain is known (decision r1-limits-ipkey, 2026-09-18) |
   | History | 1 to 20 turns, must end on a user turn, 4000 chars per turn |
-  | Images | 4 per turn, 5 MB each, checked on every turn |
+  | Images | 3 per turn, 3 MB each, checked on every turn (decision w-composer-images, substep 4.2.7) |
   | Scope slug | ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$ |
   | Principal | all-digit values rejected (they would read as space-wide trust) |
   | LLM calls | 30 s timeout, 2 retries, breaker after 5 |
