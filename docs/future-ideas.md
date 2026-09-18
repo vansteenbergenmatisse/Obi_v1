@@ -203,12 +203,20 @@ Blocked on: a platform providing a real per-person identity in the note.
 ## Write the four missing ADRs (cm-docs)
 What: write the decisions-of-record ADRs the design page implies exist but do not, covering the
 fingerprint, scope_state, label-gated ingestion, and the edge token.
-Why not now: deferred doc-debt (owner, 2026-09-18). The four topics are real, implemented behavior;
-the gap is only that no ADR documents them. Until written, the design page must not imply they
-exist and the coverage-map keeps `cm-docs` red under "needs live" (`live-0.5.3-cm-docs`).
-Where it would go: `docs/adr/` — four new numbered ADRs; panel cm-docs.
+**RESOLVED 2026-09-18 (owner: draft them) — for 3 of 4.** Written as retroactive docs of shipped
+behavior: ADR-0015 (change-detection fingerprints), ADR-0016 (scope-state materialized as tags, no
+column), ADR-0017 (edge-token verification). ADR-0011 already documents the label→scope tagging +
+retrieval filtering that IS shipped.
+The 4th, **label-gated ingestion, is NOT a clean retroactive ADR** — shipped code diverges from
+never-bend rule #5 / the design page: no published+tag indexing gate (a page with zero recognized
+labels is indexed with empty `tags`, merely invisible to scoped retrieval); deactivation is driven
+by Confluence status (trashed/deleted/archived) and by loss of source-scope root coverage, NOT by
+knowledge-scope tag loss (a label-only change keeps the page active); `classified` is a forbidden
+knowledge-scope slug in config validation, not a page-delete trigger. It is now a **code-vs-design
+decision** tracked in `docs/plan/decisions.md` (`live-0.5.3-cm-docs`): fix the code to match rule #5,
+or amend rule #5 + the design page to match the shipped behavior. No ADR until that call is made.
+Where it would go: `docs/adr/` — 3 written; the 4th pending the rule-#5 decision; panel cm-docs.
 Added: 2026-09-18
-Note: I can draft these on request; each is a short ADR describing already-shipped behavior.
 
 ## Route local/dev/test make targets away from live Supabase (deferred safety)
 What: the root `.env` sets `DATABASE_URL` to a live Supabase pooler, not the local `:5434` Postgres.
@@ -216,11 +224,13 @@ What: the root `.env` sets `DATABASE_URL` to a live Supabase pooler, not the loc
 and `make migrate` still resolve the old way. Two prior safety incidents came from a run connecting to
 live Supabase. The fix is one call: (a) `.env` stops setting `DATABASE_URL` for local dev, or (b) every
 db-touching make target pins the local URL the way `test-db` already does.
-Why not now: deferred at the owner's request (2026-09-18). **CAUTION while deferred:** do not run bare
-`make check` / `make test` / `make migrate` — they may hit live Supabase. Use `make test-db` (pinned)
-or set `DATABASE_URL` to the local instance explicitly for any db-touching command.
+**RESOLVED 2026-09-18 via option (b):** `make test` and `make migrate` now pin `DB_URL_LOCAL` the way
+`test-db` already does (commit "chore(make): pin local DB URL on test and migrate targets"). `make
+check` runs `test`, so it is covered too. `reingest` stays live-by-design (its docstring requires live
+Confluence). **`eval` is the one db-touching target still left inheriting the root .env `DATABASE_URL`**
+— by design, since it needs a populated store; run it against a populated instance deliberately.
 Where it would go: the harness/make targets, near substep 0.5.4 (the CI gate).
-Added: 2026-09-18 (moved here from the 0.5 owner-actions section)
+Added: 2026-09-18 (moved here from the 0.5 owner-actions section); resolved 2026-09-18.
 
 ## Configure a git remote so CI runs for real (deferred)
 What: `git remote -v` is empty, so no pull request has ever exercised `.github/workflows/ci.yml`. The
