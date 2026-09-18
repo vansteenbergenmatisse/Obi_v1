@@ -16,27 +16,25 @@ your one-word call: implement the behavior, or correct the page. (The two infra 
 same pass — the local test-DB routing and the missing git remote — were moved to the deferred list
 below on 2026-09-18 at the owner's request. The safety caution on the DB-routing one still stands.)
 
-## DECISION · Four design-page-vs-code drifts: implement the behavior, or correct the page
-What: four panels where the design page claims behavior the code does not have. The regression
-tests assert the **real** (code) behavior, so they are green today — but each is a latent red the
-moment anyone asserts the panel's stated claim. For each, you decide: **build the missing behavior**
-or **fix the panel text**.
-- `ov-confluence`: the "APIs used" line lists labels under v1; the code reads labels from v2
-  (`/api/v2/pages/{id}/labels`). Likely a page-text fix.
+## DECISION · Four design-page-vs-code drifts — all four now ruled on (2026-09-18)
+All four are decided. Kept here for the record.
+- `ov-confluence`: ~~the "APIs used" line lists labels under v1.~~ **RESOLVED 2026-09-18** — the code
+  reads labels from v2 (`/api/v2/pages/{id}/labels`); the page was corrected to "v2 pages, spaces and
+  labels; v1 for restrictions, group members, attachment download". Page-text fix only, no code change.
 - `r1-limits`: ~~the panel claims an `X-Forwarded-For` client-IP rate-limit fallback for untokened
   requests; no such code exists.~~ **RESOLVED 2026-09-18** (decision `r1-limits-ipkey`): drop the
   claim, keep `request.client.host`; the panel today-line is corrected and a regression test pins
   that a forged XFF header changes nothing. `TRUSTED_PROXY_HOPS` (default 0) is added by 3.2.6 and
   set for real in 7.1.1. See `docs/plan/decisions.md` (`r1-limits-ipkey`, open `trusted-proxy-hops`).
-- `w-composer`: the panel claims a 5 MB per-image size cap; nothing enforces byte size (only
-  count = 4). Decide whether to enforce a size cap or correct the page.
-- `d-event_ledger`: the panel's Columns list names an `actor` column that does not exist (only
-  `actor_account_id`, and it's never persisted to `event_ledger`). Likely a page-text fix.
-**What you should do:** for each of the four, say "implement" or "correct the page." The
-correct-the-page ones I can batch into a single design-review pass; the implement ones become their
-own substeps with their own tests.
-Where it would go: a design-review pass (page-text fixes) plus per-panel substeps for any you want
-built; panels ov-confluence, r1-limits, w-composer, d-event_ledger.
+- `w-composer`: ~~the panel claims a 5 MB per-image cap; nothing enforces byte size (only count=4).~~
+  **DECIDED 2026-09-18 — IMPLEMENT** (decision `w-composer-images`): at most 3 images per turn, each
+  ≤ 3 MB, over-limit → a user-facing "compress your image" error; images are analyzed, never stored.
+  The w-composer panel target is updated; needs a substep (backend rejects with a 400, composer shows
+  the error). Not yet built.
+- `d-event_ledger`: ~~the panel names an `actor` column that does not exist.~~ **LEFT OPEN 2026-09-18** —
+  moved to its own deferred entry below ("The event_ledger `actor` column — decide later").
+Where it would go: ov-confluence + r1-limits done (page/tests); w-composer is a pending implement
+substep; d-event_ledger revisited later. Panels ov-confluence, r1-limits, w-composer, d-event_ledger.
 Added: 2026-09-18
 
 ---
@@ -157,11 +155,26 @@ Where it would go: features/evaluation/; likely paired with the CI-gate substep 
 whichever substep next extends the "Protect" batch pattern.
 Added: 2026-09-17
 
+## Owner architecture note for the note / auth flow (2026-09-18)
+The three entries below (em-hostbackend, ov-auth, sc-user) are three faces of one intended mechanism,
+described by the owner on 2026-09-18:
+- We hand the host platform a single embed link (a JavaScript/iframe snippet that loads our frontend).
+- When a user logs in to the host app (e.g. Base), that code activates and the host software authorizes
+  the request — a yes/no — and returns a small, fixed set of values in the note (a JWT):
+  **company name, company id, integration** (which platform they integrate with, e.g. Mews vs Toast vs
+  Opera Cloud), **and a unique user identity** (just enough to say "this is a specific, unique user").
+- Those values do two jobs: they go into the answer model's system prompt so it knows the integration,
+  and they filter the vector store by the integration tag — a company that integrates with Mews only ever
+  retrieves Mews-tagged data, never Toast or Opera Cloud content.
+This is the em-token contract (see decision `embedded-scoping`, integration-level scoping in v1). The
+three items below are what still has to become real (who signs, a real key to verify, a real per-user id).
+
 ## An agreed auth service to sign the note (em-hostbackend)
-What: a shared, agreed authentication service that signs the platform's note (the JWT the widget
-receives), instead of each platform/owner signing it directly.
+What: a shared, agreed authentication service — likely the separate host software described in the note
+above — that decides yes/no and signs the note (the JWT the widget receives) with the four values,
+instead of each platform/owner signing it directly.
 Why not now: the owner signs the notes directly for now ("I sign the notes", 2026-09-18); whether a
-separate agreed auth service should exist "depends" and cannot be decided yet. It describes a system
+separate agreed auth service should own it "depends" and cannot be decided yet. It describes a system
 outside this repo, so no code here implements or checks it.
 Where it would go: Phase 4 / the token contract; panels em-hostbackend, em-token, ov-auth.
 Added: 2026-09-18
@@ -232,4 +245,16 @@ What you should do: when a staging reader credential exists, hand me `DATABASE_R
 the host is staging (not production); I'll run the script and save the output to
 `final_docs/0.5-regression-tests/live-isolation-<date>.txt`.
 Where it would go: substep 0.5.3 (live isolation) and 7.1.1 (environments); panels r3-reader, s-reader.
+Added: 2026-09-18
+
+## The event_ledger `actor` column — decide later (d-event_ledger)
+What: the design page's `event_ledger` column list names an `actor` column. In the code there is no
+`actor` column on `event_ledger` — there is an `actor_account_id`, and it is not persisted to the
+event_ledger row today. So the page overstates the schema. Two ways to reconcile once we look at it
+properly: (a) correct the page to drop `actor` (nothing depends on it), or (b) actually record the
+actor (who triggered the event — a webhook user, a sweep, a manual run) on every ledger row if we want
+that audit trail.
+Why not now: owner asked to leave it open and double-check later (2026-09-18); it is not a failing test
+and nothing depends on the missing column. Revisit when we do the event_ledger / audit-trail work.
+Where it would go: a design-review page fix, or an event_ledger schema + write change; panel d-event_ledger.
 Added: 2026-09-18

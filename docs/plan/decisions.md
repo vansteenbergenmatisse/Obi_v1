@@ -36,14 +36,15 @@ raised during the 0.5 regression phase.
 | i4-failed | a gate-failed version | is never garbage collected; on the queue path the gate's rollback leaves no version row at all | confirmed | 2026-09-18 | 2.4.3 keeps the stage-4 regression tests green against this behavior |
 | widget-test-level | the level of the 0.5 widget regression tests | jsdom component tests (count as unit) plus the `widget-mounts.spec.ts` mount smoke; Playwright per panel arrives with Phase 4 | confirmed | 2026-09-18 | the Phase 4 substeps (4.2.x) change each widget panel at browser level and write the browser tests then |
 | r1-limits-ipkey | the untokened rate-limit IP key | stays `request.client.host`, no X-Forwarded-For parsing, until the trusted proxy hop count is set in 7.1.1 | confirmed | 2026-09-18 | 3.2.6 adds the `TRUSTED_PROXY_HOPS` setting (default 0) and its tests; 7.1.1 sets the real count and makes the proxy forward XFF. See open `trusted-proxy-hops` below |
+| freshness-target | how fast a Confluence change reaches the vector store | target ≤ 20 s (aspirational, as fast as possible) | confirmed | 2026-09-18 | the core requirement: add a tag → page indexed; remove the tag → page removed; edit the body → that part updated. "Preferably within 20 s"; a target, not a hard SLA |
+| latency-budget | the worst-case latency ceiling per answer | 7–12 s acceptable; may go higher if a lower ceiling would cost accuracy | confirmed | 2026-09-18 | widens the 7–9 s norm; accuracy still wins over speed (`speed-vs-accuracy`) |
+| rerank-depth | how many candidates the reranker scores | 75 | confirmed | 2026-09-18 | owner confirmed 75 is good; the design target of up to 150 stays a future gold-set recalibration (see future-ideas, reranker bake-off) |
+| w-composer-images | the image upload cap on a turn | at most 3 images per turn, each ≤ 3 MB; over the limit → a user-facing error ("too large — compress your image"); images are analyzed, never stored | confirmed | 2026-09-18 | changes the current cap (4 per turn, no byte check). Needs implementation: backend rejects with a clear 400 (w-proxy forwards it), the composer shows the popup. w-composer panel target updated |
 
 ## Open — building to the default until the owner confirms
 
 | id | decision | default built to | status | date | note |
 |---|---|---|---|---|---|
-| freshness-target | the freshness target in seconds | — | open | 2026-09-14 | needs the owner's number |
-| latency-budget | the worst-case latency budget | — | open | 2026-09-14 | needs the owner's number |
-| rerank-depth | the rerank depth | 75 today | open | 2026-09-14 | recalibrate on the gold set |
 | trusted-proxy-hops | the trusted proxy hop count for the rate-limit IP key | `TRUSTED_PROXY_HOPS = 0`, meaning `request.client.host` | open | 2026-09-18 | set in 7.1.1 once the real chain from browser → widget proxy route → any load balancer → API is known. The widget's own proxy route (w-proxy) sits between browser and backend, so at 0 every browser behind one proxy instance shares one 20/min bucket — accepted for the pilot |
 
 ## Open / decision-needed tracking rows (append-only; resolutions dated)
