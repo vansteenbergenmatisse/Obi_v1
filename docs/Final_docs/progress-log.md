@@ -763,3 +763,15 @@ Root cause: tiktoken was an optional dependency (the `tokenizers` extra). CI ins
 The owner confirmed tiktoken is the intended tokenizer, so the fix makes it a core dependency (moved tiktoken>=0.8 from the optional extra into [project].dependencies), ensuring production, CI and local all count tokens the same way. The redundant `tokenizers` extra is kept so the documented `--extra tokenizers` command still resolves. uv.lock was refreshed.
 
 Verification: the four previously-failing tests pass locally (TokenCounter().backend reports "tiktoken"). The real proof is the CI re-run on this push, since tiktoken cannot easily be removed locally to reproduce the red. Production does not exist yet (staging only, per decision live-0.5.3-cm-infra), so switching the tokenizer backend has no live index to re-embed. Nothing else changed.
+
+## Session maintenance — .env DB-routing, action-plan path drift, 3 ADRs, and CI green (2026-09-18)
+
+Alongside substep 4.2.7 and the tiktoken CI fix (their own entries above), this session cleared four owner-raised items that are NOT action-plan substeps, so they are narrated here and kept in their canonical homes rather than forced into the ledger as substep entries.
+
+.env DB-routing (option b): `make test` and `make migrate` now pin the local DB URL the way `test-db` already does, so bare targets can no longer reach live Supabase. `reingest` stays live-by-design and `eval` still inherits `.env` by design (it needs a populated store). Recorded as resolved in future-ideas.md. Commit 923294d.
+
+Action-plan path drift: the action plan referenced a pre-rename doc layout, so 51 stale references were rewritten to their real docs/Final_docs/ locations. No-target and root-level references were deliberately left and documented in the commit: the repo-root final_docs/0.5-regression-tests/ (correct as-is), final_docs/1.1-move/, docs/archive/, docs/synopsis/, docs/release/, docs/embedding/datahub.md, and the 0.3-synopsis README refs (the renamed dir has no README). Commit cefc961.
+
+Four missing ADRs (cm-docs): three were written — ADR-0015 (change-detection fingerprints), ADR-0016 (scope-state materialized as tags, no separate column), ADR-0017 (edge-token verification). The fourth, label-gated ingestion, was deliberately NOT written: the shipped code contradicts never-bend rule #5 (there is no published+tag indexing gate; deactivation is driven by Confluence status and loss of source-scope root coverage, not by knowledge-scope tag loss; `classified` is a forbidden config-validation slug, not a page-delete trigger). That code-vs-design conflict is recorded as decision-needed in decisions.md (live-0.5.3-cm-docs) and future-ideas.md (cm-docs-adrs); the owner chose to just note it for now, so no code or design-page change was made. Commit 7f08f2a.
+
+CI outcome: PR #3 (github.com/vansteenbergenmatisse/Obi_v1/pull/3) now passes end-to-end — the obi four-level check is green (2m27s, run 35345743740) after the tiktoken fix. This is the first time CI has run and passed on this repo. The first run (35345037971) went red on 4 chunk/token tests for the tiktoken reason above, not for anything in 4.2.7.
