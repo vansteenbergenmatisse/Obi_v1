@@ -1,7 +1,7 @@
 /**
  * Maps semantic design tokens into a Tailwind theme extension.
  *
- * `apps/web` imports `tailwindTheme` and spreads it into the `theme.extend`
+ * `frontend` imports `tailwindTheme` and spreads it into the `theme.extend`
  * block of its Tailwind config, so Tailwind utilities (bg-surface, text-text,
  * rounded-md, p-md, ...) resolve to the token values in `tokens.ts`.
  */

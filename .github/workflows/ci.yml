@@ -20,19 +20,32 @@ jobs:
           version: "0.9.x"
 
       - name: Set up the automation venv (README Quickstart)
-        run: cd apps/automation && uv venv --python 3.12 && uv pip install -e ".[dev]"
+        run: cd backend && uv venv --python 3.12 && uv pip install -e ".[dev]"
+
+      # The knowledge base owns its own standalone test suite (1.1.1-fix): its schema/migration
+      # tests import nothing from the backend, so they run from their own venv. Installed here so
+      # the coverage floor and make test-unit/test-db can collect and run them.
+      - name: Set up the knowledge-base venv (1.1.1-fix)
+        run: cd knowledge-base && uv venv --python 3.12 && uv pip install -e ".[dev]"
 
       # The coverage floor from harness.md: pytest must collect at least this many tests
       # (test-unit + test-db combined). A drop below it means a test file silently stopped
       # being collected (e.g. a marker typo, since --strict-markers only catches unknown
-      # marks, not missing ones).
-      - name: Coverage floor (>= 621 tests collected)
+      # marks, not missing ones). 1.1.1-fix: the ~35 schema/migration tests moved from
+      # backend/ to knowledge-base/, so the floor now sums BOTH trees — otherwise a deletion
+      # in either tree could hide below the other's margin (a false pass), and the split alone
+      # would drop the backend-only count below the floor (a false fail). The combined total is
+      # unchanged by the move; the floor of 625 stays the same minimum it was at substep 0.5.1.
+      - name: Coverage floor (>= 625 tests collected, backend + knowledge-base)
         run: |
-          cd apps/automation
-          count=$(uv run pytest --collect-only -q | tail -1 | grep -oE '^[0-9]+')
-          echo "pytest collected: $count"
-          if [ -z "$count" ] || [ "$count" -lt 621 ]; then
-            echo "::error::pytest collected $count tests, below the substep 0.5.1 coverage floor of 621 (harness.md)"
+          count_backend=$(cd backend && uv run pytest --collect-only -q | tail -1 | grep -oE '^[0-9]+')
+          count_kb=$(cd knowledge-base && uv run pytest --collect-only -q | tail -1 | grep -oE '^[0-9]+')
+          count_backend=${count_backend:-0}
+          count_kb=${count_kb:-0}
+          count=$((count_backend + count_kb))
+          echo "pytest collected: backend=$count_backend + knowledge-base=$count_kb = $count"
+          if [ "$count" -lt 625 ]; then
+            echo "::error::pytest collected $count tests (backend=$count_backend, knowledge-base=$count_kb), below the substep 0.5.1 coverage floor of 625 (harness.md)"
             exit 1
           fi
 

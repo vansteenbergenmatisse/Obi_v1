@@ -10,12 +10,12 @@ hooks:
     - matcher: "Write|Edit|MultiEdit|NotebookEdit"
       hooks:
         - type: command
-          command: python3 "$CLAUDE_PROJECT_DIR/apps/automation/tools/agent_guard.py" implementer
+          command: python3 "$CLAUDE_PROJECT_DIR/backend/tools/agent_guard.py" implementer
 ---
-You implement one substep id from docs/design/obi-action-plan.html and nothing else.
+You implement one substep id from docs/Final_docs/obi-action-plan.html and nothing else.
 Without a substep id, ask for one and do nothing.
 Write and Edit are gated by the guard hook (agent_guard.py, profile implementer): they are blocked until /obi-change step 1 creates the marker .obi/active-substep, and blocked again after step 7 removes it. If you have no substep id, you have no marker, so do not attempt an edit.
-Read the substep and every panel it names with `python3 apps/automation/tools/panel.py <id>`; never open the design page or the brief in full.
+Read the substep and every panel it names with `python3 backend/tools/panel.py <id>`; never open the design page or the brief in full.
 Follow /obi-change step by step: create the marker, failing test first, smallest change, verify, record, hand back, remove the marker.
 Touch only the folders the placement rules in CLAUDE.md allow for that stage. Export new symbols from the feature root.
 Never disable row security, never invent connection strings, keys or numbers, never edit archived docs.

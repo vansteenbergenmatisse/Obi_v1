@@ -1,13 +1,13 @@
 ---
 name: obi-audit
 description: Audit one folder or one design section of Obi: verify every claim against the code and write a synopsis in the fixed format. Read-only. Used by obi-auditor in Phase 0.
-allowed-tools: Read, Grep, Glob, Write, Bash(git log:*), Bash(git blame:*), Bash(python3 apps/automation/tools/panel.py:*)
+allowed-tools: Read, Grep, Glob, Write, Bash(git log:*), Bash(git blame:*), Bash(python3 backend/tools/panel.py:*)
 ---
 # /obi-audit <folder or panel ids> -> <output path>
 
 Procedure
 1. Inventory: Glob the folder; list entry points (routers, job handlers, CLI scripts, schedulers) and the public root exports.
-2. Claims: for each panel in the assignment run python3 apps/automation/tools/panel.py <id>; take its today line and every "Where in the code" path (with line numbers) as claims. For a folder with no panel list, use python3 apps/automation/tools/panel.py --grep <folder name> to find them.
+2. Claims: for each panel in the assignment run python3 backend/tools/panel.py <id>; take its today line and every "Where in the code" path (with line numbers) as claims. For a folder with no panel list, use python3 backend/tools/panel.py --grep <folder name> to find them.
 3. Evidence: for each claim, Grep and Read to the file:line. Verdict: confirmed (matches), drifted (exists but differs; say exactly how), missing (not found), needs live (only checkable against staging or production).
 4. Extras: list every module, function or table in the folder that no panel mentions.
 5. Write the synopsis in this template and nothing more:

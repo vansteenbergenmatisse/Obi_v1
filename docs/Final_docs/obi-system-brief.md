@@ -1,10 +1,10 @@
 # Obi, part by part — the complete brief, A to Z
 
-Generated on 2026-09-16 from `../../docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
+Generated on 2026-09-21 from `../docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
 
 ## 0 · How to read this brief
 
-**What Obi is.** A chat widget that answers questions from Omniboost's Confluence pages with citations. Two workflows: **ingestion** (a published Confluence page becomes chunks with vectors in Postgres) and **retrieval** (a question becomes a cited answer from those chunks). One Postgres database (Supabase, pgvector) is both the relational store and the vector store. The backend is Python (FastAPI) under `apps/automation`; the widget is Next.js under `apps/web`; contracts and design tokens are packages.
+**What Obi is.** A chat widget that answers questions from Omniboost's Confluence pages with citations. Two workflows: **ingestion** (a published Confluence page becomes chunks with vectors in Postgres) and **retrieval** (a question becomes a cited answer from those chunks). One Postgres database (Supabase, pgvector) is both the relational store and the vector store. The backend is Python (FastAPI) under `backend`; the widget is Next.js under `frontend`; contracts and design tokens are packages.
 
 **How the page marks reality.** Every stage, box and panel carries one status:
 
@@ -115,7 +115,7 @@ _Workflow label shown in the drawer: System overview_
   | Setting | Value |
   |---|---|
   | What we read | page meta, body (storage format), labels, read restrictions, attachments |
-  | APIs used | v2 pages and spaces; v1 for labels, restrictions, group members, attachment download |
+  | APIs used | v2 pages, spaces and labels; v1 for restrictions, group members, attachment download |
   | Client | HttpConfluenceClient: timeout, retry on 5xx, circuit breaker after 5 failures |
   | Test double | FixtureConfluenceGateway reads tests/fixtures/confluence, so CI never calls the network |
 - Where in the code:
@@ -580,7 +580,7 @@ _Workflow label shown in the drawer: Separation of concerns_
 ##### Panel `sc-frontend` · One frontend · [Implemented]
 - Kind: Part
 - In plain words: The chat window a person types in, plus the small server route that adds the secret key. It shows answers. It never decides who may see what.
-- Today: apps/web: a Next.js app with the widget UI, its proxy route, and a built iframe bridge holding the token in memory. Embedded in a platform page with a scope from its config. A per-user JWT from the host gates it; the shared pilot token is retired.
+- Today: frontend/: the Next.js chat widget, its proxy route and iframe bridge — renamed from apps/web in substep 1.1.1 (rename-only, no logic change). Reads the tag list from knowledge-base/config at build.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -597,7 +597,7 @@ _Workflow label shown in the drawer: Separation of concerns_
 ##### Panel `sc-backend` · One backend · [Implemented]
 - Kind: Part
 - In plain words: The code that checks who is asking, reads Confluence, builds the index, searches, scores and writes the answer. One backend serves every integration.
-- Today: apps/automation: FastAPI, five feature folders (confluence_sync, ingestion, retrieval, rag_agent, evaluation), platform clients, the job worker.
+- Today: backend/: FastAPI with the five feature folders under app/, platform clients and the worker — renamed from apps/automation in 1.1.1. The DB layer is no longer app.platform.db; it is the standalone schema package imported from knowledge-base.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -611,10 +611,10 @@ _Workflow label shown in the drawer: Separation of concerns_
   - `apps/automation/platform/` — clients, settings, jobs (and today also db models)
 - Target and notes: Proposed folder: backend/. The five features and the boundary rule (ADR-0003) stay exactly as they are.
 
-##### Panel `sc-kb` · One knowledge base · [Implemented, needs changing]
+##### Panel `sc-kb` · One knowledge base · [Implemented]
 - Kind: Part
 - In plain words: One Postgres database holds every page in pieces with its tags. The database itself hides rows a person may not see. The folder next to it holds the schema, the tags and the seed data, never the pages.
-- Today: Supabase Postgres with pgvector. Schema and policies in platform/db, migrations in alembic/versions (12 files through 0012), the tag list in config/knowledge_scopes.json, curated seeds in scripts/, a local compose file in infra/foundation.
+- Today: knowledge-base/ holds schema/, migrations/, config/, seed/ and local/, and now its OWN standalone test suite (knowledge-base/tests/, 35 schema/migration tests) run from its own venv against schema.settings.KbSettings — importing nothing from the backend. The backend imports schema/ as an editable package; the one-way rule (nothing under knowledge-base/ imports app/features/platform/shared) is enforced by backend/tools/check_feature_boundaries.py (1.1.2) and proven by backend/tests/tools/test_boundaries.py; the KB suite runs in make test-unit/test-db and CI.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -729,7 +729,7 @@ _Workflow label shown in the drawer: Code map_
 ##### Panel `cm-retrieval` · features/retrieval · [Implemented]
 - Kind: Feature
 - In plain words: The code that searches, merges results, checks page permissions, and calls the reranker.
-- Today: Owns search, fusion, the page ACL, rerank wiring, and the retrieval half of query_trace. The rag_reader binding itself lives in platform/db/engine.py; this folder only comments on it.
+- Today: Owns search, fusion, the page ACL, rerank wiring, and the retrieval half of query_trace. The rag_reader binding itself lives in knowledge-base/schema/engine.py; this folder only comments on it.
 - Where in the code:
   - `application/retriever.py` — HybridRetriever: the search transaction
   - `infrastructure/search_repo.py` — dense_search, keyword_search, GUCs, rerank texts, parents
@@ -784,7 +784,7 @@ _Workflow label shown in the drawer: Code map_
   - `shared/ttl_cache.py` — TTLCache, used by idempotency (and the answer cache, to remove)
   - `shared/hashing.py` — hash_json, sha256_text
 
-##### Panel `cm-alembic` · alembic/versions: the migrations · [Unverified]
+##### Panel `cm-alembic` · knowledge-base/migrations/versions: the migrations · [Unverified]
 - Kind: Folder
 - In plain words: The numbered history of every database change.
 - Today: 0001 core schema, 0002 provider tags and RLS, 0003 query_trace, 0004 source_scope, 0005 page_restriction, 0006 dedupe check constraints, 0007 knowledge scope, 0008 drop FORCE RLS, 0009 reader policies, 0010 scope RLS. Live head on Supabase: 0012.
@@ -856,10 +856,10 @@ ALTER TABLE query_trace ADD COLUMN decision text;
   - `verify_knowledge_scope_live.py` — add, edit, remove a real label and check the DB
   - `rotate_chat_api_key.py` — overlap-window key rotation
 
-##### Panel `cm-config` · config/knowledge_scopes.json: the scope list · [Implemented, needs changing]
+##### Panel `cm-config` · config/knowledge_scopes.json: the scope list · [Implemented]
 - Kind: File
 - In plain words: The tag list. A Confluence label in this file is a knowledge scope; add a name to add a tag.
-- Today: Holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test. Loaded at startup; startup fails if the general scope is missing. The widget's scope list is a hand-written copy of this file, guarded by a runtime drift test, not generated at build time.
+- Today: Loaded and validated at startup (fails if obi-general-test or classified is missing); classified is present but excluded from the recognized set, from GET /health, and from the widget list. Each entry now carries name + label + description; the widget's scope switcher is GENERATED from this file at build time (substep 1.2.2) — no hand-written copy, no drift test. platforms.json now sits beside it under knowledge-base/config/, loaded + validated at startup after the tag map (substep 1.2.3): six ordered rules each naming the offending entry, general added by the loader and never hand-listed, exposing allowed_scopes_for + platform_for; datahub is the first active platform and is logged at boot.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -896,7 +896,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
   | 0014 | scope RLS backstop |
 - Target and notes: Changing any fixed decision needs a new ADR. The changes on this page need at least one: the fingerprint, scope_state, label-gated ingestion, and the edge token.
 
-##### Panel `cm-web` · apps/web: the widget · [Implemented]
+##### Panel `cm-web` · frontend: the widget · [Implemented]
 - Kind: App
 - In plain words: The chat widget's code.
 - Today: server/auth.ts has been deleted; the proxy no longer uses it. The iframe bridge (src/features/embed/) is built and tested, not planned.
@@ -929,7 +929,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
   | Holds | the widget's colors, type, and the Tailwind theme mapping |
   | Style | light theme, indigo accent, Inter |
 
-##### Panel `cm-infra` · infra/foundation: local Postgres · [Implemented]
+##### Panel `cm-infra` · knowledge-base/local: local Postgres · [Implemented]
 - Kind: Folder
 - In plain words: A local Postgres so everything runs on a laptop.
 - Settings and rules:
@@ -962,7 +962,7 @@ Each event carries the page id, the page version, the space id, the actor, a tim
 | Field | What it is | Limit |
 |---|---|---|
 | history | the turns so far, must end on a user turn | 20 turns, 4000 chars each |
-| images | base64 images on the newest turn only | 4 per turn, 5 MB each |
+| images | base64 images on the newest turn only | 3 per turn, 3 MB each (decision w-composer-images, substep 4.2.7) |
 | knowledgeScope | which platform the widget sits in, for example `mews` | a lowercase slug, checked for shape and against the list; unknown slug: 400. The token decides the scope. A known slug that disagrees with the token is ignored and logged [Implemented, needs changing] |
 | principal | who is asking, for page-level access | derived from the token's `sub` through the identity mapping, never from the body [Implemented, needs changing] |
 | Authorization header | one shared server key today; a key per widget host plus a signed user token from the host backend in the target (section 03.2) | fail closed if missing [Planned] |
@@ -1312,7 +1312,7 @@ class AuthContext:
 ##### Panel `em-button` · The frame: the round button and the chat window · [Implemented]
 - Kind: Frontend
 - In plain words: What obi.js draws: a round button at the top of the screen, and the chat window that pops up when it is clicked. Both come from our domain inside one frame.
-- Today: apps/web/src/app/embed/page.tsx is built and unit-tested, not planned.
+- Today: frontend/src/app/embed/page.tsx is built and unit-tested, not planned.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2275,10 +2275,10 @@ _Every arrow runs through ingestion stage 1 (a label event or a sweep) and stage
 
 _Workflow label shown in the drawer: Knowledge scopes_
 
-##### Panel `tg-config` · The scope list file · [Implemented, needs changing]
+##### Panel `tg-config` · The scope list file · [Implemented]
 - Kind: Config
 - In plain words: The list of tag names in one small file. A name here is a tag; a name not here is ignored.
-- Today: apps/web/src/features/chat/model/knowledge-scopes.ts is a hand-written copy of this file's list, checked by a runtime drift test, not generated at build time.
+- Today: knowledge-base/config/knowledge_scopes.json holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test and the reserved classified; the loader validates it at startup and returns the four recognized scopes (classified excluded); the widget list mirrors the same file minus classified, guarded by the drift test.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2310,9 +2310,10 @@ _Workflow label shown in the drawer: Knowledge scopes_
   - Add a slug, restart, query GET /health: the slug is listed as a valid scope.
 - Target and notes: This is the whole setup for a new tag. No table edit, no migration.
 
-##### Panel `ks-validate` · Validate the list · [Implemented, needs changing]
+##### Panel `ks-validate` · Validate the list · [Implemented]
 - Kind: Knowledge scopes
 - In plain words: The app checks the list at startup and stops with a clear message if a name is wrong.
+- Today: Startup validation in platform/config/knowledge_scopes.py, in order: every entry lowercase, no duplicates, obi-general-test present, classified present — each rule raises naming the entry and exits the backend non-zero (test_knowledge_scopes.py, 6 unit tests).
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2726,9 +2727,9 @@ class AuthContext:
 - Settings and rules:
   | Setting | Value |
   |---|---|
-  | Rate | 20 per minute; keyed on the token subject in the target; on the client IP today and for any request without a token (trusted-proxy X-Forwarded-For) |
+  | Rate | 20 per minute; keyed on the token subject when there is a token, otherwise on request.client.host. No X-Forwarded-For parsing today: TRUSTED_PROXY_HOPS defaults to 0, set per environment in 7.1.1 once the browser→proxy→API chain is known (decision r1-limits-ipkey, 2026-09-18) |
   | History | 1 to 20 turns, must end on a user turn, 4000 chars per turn |
-  | Images | 4 per turn, 5 MB each, checked on every turn |
+  | Images | 3 per turn, 3 MB each, checked on every turn (decision w-composer-images, substep 4.2.7) |
   | Scope slug | ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$ |
   | Principal | all-digit values rejected (they would read as space-wide trust) |
   | LLM calls | 30 s timeout, 2 retries, breaker after 5 |
@@ -3756,12 +3757,12 @@ _Workflow label shown in the drawer: The widget_
 ##### Panel `w-composer` · The composer · [Implemented]
 - Kind: UI
 - In plain words: Where the person types, pastes, or attaches a picture.
-- Today: 4 images per turn; no size check exists anywhere in apps/web — the 5 MB figure below is not enforced.
+- Today: ≤ 3 images per turn, each ≤ 3 MB; over either limit the composer shows a user-facing error and does not attach, and the backend rejects an over-limit request with a 400 the proxy forwards (decision w-composer-images).
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | Inputs | text, file picker, clipboard paste, the header's screenshot button |
-  | Images | base64 on the newest turn only, 4 per turn, 5 MB each |
+  | Images | base64 on the newest turn only, never stored; target ≤ 3 per turn, each ≤ 3 MB; over the limit shows a user-facing error (compress the image). Today (needs change, decision w-composer-images 2026-09-18): 4 per turn, no byte-size check |
   | Empty text plus image | allowed; the backend skips search and still analyzes the image |
   | Disclosure | we do not check images for personal info; skip sensitive screenshots |
 - Where in the code:
@@ -4211,6 +4212,7 @@ _Workflow label shown in the drawer: The vector database_
 ##### Panel `vd-hnsw` · The HNSW index · [Implemented]
 - Kind: Vector database
 - In plain words: A fast lookup map over all the number codes that finds the closest ones without checking every row.
+- Today: Regression-tested: dedicated tests pin the index's name, its halfvec/cosine shape above the 2000-dim cap (vector_cosine_ops at or below it, disclosed), and its m=16/ef_construction=200 build params.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4232,6 +4234,7 @@ _Workflow label shown in the drawer: The vector database_
 ##### Panel `vd-rls` · Row security covers vectors too · [Implemented]
 - Kind: Vector database
 - In plain words: The row locks apply to the numbers too, so a hidden row never comes out of a vector search.
+- Today: Regression-tested: dedicated tests pin that embedding lives on chunk, that both the source and knowledge-scope SELECT policies are registered on chunk, and that a raw nearest-neighbor query as the reader never returns a row on a forbidden source even when it is the closest match.
 - Steps:
   1. The vector sits on the chunk row.
   2. The source and scope policies apply to every SELECT on chunk.
@@ -4249,6 +4252,7 @@ _Workflow label shown in the drawer: The vector database_
 ##### Panel `vd-keyword` · The keyword side · [Implemented]
 - Kind: Vector database
 - In plain words: Next to the numbers, each piece has a word index that finds exact words the numbers might miss.
+- Today: The keyword-search tsv column, its GIN index and the OR-joined/ts_rank query are each pinned by a dedicated panel-id-named regression test.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4361,7 +4365,7 @@ _Workflow label shown in the drawer: Security_
   |---|---|
   | Host key | per widget host, server to server, never in the browser |
   | User token | signed by the trusted issuer (host backend or agreed auth service): iss, aud, sub, iat, exp, company_id, company_name, integration; reaches the iframe by postMessage only |
-  | Rate limit key | the token subject; client IP only on the pre-token path, with trusted-proxy X-Forwarded-For parsing |
+  | Rate limit key | the token subject; request.client.host on the pre-token path. No X-Forwarded-For parsing today (TRUSTED_PROXY_HOPS=0, set in 7.1.1) — see decision r1-limits-ipkey |
   | Network | the backend stays private to the proxy; only the proxy holds the host key |
 - Where in the code:
   - `rag_agent/server/router.py:254-267` — _verify_api_key
@@ -4657,7 +4661,7 @@ _Section id: `open`_
 | `ov-answer` | fit | Answer | Implemented, needs changing |
 | `sc-frontend` | concerns | One frontend | Implemented |
 | `sc-backend` | concerns | One backend | Implemented |
-| `sc-kb` | concerns | One knowledge base | Implemented, needs changing |
+| `sc-kb` | concerns | One knowledge base | Implemented |
 | `sc-user` | concerns | A Mews user | Planned |
 | `em-token` | embed | The signed note (JWT) | Implemented |
 | `r1-ctx` | rt1 | Build the authorization context: company, integration, person | Planned |
@@ -4672,19 +4676,19 @@ _Section id: `open`_
 | `cm-eval` | code | features/evaluation | Planned |
 | `cm-platform` | code | platform/: shared technical capabilities | Implemented |
 | `cm-shared` | code | shared/: small generic helpers | Implemented |
-| `cm-alembic` | code | alembic/versions: the migrations | Unverified |
+| `cm-alembic` | code | knowledge-base/migrations/versions: the migrations | Unverified |
 | `cm-scripts` | code | scripts/: operator tools | Implemented |
-| `cm-config` | code | config/knowledge_scopes.json: the scope list | Implemented, needs changing |
+| `cm-config` | code | config/knowledge_scopes.json: the scope list | Implemented |
 | `cm-docs` | code | docs/adr: the decisions of record | Implemented |
-| `cm-web` | code | apps/web: the widget | Implemented |
+| `cm-web` | code | frontend: the widget | Implemented |
 | `cm-contracts` | code | packages/contracts | Implemented |
 | `cm-tokens` | code | packages/design-tokens | Implemented |
-| `cm-infra` | code | infra/foundation: local Postgres | Implemented |
+| `cm-infra` | code | knowledge-base/local: local Postgres | Implemented |
 | `em-loader` | embed | obi.js: one script tag | Implemented |
 | `em-hostbackend` | embed | The platform's note endpoint | Decision needed |
 | `em-backend` | embed | Obi checks the note and picks the pages | Implemented |
 | `em-kb` | embed | Obi picks the pages: the shared knowledge base | Implemented, needs changing |
-| `tg-config` | tags | The scope list file | Implemented, needs changing |
+| `tg-config` | tags | The scope list file | Implemented |
 | `i1-sweep` | in1 | Sweeps: the safety net | Implemented, needs changing |
 | `s-writer` | security | The writer (table owner) | Implemented |
 | `i1-webhook` | in1 | POST /confluence/events | Unverified |
@@ -4723,7 +4727,7 @@ _Section id: `open`_
 | `i4-gc` | in4 | Garbage collect old versions | Implemented |
 | `i4-rollback` | in4 | Rollback to an older version | Implemented |
 | `ks-edit` | tags | Edit knowledge_scopes.json | Implemented, needs changing |
-| `ks-validate` | tags | Validate the list | Implemented, needs changing |
+| `ks-validate` | tags | Validate the list | Implemented |
 | `ks-deploy` | tags | Deploy | Implemented, needs changing |
 | `ks-sweep` | tags | The label sweep finds tagged pages | Planned |
 | `ks-index` | tags | Pages go in | Implemented |

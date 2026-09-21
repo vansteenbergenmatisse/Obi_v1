@@ -6,6 +6,39 @@ is the substep-1.3.1 ideas file named by CLAUDE.md's "where the truth lives" —
 narrowly-scoped list of deferred *plan-adjacent* features, not the broader ad hoc backlog kept at
 `docs/future-ideas/IDEAS.md`.
 
+---
+
+# Owner decisions surfaced 2026-09-18 — page-vs-code drifts to rule on
+
+This holds design-page-vs-code drifts where the tests assert the real (code) behavior, so they are
+green today, but each is a latent red the moment anyone asserts the panel's stated claim. Each needs
+your one-word call: implement the behavior, or correct the page. (The two infra blockers found in the
+same pass — the local test-DB routing and the missing git remote — were moved to the deferred list
+below on 2026-09-18 at the owner's request. The safety caution on the DB-routing one still stands.)
+
+## DECISION · Four design-page-vs-code drifts — all four now ruled on (2026-09-18)
+All four are decided. Kept here for the record.
+- `ov-confluence`: ~~the "APIs used" line lists labels under v1.~~ **RESOLVED 2026-09-18** — the code
+  reads labels from v2 (`/api/v2/pages/{id}/labels`); the page was corrected to "v2 pages, spaces and
+  labels; v1 for restrictions, group members, attachment download". Page-text fix only, no code change.
+- `r1-limits`: ~~the panel claims an `X-Forwarded-For` client-IP rate-limit fallback for untokened
+  requests; no such code exists.~~ **RESOLVED 2026-09-18** (decision `r1-limits-ipkey`): drop the
+  claim, keep `request.client.host`; the panel today-line is corrected and a regression test pins
+  that a forged XFF header changes nothing. `TRUSTED_PROXY_HOPS` (default 0) is added by 3.2.6 and
+  set for real in 7.1.1. See `docs/plan/decisions.md` (`r1-limits-ipkey`, open `trusted-proxy-hops`).
+- `w-composer`: ~~the panel claims a 5 MB per-image cap; nothing enforces byte size (only count=4).~~
+  **DECIDED 2026-09-18 — IMPLEMENT** (decision `w-composer-images`): at most 3 images per turn, each
+  ≤ 3 MB, over-limit → a user-facing "compress your image" error; images are analyzed, never stored.
+  The w-composer panel target is updated; needs a substep (backend rejects with a 400, composer shows
+  the error). Not yet built.
+- `d-event_ledger`: ~~the panel names an `actor` column that does not exist.~~ **LEFT OPEN 2026-09-18** —
+  moved to its own deferred entry below ("The event_ledger `actor` column — decide later").
+Where it would go: ov-confluence + r1-limits done (page/tests); w-composer is a pending implement
+substep; d-event_ledger revisited later. Panels ov-confluence, r1-limits, w-composer, d-event_ledger.
+Added: 2026-09-18
+
+---
+
 ## Multilingual keyword index instead of translation
 What: Build the keyword-search index (r2-keyword) directly against each source language's own
 word forms — a per-language tsvector configuration or a genuinely multilingual index — instead of
@@ -104,3 +137,137 @@ widens that same exposure instead of closing it.
 Where it would go: nowhere planned — stays rejected unless a cache-invalidation story for 3.2.7 is
 designed first; panel cm-agent.
 Added: 2026-09-16
+
+## Gate "Protect" regression batches on retrieval quality, not just plumbing
+What: after a "Protect" batch (e.g. the vector-database or relational-database panels) adds its
+structural regression tests, also run features/evaluation's gold-set runner (make eval) and record
+a before-and-after row — so a change that keeps every new structural test green (index exists, RLS
+still hides a forbidden row, the embedding provider is still shared, etc.) but silently degrades
+precision@k, recall@k, or faithfulness still gets caught before it ships.
+Why not now: today's "Protect" tests are deliberately narrow — they prove the plumbing a panel
+describes still behaves exactly as documented, nothing about whether retrieval is *good*. Gold-set
+evaluation is a slower, separate harness (features/evaluation/, make eval) built for that question;
+folding a full eval run into every fast structural-regression batch would blow up what is meant to
+be a quick gate. Two related gaps are already tracked elsewhere, not duplicated here: the embedding
+model/dimension itself is a live, unresolved choice (vd-model in docs/plan/decisions.md), and
+reranking (r4-rerank) already has its own dedicated regression tests from an earlier batch.
+Where it would go: features/evaluation/; likely paired with the CI-gate substep (0.5.4) or
+whichever substep next extends the "Protect" batch pattern.
+Added: 2026-09-17
+
+## Owner architecture note for the note / auth flow (2026-09-18)
+The three entries below (em-hostbackend, ov-auth, sc-user) are three faces of one intended mechanism,
+described by the owner on 2026-09-18:
+- We hand the host platform a single embed link (a JavaScript/iframe snippet that loads our frontend).
+- When a user logs in to the host app (e.g. Base), that code activates and the host software authorizes
+  the request — a yes/no — and returns a small, fixed set of values in the note (a JWT):
+  **company name, company id, integration** (which platform they integrate with, e.g. Mews vs Toast vs
+  Opera Cloud), **and a unique user identity** (just enough to say "this is a specific, unique user").
+- Those values do two jobs: they go into the answer model's system prompt so it knows the integration,
+  and they filter the vector store by the integration tag — a company that integrates with Mews only ever
+  retrieves Mews-tagged data, never Toast or Opera Cloud content.
+This is the em-token contract (see decision `embedded-scoping`, integration-level scoping in v1). The
+three items below are what still has to become real (who signs, a real key to verify, a real per-user id).
+
+## An agreed auth service to sign the note (em-hostbackend)
+What: a shared, agreed authentication service — likely the separate host software described in the note
+above — that decides yes/no and signs the note (the JWT the widget receives) with the four values,
+instead of each platform/owner signing it directly.
+Why not now: the owner signs the notes directly for now ("I sign the notes", 2026-09-18); whether a
+separate agreed auth service should own it "depends" and cannot be decided yet. It describes a system
+outside this repo, so no code here implements or checks it.
+Where it would go: Phase 4 / the token contract; panels em-hostbackend, em-token, ov-auth.
+Added: 2026-09-18
+Blocked on: the owner's call on which team/system owns note-signing at scale.
+
+## A real platform signing key to verify the note end-to-end (ov-auth)
+What: verify the note's alg/signature/issuer/audience/expiry against a real platform's live signing
+key (ov-auth step 5), end-to-end, not just against synthetic test-host keys.
+Why not now: no real platform signing key exists to test against yet (2026-09-18). The verification
+code and its tests already run against synthetic keys (`test_token_verifier.py`); only the live-key
+proof is missing.
+Where it would go: Phase 7 (environments) live checks; panel ov-auth.
+Added: 2026-09-18
+Blocked on: a real platform (Data Hub first) issuing a signing key.
+
+## A real per-person identity flow to shape the identity mapping (sc-user)
+What: a real embedded end-user identity flow so the per-person identity mapping (sc-user) can be
+designed and tested against something concrete, not local test-host scaffolding.
+Why not now: no real per-person identity flow is available yet (2026-09-18). This is the same
+blocker as "Per-person Confluence permissions for embedded users" above — v1 uses integration-level
+scoping only (decision `embedded-scoping`), and the note carries no per-person Confluence identity.
+Where it would go: Phase 4; panels sc-user, em-token, r3-acl. See the per-person-permissions idea above.
+Added: 2026-09-18
+Blocked on: a platform providing a real per-person identity in the note.
+
+## Write the four missing ADRs (cm-docs)
+What: write the decisions-of-record ADRs the design page implies exist but do not, covering the
+fingerprint, scope_state, label-gated ingestion, and the edge token.
+**RESOLVED 2026-09-18 (owner: draft them) — for 3 of 4.** Written as retroactive docs of shipped
+behavior: ADR-0015 (change-detection fingerprints), ADR-0016 (scope-state materialized as tags, no
+column), ADR-0017 (edge-token verification). ADR-0011 already documents the label→scope tagging +
+retrieval filtering that IS shipped.
+The 4th, **label-gated ingestion, is NOT a clean retroactive ADR** — shipped code diverges from
+never-bend rule #5 / the design page: no published+tag indexing gate (a page with zero recognized
+labels is indexed with empty `tags`, merely invisible to scoped retrieval); deactivation is driven
+by Confluence status (trashed/deleted/archived) and by loss of source-scope root coverage, NOT by
+knowledge-scope tag loss (a label-only change keeps the page active); `classified` is a forbidden
+knowledge-scope slug in config validation, not a page-delete trigger. It is now a **code-vs-design
+decision** tracked in `docs/plan/decisions.md` (`live-0.5.3-cm-docs`): fix the code to match rule #5,
+or amend rule #5 + the design page to match the shipped behavior. No ADR until that call is made.
+Where it would go: `docs/adr/` — 3 written; the 4th pending the rule-#5 decision; panel cm-docs.
+Added: 2026-09-18
+
+## Route local/dev/test make targets away from live Supabase (deferred safety)
+What: the root `.env` sets `DATABASE_URL` to a live Supabase pooler, not the local `:5434` Postgres.
+`make test-db` is safe (it pins the local URL for its own two commands), but `make check`, `make test`
+and `make migrate` still resolve the old way. Two prior safety incidents came from a run connecting to
+live Supabase. The fix is one call: (a) `.env` stops setting `DATABASE_URL` for local dev, or (b) every
+db-touching make target pins the local URL the way `test-db` already does.
+**RESOLVED 2026-09-18 via option (b):** `make test` and `make migrate` now pin `DB_URL_LOCAL` the way
+`test-db` already does (commit "chore(make): pin local DB URL on test and migrate targets"). `make
+check` runs `test`, so it is covered too. `reingest` stays live-by-design (its docstring requires live
+Confluence). **`eval` is the one db-touching target still left inheriting the root .env `DATABASE_URL`**
+— by design, since it needs a populated store; run it against a populated instance deliberately.
+Where it would go: the harness/make targets, near substep 0.5.4 (the CI gate).
+Added: 2026-09-18 (moved here from the 0.5 owner-actions section); resolved 2026-09-18.
+
+## Configure a git remote so CI runs for real (deferred)
+What: no pull request had ever exercised `.github/workflows/ci.yml`. The four underlying commands were
+verified locally and the gate mechanism was proven historically (PR #1 red→green in ci-gate-proof.md),
+but the real CI path on this repo was unproven end-to-end.
+**RESOLVED 2026-09-18:** the earlier "`git remote -v` is empty" premise was stale — a remote (`origin`
+→ `github.com/vansteenbergenmatisse/Obi_v1`) already exists. The `feat/rag-phase-3.5` branch was pushed
+and a PR opened against `main`, which fires the PR-triggered CI end-to-end for the first time. Watch the
+PR's checks; if the run is green, capture the proof under `docs/Final_docs/0.5-regression-tests/` and this
+item is fully closed. (Separately flagged: CI and the Makefile cite `docs/Final_docs/0.5-regression-tests/harness.md`
+while that dir actually lives at repo-root `docs/Final_docs/0.5-regression-tests/` — a path inconsistency to fix.)
+Where it would go: substep 0.5.1 / 0.5.4 (the CI gate).
+Added: 2026-09-18 (moved here from the 0.5 owner-actions section); resolved 2026-09-18.
+
+## Read-only staging DB URL for the live isolation run (pre-production)
+What: a read-only staging connection string (`DATABASE_READER_URL` for staging) so the live isolation
+script (`scripts/setup_supabase.py verify-isolation`, substep 0.5.3 / the 7.1.1 live checks) can prove,
+against the real managed Postgres, that the reader role cannot write and RLS hides forbidden rows.
+Why not now: the isolation *logic* is already proven at the local DB level by the `-m db` tests (both
+roles, all policies, RLS on). The live run is an extra proof that only becomes necessary at 7.1.1, just
+before production, when a misconfigured reader role would expose real tenant data — and no production
+exists yet. The only Supabase URL in `.env` today is the writer/pooler tied to two prior stray-write
+incidents, so the run must NOT use it; it needs a genuinely read-only string.
+What you should do: when a staging reader credential exists, hand me `DATABASE_READER_URL` and confirm
+the host is staging (not production); I'll run the script and save the output to
+`docs/Final_docs/0.5-regression-tests/live-isolation-<date>.txt`.
+Where it would go: substep 0.5.3 (live isolation) and 7.1.1 (environments); panels r3-reader, s-reader.
+Added: 2026-09-18
+
+## The event_ledger `actor` column — decide later (d-event_ledger)
+What: the design page's `event_ledger` column list names an `actor` column. In the code there is no
+`actor` column on `event_ledger` — there is an `actor_account_id`, and it is not persisted to the
+event_ledger row today. So the page overstates the schema. Two ways to reconcile once we look at it
+properly: (a) correct the page to drop `actor` (nothing depends on it), or (b) actually record the
+actor (who triggered the event — a webhook user, a sweep, a manual run) on every ledger row if we want
+that audit trail.
+Why not now: owner asked to leave it open and double-check later (2026-09-18); it is not a failing test
+and nothing depends on the missing column. Revisit when we do the event_ledger / audit-trail work.
+Where it would go: a design-review page fix, or an event_ledger schema + write change; panel d-event_ledger.
+Added: 2026-09-18

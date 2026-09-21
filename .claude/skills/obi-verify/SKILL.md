@@ -5,16 +5,16 @@ allowed-tools: Bash(make:*), Bash(uv run:*), Bash(pnpm:*), Bash(docker:*), Read,
 ---
 # /obi-verify
 
-Run from the repository root. The Makefile is at the repository root and its targets `cd` into apps/automation themselves, so call `make` from the root — never `cd apps/automation && make`. Run every level below in order and print one table. Commands and results only.
+Run from the repository root. The Makefile is at the repository root and its targets `cd` into backend themselves, so call `make` from the root — never `cd backend && make`. Run every level below in order and print one table. Commands and results only.
 
 | level | command | pass rule |
 |---|---|---|
 | unit | make test-unit | exit 0 (every test NOT marked `db`) |
 | database | make test-db | exit 0 (every `db`-marked test, against the local pgvector Postgres, migrated to head, both roles and all policies applied) |
-| lint + types | cd apps/automation && uv run ruff check . ; uv run ruff format --check . ; uv run pyright | counts not above the baseline in docs/plan/baseline.md; if that file is missing or says "no baseline yet", PASS with note "no baseline yet" |
+| lint + types | cd backend && uv run ruff check . ; uv run ruff format --check . ; uv run pyright | counts not above the baseline in docs/plan/baseline.md; if that file is missing or says "no baseline yet", PASS with note "no baseline yet" |
 | browser | make test-ui | exit 0; if the target does not exist print "not wired yet" |
 | eval | make eval | prints recall@75, P@5, NDCG@10, refusal rate; none below docs/plan/baseline.md; if that file is missing or says "no baseline yet", PASS with note "no baseline yet" |
-| live (only if STAGING_DATABASE_URL is set) | cd apps/automation && uv run python scripts/setup_supabase.py verify-isolation && uv run python scripts/verify_knowledge_scope_backfill.py | both exit 0; if the var is unset print "skipped" |
+| live (only if STAGING_DATABASE_URL is set) | cd backend && uv run python scripts/setup_supabase.py verify-isolation && uv run python scripts/verify_knowledge_scope_backfill.py | both exit 0; if the var is unset print "skipped" |
 
 Baseline: read docs/plan/baseline.md once. A missing file, or a numbered line reading "no baseline yet", is not a failure — report the level PASS with the note "no baseline yet". A real number that is exceeded (lint/type counts rose, or an eval metric fell) is RED.
 

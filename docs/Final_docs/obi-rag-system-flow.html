@@ -760,7 +760,7 @@ details.sec[open]>summary .show{display:none}
     <table>
       <tr><th>Field</th><th>What it is</th><th>Limit</th></tr>
       <tr><td>history</td><td>the turns so far, must end on a user turn</td><td>20 turns, 4000 chars each</td></tr>
-      <tr><td>images</td><td>base64 images on the newest turn only</td><td>4 per turn, 5 MB each</td></tr>
+      <tr><td>images</td><td>base64 images on the newest turn only</td><td>3 per turn, 3 MB each (decision w-composer-images, substep 4.2.7)</td></tr>
       <tr><td>knowledgeScope</td><td>which platform the widget sits in, for example <code>mews</code></td><td>a lowercase slug, checked for shape and against the list; unknown slug: 400. The token decides the scope. A known slug that disagrees with the token is ignored and logged <span class="tag t-bug">Implemented, needs changing</span></td></tr>
       <tr><td>principal</td><td>who is asking, for page-level access</td><td>derived from the token's <code>sub</code> through the identity mapping, never from the body <span class="tag t-bug">Implemented, needs changing</span></td></tr>
       <tr><td>Authorization header</td><td>one shared server key today; a key per widget host plus a signed user token from the host backend in the target (<a href="#embed">section 03.2</a>)</td><td>fail closed if missing <span class="tag t-new">Planned</span></td></tr>
@@ -2432,7 +2432,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 [
 "APIs used",
-"v2 pages and spaces; v1 for labels, restrictions, group members, attachment download"
+"v2 pages, spaces and labels; v1 for restrictions, group members, attachment download"
 ],
 [
 "Client",
@@ -2794,7 +2794,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "Feature",
 "h": "features/retrieval",
 "st": "built",
-"today": "Owns search, fusion, the page ACL, rerank wiring, and the retrieval half of query_trace. The rag_reader binding itself lives in platform/db/engine.py; this folder only comments on it.",
+"today": "Owns search, fusion, the page ACL, rerank wiring, and the retrieval half of query_trace. The rag_reader binding itself lives in knowledge-base/schema/engine.py; this folder only comments on it.",
 "files": [
 [
 "application/retriever.py",
@@ -2952,7 +2952,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 },
 "cm-alembic": {
 "n": "Folder",
-"h": "alembic/versions: the migrations",
+"h": "knowledge-base/migrations/versions: the migrations",
 "st": "unverified",
 "today": "0001 core schema, 0002 provider tags and RLS, 0003 query_trace, 0004 source_scope, 0005 page_restriction, 0006 dedupe check constraints, 0007 knowledge scope, 0008 drop FORCE RLS, 0009 reader policies, 0010 scope RLS. Live head on Supabase: 0012.",
 "s": [
@@ -3003,8 +3003,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "cm-config": {
 "n": "File",
 "h": "config/knowledge_scopes.json: the scope list",
-"st": "change",
-"today": "Holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test. Loaded at startup; startup fails if the general scope is missing. The widget's scope list is a hand-written copy of this file, guarded by a runtime drift test, not generated at build time.",
+"st": "built",
+"today": "Loaded and validated at startup (fails if obi-general-test or classified is missing); classified is present but excluded from the recognized set, from GET /health, and from the widget list. Each entry now carries name + label + description; the widget's scope switcher is GENERATED from this file at build time (substep 1.2.2) — no hand-written copy, no drift test. platforms.json now sits beside it under knowledge-base/config/, loaded + validated at startup after the tag map (substep 1.2.3): six ordered rules each naming the offending entry, general added by the loader and never hand-listed, exposing allowed_scopes_for + platform_for; datahub is the first active platform and is logged at boot.",
 "f": [
 [
 "Target list",
@@ -3091,7 +3091,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 },
 "cm-web": {
 "n": "App",
-"h": "apps/web: the widget",
+"h": "frontend: the widget",
 "st": "built",
 "files": [
 [
@@ -3162,7 +3162,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 },
 "cm-infra": {
 "n": "Folder",
-"h": "infra/foundation: local Postgres",
+"h": "knowledge-base/local: local Postgres",
 "st": "built",
 "f": [
 [
@@ -4503,7 +4503,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "tg-config": {
 "n": "Config",
 "h": "The scope list file",
-"st": "change",
+"st": "built",
 "f": [
 [
 "Path",
@@ -4541,7 +4541,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ]
 ],
 "simple": "The list of tag names in one small file. A name here is a tag; a name not here is ignored.",
-"today": "apps/web/src/features/chat/model/knowledge-scopes.ts is a hand-written copy of this file's list, checked by a runtime drift test, not generated at build time."
+"today": "knowledge-base/config/knowledge_scopes.json holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test and the reserved classified; the loader validates it at startup and returns the four recognized scopes (classified excluded); the widget list mirrors the same file minus classified, guarded by the drift test."
 },
 "tg-state": {
 "n": "Data",
@@ -4692,7 +4692,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "f": [
 [
 "Rate",
-"20 per minute; keyed on the token subject in the target; on the client IP today and for any request without a token (trusted-proxy X-Forwarded-For)"
+"20 per minute; keyed on the token subject when there is a token, otherwise on request.client.host. No X-Forwarded-For parsing today: TRUSTED_PROXY_HOPS defaults to 0, set per environment in 7.1.1 once the browser→proxy→API chain is known (decision r1-limits-ipkey, 2026-09-18)"
 ],
 [
 "History",
@@ -4700,7 +4700,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 [
 "Images",
-"4 per turn, 5 MB each, checked on every turn"
+"3 per turn, 3 MB each, checked on every turn (decision w-composer-images, substep 4.2.7)"
 ],
 [
 "Scope slug",
@@ -6150,7 +6150,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 [
 "Images",
-"base64 on the newest turn only, 4 per turn, 5 MB each"
+"base64 on the newest turn only, never stored; target ≤ 3 per turn, each ≤ 3 MB; over the limit shows a user-facing error (compress the image). Today (needs change, decision w-composer-images 2026-09-18): 4 per turn, no byte-size check"
 ],
 [
 "Empty text plus image",
@@ -6168,7 +6168,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ]
 ],
 "simple": "Where the person types, pastes, or attaches a picture.",
-"today": "4 images per turn; no size check exists anywhere in apps/web — the 5 MB figure below is not enforced."
+"today": "≤ 3 images per turn, each ≤ 3 MB; over either limit the composer shows a user-facing error and does not attach, and the backend rejects an over-limit request with a 400 the proxy forwards (decision w-composer-images)."
 },
 "w-scope": {
 "n": "Config",
@@ -6739,7 +6739,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 [
 "Rate limit key",
-"the token subject; client IP only on the pre-token path, with trusted-proxy X-Forwarded-For parsing"
+"the token subject; request.client.host on the pre-token path. No X-Forwarded-For parsing today (TRUSTED_PROXY_HOPS=0, set in 7.1.1) — see decision r1-limits-ipkey"
 ],
 [
 "Network",
@@ -7199,7 +7199,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "ks-validate": {
 "n": "Knowledge scopes",
 "h": "Validate the list",
-"st": "change",
+"st": "built",
 "f": [
 [
 "Lowercase",
@@ -7222,7 +7222,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "t": [
 "Add 'Toast' with a capital T: startup fails and names the entry."
 ],
-"simple": "The app checks the list at startup and stops with a clear message if a name is wrong."
+"simple": "The app checks the list at startup and stops with a clear message if a name is wrong.",
+"today": "Startup validation in platform/config/knowledge_scopes.py, in order: every entry lowercase, no duplicates, obi-general-test present, classified present — each rule raises naming the entry and exits the backend non-zero (test_knowledge_scopes.py, 6 unit tests)."
 },
 "ks-deploy": {
 "n": "Knowledge scopes",
@@ -7390,7 +7391,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ]
 ],
 "note": "halfvec because pgvector indexes cap plain vectors at 2000 dimensions. Half precision costs almost no recall at this size.",
-"simple": "A fast lookup map over all the number codes that finds the closest ones without checking every row."
+"simple": "A fast lookup map over all the number codes that finds the closest ones without checking every row.",
+"today": "Regression-tested: dedicated tests pin the index's name, its halfvec/cosine shape above the 2000-dim cap (vector_cosine_ops at or below it, disclosed), and its m=16/ef_construction=200 build params."
 },
 "vd-nearest": {
 "n": "Vector database",
@@ -7412,7 +7414,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "The source and scope policies apply to every SELECT on chunk.",
 "So a nearest-neighbor hit from a forbidden row is never returned."
 ],
-"simple": "The row locks apply to the numbers too, so a hidden row never comes out of a vector search."
+"simple": "The row locks apply to the numbers too, so a hidden row never comes out of a vector search.",
+"today": "Regression-tested: dedicated tests pin that embedding lives on chunk, that both the source and knowledge-scope SELECT policies are registered on chunk, and that a raw nearest-neighbor query as the reader never returns a row on a forbidden source even when it is the closest match."
 },
 "vd-question": {
 "n": "Vector database",
@@ -7445,7 +7448,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ]
 ],
 "note": "Not a vector, but it lives next to one and runs in the same transaction. It catches exact strings like an error code.",
-"simple": "Next to the numbers, each piece has a word index that finds exact words the numbers might miss."
+"simple": "Next to the numbers, each piece has a word index that finds exact words the numbers might miss.",
+"today": "The keyword-search tsv column, its GIN index and the OR-joined/ts_rank query are each pinned by a dedicated panel-id-named regression test."
 },
 "vd-swap": {
 "n": "Vector database",
@@ -7502,7 +7506,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "h": "One frontend",
 "st": "built",
 "simple": "The chat window a person types in, plus the small server route that adds the secret key. It shows answers. It never decides who may see what.",
-"today": "apps/web: a Next.js app with the widget UI, its proxy route, and a built iframe bridge holding the token in memory. Embedded in a platform page with a scope from its config. A per-user JWT from the host gates it; the shared pilot token is retired.",
+"today": "frontend/: the Next.js chat widget, its proxy route and iframe bridge — renamed from apps/web in substep 1.1.1 (rename-only, no logic change). Reads the tag list from knowledge-base/config at build.",
 "f": [
 [
 "Owns",
@@ -7542,7 +7546,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "h": "One backend",
 "st": "built",
 "simple": "The code that checks who is asking, reads Confluence, builds the index, searches, scores and writes the answer. One backend serves every integration.",
-"today": "apps/automation: FastAPI, five feature folders (confluence_sync, ingestion, retrieval, rag_agent, evaluation), platform clients, the job worker.",
+"today": "backend/: FastAPI with the five feature folders under app/, platform clients and the worker — renamed from apps/automation in 1.1.1. The DB layer is no longer app.platform.db; it is the standalone schema package imported from knowledge-base.",
 "f": [
 [
 "Owns",
@@ -7580,9 +7584,9 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "sc-kb": {
 "n": "Part",
 "h": "One knowledge base",
-"st": "change",
+"st": "built",
 "simple": "One Postgres database holds every page in pieces with its tags. The database itself hides rows a person may not see. The folder next to it holds the schema, the tags and the seed data, never the pages.",
-"today": "Supabase Postgres with pgvector. Schema and policies in platform/db, migrations in alembic/versions (12 files through 0012), the tag list in config/knowledge_scopes.json, curated seeds in scripts/, a local compose file in infra/foundation.",
+"today": "knowledge-base/ holds schema/, migrations/, config/, seed/ and local/, and now its OWN standalone test suite (knowledge-base/tests/, 35 schema/migration tests) run from its own venv against schema.settings.KbSettings — importing nothing from the backend. The backend imports schema/ as an editable package; the one-way rule (nothing under knowledge-base/ imports app/features/platform/shared) is enforced by backend/tools/check_feature_boundaries.py (1.1.2) and proven by backend/tests/tools/test_boundaries.py; the KB suite runs in make test-unit/test-db and CI.",
 "f": [
 [
 "Holds in Postgres",
@@ -7875,7 +7879,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "The frame refuses a message from any other window or domain.",
 "The note never appears in the frame's URL, cookies or storage."
 ],
-"today": "apps/web/src/app/embed/page.tsx is built and unit-tested, not planned."
+"today": "frontend/src/app/embed/page.tsx is built and unit-tested, not planned."
 },
 "em-loader": {
 "n": "Frontend",

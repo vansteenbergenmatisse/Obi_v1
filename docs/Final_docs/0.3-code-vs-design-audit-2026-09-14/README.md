@@ -2,6 +2,13 @@
 
 _Folder: `0.3-code-vs-design-audit-2026-09-14`._
 
+> **Merged 2026-09-18 — this is now the single 0.3 home.** At the owner's request the two 0.3
+> directories were consolidated here. Alongside the ten code-vs-design synopses below, this folder
+> now also holds the **test-suite inventory** (`test-suite-inventory.md`) and **infrastructure
+> inventory** (`infrastructure-inventory.md`) written for substeps 0.3.2/0.3.3 — they previously
+> lived in the sibling `0.3-synopsis-2026-09-16/`, which is now a redirect stub. The audit synopses
+> remain the frozen 2026-09-14 snapshot described below; only those two inventory files were added.
+
 ## What this folder is (read this first)
 
 A **point-in-time, read-only audit of Obi's codebase measured against the design page.**

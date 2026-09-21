@@ -1,11 +1,11 @@
 # Omniboost RAG — developer task runner.
 #
-# Python tasks run inside the automation venv at apps/automation/.venv, created
-# by `uv venv` (see README Quickstart). `uv run` resolves that venv when invoked
-# from apps/automation.
+# Python tasks run inside the backend venv at backend/.venv, created
+# by `uv sync` (see README Quickstart). `uv run` resolves that venv when invoked
+# from backend. The schema package lives in ../knowledge-base (editable path dep).
 
-AUTOMATION := apps/automation
-COMPOSE := infra/foundation/docker-compose.yml
+AUTOMATION := backend
+COMPOSE := knowledge-base/local/docker-compose.yml
 PG_CONTAINER := omniboost_rag_pg
 # The local compose Postgres, pinned explicitly (substep 0.5.1/harness.md) so `test-db` can never
 # pick up a developer's root .env DATABASE_URL (which may point at a live Supabase project for
@@ -22,19 +22,32 @@ up:
 down:
 	docker compose -f $(COMPOSE) down
 
-## migrate: apply Alembic migrations to head.
+## migrate: apply Alembic migrations to head on the LOCAL pgvector Postgres.
+## Pinned to the local URL (like test-db) so a bare `make migrate` can never migrate a
+## live Supabase project via a developer's root .env DATABASE_URL. Migrating a live
+## project is a deliberate act: run alembic directly with an explicit DATABASE_URL.
 migrate:
-	cd $(AUTOMATION) && uv run alembic upgrade head
+	cd $(AUTOMATION) && DATABASE_URL=$(DB_URL_LOCAL) uv run alembic -c ../knowledge-base/migrations/alembic.ini upgrade head
 
-## test: run the automation test suite (the pre-0.5.1 umbrella; kept working as-is).
+## test: run the backend suite then the knowledge base's own standalone suite (the umbrella
+## behind `make check`; 1.1.1-fix wires knowledge-base/tests/ in here too so the pre-commit
+## gate covers both trees, not just the backend). Pinned to the local URL (like test-db) so
+## db-marked tests can never run against a live Supabase project via the root .env
+## DATABASE_URL. Run `make up` first for the db tests.
 test:
-	cd $(AUTOMATION) && uv run pytest
+	cd $(AUTOMATION) && DATABASE_URL=$(DB_URL_LOCAL) uv run pytest
+	cd knowledge-base && DATABASE_URL=$(DB_URL_LOCAL) uv run pytest
 
 ## test-unit: fakes only, no database, no live marker (substep 0.5.1 / harness.md).
 ## Every test NOT marked `db` — the reranker, embedder, Claude client and Confluence
-## gateway are fakes; nothing touches a network or a real Postgres.
-test-unit:
+## gateway are fakes; nothing touches a network or a real Postgres. Runs the architecture
+## boundary checker first (ADR-0003 feature rules + the 1.1.2 one-way folder rules) so a
+## wrong-way import fails the unit level (and CI, which runs this target). Runs the backend
+## suite then the knowledge base's own standalone suite (1.1.1-fix: knowledge-base/tests/,
+## run from its own venv so the one-way rule — it imports nothing from the backend — holds).
+test-unit: boundaries
 	cd $(AUTOMATION) && uv run pytest -m "not db"
+	cd knowledge-base && uv run pytest -m "not db"
 
 ## test-db: the database suite against the LOCAL pgvector Postgres (substep 0.5.1 /
 ## harness.md). Starts compose, re-applies the roles/policies init script idempotently
@@ -50,11 +63,14 @@ test-db:
 		sleep 1; \
 	done
 	docker exec $(PG_CONTAINER) psql -U rag -d omniboost_rag -f /docker-entrypoint-initdb.d/01-roles.sql
-	cd $(AUTOMATION) && DATABASE_URL=$(DB_URL_LOCAL) uv run alembic upgrade head
+	cd $(AUTOMATION) && DATABASE_URL=$(DB_URL_LOCAL) uv run alembic -c ../knowledge-base/migrations/alembic.ini upgrade head
 	cd $(AUTOMATION) && DATABASE_URL=$(DB_URL_LOCAL) uv run pytest -m db; \
 	status=$$?; \
+	cd "$(CURDIR)/knowledge-base" && DATABASE_URL=$(DB_URL_LOCAL) uv run pytest -m db; \
+	kb_status=$$?; \
 	$(MAKE) -C "$(CURDIR)" down; \
-	exit $$status
+	if [ $$status -ne 0 ]; then exit $$status; fi; \
+	exit $$kb_status
 
 ## test-ui: the widget's Playwright browser suite against a stub host page
 ## (substep 0.5.1 / harness.md). Installs Chromium first (no-op if already present).

@@ -1,0 +1,53 @@
+[project]
+name = "obi-knowledge-base"
+version = "0.1.0"
+description = "Obi knowledge base: the versioned Confluence store schema, roles, policies and DB settings. Imported by the backend as the `schema` package; imports nothing back (ADR-0003, Phase-1 one-way rule)."
+requires-python = ">=3.12,<3.14"
+dependencies = [
+    "sqlalchemy>=2.0.35",
+    "pgvector>=0.3.6",
+    "psycopg[binary]>=3.2",
+    "pydantic-settings>=2.5",
+    # The migrations under migrations/ are a real Alembic project (env.py, versions/). Alembic
+    # was previously only borrowed from the backend's venv; the knowledge base owns its
+    # migrations, so it declares Alembic as its own dependency and stands alone.
+    "alembic>=1.13",
+]
+
+[project.optional-dependencies]
+# Mirrors backend/pyproject.toml's dev extra so `uv run pytest` works from knowledge-base/ on
+# its own venv. The schema/migration tests moved here (from backend/tests/schema/) are plain
+# pytest — no asyncio, no live network — so only pytest itself is needed.
+dev = [
+    "pytest>=8.3",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["schema"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+# --strict-markers so an unknown mark (e.g. a `db` typo) is an error, not a silent skip; mirrors
+# backend/pyproject.toml. The `db` marker means "needs a real local Postgres, migrations applied"
+# (substep 0.5.1, harness.md) — the same definition the backend uses.
+addopts = "--strict-markers"
+markers = [
+    "db: requires a real local Postgres with migrations applied (substep 0.5.1, harness.md)",
+]
+
+# Mirror the backend's ruff config so the schema package is held to the same bar when linted
+# (the 1.1.1 move; the backend runs `ruff check ../knowledge-base/schema`).
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["schema"]
