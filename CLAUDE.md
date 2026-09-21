@@ -33,28 +33,47 @@ Secrets come from the root `.env` (gitignored). Tests never read it. `/obi-verif
 
 ## Where things go
 
-Backend (Python, FastAPI):
-- The entrypoint module is wiring only: settings, engines, services, routers, scheduler. No business rules.
-- `features/confluence_sync/` owns ingestion stages 1 and 2: webhook, event ledger, job queue and worker, sweeps, change classification, labels to scope state.
-- `features/ingestion/` owns stages 3 and 4: normalize, chunk, contextualize, attachments, embed, version, swap, garbage collection, rollback.
-- `features/retrieval/` owns retrieval stages 2 to 4: hybrid search, fusion, page permissions, rerank wiring, trace writes.
-- `features/rag_agent/` owns stages 1 and 5: the chat endpoint, token and key checks, limits, small talk, rewrite, refusal, generation, citations, the support check, prompts, curated knowledge.
-- `features/evaluation/` owns the eval runner, metrics and datasets.
-- `platform/` owns technical capabilities: database models, roles and policies, API clients, settings, the job queue, logging.
-- `shared/` owns small cross-feature primitives with no clearer owner (hashing, rate limiter, TTL cache). A primitive goes here, not in `platform/`.
+Three runnable roots plus shared packages. Every new file belongs to exactly one root, in the feature or component structure below.
+
+`backend/` (Python, FastAPI) — business logic and the worker:
+- `app/main.py` is wiring only: settings, engines, services, routers, scheduler. No business rules.
+- `app/features/confluence_sync/` owns ingestion stages 1 and 2: webhook, event ledger, job queue and worker, sweeps, change classification, labels to scope state.
+- `app/features/ingestion/` owns stages 3 and 4: normalize, chunk, contextualize, attachments, embed, version, swap, garbage collection, rollback.
+- `app/features/retrieval/` owns retrieval stages 2 to 4: hybrid search, fusion, page permissions, rerank wiring, trace writes.
+- `app/features/rag_agent/` owns stages 1 and 5: the chat endpoint, token and key checks, limits, small talk, rewrite, refusal, generation, citations, the support check, prompts, curated knowledge.
+- `app/features/evaluation/` owns the eval runner, metrics and datasets.
+- `app/platform/` owns technical capabilities and imports no feature: API clients (`clients/`), settings (`config/`), the job queue (`jobs/`), logging.
+- `app/shared/` owns small cross-feature primitives with no clearer owner (hashing, rate limiter, TTL cache). A primitive goes here, not in `app/platform/`.
+- `scripts/` holds operator tools (Supabase setup and isolation check, seeds, sweeps, backfill and readiness gate, key rotation); `tools/` holds repo tooling; `tests/` holds the backend suite.
 - Every prompt lives in the rag_agent domain layer. No prompt text anywhere else.
-- Migrations are numbered, each has a downgrade, and every schema change on the design page lives in one migration.
-- Operator tools (Supabase setup and isolation check, seeds, sweeps, backfill and readiness gate, key rotation) live in `scripts/`.
 
-Frontend (Next.js): the widget UI, the proxy route that adds the host key, the embed frame, the loader script, i18n, the generated scope list. UI components exist only here.
+`knowledge-base/` — the data layer; imports nothing from `backend/`:
+- `schema/` owns database models, enums, roles and policies.
+- `migrations/versions/` holds numbered migrations, each with a downgrade; every schema change on the design page lives in one migration.
+- `config/` holds the tag map and the platform list as JSON. Nothing else may define a tag or a platform.
+- `seed/` and `local/` hold the curated-knowledge seed and the local pgvector compose.
 
-Config is data: the tag map and the platform list are JSON under `config/`. Nothing else may define a tag or a platform.
+`frontend/` (Next.js) — the only place UI components live:
+- `src/features/chat/` owns the widget: `ui/`, `api/`, `server/` (the proxy route that adds the host key), `model/`.
+- `src/features/embed/` owns the embed frame, the iframe bridge, and the loader script.
+- `src/app/api/chat/` is the route entrypoint; route files stay thin.
+- `src/components/` holds reusable UI shared across features.
 
-Tests: unit tests with fakes and database tests next to the feature they cover; browser tests in the frontend; eval datasets in `features/evaluation/`. Names: `test_<stage>_<behavior>`. Every regression test names the design panel it protects.
+`packages/` holds `contracts/` (shared TS types, token claims, OpenAPI) and `design-tokens/`. `docs/` holds the design page, action plan, ledger and ADRs (the authoritative set lives under `docs/Final_docs/`).
 
-<!-- Phase 1 of the plan moves apps/web → frontend/, apps/automation → backend/, and db models + migrations + config + seeds + local compose → knowledge-base/. Same placement rules, new top folders. Rewrite this section then and delete this note. -->
+Dependency direction is one-way and enforced by `make boundaries`: `frontend/` reads config as JSON at build and imports neither other root; `backend/` imports `knowledge-base/schema`; `knowledge-base/` imports nothing from `backend/`.
 
-After the Phase 1 move, the same rules hold under three top folders: `frontend/`, `backend/`, `knowledge-base/` (schema, migrations, config, seed, local). `backend` imports `knowledge-base/schema`; `knowledge-base` imports nothing from `backend`; `frontend` imports neither and reads config as JSON at build time.
+Tests: unit tests with fakes and database tests next to the feature they cover; browser tests in the frontend; eval datasets in `backend/app/features/evaluation/`. Names: `test_<stage>_<behavior>`. Every regression test names the design panel it protects.
+
+### Where a new file goes
+
+Before creating a file, place it by the first rule that fits:
+1. A data concern (a model, a migration, a tag, a seed) → `knowledge-base/`.
+2. User-facing UI or the widget proxy → `frontend/src/features/<feature>/` when it is feature-owned, or `frontend/src/components/` when it is reused across features.
+3. Owns a backend capability end to end → `backend/app/features/<feature>/`. Extend the owning feature; add a new feature folder only for a genuinely new capability.
+4. A generic technical capability used across features (a client, settings, the queue, logging) → `backend/app/platform/`.
+5. A tiny cross-feature primitive with no clearer owner → `backend/app/shared/`.
+6. Never duplicate a feature-owned concept elsewhere; reach another feature only through its public root (see Boundaries).
 
 ## Boundaries (enforced by `make boundaries`)
 
