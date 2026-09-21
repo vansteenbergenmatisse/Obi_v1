@@ -20,7 +20,6 @@ infra/
   foundation/     Shared infra (Postgres + pgvector via docker-compose).
 docs/
   adr/            Architecture Decision Records.
-tests/            Cross-application and operational tests (see tests/TESTING.md).
 ```
 
 TypeScript owns everything a human looks at (and the proxy that serves it). Python owns the
