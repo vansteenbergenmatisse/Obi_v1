@@ -209,13 +209,21 @@ def create_app(*, settings: Settings | None = None, start_scheduler: bool | None
     # PLAN 11.1c (ADR-0014): the /chat token verifier, built once from the platform registry.
     # Touching settings.platform_registry here is also the fail-fast startup check (bad
     # platforms.json -> boot fails, never fails open to an unverified caller).
-    app.state.token_verifier = TokenVerifier(settings.platform_registry)
+    platform_registry = settings.platform_registry
+    log.info("platform_registry_loaded", active_platforms=platform_registry.active_platforms())
+    app.state.token_verifier = TokenVerifier(platform_registry)
     app.include_router(confluence_router)
     app.include_router(chat_router)
 
     @app.get("/health")
     def health() -> dict:
-        return {"status": "ok", "env": settings.env}
+        # substep 1.2.1: list the loaded, recognized scopes. `knowledge_scope_set` already excludes
+        # the reserved `classified` scope, so it is never exposed here.
+        return {
+            "status": "ok",
+            "env": settings.env,
+            "knowledge_scopes": sorted(settings.knowledge_scope_set),
+        }
 
     return app
 

@@ -3003,8 +3003,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "cm-config": {
 "n": "File",
 "h": "config/knowledge_scopes.json: the scope list",
-"st": "change",
-"today": "Holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test. Loaded at startup; startup fails if the general scope is missing. The widget's scope list is a hand-written copy of this file, guarded by a runtime drift test, not generated at build time.",
+"st": "built",
+"today": "Loaded and validated at startup (fails if obi-general-test or classified is missing); classified is present but excluded from the recognized set, from GET /health, and from the widget list. Each entry now carries name + label + description; the widget's scope switcher is GENERATED from this file at build time (substep 1.2.2) — no hand-written copy, no drift test. platforms.json now sits beside it under knowledge-base/config/, loaded + validated at startup after the tag map (substep 1.2.3): six ordered rules each naming the offending entry, general added by the loader and never hand-listed, exposing allowed_scopes_for + platform_for; datahub is the first active platform and is logged at boot.",
 "f": [
 [
 "Target list",
@@ -4503,7 +4503,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "tg-config": {
 "n": "Config",
 "h": "The scope list file",
-"st": "change",
+"st": "built",
 "f": [
 [
 "Path",
@@ -4541,7 +4541,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ]
 ],
 "simple": "The list of tag names in one small file. A name here is a tag; a name not here is ignored.",
-"today": "apps/web/src/features/chat/model/knowledge-scopes.ts is a hand-written copy of this file's list, checked by a runtime drift test, not generated at build time."
+"today": "knowledge-base/config/knowledge_scopes.json holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test and the reserved classified; the loader validates it at startup and returns the four recognized scopes (classified excluded); the widget list mirrors the same file minus classified, guarded by the drift test."
 },
 "tg-state": {
 "n": "Data",
@@ -7199,7 +7199,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "ks-validate": {
 "n": "Knowledge scopes",
 "h": "Validate the list",
-"st": "change",
+"st": "built",
 "f": [
 [
 "Lowercase",
@@ -7222,7 +7222,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "t": [
 "Add 'Toast' with a capital T: startup fails and names the entry."
 ],
-"simple": "The app checks the list at startup and stops with a clear message if a name is wrong."
+"simple": "The app checks the list at startup and stops with a clear message if a name is wrong.",
+"today": "Startup validation in platform/config/knowledge_scopes.py, in order: every entry lowercase, no duplicates, obi-general-test present, classified present — each rule raises naming the entry and exits the backend non-zero (test_knowledge_scopes.py, 6 unit tests)."
 },
 "ks-deploy": {
 "n": "Knowledge scopes",

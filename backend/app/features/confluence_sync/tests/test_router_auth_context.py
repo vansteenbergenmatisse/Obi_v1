@@ -4,8 +4,8 @@ request body) drives the knowledge scope that reaches the answer service.
 This is the security done-when for Task B1. It uses a recorder `AnswerProvider` (captures the
 `AuthContext` the router built) and the `_StubTokenVerifier` from test_chat_endpoint (maps a raw
 header value to claims / a TokenError), so no real JWT signing or JWKS fetch is needed. The real
-`settings.platform_registry` (config/platforms.json) maps integration `mews` -> ["obi-general-test",
-"obi-mews-test"]."""
+`settings.platform_registry` (knowledge-base/config/platforms.json) maps integration `mews` ->
+["obi-general-test", "obi-mews-test"]."""
 
 from __future__ import annotations
 

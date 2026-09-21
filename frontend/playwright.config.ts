@@ -27,6 +27,10 @@ export default defineConfig({
     url: `http://127.0.0.1:${PORT}/test-hosts/none`,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
+    // Turn on the dev/verification scope switcher (PLAN 10.8, panel-header.tsx) so
+    // `scope-list.spec.ts` (substep 1.2.2) can prove the switcher renders the JSON-generated list.
+    // A real embed never sets this; it stays off everywhere except this browser suite.
+    env: { NEXT_PUBLIC_SHOW_SCOPE_SWITCHER: "true" },
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
 });

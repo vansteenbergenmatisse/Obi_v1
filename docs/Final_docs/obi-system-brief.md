@@ -856,10 +856,10 @@ ALTER TABLE query_trace ADD COLUMN decision text;
   - `verify_knowledge_scope_live.py` — add, edit, remove a real label and check the DB
   - `rotate_chat_api_key.py` — overlap-window key rotation
 
-##### Panel `cm-config` · config/knowledge_scopes.json: the scope list · [Implemented, needs changing]
+##### Panel `cm-config` · config/knowledge_scopes.json: the scope list · [Implemented]
 - Kind: File
 - In plain words: The tag list. A Confluence label in this file is a knowledge scope; add a name to add a tag.
-- Today: Holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test. Loaded at startup; startup fails if the general scope is missing. The widget's scope list is a hand-written copy of this file, guarded by a runtime drift test, not generated at build time.
+- Today: Loaded and validated at startup (fails if obi-general-test or classified is missing); classified is present but excluded from the recognized set, from GET /health, and from the widget list. Each entry now carries name + label + description; the widget's scope switcher is GENERATED from this file at build time (substep 1.2.2) — no hand-written copy, no drift test. platforms.json now sits beside it under knowledge-base/config/, loaded + validated at startup after the tag map (substep 1.2.3): six ordered rules each naming the offending entry, general added by the loader and never hand-listed, exposing allowed_scopes_for + platform_for; datahub is the first active platform and is logged at boot.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2275,10 +2275,10 @@ _Every arrow runs through ingestion stage 1 (a label event or a sweep) and stage
 
 _Workflow label shown in the drawer: Knowledge scopes_
 
-##### Panel `tg-config` · The scope list file · [Implemented, needs changing]
+##### Panel `tg-config` · The scope list file · [Implemented]
 - Kind: Config
 - In plain words: The list of tag names in one small file. A name here is a tag; a name not here is ignored.
-- Today: apps/web/src/features/chat/model/knowledge-scopes.ts is a hand-written copy of this file's list, checked by a runtime drift test, not generated at build time.
+- Today: knowledge-base/config/knowledge_scopes.json holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test and the reserved classified; the loader validates it at startup and returns the four recognized scopes (classified excluded); the widget list mirrors the same file minus classified, guarded by the drift test.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2310,9 +2310,10 @@ _Workflow label shown in the drawer: Knowledge scopes_
   - Add a slug, restart, query GET /health: the slug is listed as a valid scope.
 - Target and notes: This is the whole setup for a new tag. No table edit, no migration.
 
-##### Panel `ks-validate` · Validate the list · [Implemented, needs changing]
+##### Panel `ks-validate` · Validate the list · [Implemented]
 - Kind: Knowledge scopes
 - In plain words: The app checks the list at startup and stops with a clear message if a name is wrong.
+- Today: Startup validation in platform/config/knowledge_scopes.py, in order: every entry lowercase, no duplicates, obi-general-test present, classified present — each rule raises naming the entry and exits the backend non-zero (test_knowledge_scopes.py, 6 unit tests).
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4677,7 +4678,7 @@ _Section id: `open`_
 | `cm-shared` | code | shared/: small generic helpers | Implemented |
 | `cm-alembic` | code | alembic/versions: the migrations | Unverified |
 | `cm-scripts` | code | scripts/: operator tools | Implemented |
-| `cm-config` | code | config/knowledge_scopes.json: the scope list | Implemented, needs changing |
+| `cm-config` | code | config/knowledge_scopes.json: the scope list | Implemented |
 | `cm-docs` | code | docs/adr: the decisions of record | Implemented |
 | `cm-web` | code | apps/web: the widget | Implemented |
 | `cm-contracts` | code | packages/contracts | Implemented |
@@ -4687,7 +4688,7 @@ _Section id: `open`_
 | `em-hostbackend` | embed | The platform's note endpoint | Decision needed |
 | `em-backend` | embed | Obi checks the note and picks the pages | Implemented |
 | `em-kb` | embed | Obi picks the pages: the shared knowledge base | Implemented, needs changing |
-| `tg-config` | tags | The scope list file | Implemented, needs changing |
+| `tg-config` | tags | The scope list file | Implemented |
 | `i1-sweep` | in1 | Sweeps: the safety net | Implemented, needs changing |
 | `s-writer` | security | The writer (table owner) | Implemented |
 | `i1-webhook` | in1 | POST /confluence/events | Unverified |
@@ -4726,7 +4727,7 @@ _Section id: `open`_
 | `i4-gc` | in4 | Garbage collect old versions | Implemented |
 | `i4-rollback` | in4 | Rollback to an older version | Implemented |
 | `ks-edit` | tags | Edit knowledge_scopes.json | Implemented, needs changing |
-| `ks-validate` | tags | Validate the list | Implemented, needs changing |
+| `ks-validate` | tags | Validate the list | Implemented |
 | `ks-deploy` | tags | Deploy | Implemented, needs changing |
 | `ks-sweep` | tags | The label sweep finds tagged pages | Planned |
 | `ks-index` | tags | Pages go in | Implemented |

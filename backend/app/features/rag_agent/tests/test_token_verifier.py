@@ -40,7 +40,7 @@ def registry(tmp_path):
                         "active": True,
                     }
                 },
-                "integrations": {"mews": ["obi-mews-test", "obi-general-test"]},
+                "integrations": {"mews": ["obi-mews-test"]},
             }
         )
     )

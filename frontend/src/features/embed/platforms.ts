@@ -4,7 +4,7 @@
  *
  * Mirrors the backend's `active_domains()` (`backend/app/platform/config/platforms.py`)
  * just enough to compute the `/embed` route's `frame-ancestors` directive at request time: reads
- * the same repo-root `config/platforms.json` (or a local override, see `PLATFORMS_PATH` below)
+ * the same `knowledge-base/config/platforms.json` (or a local override, see `PLATFORMS_PATH` below)
  * and returns the sorted, de-duplicated domain list of every `active: true` entry. Never caches —
  * each call re-reads the file, matching "computed at request time." Does not verify tokens or map
  * integrations to scopes; that stays backend-only (`TokenVerifier`/`PlatformRegistry`).
@@ -25,8 +25,12 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-// frontend/src/features/embed -> repo root is four directories up.
-const DEFAULT_PLATFORMS_PATH = resolve(here, "../../../../config/platforms.json");
+// frontend/src/features/embed -> repo root is four directories up; the file lives beside
+// knowledge_scopes.json under knowledge-base/config/ (relocated in substep 1.2.3).
+const DEFAULT_PLATFORMS_PATH = resolve(
+  here,
+  "../../../../knowledge-base/config/platforms.json",
+);
 
 interface RawPlatformEntry {
   domains?: string[];
@@ -38,7 +42,7 @@ interface RawPlatformsFile {
 }
 
 /** Same override knob name as the backend's `PLATFORMS_PATH` env var (`Settings.platforms_path`)
- * so a local dev/test setup can point both apps at one `config/platforms.local.json` with a
+ * so a local dev/test setup can point both apps at one `knowledge-base/config/platforms.local.json` with a
  * single env var (see `docs/embedding/obi-embed-local-test-keys.md`). */
 function platformsPath(): string {
   const override = process.env.PLATFORMS_PATH;

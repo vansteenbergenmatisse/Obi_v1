@@ -22,3 +22,17 @@ production).
 > tags) carries a divergence caveat, and the 4th ADR (label-gated ingestion) was not written. The
 > owner chose to just note it for now (see `docs/plan/decisions.md` `live-0.5.3-cm-docs` and
 > `docs/future-ideas.md` cm-docs-adrs).
+
+> Update 2026-09-21 (owner direction, recorded from substep 1.2.2). The owner made
+> `knowledge-base/config/knowledge_scopes.json` the single canonical allowlist (entries now carry
+> `name` + `label` + `description`) and had the widget generate its list from it (substep 1.2.2,
+> done). The owner further directed that this SAME file govern Confluence ingestion eligibility:
+> a page is eligible only if it carries ≥1 label matching an entry's `name`; pages with no approved
+> label are not ingested; multiple approved labels → ingest once, associate with every matching
+> scope; unrelated labels never become scopes; `platforms.json` still gates per-platform access.
+> This assigns the three "decision-needed" rows above to **substep 2.2.4 (Label-gated membership,
+> unconditional)** — the requirements are recorded verbatim in that substep's block in
+> `docs/Final_docs/obi-action-plan.html`. It also supersedes requirement-wise the resolver's
+> current "2+ provider labels ⇒ conflict, zero tags" behavior (`resolve_knowledge_scope_tags`),
+> which requirement (4) changes to "ingest once, associate with all". Not built in 1.2.2 (widget
+> display only); to be built in 2.2.4.

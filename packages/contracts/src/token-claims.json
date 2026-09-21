@@ -6,7 +6,7 @@
   "type": "object",
   "required": ["iss", "aud", "sub", "iat", "exp"],
   "properties": {
-    "iss": { "type": "string", "description": "Issuer — must match a trusted platform issuer in config/platforms.json." },
+    "iss": { "type": "string", "description": "Issuer — must match a trusted platform issuer in knowledge-base/config/platforms.json." },
     "aud": { "const": "obi", "description": "Audience — always the literal \"obi\"." },
     "sub": { "type": "string", "description": "Stable per-user subject. Only a hash of it is ever traced; the raw value is never persisted or logged." },
     "iat": { "type": "integer", "description": "Issued-at (epoch seconds)." },

@@ -14,7 +14,7 @@
  * left `middleware-manifest.json` empty either way, meaning the middleware silently never ran).
  * So the active-domain list is fetched from `/api/internal/active-domains` (a plain Node.js route
  * handler that DOES call `node:fs`, same-origin, no CORS) instead of read directly here — this
- * keeps the "computed fresh at request time from `config/platforms.json`, `PLATFORMS_PATH`-
+ * keeps the "computed fresh at request time from `knowledge-base/config/platforms.json`, `PLATFORMS_PATH`-
  * override included" behavior on genuine Edge middleware, at the cost of one small internal HTTP
  * hop per `/embed` request. Revisit once Node.js middleware is verified working in a newer
  * Next.js release (see `docs/embedding/obi-embed-local-test-keys.md`).

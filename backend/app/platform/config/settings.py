@@ -24,8 +24,8 @@ if TYPE_CHECKING:
 _OFFLINE_ENVS = {"local", "test", "dev", "ci"}
 
 # Operator-editable static identity block for Obi's per-user identity path (operator-requested
-# 2026-09-12). Lives at the repo-root config/ beside platforms.json / knowledge_scopes.json — one
-# place an operator edits directly. backend/app/platform/config/settings.py -> repo root is 4 levels up.
+# 2026-09-12). Lives at the repo-root config/obi_identity.md — one place an operator edits directly
+# (the platform + scope config now sit under knowledge-base/config/). settings.py -> root is 4 up.
 DEFAULT_OBI_IDENTITY_PATH = Path(__file__).resolve().parents[4] / "config" / "obi_identity.md"
 
 
@@ -242,11 +242,13 @@ class Settings(BaseSettings):
     # numbered evidence block, so an unbounded cap could crowd out real retrieval evidence entirely.
     curated_knowledge_max_entries: int = 5
 
-    # Obi embed platform registry (PLAN 11.1c; ADR-0014). The trusted-issuer + integration->scope
-    # map itself lives in config/platforms.json (see platform_registry below), beside
-    # knowledge_scopes.json; this file only holds where to read it and whether an empty registry
-    # is tolerated. platforms_path empty -> the repo-root default. allow_empty_platforms is True
-    # only in local/test (an empty registry stops startup in a real deployment).
+    # Obi embed platform registry (PLAN 11.1c; validated by substep 1.2.3). The trusted-issuer +
+    # integration->scope map lives in knowledge-base/config/platforms.json (see platform_registry
+    # below), beside knowledge_scopes.json; this file only holds where to read it (PLATFORMS_PATH)
+    # and whether an empty/inactive registry is tolerated. platforms_path empty -> the default
+    # under knowledge-base/config/. The env NAME decides the "outside local" rule: local/test/dev/ci
+    # tolerate an empty or all-inactive registry; a real deployment requires >=1 active platform.
+    # allow_empty_platforms forces tolerance regardless (set only by the test suite).
     platforms_path: str = ""
     allow_empty_platforms: bool = False
 
@@ -286,7 +288,9 @@ class Settings(BaseSettings):
 
         path = Path(self.platforms_path) if self.platforms_path else DEFAULT_PLATFORMS_PATH
         return load_platform_registry(
-            path, self.knowledge_scope_set, allow_empty=self.allow_empty_platforms
+            path,
+            self.knowledge_scope_set,
+            allow_empty=self.allow_empty_platforms or self.is_offline_env(),
         )
 
     @model_validator(mode="after")
