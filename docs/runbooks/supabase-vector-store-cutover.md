@@ -33,7 +33,7 @@ read-path guarantee is unchanged — verified live in step 5.
 
 ## Procedure
 
-Run every step from `apps/automation`. Steps are idempotent and safe to re-run.
+Run every step from `backend`. Steps are idempotent and safe to re-run.
 
 1. **Preflight** — connectivity, DB identity, current role, and the pgvector gate:
 

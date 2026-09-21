@@ -1,6 +1,6 @@
 # Obi, part by part — the complete brief, A to Z
 
-Generated on 2026-09-21 from `docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
+Generated on 2026-09-21 from `../docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
 
 ## 0 · How to read this brief
 
@@ -729,7 +729,7 @@ _Workflow label shown in the drawer: Code map_
 ##### Panel `cm-retrieval` · features/retrieval · [Implemented]
 - Kind: Feature
 - In plain words: The code that searches, merges results, checks page permissions, and calls the reranker.
-- Today: Owns search, fusion, the page ACL, rerank wiring, and the retrieval half of query_trace. The rag_reader binding itself lives in platform/db/engine.py; this folder only comments on it.
+- Today: Owns search, fusion, the page ACL, rerank wiring, and the retrieval half of query_trace. The rag_reader binding itself lives in knowledge-base/schema/engine.py; this folder only comments on it.
 - Where in the code:
   - `application/retriever.py` — HybridRetriever: the search transaction
   - `infrastructure/search_repo.py` — dense_search, keyword_search, GUCs, rerank texts, parents
@@ -784,7 +784,7 @@ _Workflow label shown in the drawer: Code map_
   - `shared/ttl_cache.py` — TTLCache, used by idempotency (and the answer cache, to remove)
   - `shared/hashing.py` — hash_json, sha256_text
 
-##### Panel `cm-alembic` · alembic/versions: the migrations · [Unverified]
+##### Panel `cm-alembic` · knowledge-base/migrations/versions: the migrations · [Unverified]
 - Kind: Folder
 - In plain words: The numbered history of every database change.
 - Today: 0001 core schema, 0002 provider tags and RLS, 0003 query_trace, 0004 source_scope, 0005 page_restriction, 0006 dedupe check constraints, 0007 knowledge scope, 0008 drop FORCE RLS, 0009 reader policies, 0010 scope RLS. Live head on Supabase: 0012.
@@ -896,7 +896,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
   | 0014 | scope RLS backstop |
 - Target and notes: Changing any fixed decision needs a new ADR. The changes on this page need at least one: the fingerprint, scope_state, label-gated ingestion, and the edge token.
 
-##### Panel `cm-web` · apps/web: the widget · [Implemented]
+##### Panel `cm-web` · frontend: the widget · [Implemented]
 - Kind: App
 - In plain words: The chat widget's code.
 - Today: server/auth.ts has been deleted; the proxy no longer uses it. The iframe bridge (src/features/embed/) is built and tested, not planned.
@@ -929,7 +929,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
   | Holds | the widget's colors, type, and the Tailwind theme mapping |
   | Style | light theme, indigo accent, Inter |
 
-##### Panel `cm-infra` · infra/foundation: local Postgres · [Implemented]
+##### Panel `cm-infra` · knowledge-base/local: local Postgres · [Implemented]
 - Kind: Folder
 - In plain words: A local Postgres so everything runs on a laptop.
 - Settings and rules:
@@ -1312,7 +1312,7 @@ class AuthContext:
 ##### Panel `em-button` · The frame: the round button and the chat window · [Implemented]
 - Kind: Frontend
 - In plain words: What obi.js draws: a round button at the top of the screen, and the chat window that pops up when it is clicked. Both come from our domain inside one frame.
-- Today: apps/web/src/app/embed/page.tsx is built and unit-tested, not planned.
+- Today: frontend/src/app/embed/page.tsx is built and unit-tested, not planned.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4676,14 +4676,14 @@ _Section id: `open`_
 | `cm-eval` | code | features/evaluation | Planned |
 | `cm-platform` | code | platform/: shared technical capabilities | Implemented |
 | `cm-shared` | code | shared/: small generic helpers | Implemented |
-| `cm-alembic` | code | alembic/versions: the migrations | Unverified |
+| `cm-alembic` | code | knowledge-base/migrations/versions: the migrations | Unverified |
 | `cm-scripts` | code | scripts/: operator tools | Implemented |
 | `cm-config` | code | config/knowledge_scopes.json: the scope list | Implemented |
 | `cm-docs` | code | docs/adr: the decisions of record | Implemented |
-| `cm-web` | code | apps/web: the widget | Implemented |
+| `cm-web` | code | frontend: the widget | Implemented |
 | `cm-contracts` | code | packages/contracts | Implemented |
 | `cm-tokens` | code | packages/design-tokens | Implemented |
-| `cm-infra` | code | infra/foundation: local Postgres | Implemented |
+| `cm-infra` | code | knowledge-base/local: local Postgres | Implemented |
 | `em-loader` | embed | obi.js: one script tag | Implemented |
 | `em-hostbackend` | embed | The platform's note endpoint | Decision needed |
 | `em-backend` | embed | Obi checks the note and picks the pages | Implemented |

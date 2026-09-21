@@ -5,10 +5,15 @@ Captured on the untouched code (branch `feat/rag-phase-3.5`), by running each le
 capture time had only `docs/plan/decisions.md` modified (the Step-0 `kb-import-name` row) and
 the new `docs/Final_docs/1.1-move/` records — no source change.
 
-`verify-after.md` must match this table **line for line on `level`, `command`, `result` and
-`note`**. The wall-clock `seconds` column is intentionally omitted from both files: it varies
-run to run and is not part of the identity check (the design's "identical line for line"
-is about outcomes, not timings).
+`verify-after.md` must match this table on **outcomes**: the behavior rows (`unit`, `database`,
+`browser`, `eval`) match **line for line on `level`, `command`, `result`** — that is the proof the
+move changed no behavior. The `lint + types` row is governed by the **no-regression floor**
+(ADR-0003 D1 — counts must not rise), not by literal identity: the move's touched files are brought
+clean under ruff/pyright per CLAUDE.md's "files you touch are brought clean" rule (ruff 45→19,
+unformatted 11→0, pyright unchanged at 57 — no count rose; see `verify-after.md`'s Step-7 note and
+`ledger.md` deviation 8). The `note` column is explanatory prose and may reword. The wall-clock
+`seconds` column is intentionally omitted from both files: it varies run to run and is not part of
+the identity check (the design's "identical line for line" is about outcomes, not timings or wording).
 
 | level | command | result | note |
 |---|---|---|---|

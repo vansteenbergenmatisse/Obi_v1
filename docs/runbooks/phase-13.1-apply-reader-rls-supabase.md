@@ -55,7 +55,7 @@ Net effect on live: retrieval's page ACL and curated layer start working through
 ## Do this — Option 1 (recommended): apply via alembic
 
 Your `.env` `DATABASE_URL` currently points at Supabase as the owner (`postgres`), which is what
-alembic needs. From `apps/automation`:
+alembic needs. From `backend`:
 
 ```bash
 # 1. Confirm you're pointed at Supabase and see the current head

@@ -2794,7 +2794,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "Feature",
 "h": "features/retrieval",
 "st": "built",
-"today": "Owns search, fusion, the page ACL, rerank wiring, and the retrieval half of query_trace. The rag_reader binding itself lives in platform/db/engine.py; this folder only comments on it.",
+"today": "Owns search, fusion, the page ACL, rerank wiring, and the retrieval half of query_trace. The rag_reader binding itself lives in knowledge-base/schema/engine.py; this folder only comments on it.",
 "files": [
 [
 "application/retriever.py",
@@ -2952,7 +2952,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 },
 "cm-alembic": {
 "n": "Folder",
-"h": "alembic/versions: the migrations",
+"h": "knowledge-base/migrations/versions: the migrations",
 "st": "unverified",
 "today": "0001 core schema, 0002 provider tags and RLS, 0003 query_trace, 0004 source_scope, 0005 page_restriction, 0006 dedupe check constraints, 0007 knowledge scope, 0008 drop FORCE RLS, 0009 reader policies, 0010 scope RLS. Live head on Supabase: 0012.",
 "s": [
@@ -3091,7 +3091,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 },
 "cm-web": {
 "n": "App",
-"h": "apps/web: the widget",
+"h": "frontend: the widget",
 "st": "built",
 "files": [
 [
@@ -3162,7 +3162,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 },
 "cm-infra": {
 "n": "Folder",
-"h": "infra/foundation: local Postgres",
+"h": "knowledge-base/local: local Postgres",
 "st": "built",
 "f": [
 [
@@ -7879,7 +7879,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "The frame refuses a message from any other window or domain.",
 "The note never appears in the frame's URL, cookies or storage."
 ],
-"today": "apps/web/src/app/embed/page.tsx is built and unit-tested, not planned."
+"today": "frontend/src/app/embed/page.tsx is built and unit-tested, not planned."
 },
 "em-loader": {
 "n": "Frontend",
