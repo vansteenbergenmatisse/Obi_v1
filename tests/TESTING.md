@@ -3,14 +3,14 @@
 ## Where tests live
 
 - **Unit and feature tests live beside the code they test.**
-  - Python (`apps/automation`): tests sit inside each feature at
-    `apps/automation/app/features/<feature>/tests/` (or the app's existing
+  - Python (`backend`): tests sit inside each feature at
+    `backend/app/features/<feature>/tests/` (or the app's existing
     `tests/` convention), run with `pytest`.
-  - TypeScript (`apps/web`): feature-scoped tests sit in
-    `apps/web/src/features/<feature>/tests/`. The web test runner is wired with
+  - TypeScript (`frontend`): feature-scoped tests sit in
+    `frontend/src/features/<feature>/tests/`. The web test runner is wired with
     the Phase 4 chat UI; there are no web tests yet.
 - **This `tests/` directory holds cross-application, integration, end-to-end,
-  and operational tests** — anything that spans `apps/web` and `apps/automation`
+  and operational tests** — anything that spans `frontend` and `backend`
   or exercises real infrastructure. These arrive later (see phase status in the
   root `README.md`); the directory is scaffolded now.
 
@@ -27,7 +27,7 @@
 
 ```bash
 # Automation unit/feature tests
-make test                     # == cd apps/automation && uv run pytest
+make test                     # == cd backend && uv run pytest
 
 # Retrieval evaluation baseline
 make eval

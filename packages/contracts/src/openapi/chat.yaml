@@ -6,7 +6,7 @@ info:
     Source-of-truth contract for the Omniboost RAG chat API and the inbound
     Confluence webhook envelope. TypeScript types under `src/index.ts` are
     hand-written to match this document until a generator is wired up; a
-    Pydantic sibling is not needed today because `apps/automation`'s FastAPI
+    Pydantic sibling is not needed today because `backend`'s FastAPI
     route already defines its own Pydantic body models directly (PLAN 4.4).
     The streaming runtime is implemented (PLAN 4.4/4.5): `POST /chat` streams
     a real answer and `PATCH /chat/{traceId}/feedback` records a rating.

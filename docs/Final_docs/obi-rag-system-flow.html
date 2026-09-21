@@ -7505,7 +7505,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "h": "One frontend",
 "st": "built",
 "simple": "The chat window a person types in, plus the small server route that adds the secret key. It shows answers. It never decides who may see what.",
-"today": "apps/web: a Next.js app with the widget UI, its proxy route, and a built iframe bridge holding the token in memory. Embedded in a platform page with a scope from its config. A per-user JWT from the host gates it; the shared pilot token is retired.",
+"today": "frontend/: the Next.js chat widget, its proxy route and iframe bridge — renamed from apps/web in substep 1.1.1 (rename-only, no logic change). Reads the tag list from knowledge-base/config at build.",
 "f": [
 [
 "Owns",
@@ -7545,7 +7545,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "h": "One backend",
 "st": "built",
 "simple": "The code that checks who is asking, reads Confluence, builds the index, searches, scores and writes the answer. One backend serves every integration.",
-"today": "apps/automation: FastAPI, five feature folders (confluence_sync, ingestion, retrieval, rag_agent, evaluation), platform clients, the job worker.",
+"today": "backend/: FastAPI with the five feature folders under app/, platform clients and the worker — renamed from apps/automation in 1.1.1. The DB layer is no longer app.platform.db; it is the standalone schema package imported from knowledge-base.",
 "f": [
 [
 "Owns",
@@ -7583,9 +7583,9 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "sc-kb": {
 "n": "Part",
 "h": "One knowledge base",
-"st": "change",
+"st": "built",
 "simple": "One Postgres database holds every page in pieces with its tags. The database itself hides rows a person may not see. The folder next to it holds the schema, the tags and the seed data, never the pages.",
-"today": "Supabase Postgres with pgvector. Schema and policies in platform/db, migrations in alembic/versions (12 files through 0012), the tag list in config/knowledge_scopes.json, curated seeds in scripts/, a local compose file in infra/foundation.",
+"today": "knowledge-base/ holds schema/, migrations/, config/, seed/ and local/, and now its OWN standalone test suite (knowledge-base/tests/, 35 schema/migration tests) run from its own venv against schema.settings.KbSettings — importing nothing from the backend. The backend imports schema/ as an editable package; the one-way rule (nothing under knowledge-base/ imports app/features/platform/shared) is enforced by backend/tools/check_feature_boundaries.py (1.1.2) and proven by backend/tests/tools/test_boundaries.py; the KB suite runs in make test-unit/test-db and CI.",
 "f": [
 [
 "Holds in Postgres",

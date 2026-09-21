@@ -292,7 +292,7 @@ bundles) that extend an existing substep's scope without altering what that subs
 
 Substep `p0-s0_5-3` ("0.5.3 · The regression suite, retrieval") already names the mechanism
 that consumes this whole list by reference, in its own prompt step 2: "Read the ... 'needs live'
-list in final_docs/0.4-design-review/delta.md. Run the live isolation script against staging
+list in docs/Final_docs/0.4-design-review/delta.md. Run the live isolation script against staging
 ... For each 'needs live' row: mark it green ... or red ...". Every one of the 12 items in
 delta.md's "Needs live" section (ov-corpus, cm-infra, cm-docs, i3-children, i3-embed/vd-model
 family, ov-filter, r3-scope/s-scope/tg-filter, s-writer, sc-user, e-ops, em-hostbackend,
@@ -321,10 +321,10 @@ made the code match the design page (design page wins) or added a test that pins
 | substep | change made | files |
 |---|---|---|
 | 0.1.1 (freeze) | Cut annotated tag **and** branch `pre-target-2026-09-14` on the starting commit `bf7fece829e3ce1e9757e1bdb5fa538fbd6456ae` (from the 0.3 audit README), cut late on 2026-09-18. Recorded the test state in a new `docs/snapshot/README.md`. | `docs/snapshot/README.md` (new); git tag+branch (local only, not pushed) |
-| 0.5.3 widget batch | Batch is now 7 panels (w-scope removed). Coverage-map widget level relabelled `component (jsdom, not a real browser)` → `jsdom` for the 7 built panels; `make test-ui` run once (1 passed, the mount smoke). | `final_docs/0.5-regression-tests/coverage-map.md` |
-| 0.5.3 / w-scope | Design page wins: w-scope is `change`, not built. Added a **Close item `p3-s3_2-close-w-scope`** to the Phase 3 · Stage 1 · The gate close list (count 3 → 4); it only flips status once 1.2.2 and 3.2.2 build it. Coverage-map w-scope row marked `change (not counted)` with the Close-item reference. | `docs/Final_docs/obi-action-plan.html`, `final_docs/0.5-regression-tests/coverage-map.md` |
-| 0.6.1 (decisions) | Rewrote `docs/plan/decisions.md` as the canonical list: 15 settled calls (2026-09-14) + 4 added 2026-09-18 (i2-fetch, i4-failed, widget-test-level, r1-limits-ipkey) + 4 open lines (freshness-target, latency-budget, rerank-depth, trusted-proxy-hops). Repointed `regression-decisions.md` to it. | `docs/plan/decisions.md`, `final_docs/0.5-regression-tests/regression-decisions.md` |
-| r1-limits (3.2.6/7.1.1 prep) | Corrected the r1-limits panel today-line (and a second panel repeating the claim) to what the code does — keyed on `request.client.host`, no XFF parsing today. Added regression test `test_r1_limits_untokened_key_is_client_host_and_ignores_x_forwarded_for` (a forged XFF changes nothing). The `TRUSTED_PROXY_HOPS` setting + its four tests belong to 3.2.6; 7.1.1 sets the real hop count. | `docs/Final_docs/obi-rag-system-flow.html`, `apps/automation/app/features/rag_agent/tests/test_edge_auth.py`, `final_docs/0.5-regression-tests/coverage-map.md` |
+| 0.5.3 widget batch | Batch is now 7 panels (w-scope removed). Coverage-map widget level relabelled `component (jsdom, not a real browser)` → `jsdom` for the 7 built panels; `make test-ui` run once (1 passed, the mount smoke). | `docs/Final_docs/0.5-regression-tests/coverage-map.md` |
+| 0.5.3 / w-scope | Design page wins: w-scope is `change`, not built. Added a **Close item `p3-s3_2-close-w-scope`** to the Phase 3 · Stage 1 · The gate close list (count 3 → 4); it only flips status once 1.2.2 and 3.2.2 build it. Coverage-map w-scope row marked `change (not counted)` with the Close-item reference. | `docs/Final_docs/obi-action-plan.html`, `docs/Final_docs/0.5-regression-tests/coverage-map.md` |
+| 0.6.1 (decisions) | Rewrote `docs/plan/decisions.md` as the canonical list: 15 settled calls (2026-09-14) + 4 added 2026-09-18 (i2-fetch, i4-failed, widget-test-level, r1-limits-ipkey) + 4 open lines (freshness-target, latency-budget, rerank-depth, trusted-proxy-hops). Repointed `regression-decisions.md` to it. | `docs/plan/decisions.md`, `docs/Final_docs/0.5-regression-tests/regression-decisions.md` |
+| r1-limits (3.2.6/7.1.1 prep) | Corrected the r1-limits panel today-line (and a second panel repeating the claim) to what the code does — keyed on `request.client.host`, no XFF parsing today. Added regression test `test_r1_limits_untokened_key_is_client_host_and_ignores_x_forwarded_for` (a forged XFF changes nothing). The `TRUSTED_PROXY_HOPS` setting + its four tests belong to 3.2.6; 7.1.1 sets the real hop count. | `docs/Final_docs/obi-rag-system-flow.html`, `apps/automation/app/features/rag_agent/tests/test_edge_auth.py`, `docs/Final_docs/0.5-regression-tests/coverage-map.md` |
 | r1-small | Design page wins (owner: "could be Haiku, doesn't matter"): `generate_small_talk` now uses `small_talk_model`, wired to `settings.routing_model` (Haiku) in `main.py`; grounded `generate()` keeps `answer_model`. Rewrote the pinning test and added a fallback test. | `apps/automation/app/features/rag_agent/infrastructure/llm_client.py`, `apps/automation/app/main.py`, `apps/automation/app/features/rag_agent/tests/test_llm_client.py`, coverage-map |
 | naming rule | Added panel-id docstrings to 4 cited tests that named no panel (i1-checks, i1-ledger, i2-meta, r4-weak). | `test_webhook.py`, `test_worker_sync.py`, `test_refusal.py` |
 | future-ideas | Deferred (owner can't answer yet): em-hostbackend agreed auth service, ov-auth real signing key, sc-user per-person identity, cm-docs 4 missing ADRs. Marked the r1-limits drift resolved. | `docs/future-ideas.md` |
@@ -335,9 +335,9 @@ not re-run this pass (no db-level change was made — the new tests are unit-lev
 
 ### Re-verification of #8 (path drift) — STILL OPEN
 
-The owner believed the `final_docs/…` vs `docs/Final_docs/…` path drift was corrected. On disk it is
-not: `final_docs/` contains only `0.5-regression-tests/`. The action plan still references
-`final_docs/0.3-synopsis-of-today/` (substeps 0.3.1, 0.3.2) and `docs/design/obi-rag-system-flow.html`
+The owner believed the `docs/Final_docs/…` vs `docs/Final_docs/…` path drift was corrected. On disk it is
+not: `docs/Final_docs/` contains only `0.5-regression-tests/`. The action plan still references
+`docs/Final_docs/0.3-synopsis-of-today/` (substeps 0.3.1, 0.3.2) and `docs/design/obi-rag-system-flow.html`
 (0.2.3), while the real files live under `docs/Final_docs/0.3-code-vs-design-audit-2026-09-14/`,
 `docs/Final_docs/0.3-synopsis-2026-09-16/`, and `docs/Final_docs/obi-rag-system-flow.html`. The
 ledger is `docs/Final_docs/ledger.md`, not `docs/plan/ledger.md`. These path references should be

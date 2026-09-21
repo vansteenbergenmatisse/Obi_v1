@@ -12,14 +12,14 @@ importers:
         specifier: ^2.3.0
         version: 2.10.7
 
-  apps/web:
+  frontend:
     dependencies:
       '@omniboost/contracts':
         specifier: workspace:*
-        version: link:../../packages/contracts
+        version: link:../packages/contracts
       '@omniboost/design-tokens':
         specifier: workspace:*
-        version: link:../../packages/design-tokens
+        version: link:../packages/design-tokens
       html-to-image:
         specifier: ^1.11.13
         version: 1.11.13
@@ -1022,9 +1022,6 @@ packages:
   call-bind-apply-helpers@1.0.2:
     resolution: {integrity: sha512-Sp1ablJ0ivDkSzjcaJdxEunN5/XvksFJ2sMBFfq6x0ryhQV/2b/KwFe21cMpmHtPOSij8K99/wSfoEuTObmuMQ==}
     engines: {node: '>= 0.4'}
-
-  caniuse-lite@1.0.30001806:
-    resolution: {integrity: sha512-72Cuvd95zbSYPKq6Fhg8eDJRlzgWDf7/mtoZv6Qe/DYNCEBdNxoA3+rZAU2ZhGCpZlns3EssFavaZomckT5Uuw==}
 
   caniuse-lite@1.0.30001809:
     resolution: {integrity: sha512-xxWVywk6a6Arlk+hymeycyn/VgqEfLDxupvhH/xiY5SJ/18kmi9o6MiO320DCUzypORHLtvh0I4i04tUhCNHNQ==}
@@ -2433,8 +2430,6 @@ snapshots:
       es-errors: 1.3.0
       function-bind: 1.1.2
 
-  caniuse-lite@1.0.30001806: {}
-
   caniuse-lite@1.0.30001809: {}
 
   chai@5.3.3:
@@ -2756,7 +2751,7 @@ snapshots:
     dependencies:
       '@next/env': 15.5.22
       '@swc/helpers': 0.5.15
-      caniuse-lite: 1.0.30001806
+      caniuse-lite: 1.0.30001809
       postcss: 8.4.31
       react: 19.2.8
       react-dom: 19.2.8(react@19.2.8)

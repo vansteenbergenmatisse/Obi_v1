@@ -1,10 +1,10 @@
 # Obi, part by part — the complete brief, A to Z
 
-Generated on 2026-09-18 from `docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
+Generated on 2026-09-21 from `docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
 
 ## 0 · How to read this brief
 
-**What Obi is.** A chat widget that answers questions from Omniboost's Confluence pages with citations. Two workflows: **ingestion** (a published Confluence page becomes chunks with vectors in Postgres) and **retrieval** (a question becomes a cited answer from those chunks). One Postgres database (Supabase, pgvector) is both the relational store and the vector store. The backend is Python (FastAPI) under `apps/automation`; the widget is Next.js under `apps/web`; contracts and design tokens are packages.
+**What Obi is.** A chat widget that answers questions from Omniboost's Confluence pages with citations. Two workflows: **ingestion** (a published Confluence page becomes chunks with vectors in Postgres) and **retrieval** (a question becomes a cited answer from those chunks). One Postgres database (Supabase, pgvector) is both the relational store and the vector store. The backend is Python (FastAPI) under `backend`; the widget is Next.js under `frontend`; contracts and design tokens are packages.
 
 **How the page marks reality.** Every stage, box and panel carries one status:
 
@@ -580,7 +580,7 @@ _Workflow label shown in the drawer: Separation of concerns_
 ##### Panel `sc-frontend` · One frontend · [Implemented]
 - Kind: Part
 - In plain words: The chat window a person types in, plus the small server route that adds the secret key. It shows answers. It never decides who may see what.
-- Today: apps/web: a Next.js app with the widget UI, its proxy route, and a built iframe bridge holding the token in memory. Embedded in a platform page with a scope from its config. A per-user JWT from the host gates it; the shared pilot token is retired.
+- Today: frontend/: the Next.js chat widget, its proxy route and iframe bridge — renamed from apps/web in substep 1.1.1 (rename-only, no logic change). Reads the tag list from knowledge-base/config at build.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -597,7 +597,7 @@ _Workflow label shown in the drawer: Separation of concerns_
 ##### Panel `sc-backend` · One backend · [Implemented]
 - Kind: Part
 - In plain words: The code that checks who is asking, reads Confluence, builds the index, searches, scores and writes the answer. One backend serves every integration.
-- Today: apps/automation: FastAPI, five feature folders (confluence_sync, ingestion, retrieval, rag_agent, evaluation), platform clients, the job worker.
+- Today: backend/: FastAPI with the five feature folders under app/, platform clients and the worker — renamed from apps/automation in 1.1.1. The DB layer is no longer app.platform.db; it is the standalone schema package imported from knowledge-base.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -611,10 +611,10 @@ _Workflow label shown in the drawer: Separation of concerns_
   - `apps/automation/platform/` — clients, settings, jobs (and today also db models)
 - Target and notes: Proposed folder: backend/. The five features and the boundary rule (ADR-0003) stay exactly as they are.
 
-##### Panel `sc-kb` · One knowledge base · [Implemented, needs changing]
+##### Panel `sc-kb` · One knowledge base · [Implemented]
 - Kind: Part
 - In plain words: One Postgres database holds every page in pieces with its tags. The database itself hides rows a person may not see. The folder next to it holds the schema, the tags and the seed data, never the pages.
-- Today: Supabase Postgres with pgvector. Schema and policies in platform/db, migrations in alembic/versions (12 files through 0012), the tag list in config/knowledge_scopes.json, curated seeds in scripts/, a local compose file in infra/foundation.
+- Today: knowledge-base/ holds schema/, migrations/, config/, seed/ and local/, and now its OWN standalone test suite (knowledge-base/tests/, 35 schema/migration tests) run from its own venv against schema.settings.KbSettings — importing nothing from the backend. The backend imports schema/ as an editable package; the one-way rule (nothing under knowledge-base/ imports app/features/platform/shared) is enforced by backend/tools/check_feature_boundaries.py (1.1.2) and proven by backend/tests/tools/test_boundaries.py; the KB suite runs in make test-unit/test-db and CI.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4660,7 +4660,7 @@ _Section id: `open`_
 | `ov-answer` | fit | Answer | Implemented, needs changing |
 | `sc-frontend` | concerns | One frontend | Implemented |
 | `sc-backend` | concerns | One backend | Implemented |
-| `sc-kb` | concerns | One knowledge base | Implemented, needs changing |
+| `sc-kb` | concerns | One knowledge base | Implemented |
 | `sc-user` | concerns | A Mews user | Planned |
 | `em-token` | embed | The signed note (JWT) | Implemented |
 | `r1-ctx` | rt1 | Build the authorization context: company, integration, person | Planned |

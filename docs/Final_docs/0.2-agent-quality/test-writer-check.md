@@ -1,8 +1,8 @@
 # 0.2.8 · Prove the test writer's tests actually catch a broken build
 
-Output location deviates from `final_docs/0.2-agent-quality/` (repo root) to
+Output location deviates from `docs/Final_docs/0.2-agent-quality/` (repo root) to
 `docs/Final_docs/0.2-agent-quality/` — same owner decision recorded in ledger entry 0.3.1: this
-repo's audit/proof output lives under `docs/Final_docs/`, not a root-level `final_docs/`.
+repo's audit/proof output lives under `docs/Final_docs/`, not a root-level `docs/Final_docs/`.
 
 All commands below run with `DATABASE_URL` pointed at the local `make up` Postgres
 (`postgresql+psycopg://rag:rag@localhost:5434/omniboost_rag`, database `omniboost_rag_test`

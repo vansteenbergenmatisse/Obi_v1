@@ -2,7 +2,7 @@
 
 Status: Accepted
 Date: 2026-08-07
-Governs: apps/automation (all features, platform, shared), the monorepo architecture standard
+Governs: backend (all features, platform, shared), the monorepo architecture standard
 
 ## Context
 
@@ -99,6 +99,6 @@ re-exports give each feature a single, greppable public surface without a runtim
 
 ## Paths governed
 
-`apps/automation/app/features/**`, `apps/automation/app/platform/**`,
-`apps/automation/app/shared/**`, `apps/automation/tools/check_feature_boundaries.py`,
+`backend/app/features/**`, `backend/app/platform/**`,
+`backend/app/shared/**`, `backend/tools/check_feature_boundaries.py`,
 the root `CLAUDE.md`.

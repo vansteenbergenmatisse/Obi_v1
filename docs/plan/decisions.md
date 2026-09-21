@@ -7,7 +7,7 @@ names a decision points at the row here (action plan substep **0.6.1**).
 - A confirmed decision that changes an earlier one needs a new ADR under `docs/adr/`.
 - The still-open decisions carry status `open` and a default that Obi builds to until the
   owner confirms otherwise; `/obi-change` names the default in its hand-back and pull request.
-- Regression view: `final_docs/0.5-regression-tests/regression-decisions.md` lists the
+- Regression view: `docs/Final_docs/0.5-regression-tests/regression-decisions.md` lists the
   regression-relevant subset and defers here as canonical.
 
 ## Settled calls
@@ -40,12 +40,13 @@ raised during the 0.5 regression phase.
 | latency-budget | the worst-case latency ceiling per answer | 7–12 s acceptable; may go higher if a lower ceiling would cost accuracy | confirmed | 2026-09-18 | widens the 7–9 s norm; accuracy still wins over speed (`speed-vs-accuracy`) |
 | rerank-depth | how many candidates the reranker scores | 75 | confirmed | 2026-09-18 | owner confirmed 75 is good; the design target of up to 150 stays a future gold-set recalibration (see future-ideas, reranker bake-off) |
 | w-composer-images | the image upload cap on a turn | at most 3 images per turn, each ≤ 3 MB; over the limit → a user-facing error ("too large — compress your image"); images are analyzed, never stored | confirmed → **implemented** | 2026-09-18 | changed the previous cap (4 per turn, no byte check). **Implemented in substep 4.2.7 (2026-09-18):** backend `chat_max_images_per_turn=3` / `chat_max_image_bytes=3_000_000`; the composer shows a user-facing error over either limit and does not attach the offending image; the /chat 400 (checked on every turn) and the w-proxy forwarding were already in place. w-composer panel flipped to built; the r1-limits Images row was corrected from 4/5 MB to 3/3 MB to match |
+| kb-import-name | the Python import name of the knowledge-base schema package | `schema` — the `knowledge-base/schema/` folder is the package, imported `from schema.models import Base` | confirmed | 2026-09-18 | `knowledge-base` has a hyphen so it cannot be a Python package name; the `schema/` folder is the package instead. Checked free before the move: `uv run python -c "import schema"` from the backend raised `ModuleNotFoundError` (no library owns the name), so `schema` is used rather than the `kb_schema` fallback. Set for substep 1.1.1 (the Phase-1 folder move) |
 
 ## Open — building to the default until the owner confirms
 
 | id | decision | default built to | status | date | note |
 |---|---|---|---|---|---|
-| trusted-proxy-hops | the trusted proxy hop count for the rate-limit IP key | `TRUSTED_PROXY_HOPS = 0`, meaning `request.client.host` | open | 2026-09-18 | set in 7.1.1 once the real chain from browser → widget proxy route → any load balancer → API is known. The widget's own proxy route (w-proxy) sits between browser and backend, so at 0 every browser behind one proxy instance shares one 20/min bucket — accepted for the pilot |
+| trusted-proxy-hops | the trusted proxy hop count for the rate-limit IP key | `TRUSTED_PROXY_HOPS = 0`, meaning `request.client.host` | open (default reaffirmed by owner) | 2026-09-18 | set in 7.1.1 once the real chain from browser → widget proxy route → any load balancer → API is known. The widget's own proxy route (w-proxy) sits between browser and backend, so at 0 every browser behind one proxy instance shares one 20/min bucket — accepted for the pilot. **Owner reaffirmed 2026-09-18:** keep 0, no X-Forwarded-For parsing, until 7.1.1 — the production chain does not exist yet (staging only), and a guessed hop count would make the limit spoofable. Stays open because the real number is a hosting fact fixed in 7.1.1, not because the pilot value is undecided |
 
 ## Open / decision-needed tracking rows (append-only; resolutions dated)
 

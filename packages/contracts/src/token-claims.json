@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://omniboost.dev/contracts/obi-token-claims.json",
   "title": "Obi embed token claims",
-  "description": "The claim set a platform's server puts in the short-lived JWT it signs at Obi button-click (PLAN 11.1c, ADR-0014). The Obi backend verifier (apps/automation .../server/token_verifier.py) is the security-authoritative side; this schema mirrors it and a drift test keeps them in lockstep. company_id/company_name/integration are all-three-or-none: a note either carries the full business identity or none of it (a note with none scopes to obi-general-test only).",
+  "description": "The claim set a platform's server puts in the short-lived JWT it signs at Obi button-click (PLAN 11.1c, ADR-0014). The Obi backend verifier (backend .../server/token_verifier.py) is the security-authoritative side; this schema mirrors it and a drift test keeps them in lockstep. company_id/company_name/integration are all-three-or-none: a note either carries the full business identity or none of it (a note with none scopes to obi-general-test only).",
   "type": "object",
   "required": ["iss", "aud", "sub", "iat", "exp"],
   "properties": {

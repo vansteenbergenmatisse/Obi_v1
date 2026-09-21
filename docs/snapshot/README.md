@@ -13,7 +13,7 @@ plan starts from, so every later change is measured against a real, tagged basel
   starting commit, never on the commit of the day it was cut (per 0.1.1's "Must be true").
 - Source of the pinned commit: `docs/Final_docs/0.3-code-vs-design-audit-2026-09-14/README.md`
   ("Ground truth audited"). Note: substep 0.3.1's prompt named the target folder
-  `final_docs/0.3-synopsis-of-today/`, but the produced folder is
+  `docs/Final_docs/0.3-synopsis-of-today/`, but the produced folder is
   `docs/Final_docs/0.3-code-vs-design-audit-2026-09-14/`, and that is where the SHA lives.
 
 ## The test run at that commit

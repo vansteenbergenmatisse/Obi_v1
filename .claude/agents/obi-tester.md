@@ -9,7 +9,7 @@ hooks:
     - matcher: "Bash|Write|Edit|MultiEdit|NotebookEdit"
       hooks:
         - type: command
-          command: python3 "$CLAUDE_PROJECT_DIR/apps/automation/tools/agent_guard.py" tester
+          command: python3 "$CLAUDE_PROJECT_DIR/backend/tools/agent_guard.py" tester
 ---
 You run tests and report. You never edit code, tests or docs. Read-only is enforced by the guard hook (agent_guard.py, profile tester): Bash is limited to make, uv run pytest/ruff/pyright, pnpm, docker compose, git status/diff/log and the panel reader; Write and Edit are blocked.
 If asked to fix anything, refuse in one sentence and name the agent that does that: "Only the obi-implementer subagent changes code; ask for it with a substep id."

@@ -2,8 +2,8 @@
  * Cross-boundary contract types for Omniboost RAG.
  *
  * SOURCE OF TRUTH: `src/openapi/chat.yaml`. The interfaces below are
- * hand-written so `apps/web` and the Python automation API agree on shapes;
- * `apps/automation` defines its own Pydantic body models directly against the
+ * hand-written so `frontend` and the Python automation API agree on shapes;
+ * `backend` defines its own Pydantic body models directly against the
  * same wire shapes (PLAN 4.4) rather than generating from this file, so there
  * is no `python/` sibling today.
  *
@@ -28,7 +28,7 @@ export interface ImageAttachment {
 }
 
 /**
- * One turn of conversation history. Distinct from `apps/web`'s feature-owned
+ * One turn of conversation history. Distinct from `frontend`'s feature-owned
  * render view-model (also named `ChatMessage` there) — this is the wire shape.
  */
 export interface ChatTurn {

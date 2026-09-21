@@ -30,7 +30,7 @@ share code — they agree through `packages/contracts`.
 ## Prerequisites
 
 - **Docker** (for Postgres + pgvector via docker-compose)
-- **uv** (Python 3.12 environment + dependency management for `apps/automation`)
+- **uv** (Python 3.12 environment + dependency management for `backend`)
 - **pnpm** (JavaScript workspace package manager)
 - **Node.js** LTS (v20+; developed on v24)
 
@@ -45,13 +45,13 @@ cp .env.example .env
 Start Postgres (pgvector on host port 5434):
 
 ```bash
-docker compose -f infra/foundation/docker-compose.yml up -d
+docker compose -f knowledge-base/local/docker-compose.yml up -d
 ```
 
 Set up the Python automation app:
 
 ```bash
-cd apps/automation && uv venv --python 3.12 && uv pip install -e ".[dev]"
+cd backend && uv venv --python 3.12 && uv pip install -e ".[dev]"
 ```
 
 Run database migrations:
@@ -76,7 +76,7 @@ Run the web app. Next.js does not read the repo-root `.env`, so the chat proxy n
 copy (same `CHAT_API_KEY` value as the root `.env`, plus the automation API's base URL):
 
 ```bash
-cp apps/web/.env.example apps/web/.env.local  # then fill in CHAT_API_KEY to match the root .env
+cp frontend/.env.example frontend/.env.local  # then fill in CHAT_API_KEY to match the root .env
 pnpm install && pnpm --filter web dev
 ```
 

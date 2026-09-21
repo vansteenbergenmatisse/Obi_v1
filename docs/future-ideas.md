@@ -239,9 +239,9 @@ but the real CI path on this repo was unproven end-to-end.
 **RESOLVED 2026-09-18:** the earlier "`git remote -v` is empty" premise was stale — a remote (`origin`
 → `github.com/vansteenbergenmatisse/Obi_v1`) already exists. The `feat/rag-phase-3.5` branch was pushed
 and a PR opened against `main`, which fires the PR-triggered CI end-to-end for the first time. Watch the
-PR's checks; if the run is green, capture the proof under `final_docs/0.5-regression-tests/` and this
+PR's checks; if the run is green, capture the proof under `docs/Final_docs/0.5-regression-tests/` and this
 item is fully closed. (Separately flagged: CI and the Makefile cite `docs/Final_docs/0.5-regression-tests/harness.md`
-while that dir actually lives at repo-root `final_docs/0.5-regression-tests/` — a path inconsistency to fix.)
+while that dir actually lives at repo-root `docs/Final_docs/0.5-regression-tests/` — a path inconsistency to fix.)
 Where it would go: substep 0.5.1 / 0.5.4 (the CI gate).
 Added: 2026-09-18 (moved here from the 0.5 owner-actions section); resolved 2026-09-18.
 
@@ -256,7 +256,7 @@ exists yet. The only Supabase URL in `.env` today is the writer/pooler tied to t
 incidents, so the run must NOT use it; it needs a genuinely read-only string.
 What you should do: when a staging reader credential exists, hand me `DATABASE_READER_URL` and confirm
 the host is staging (not production); I'll run the script and save the output to
-`final_docs/0.5-regression-tests/live-isolation-<date>.txt`.
+`docs/Final_docs/0.5-regression-tests/live-isolation-<date>.txt`.
 Where it would go: substep 0.5.3 (live isolation) and 7.1.1 (environments); panels r3-reader, s-reader.
 Added: 2026-09-18
 
