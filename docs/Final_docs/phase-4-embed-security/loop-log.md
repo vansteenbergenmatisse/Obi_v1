@@ -172,7 +172,13 @@ Five fresh auditors + verify (9 agents). **40 fixed-confirmed, 0 still-broken, 2
 
 Closed BOTH comprehensively + symmetrically to end the alias tail: `.local` now rejected as a CSP domain too (backend) + stripped (frontend); both matchers broadened (line-for-line equivalent, hand-rolled IPv6 expander, no new dep) to cover the full alias set, verified NOT over-matching real hosts (127.example.com, example.local.com, ::ffff:8.8.8.8, real IPv6). 34 tests (failing-first). **Gate:** backend unit 590→616 · backend db 281/1xf · kb 23+18 · frontend vitest 276→284 · typecheck/ruff/pyright clean · boundaries OK.
 
-## Wave 5 + Wave 6 — two consecutive clean waves required (pending)
+## Wave 5 — CLEAN (consecutive-clean #1) (2026-09-22)
+
+Five fresh auditors + verify. 4 domains (browser/CSP, authz/identity/lifecycle, test-infra/CI, cross-cut) returned detailed CLEAN confirmations — no actionable finding survived, all fixes confirmed holding and the frontend/backend twins verified line-for-line equivalent, no SEC-RW4 regression. The auth/config auditor (W5A1) returned a DEGENERATE response (a StructuredOutput hiccup — "test minimal submission"), so that domain was RE-RUN STANDALONE (prose) to avoid counting a clean result on a domain that didn't genuinely audit. The standalone auth/config re-audit ran a full adversarial probe — forged-token matrix (HS256 downgrade, alg=none, unknown iss, wrong aud, expired, over-lifetime, missing claims, forged sig all rejected; only the valid token accepted), `model_copy` cache attacks (no stale/wrong registry; no offline→prod leak; no first-load bypass), and loopback/.local matcher fuzzing (full alias set rejected, real hosts + `::ffff:8.8.8.8` + `127.example.com` not over-matched) — and returned **CLEAN**. Live bonus evidence: the SEC-R4/CFG-D DB guard correctly REFUSED to run against the repo `.env`'s remote Supabase DSN (the guard working). One informational non-actionable note: non-canonical IPv4 short-forms (`127.1`, packed-decimal `2130706433`) aren't matched — by-design, operator-config-only, parity with the frontend twin maintained; not a finding.
+
+**Wave 5 = CLEAN. Consecutive-clean counter: 1 of 2.**
+
+## Wave 6 — Second consecutive clean wave (pending)
 
 
 
