@@ -14,6 +14,7 @@ import pytest
 from app.platform.config.knowledge_scopes import load_recognized_knowledge_scopes
 from app.platform.config.platforms import (
     DEFAULT_PLATFORMS_PATH,
+    _domain_host,
     _is_ipv4_loopback_host,
     _is_loopback_host,
     load_platform_registry,
@@ -513,6 +514,33 @@ def test_platforms_non_ascii_digit_issuer_loads_as_real_host_outside_offline(tmp
     p = _write(tmp_path, _data(platforms=plat, integrations={}))
     reg = load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
     assert reg.by_issuer(f"https://{host}") is not None
+
+
+# --- W8-A1-1: backend/frontend edge-whitespace strip parity --------------------------------------
+# gap W8-A1-1 (Wave-8 differential fuzz, 3.7k inputs): Python ``str.strip()`` and JS
+# ``String.prototype.trim()`` remove DIFFERENT edge whitespace — Python also strips U+001C–U+001F +
+# U+0085, JS also strips U+FEFF. The bare ``.strip()``/``.trim()`` in the two loopback twins made
+# them disagree on exactly those six code points (e.g. ``127.0.0.1<BOM>`` was loopback on the
+# frontend but slipped past the backend guard). Both now strip one shared union set
+# (_EDGE_WHITESPACE / EDGE_WHITESPACE). These six chars must be stripped so a loopback base matches.
+_EDGE_DIVERGENT = ["\x1c", "\x1d", "\x1e", "\x1f", "\x85", "\ufeff"]
+
+
+@pytest.mark.parametrize("ws", _EDGE_DIVERGENT)
+def test_loopback_matcher_strips_the_divergent_edge_whitespace(ws):
+    """gap W8-A1-1 · each of the six code points on which Python-strip and JS-trim historically
+    disagreed is now stripped from a host's ends, so a loopback base carrying it (leading OR
+    trailing) is still classified loopback — byte-for-byte with the frontend twin's stripEdges."""
+    for host in (f"127.0.0.1{ws}", f"{ws}127.0.0.1", f"{ws}localhost{ws}", f"[::1]{ws}"):
+        assert _is_loopback_host(_domain_host(host)) is True, host
+
+
+def test_edge_whitespace_does_not_over_strip_zero_width_space():
+    """gap W8-A1-1 · U+200B (zero-width space) is NOT edge-whitespace on EITHER runtime (Python
+    isspace() False, JS trim keeps it), so it must stay in the host and a loopback base carrying it
+    is NOT loopback — pinning that the shared set is the exact union, not an over-broad sweep."""
+    assert _is_loopback_host(_domain_host("127.0.0.1\u200b")) is False
+    assert _is_loopback_host(_domain_host("\u200blocalhost")) is False
 
 
 # --- CIP-A1: per-platform allowed_integrations allow-list ----------------------------------------

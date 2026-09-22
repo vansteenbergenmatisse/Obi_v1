@@ -46,6 +46,34 @@ export function isLocalOrDevEnv(): boolean {
   return process.env.NODE_ENV !== "production";
 }
 
+/**
+ * The set of edge-whitespace code points to strip from a host before matching — the twin of the
+ * backend's `_EDGE_WHITESPACE` in `platforms.py` (gap W8-A1-1). Bare JS `String.prototype.trim()`
+ * and Python `str.strip()` remove DIFFERENT characters (Python also strips C1 separators U+001C–
+ * U+001F and NEL U+0085; JS also strips the BOM U+FEFF), which made this matcher diverge from its
+ * backend twin on those six code points. Both sides now strip this ONE identical union set, so a
+ * malformed edge character can no longer let a loopback host slip past one side but not the other.
+ */
+const EDGE_WHITESPACE = new Set([
+  0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x20, // tab LF VT FF CR space  (both runtimes strip)
+  0xa0, 0x1680, // NBSP, Ogham space  (both)
+  0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a, // en..hair
+  0x2028, 0x2029, 0x202f, 0x205f, 0x3000, // line/para sep, narrow/med NBSP, ideographic  (both)
+  0x1c, 0x1d, 0x1e, 0x1f, 0x85, // FS GS RS US NEL  (Python str.strip only)
+  0xfeff, // BOM / zero-width no-break space  (JS trim only)
+]);
+
+/** Strip the shared `EDGE_WHITESPACE` union set from both ends — the twin of the backend
+ * `_strip_edges`. Used instead of bare `.trim()` so the two host matchers stay in step (gap
+ * W8-A1-1). All members are BMP single code units, so index-based iteration is exact. */
+function stripEdges(value: string): string {
+  let start = 0;
+  let end = value.length;
+  while (start < end && EDGE_WHITESPACE.has(value.charCodeAt(start))) start++;
+  while (end > start && EDGE_WHITESPACE.has(value.charCodeAt(end - 1))) end--;
+  return value.slice(start, end);
+}
+
 /** A `127.0.0.0/8` IPv4 loopback literal — `127.` followed by three numeric octets, each 0–255.
  * Deliberately a strict numeric-IPv4 check so a hostname that merely starts with `127.`
  * (e.g. `127.example.com`) is NOT treated as loopback (gap BIT-A-R1). */
@@ -138,7 +166,7 @@ function isIpv6Loopback(host: string): boolean {
  * `platforms.py` (the two twins must agree — a divergence here is the recurring bug).
  */
 export function isLocalhostDomain(domain: string): boolean {
-  const raw = domain.trim().toLowerCase();
+  const raw = stripEdges(domain).toLowerCase();
   if (raw === "") return false;
 
   let host: string;
@@ -155,9 +183,10 @@ export function isLocalhostDomain(domain: string): boolean {
   }
 
   // Strip whitespace the extraction can leave INSIDE the value (`[ ::1]` → ` ::1`, `127.0.0.1 :80`
-  // → `127.0.0.1 `), mirroring the backend twin `_is_loopback_host`'s unconditional `.strip()` in
-  // platforms.py — without this the two matchers diverge on such malformed inputs (gap W7-A1-1).
-  host = host.trim();
+  // → `127.0.0.1 `), mirroring the backend twin `_is_loopback_host`'s unconditional strip in
+  // platforms.py — using the SAME union set as the entry strip so the two matchers stay in step
+  // across every edge whitespace code point (gaps W7-A1-1, W8-A1-1).
+  host = stripEdges(host);
 
   // Normalize a single trailing FQDN dot (`localhost.`, `127.0.0.1.`, `acme.local.`).
   if (host.endsWith(".") && !host.endsWith("..")) host = host.slice(0, -1);

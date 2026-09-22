@@ -152,6 +152,25 @@ describe("isLocalhostDomain — full loopback set (gap BIT-A-R1)", () => {
     expect(isLocalhostDomain("[ 127.0.0.1]")).toBe(true);
     expect(isLocalhostDomain("127.0.0.1 :80")).toBe(true);
   });
+
+  it("strips the six Python/JS-divergent edge-whitespace chars, matching the backend (gap W8-A1-1)", () => {
+    // JS `trim()` and Python `strip()` disagree on exactly these six: JS-only U+FEFF, Python-only
+    // U+001C–U+001F and U+0085. `stripEdges` strips the shared union so the twins agree — each,
+    // leading or trailing on a loopback base, must still classify as loopback.
+    for (const ws of ["\x1c", "\x1d", "\x1e", "\x1f", "\x85", "\ufeff"]) {
+      expect(isLocalhostDomain(`127.0.0.1${ws}`)).toBe(true);
+      expect(isLocalhostDomain(`${ws}127.0.0.1`)).toBe(true);
+      expect(isLocalhostDomain(`${ws}localhost${ws}`)).toBe(true);
+      expect(isLocalhostDomain(`[::1]${ws}`)).toBe(true);
+    }
+  });
+
+  it("does NOT strip U+200B (zero-width space) — the union is exact, not over-broad (gap W8-A1-1)", () => {
+    // U+200B is not edge-whitespace on either runtime, so it stays in the host and a loopback base
+    // carrying it is NOT loopback (both twins agree, pinning that the shared set is the exact union).
+    expect(isLocalhostDomain("127.0.0.1\u200b")).toBe(false);
+    expect(isLocalhostDomain("\u200blocalhost")).toBe(false);
+  });
 });
 
 describe("expanded loopback stripping outside local/dev (gap BIT-A-R1)", () => {

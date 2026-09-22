@@ -40,6 +40,48 @@ _MAX_LIFETIME = 1440
 # party — never a test/placeholder issuer. These are the markers of a not-yet-real entry.
 _PLACEHOLDER_MARKERS = ("TODO", "PLACEHOLDER")
 
+# gap W8-A1-1: the loopback/.local host matcher must classify a domain IDENTICALLY to its frontend
+# twin ``isLocalhostDomain`` (``frontend/src/features/embed/csp.ts``); a divergence is the recurring
+# bug the twins exist to close. Bare Python ``str.strip()`` and JS ``trim()`` remove DIFFERENT edge
+# whitespace: Python also strips the C1 separators U+001C-U+001F and NEL U+0085 (JS does not), and
+# JS also strips the BOM/ZWNBSP U+FEFF (Python does not). So both strip this ONE explicit union
+# set (every code point either runtime strips), identical by construction, so a malformed edge char
+# can no longer let a loopback host slip past one side's guard but not the other's. Real hostnames
+# carry none of these, so this is a strict tightening, not a behaviour change.
+_EDGE_WHITESPACE = "".join(
+    chr(c)
+    for c in (
+        0x09,
+        0x0A,
+        0x0B,
+        0x0C,
+        0x0D,
+        0x20,  # tab LF VT FF CR space  (both runtimes strip)
+        0xA0,
+        0x1680,
+        *range(0x2000, 0x200B),  # NBSP, Ogham, U+2000-200A en..hair  (both)
+        0x2028,
+        0x2029,
+        0x202F,
+        0x205F,
+        0x3000,  # line/para sep, narrow/med NBSP, ideographic (both)
+        0x1C,
+        0x1D,
+        0x1E,
+        0x1F,
+        0x85,  # FS GS RS US NEL  (Python str.strip only)
+        0xFEFF,  # BOM / zero-width no-break space  (JS trim only)
+    )
+)
+
+
+def _strip_edges(value: str) -> str:
+    """Strip the shared ``_EDGE_WHITESPACE`` union set from both ends — the twin of csp.ts
+    ``stripEdges``. Used instead of bare ``str.strip()`` wherever a host is normalized for the
+    loopback/.local match so the two matchers stay byte-for-byte in step (gap W8-A1-1)."""
+    return value.strip(_EDGE_WHITESPACE)
+
+
 # backend/app/platform/config/platforms.py -> repo root is 4 levels up; the file lives beside
 # knowledge_scopes.json under knowledge-base/config/ (relocated in substep 1.2.3).
 DEFAULT_PLATFORMS_PATH = (
@@ -115,7 +157,7 @@ def _domain_host(domain: str) -> str:
     literal is not mangled: bracketed IPv6 (``[::1]:3000``) yields the text inside the brackets; a
     bare IPv6 literal (more than one ``:``) is left whole; a plain ``host[:port]`` drops one
     trailing ``:port``."""
-    host = domain.strip().lower()
+    host = _strip_edges(domain).lower()
     if not host:
         return host
     if host.startswith("["):
@@ -215,7 +257,7 @@ def _is_dot_local_host(host: str) -> bool:
     a single trailing FQDN dot (``acme.local.``). A ``.local.com`` host is NOT matched — the suffix
     is the exact ``.local`` TLD, not any ``.local`` substring (gap CFG-DOMLOCAL-1). Mirrors the
     ``.local`` branch of csp.ts ``isLocalhostDomain``."""
-    h = host.strip().lower()
+    h = _strip_edges(host).lower()
     if h.endswith(".") and not h.endswith(".."):
         h = h[:-1]
     return h.endswith(".local")
@@ -238,7 +280,7 @@ def _is_loopback_host(host: str) -> bool:
     A real hostname like ``127.example.com`` is NOT over-matched (see ``_is_ipv4_loopback_host``);
     ``.local`` is a separate non-production check (``_is_dot_local_host``), not loopback.
     """
-    h = host.strip().lower()
+    h = _strip_edges(host).lower()
     if h.startswith("[") and h.endswith("]"):
         h = h[1:-1]
     if h.endswith(".") and not h.endswith(".."):  # trailing-dot FQDN root form
