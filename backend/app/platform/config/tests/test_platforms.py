@@ -362,6 +362,120 @@ def test_platforms_active_real_and_lookalike_host_not_refused_outside_offline(tm
     assert reg.by_issuer(f"https://{host}") is not None
 
 
+# --- gap CFG-DOMLOCAL-1 + BIT-LOOPBACK-EDGE-1: .local CSP-domain parity + loopback aliases --------
+# CFG-DOMLOCAL-1: the issuer/jwks loop rejected a .local host but the CSP-domain loop rejected only
+# a loopback host, so an ACTIVE platform with a real https issuer but an app.acme.local CSP domain
+# passed the production guard and .local reached frame-ancestors + the postMessage allow-list.
+# BIT-LOOPBACK-EDGE-1: the loopback matcher matched only literal localhost/*.localhost/dotted-quad
+# 127.0.0.0/8/0.0.0.0/::1 and missed well-known loopback aliases — the trailing-dot FQDN form
+# (localhost., 127.0.0.1.), the fully-expanded IPv6 loopback (0:0:0:0:0:0:0:1) and the IPv4-mapped
+# IPv6 form (::ffff:127.0.0.1 / ::ffff:7f00:1). Both sides are widened together (csp.ts twins).
+
+
+def _issuer_url(host: str) -> str:
+    """A URL whose urlsplit host is exactly ``host`` — IPv6 literals get bracketed."""
+    return f"https://[{host}]/" if ":" in host else f"https://{host}/"
+
+
+_ALIAS_LOOPBACK_HOSTS = [
+    "localhost.",  # trailing-dot FQDN form
+    "127.0.0.1.",  # trailing-dot IPv4 loopback
+    "0:0:0:0:0:0:0:1",  # fully-expanded IPv6 loopback
+    "::ffff:127.0.0.1",  # IPv4-mapped IPv6 loopback (dotted)
+    "::ffff:7f00:1",  # IPv4-mapped IPv6 loopback (hex)
+    "::ffff:127.255.255.255",  # top of the mapped 127.0.0.0/8 block
+]
+
+
+@pytest.mark.parametrize("host", _ALIAS_LOOPBACK_HOSTS)
+def test_platforms_active_loopback_alias_issuer_refused_outside_offline(tmp_path, host):
+    """gap BIT-LOOPBACK-EDGE-1 · a loopback ALIAS (trailing-dot FQDN, fully-expanded IPv6, or
+    IPv4-mapped IPv6) on the ISSUER host is refused outside offline, naming the entry; offline
+    (the local embed test flow) still tolerates it."""
+    plat = {"acme": _platform(issuer=_issuer_url(host), jwks_url="https://ex.test/j", domains=[])}
+    p = _write(tmp_path, _data(platforms=plat, integrations={}))
+    with pytest.raises(ValueError, match="acme") as exc:
+        load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
+    assert "loopback" in str(exc.value).lower()
+    load_platform_registry(p, RECOGNIZED, allow_empty=True, offline=True)
+
+
+@pytest.mark.parametrize("host", _ALIAS_LOOPBACK_HOSTS)
+def test_platforms_active_loopback_alias_jwks_refused_outside_offline(tmp_path, host):
+    """gap BIT-LOOPBACK-EDGE-1 · the same alias set applies to the JWKS host too."""
+    plat = {"acme": _platform(issuer="https://ex.test", jwks_url=_issuer_url(host), domains=[])}
+    p = _write(tmp_path, _data(platforms=plat, integrations={}))
+    with pytest.raises(ValueError, match="acme") as exc:
+        load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
+    msg = str(exc.value)
+    assert "loopback" in msg.lower()
+    assert "jwks_url" in msg
+
+
+@pytest.mark.parametrize(
+    "domain",
+    [
+        "localhost.",
+        "127.0.0.1.",
+        "0:0:0:0:0:0:0:1",
+        "[0:0:0:0:0:0:0:1]:3000",
+        "::ffff:127.0.0.1",
+        "[::ffff:127.0.0.1]:3000",
+        "::ffff:7f00:1",
+    ],
+)
+def test_platforms_active_loopback_alias_csp_domain_refused_outside_offline(tmp_path, domain):
+    """gap BIT-LOOPBACK-EDGE-1 · a CSP domain on any loopback alias form (incl. bracketed IPv6 with
+    a port) must never reach production frame-ancestors — refused outside offline, naming the
+    entry."""
+    plat = {
+        "acme": _platform(
+            issuer="https://acme.example.com",
+            jwks_url="https://acme.example.com/j",
+            domains=["app.acme.example.com", domain],
+        )
+    }
+    p = _write(tmp_path, _data(platforms=plat, integrations={}))
+    with pytest.raises(ValueError, match="acme") as exc:
+        load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
+    assert "loopback" in str(exc.value).lower()
+
+
+@pytest.mark.parametrize("domain", ["app.acme.local", "acme.local", "app.acme.local:3000"])
+def test_platforms_active_dotlocal_csp_domain_refused_outside_offline(tmp_path, domain):
+    """gap CFG-DOMLOCAL-1 · a .local CSP domain on an ACTIVE entry with an otherwise-real https
+    issuer must NOT reach production frame-ancestors — refused outside offline, mirroring the
+    issuer/jwks .local check that already existed."""
+    plat = {
+        "acme": _platform(
+            issuer="https://acme.example.com",
+            jwks_url="https://acme.example.com/j",
+            domains=["app.acme.example.com", domain],
+        )
+    }
+    p = _write(tmp_path, _data(platforms=plat, integrations={}))
+    with pytest.raises(ValueError, match="acme") as exc:
+        load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
+    assert ".local" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "host",
+    ["app.mews.com", "127.example.com", "example.local.com", "notlocalhost.example.com"],
+)
+def test_platforms_active_alias_lookalike_host_not_refused_outside_offline(tmp_path, host):
+    """gap BIT-LOOPBACK-EDGE-1 / CFG-DOMLOCAL-1 · lookalikes that are NOT loopback or a .local TLD —
+    a real host (app.mews.com), a 127-prefixed hostname (127.example.com), a .local.com host
+    (example.local.com), and a notlocalhost.* host — load fine outside offline as issuer/jwks host
+    and CSP domain; neither the widened loopback matcher nor the .local check over-matches them."""
+    plat = {
+        "acme": _platform(issuer=f"https://{host}", jwks_url=f"https://{host}/j", domains=[host])
+    }
+    p = _write(tmp_path, _data(platforms=plat, integrations={}))
+    reg = load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
+    assert reg.by_issuer(f"https://{host}") is not None
+
+
 # --- CIP-A1: per-platform allowed_integrations allow-list ----------------------------------------
 # Each platform declares which integration CLAIM VALUES it may assert; a value not in the global
 # integrations map stops startup naming the offender, and the loaded entry exposes the tuple.

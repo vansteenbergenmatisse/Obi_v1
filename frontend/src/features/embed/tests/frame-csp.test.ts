@@ -173,6 +173,76 @@ describe("expanded loopback stripping outside local/dev (gap BIT-A-R1)", () => {
   });
 });
 
+describe("isLocalhostDomain — loopback aliases + .local (gap BIT-LOOPBACK-EDGE-1 / CFG-DOMLOCAL-1)", () => {
+  it("matches the trailing-dot FQDN loopback forms", () => {
+    expect(isLocalhostDomain("localhost.")).toBe(true);
+    expect(isLocalhostDomain("127.0.0.1.")).toBe(true);
+    expect(isLocalhostDomain("app.localhost.")).toBe(true);
+  });
+
+  it("matches the fully-expanded IPv6 loopback (bare and bracketed with a port)", () => {
+    expect(isLocalhostDomain("0:0:0:0:0:0:0:1")).toBe(true);
+    expect(isLocalhostDomain("[0:0:0:0:0:0:0:1]:3000")).toBe(true);
+  });
+
+  it("matches the IPv4-mapped IPv6 loopback (dotted and hex, whole 127.0.0.0/8)", () => {
+    expect(isLocalhostDomain("::ffff:127.0.0.1")).toBe(true);
+    expect(isLocalhostDomain("[::ffff:127.0.0.1]:3000")).toBe(true);
+    expect(isLocalhostDomain("::ffff:7f00:1")).toBe(true);
+    expect(isLocalhostDomain("::ffff:127.255.255.255")).toBe(true);
+  });
+
+  it("treats a .local TLD host as non-production (CFG-DOMLOCAL-1)", () => {
+    expect(isLocalhostDomain("app.acme.local")).toBe(true);
+    expect(isLocalhostDomain("acme.local")).toBe(true);
+    expect(isLocalhostDomain("app.acme.local:3000")).toBe(true);
+    expect(isLocalhostDomain("acme.local.")).toBe(true);
+  });
+
+  it("does NOT over-match lookalikes", () => {
+    expect(isLocalhostDomain("example.local.com")).toBe(false);
+    expect(isLocalhostDomain("127.example.com")).toBe(false);
+    expect(isLocalhostDomain("app.mews.com")).toBe(false);
+    expect(isLocalhostDomain("notlocalhost")).toBe(false);
+    expect(isLocalhostDomain("2001:db8::7f00:1")).toBe(false);
+    expect(isLocalhostDomain("::ffff:126.0.0.1")).toBe(false);
+    expect(isLocalhostDomain("::ffff:8.8.8.8")).toBe(false);
+  });
+});
+
+describe("effectiveEmbedderDomains strips aliases + .local outside local/dev (gap BIT-LOOPBACK-EDGE-1 / CFG-DOMLOCAL-1)", () => {
+  const aliasDomains = [
+    "localhost.",
+    "127.0.0.1.",
+    "0:0:0:0:0:0:0:1",
+    "::ffff:127.0.0.1",
+    "::ffff:7f00:1",
+    "app.acme.local",
+  ];
+
+  it("strips every alias/.local form and keeps the real domain outside local/dev", () => {
+    expect(effectiveEmbedderDomains([...aliasDomains, "app.mews.com"], false)).toEqual([
+      "app.mews.com",
+    ]);
+  });
+
+  it("keeps every alias/.local form in local/dev (the embed test flow, regression)", () => {
+    expect(effectiveEmbedderDomains([...aliasDomains, "app.mews.com"], true)).toEqual([
+      ...aliasDomains,
+      "app.mews.com",
+    ]);
+  });
+
+  it("computeEmbedCsp drops every alias/.local form from frame-ancestors outside local/dev", () => {
+    const result = computeEmbedCsp([...aliasDomains, "app.mews.com"], false);
+    expect(result.ok).toBe(true);
+    expect(result.header).toBe("frame-ancestors app.mews.com");
+    expect(result.header).not.toContain(".local");
+    expect(result.header).not.toContain("::");
+    expect(result.header).not.toContain("*");
+  });
+});
+
 describe("toEmbedderOrigins — bridge allow-list scheme + loopback posture (gap BIT-A1)", () => {
   it("outside local/dev emits ONLY https origins for real domains and drops every loopback origin", () => {
     const origins = toEmbedderOrigins(

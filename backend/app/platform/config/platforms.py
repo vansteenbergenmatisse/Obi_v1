@@ -11,9 +11,12 @@ real integration (a key of the integrations map — gap CIP-A1); an empty regist
 active platforms, stops startup outside local (allow_empty=False). Outside offline (offline=False)
 an ACTIVE platform must further be a real production trusted issuer — an https issuer/jwks on a real
 host, never a TODO/PLACEHOLDER string, a .local host, or ANY loopback address (localhost/
-*.localhost, the whole 127.0.0.0/8 block, 0.0.0.0 or IPv6 ::1 — the same set the frontend csp.ts
-strips, gap BIT-A-R1), and no loopback CSP domain (gap CFG-02/AUTHRT-1 + CFG-04); offline/local
-keeps loading platforms.local.json's test-* issuers and localhost domains unchanged.
+*.localhost, the whole 127.0.0.0/8 block, 0.0.0.0, or IPv6 ::1 in any form — bare, trailing-dot,
+fully-expanded 0:0:0:0:0:0:0:1, or IPv4-mapped ::ffff:127.0.0.1 — the same set the frontend csp.ts
+strips, gaps BIT-A-R1 + BIT-LOOPBACK-EDGE-1), and no loopback OR .local CSP domain (gap
+CFG-02/AUTHRT-1 + CFG-04 + CFG-DOMLOCAL-1: the CSP-domain loop rejects the same non-production host
+set as the issuer/jwks loop); offline/local keeps loading platforms.local.json's test-* issuers and
+localhost domains unchanged.
 
 Lives at ``knowledge-base/config/platforms.json`` beside ``knowledge_scopes.json`` — one global
 place an operator edits directly, readable from either app (mirrors knowledge_scopes.py).
@@ -136,42 +139,126 @@ def _is_ipv4_loopback_host(host: str) -> bool:
     return octets[0] == "127"
 
 
+def _expand_ipv6(host: str) -> list[int] | None:
+    """Expand an IPv6 literal to its eight 16-bit groups (ints), or ``None`` when ``host`` is not a
+    well-formed IPv6 address. Handles ``::`` zero-compression and a trailing dotted-quad IPv4
+    (``::ffff:127.0.0.1``). Hand-rolled (no ``ipaddress``) so the logic is IDENTICAL to csp.ts's
+    ``expandIpv6`` twin (gap BIT-LOOPBACK-EDGE-1) — a divergence between the two is the recurring
+    bug this closes."""
+    if ":" not in host:
+        return None
+    if host.count("::") > 1:
+        return None
+    work = host
+    if "." in work:
+        idx = work.rfind(":")
+        if idx == -1:
+            return None
+        head, v4 = work[: idx + 1], work[idx + 1 :]
+        octets = v4.split(".")
+        if len(octets) != 4:
+            return None
+        vals: list[int] = []
+        for o in octets:
+            if not o.isdigit() or len(o) > 3:
+                return None
+            n = int(o)
+            if n > 255:
+                return None
+            vals.append(n)
+        work = f"{head}{vals[0]:02x}{vals[1]:02x}:{vals[2]:02x}{vals[3]:02x}"
+    if "::" in work:
+        left, right = work.split("::")
+        lg = left.split(":") if left else []
+        rg = right.split(":") if right else []
+        if any(g == "" for g in lg) or any(g == "" for g in rg):
+            return None
+        missing = 8 - (len(lg) + len(rg))
+        if missing < 1:  # "::" must stand for at least one all-zero group
+            return None
+        groups = [*lg, *(["0"] * missing), *rg]
+    else:
+        groups = work.split(":")
+    if len(groups) != 8:
+        return None
+    out: list[int] = []
+    for g in groups:
+        if not (1 <= len(g) <= 4) or any(c not in "0123456789abcdef" for c in g):
+            return None
+        out.append(int(g, 16))
+    return out
+
+
+def _is_ipv6_loopback(host: str) -> bool:
+    """True for an IPv6 loopback literal in any form (gap BIT-LOOPBACK-EDGE-1): compressed ``::1``,
+    fully-expanded ``0:0:0:0:0:0:0:1``, and the IPv4-mapped ``::ffff:<127.0.0.0/8>`` (dotted
+    ``::ffff:127.0.0.1`` or hex ``::ffff:7f00:1``). Does NOT match a real IPv6 host or the
+    deprecated non-mapped ``::7f00:1`` form. Mirrors csp.ts ``isIpv6Loopback``."""
+    groups = _expand_ipv6(host)
+    if groups is None:
+        return False
+    if groups[:7] == [0] * 7 and groups[7] == 1:
+        return True
+    # IPv4-mapped (::ffff:a.b.c.d): the mapped IPv4's first octet in the 127.0.0.0/8 block.
+    return groups[:5] == [0] * 5 and groups[5] == 0xFFFF and (groups[6] >> 8) == 0x7F
+
+
+def _is_dot_local_host(host: str) -> bool:
+    """True when a bare host is an mDNS/Bonjour ``.local`` TLD name (``app.acme.local``), tolerating
+    a single trailing FQDN dot (``acme.local.``). A ``.local.com`` host is NOT matched — the suffix
+    is the exact ``.local`` TLD, not any ``.local`` substring (gap CFG-DOMLOCAL-1). Mirrors the
+    ``.local`` branch of csp.ts ``isLocalhostDomain``."""
+    h = host.strip().lower()
+    if h.endswith(".") and not h.endswith(".."):
+        h = h[:-1]
+    return h.endswith(".local")
+
+
 def _is_loopback_host(host: str) -> bool:
     """True when a bare host resolves to the local loopback — the FULL set the frontend's
     ``isLocalhostDomain`` (``frontend/src/features/embed/csp.ts``) treats as localhost, kept in
-    step with it (gap BIT-A-R1) so none of it can become a trusted issuer host or embedder origin
-    outside local/dev:
+    step with it (gaps BIT-A-R1 + BIT-LOOPBACK-EDGE-1) so none of it can become a trusted issuer
+    host or embedder origin outside local/dev:
 
     - ``localhost`` and any ``*.localhost``;
+    - the trailing-dot FQDN root form of any of these (``localhost.``, ``127.0.0.1.``) — one
+      trailing ``.`` is stripped before matching;
     - the whole ``127.0.0.0/8`` block (``127.x.x.x`` with valid octets), not just ``127.0.0.1``;
     - the ``0.0.0.0`` wildcard-bind address;
-    - IPv6 loopback ``::1``, whether bare (``::1``) or arriving bracketed (``[::1]``).
+    - IPv6 loopback in any form: ``::1``, the fully-expanded ``0:0:0:0:0:0:0:1``, and the
+      IPv4-mapped ``::ffff:127.0.0.1`` / ``::ffff:7f00:1`` — bare or arriving bracketed (``[::1]``).
 
-    A real hostname like ``127.example.com`` is NOT over-matched (see ``_is_ipv4_loopback_host``).
+    A real hostname like ``127.example.com`` is NOT over-matched (see ``_is_ipv4_loopback_host``);
+    ``.local`` is a separate non-production check (``_is_dot_local_host``), not loopback.
     """
     h = host.strip().lower()
     if h.startswith("[") and h.endswith("]"):
         h = h[1:-1]
+    if h.endswith(".") and not h.endswith(".."):  # trailing-dot FQDN root form
+        h = h[:-1]
     if h == "localhost" or h.endswith(".localhost"):
         return True
     if h == "0.0.0.0":  # noqa: S104 — matching the bind-all address, not binding to it
         return True
-    if h == "::1":
+    if _is_ipv6_loopback(h):
         return True
     return _is_ipv4_loopback_host(h)
 
 
 def _reject_untrusted_active_platform(entry: PlatformEntry) -> None:
-    """gap CFG-02/AUTHRT-1 + CFG-04 (loopback set widened for gap BIT-A-R1) — refuse an ACTIVE
-    platform that is not a real production trusted issuer, naming the offending entry. Applied by
-    ``load_platform_registry`` only when ``offline`` is False; local/test/ci keep loading
-    ``platforms.local.json`` with its ``test-*`` issuers and localhost domains unchanged
-    (``dev``/``development`` are NOT offline — see ``settings.py`` ``_OFFLINE_ENVS``). An active
-    entry's issuer/jwks must be an https URL on a real host — not a ``TODO``/``PLACEHOLDER`` string,
-    not a ``.local`` host, and not any loopback address (``localhost``/``*.localhost``, the whole
-    ``127.0.0.0/8`` block, ``0.0.0.0``, or IPv6 ``::1``) — and none of its CSP domains may be a
-    loopback address. The loopback set is the SAME one the frontend's ``isLocalhostDomain`` strips
-    (``frontend/src/features/embed/csp.ts``); see ``_is_loopback_host``."""
+    """gap CFG-02/AUTHRT-1 + CFG-04 (loopback set widened for gaps BIT-A-R1 + BIT-LOOPBACK-EDGE-1;
+    CSP-domain ``.local`` parity for CFG-DOMLOCAL-1) — refuse an ACTIVE platform that is not a real
+    production trusted issuer, naming the offending entry. Applied by ``load_platform_registry``
+    only when ``offline`` is False; local/test/ci keep loading ``platforms.local.json`` with its
+    ``test-*`` issuers and localhost domains unchanged (``dev``/``development`` are NOT offline —
+    see ``settings.py`` ``_OFFLINE_ENVS``). An active entry's issuer/jwks must be an https URL on a
+    real host — not a ``TODO``/``PLACEHOLDER`` string, not a ``.local`` host, and not any loopback
+    address (``localhost``/``*.localhost``, the whole ``127.0.0.0/8`` block, ``0.0.0.0``, or IPv6
+    ``::1`` in any form incl. the trailing-dot, fully-expanded, and IPv4-mapped aliases) — and NONE
+    of its CSP domains may be a loopback address OR a ``.local`` host either (CFG-DOMLOCAL-1: the
+    two loops now reject the same non-production host set, symmetrically). The loopback + ``.local``
+    set is the SAME one the frontend's ``isLocalhostDomain`` strips
+    (``frontend/src/features/embed/csp.ts``); see ``_is_loopback_host`` / ``_is_dot_local_host``."""
     key = entry.key
     for label, value in (("issuer", entry.issuer), ("jwks_url", entry.jwks_url)):
         upper = value.upper()
@@ -191,15 +278,23 @@ def _reject_untrusted_active_platform(entry: PlatformEntry) -> None:
                 f"platform {key}: active {label} host '{host}' is a localhost/loopback address; "
                 f"refused outside local"
             )
-        if host.endswith(".local"):
+        if _is_dot_local_host(host):
             raise ValueError(
                 f"platform {key}: active {label} host '{host}' ends in .local; "
                 f"refused outside local"
             )
     for domain in entry.domains:
-        if _is_loopback_host(_domain_host(domain)):
+        host = _domain_host(domain)
+        if _is_loopback_host(host):
             raise ValueError(
                 f"platform {key}: active CSP domain '{domain}' is a localhost/loopback address; "
+                f"refused outside local"
+            )
+        # gap CFG-DOMLOCAL-1: mirror the issuer/jwks .local check on the CSP-domain loop, so a
+        # real https issuer cannot smuggle a `.local` CSP domain into production frame-ancestors.
+        if _is_dot_local_host(host):
+            raise ValueError(
+                f"platform {key}: active CSP domain '{domain}' ends in .local; "
                 f"refused outside local"
             )
 

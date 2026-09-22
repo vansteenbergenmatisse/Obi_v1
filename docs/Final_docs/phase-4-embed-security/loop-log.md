@@ -162,7 +162,17 @@ Five fresh auditors + adversarial verify (14 agents). **35 fixed-confirmed, 2 pa
 
 **Combined gate:** backend unit 566→590 · kb unit 23 · backend db 281/1xf · kb db 18 · frontend vitest 275→276 · typecheck/ruff clean · boundaries OK.
 
-## Wave 4 + Wave 5 — two consecutive clean waves required (pending)
+## Wave 4 — Third fresh independent re-audit (2026-09-22)
+
+Five fresh auditors + verify (9 agents). **40 fixed-confirmed, 0 still-broken, 2 CONFIRMED actionable (both LOW), refuted others.** NOT clean → repaired (SEC-RW4), counter still 0. The findings are the audit tail — increasingly esoteric loopback edges, both defense-in-depth-only (no corpus/scope bypass):
+- **CFG-DOMLOCAL-1 (LOW):** backend guard rejected `.local` as issuer/jwks host but NOT as a CSP domain (internal asymmetry).
+- **BIT-LOOPBACK-EDGE-1 (LOW):** loopback aliases (trailing-dot FQDN, expanded IPv6 `0:0:0:0:0:0:0:1`, IPv4-mapped `::ffff:127.0.0.1`) unmatched on BOTH sides (consistent, not a repair regression).
+
+### Wave-4 repair (SEC-RW4) — DONE (committed)
+
+Closed BOTH comprehensively + symmetrically to end the alias tail: `.local` now rejected as a CSP domain too (backend) + stripped (frontend); both matchers broadened (line-for-line equivalent, hand-rolled IPv6 expander, no new dep) to cover the full alias set, verified NOT over-matching real hosts (127.example.com, example.local.com, ::ffff:8.8.8.8, real IPv6). 34 tests (failing-first). **Gate:** backend unit 590→616 · backend db 281/1xf · kb 23+18 · frontend vitest 276→284 · typecheck/ruff/pyright clean · boundaries OK.
+
+## Wave 5 + Wave 6 — two consecutive clean waves required (pending)
 
 
 

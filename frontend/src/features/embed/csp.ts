@@ -57,17 +57,85 @@ function isIpv4LoopbackHost(host: string): boolean {
 }
 
 /**
- * A bare `host[:port]` CSP domain that resolves to the local loopback (gap CFG-04, widened for gap
- * BIT-A-R1). Domains are stored without a scheme (e.g. `"localhost:3000"`, `"app.mews.com"`,
- * `"[::1]:3000"`). This is a pure host check that treats the FULL loopback set as localhost so none
- * of it can become a trusted embedder origin / frame-ancestor outside local/dev:
+ * Expand an IPv6 literal to its eight 16-bit groups, or `null` when `host` is not a well-formed
+ * IPv6 address. Handles `::` zero-compression and a trailing dotted-quad IPv4 (`::ffff:127.0.0.1`).
+ * Hand-rolled (no runtime dep) so the logic is IDENTICAL to the backend's `_expand_ipv6` twin in
+ * `platforms.py` (gap BIT-LOOPBACK-EDGE-1) — a divergence between the two is the recurring bug.
+ */
+function expandIpv6(host: string): number[] | null {
+  if (!host.includes(":")) return null;
+  if ((host.match(/::/g)?.length ?? 0) > 1) return null;
+  let work = host;
+  if (work.includes(".")) {
+    const idx = work.lastIndexOf(":");
+    if (idx === -1) return null;
+    const head = work.slice(0, idx + 1);
+    const v4 = work.slice(idx + 1);
+    const octets = v4.split(".");
+    if (octets.length !== 4) return null;
+    const vals: number[] = [];
+    for (const o of octets) {
+      if (!/^\d{1,3}$/.test(o)) return null;
+      const n = Number(o);
+      if (n > 255) return null;
+      vals.push(n);
+    }
+    const hex = (n: number) => n.toString(16).padStart(2, "0");
+    work = `${head}${hex(vals[0])}${hex(vals[1])}:${hex(vals[2])}${hex(vals[3])}`;
+  }
+  let groups: string[];
+  if (work.includes("::")) {
+    const [left, right] = work.split("::");
+    const lg = left ? left.split(":") : [];
+    const rg = right ? right.split(":") : [];
+    if (lg.some((g) => g === "") || rg.some((g) => g === "")) return null;
+    const missing = 8 - (lg.length + rg.length);
+    if (missing < 1) return null; // `::` must stand for at least one all-zero group
+    groups = [...lg, ...Array<string>(missing).fill("0"), ...rg];
+  } else {
+    groups = work.split(":");
+  }
+  if (groups.length !== 8) return null;
+  const out: number[] = [];
+  for (const g of groups) {
+    if (!/^[0-9a-f]{1,4}$/.test(g)) return null;
+    out.push(parseInt(g, 16));
+  }
+  return out;
+}
+
+/** True for an IPv6 loopback literal in any form (gap BIT-LOOPBACK-EDGE-1): compressed `::1`,
+ * fully-expanded `0:0:0:0:0:0:0:1`, and IPv4-mapped `::ffff:<127.0.0.0/8>` (dotted `::ffff:127.0.0.1`
+ * or hex `::ffff:7f00:1`). Does NOT match a real IPv6 host or the deprecated non-mapped `::7f00:1`.
+ * Mirrors the backend's `_is_ipv6_loopback`. */
+function isIpv6Loopback(host: string): boolean {
+  const groups = expandIpv6(host);
+  if (groups === null) return false;
+  if (groups.slice(0, 7).every((g) => g === 0) && groups[7] === 1) return true;
+  // IPv4-mapped (::ffff:a.b.c.d): the mapped IPv4's first octet in the 127.0.0.0/8 block.
+  return (
+    groups.slice(0, 5).every((g) => g === 0) && groups[5] === 0xffff && groups[6] >> 8 === 0x7f
+  );
+}
+
+/**
+ * A bare `host[:port]` CSP domain that must be stripped OUTSIDE local/dev — the local loopback
+ * (gap CFG-04, widened for gaps BIT-A-R1 + BIT-LOOPBACK-EDGE-1) OR an mDNS `.local` TLD name (gap
+ * CFG-DOMLOCAL-1). Domains are stored without a scheme (e.g. `"localhost:3000"`, `"app.mews.com"`,
+ * `"[::1]:3000"`, `"app.acme.local"`). A pure host check that treats the FULL non-production set as
+ * local so none of it can become a trusted embedder origin / frame-ancestor outside local/dev:
  *  - `localhost` and any `*.localhost`;
+ *  - the trailing-dot FQDN root form of any of these (`localhost.`, `127.0.0.1.`);
  *  - the whole `127.0.0.0/8` block (`127.x.x.x` with valid octets), not just `127.0.0.1`;
  *  - the `0.0.0.0` wildcard-bind address;
- *  - IPv6 loopback `::1`, whether bare (`::1`) or bracketed with a port (`[::1]:3000`).
+ *  - IPv6 loopback in any form: `::1`, fully-expanded `0:0:0:0:0:0:0:1`, and IPv4-mapped
+ *    `::ffff:127.0.0.1` / `::ffff:7f00:1` — bare or bracketed with a port (`[::1]:3000`);
+ *  - a `.local` TLD host (`app.acme.local`) — an exact `.local` suffix, so `example.local.com`
+ *    and `127.example.com` are NOT over-matched.
  * A trailing `:port` is stripped only when unambiguous: bracketed IPv6 uses the text inside `[...]`,
  * a bare IPv6 literal (more than one `:`) is left whole, and a plain `host[:port]` drops one
- * `:port`. Kept in step with the backend's loopback guard in `platforms.py`.
+ * `:port`. Kept in step with the backend's `_is_loopback_host` + `_is_dot_local_host` in
+ * `platforms.py` (the two twins must agree — a divergence here is the recurring bug).
  */
 export function isLocalhostDomain(domain: string): boolean {
   const raw = domain.trim().toLowerCase();
@@ -86,9 +154,13 @@ export function isLocalhostDomain(domain: string): boolean {
     host = raw.split(":")[0];
   }
 
+  // Normalize a single trailing FQDN dot (`localhost.`, `127.0.0.1.`, `acme.local.`).
+  if (host.endsWith(".") && !host.endsWith("..")) host = host.slice(0, -1);
+
   if (host === "localhost" || host.endsWith(".localhost")) return true;
+  if (host.endsWith(".local")) return true; // gap CFG-DOMLOCAL-1: exact `.local` TLD
   if (host === "0.0.0.0") return true;
-  if (host === "::1") return true;
+  if (isIpv6Loopback(host)) return true;
   return isIpv4LoopbackHost(host);
 }
 
@@ -96,9 +168,10 @@ export function isLocalhostDomain(domain: string): boolean {
  * The active platform domains that may actually embed/drive the frame in THIS environment — the
  * single source of truth shared by BOTH consumers of `activeDomains()` (gap BIT-A1): the CSP's
  * `frame-ancestors` (`computeEmbedCsp`) and the postMessage allow-list the frame accepts messages
- * from (`app/embed/page.tsx`'s `toEmbedderOrigins`). Outside local/dev every localhost/127.0.0.1
- * domain is stripped (a production frame must never trust the loopback); local/dev keeps them for
- * the embed test flow. Routing both consumers through here is what keeps the CSP and the bridge
+ * from (`app/embed/page.tsx`'s `toEmbedderOrigins`). Outside local/dev every localhost/loopback and
+ * `.local` domain is stripped (a production frame must never trust the loopback or an mDNS `.local`
+ * name — gaps CFG-04, BIT-LOOPBACK-EDGE-1, CFG-DOMLOCAL-1); local/dev keeps them for the embed test
+ * flow. Routing both consumers through here is what keeps the CSP and the bridge
  * allow-list from ever diverging — previously only `computeEmbedCsp` filtered, so the bridge
  * trusted localhost embedders in production.
  */
