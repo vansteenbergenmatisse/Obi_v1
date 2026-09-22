@@ -9,7 +9,21 @@
  * tree-shaking can happen) — so this logic lives in its own file with zero Node-only imports.
  */
 
-const _LOCAL_ENVS = new Set(["local", "dev", "development", "test", "ci"]);
+/**
+ * CANONICAL cross-side env signal (gap CFG-05): the accepted `APP_ENV` values that count as
+ * local/dev/test/CI. MUST stay identical to the backend's `_OFFLINE_ENVS`
+ * (`backend/app/platform/config/settings.py`). `"development"` is treated as offline/local on BOTH
+ * sides — the one canonical treatment — so a deployment that sets only `APP_ENV` or only `ENV` can
+ * no longer gate the two apps inconsistently. The env var NAMES stay put (`APP_ENV` here, `ENV` on
+ * the backend); only this accepted-value set is aligned. A contract test on each side pins it.
+ */
+export const LOCAL_OR_DEV_ENVS: ReadonlySet<string> = new Set([
+  "local",
+  "dev",
+  "development",
+  "test",
+  "ci",
+]);
 
 /**
  * True in local/dev/test/ci — envs where an empty active-domain list is tolerated (there's simply
@@ -20,8 +34,18 @@ const _LOCAL_ENVS = new Set(["local", "dev", "development", "test", "ci"]);
  */
 export function isLocalOrDevEnv(): boolean {
   const explicit = process.env.APP_ENV?.trim().toLowerCase();
-  if (explicit) return _LOCAL_ENVS.has(explicit);
+  if (explicit) return LOCAL_OR_DEV_ENVS.has(explicit);
   return process.env.NODE_ENV !== "production";
+}
+
+/**
+ * A bare `host[:port]` CSP domain that resolves to the local loopback (gap CFG-04). Domains are
+ * stored without a scheme (e.g. `"localhost:3000"`, `"app.mews.com"`), so strip any `:port` before
+ * comparing. Kept in step with the backend's `_LOCALHOST_HOSTS` guard in `platforms.py`.
+ */
+function isLocalhostDomain(domain: string): boolean {
+  const host = domain.trim().toLowerCase().split(":")[0];
+  return host === "localhost" || host === "127.0.0.1";
 }
 
 export interface EmbedCspResult {
@@ -37,11 +61,18 @@ export interface EmbedCspResult {
  * active domains renders `frame-ancestors 'none'` when tolerated (local/dev), or fails the request
  * entirely (`ok: false`) outside it — the frame must refuse to be embedded by anyone rather than
  * silently default-allow.
+ *
+ * gap CFG-04 (defense in depth): outside local/dev, any localhost/127.0.0.1 domain is stripped
+ * before it can reach `frame-ancestors` — a production frame must never be embeddable from the
+ * loopback. The backend registry guard (`platforms.py`) already refuses such a domain at load, so
+ * a well-formed prod config never carries one; this is the second layer. Local/dev keeps localhost
+ * domains intact (the embed test flow).
  */
 export function computeEmbedCsp(domains: string[], isLocalOrDev: boolean): EmbedCspResult {
-  if (domains.length === 0 && !isLocalOrDev) {
+  const effective = isLocalOrDev ? domains : domains.filter((d) => !isLocalhostDomain(d));
+  if (effective.length === 0 && !isLocalOrDev) {
     return { ok: false, header: "frame-ancestors 'none'" };
   }
-  const ancestors = domains.length > 0 ? domains.join(" ") : "'none'";
+  const ancestors = effective.length > 0 ? effective.join(" ") : "'none'";
   return { ok: true, header: `frame-ancestors ${ancestors}` };
 }

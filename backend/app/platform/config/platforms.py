@@ -7,7 +7,11 @@ Validated at startup, after the tag map, rules in order, each error naming the o
 every mapped scope exists in knowledge_scopes.json; 'classified' is never mappable; the general
 scope is added by the loader, never listed by hand; lifetime_minutes sits within 1..1440; every
 signing alg is on the allow-list (RS256, ES256); an empty registry, or one with zero active
-platforms, stops startup outside local (allow_empty=False).
+platforms, stops startup outside local (allow_empty=False). Outside offline (offline=False) an
+ACTIVE platform must further be a real production trusted issuer — an https issuer/jwks on a real
+host, never a TODO/PLACEHOLDER string, localhost/127.0.0.1 or .local host, and no localhost CSP
+domain (gap CFG-02/AUTHRT-1 + CFG-04); offline/local keeps loading platforms.local.json's test-*
+issuers and localhost domains unchanged.
 
 Lives at ``knowledge-base/config/platforms.json`` beside ``knowledge_scopes.json`` — one global
 place an operator edits directly, readable from either app (mirrors knowledge_scopes.py).
@@ -18,12 +22,19 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 _GENERAL = "obi-general-test"
 _FORBIDDEN = frozenset({"classified"})
 _ALLOWED_ALGS = frozenset({"RS256", "ES256"})
 _MIN_LIFETIME = 1
 _MAX_LIFETIME = 1440
+
+# gap CFG-02/AUTHRT-1 + CFG-04: outside offline/local, an ACTIVE platform is a fully-trusted JWT
+# issuer whose domains seed the embed frame's CSP, so it must be a real, https, non-localhost third
+# party — never a test/placeholder issuer. These are the markers of a not-yet-real entry.
+_PLACEHOLDER_MARKERS = ("TODO", "PLACEHOLDER")
+_LOCALHOST_HOSTS = frozenset({"localhost", "127.0.0.1"})
 
 # backend/app/platform/config/platforms.py -> repo root is 4 levels up; the file lives beside
 # knowledge_scopes.json under knowledge-base/config/ (relocated in substep 1.2.3).
@@ -79,12 +90,74 @@ class PlatformRegistry:
         return sorted(set(out))
 
 
+def _url_host(value: str) -> str:
+    """Lowercased host of a URL, or "" when it has no parseable host (e.g. a placeholder
+    string like "TODO until 4.x")."""
+    return (urlsplit(value).hostname or "").lower()
+
+
+def _domain_host(domain: str) -> str:
+    """Lowercased host of a bare ``host[:port]`` CSP domain entry (these are stored without a
+    scheme, e.g. "localhost:3000" / "app.mews.com")."""
+    host = domain.strip().lower()
+    return host.rsplit(":", 1)[0] if ":" in host else host
+
+
+def _reject_untrusted_active_platform(entry: PlatformEntry) -> None:
+    """gap CFG-02/AUTHRT-1 + CFG-04 — refuse an ACTIVE platform that is not a real production
+    trusted issuer, naming the offending entry. Applied by ``load_platform_registry`` only when
+    ``offline`` is False; local/test/dev keep loading ``platforms.local.json`` with its ``test-*``
+    issuers and localhost domains unchanged. An active entry's issuer/jwks must be an https URL on
+    a real host (not a ``TODO``/``PLACEHOLDER`` string, not ``localhost``/``127.0.0.1``, not a
+    ``.local`` host), and none of its CSP domains may be localhost."""
+    key = entry.key
+    for label, value in (("issuer", entry.issuer), ("jwks_url", entry.jwks_url)):
+        upper = value.upper()
+        for marker in _PLACEHOLDER_MARKERS:
+            if marker in upper:
+                raise ValueError(
+                    f"platform {key}: active {label} '{value}' is a placeholder "
+                    f"({marker}); not a real trusted issuer outside local"
+                )
+        if not value.startswith("https://"):
+            raise ValueError(
+                f"platform {key}: active {label} '{value}' is not https; refused outside local"
+            )
+        host = _url_host(value)
+        if host in _LOCALHOST_HOSTS:
+            raise ValueError(
+                f"platform {key}: active {label} host '{host}' is localhost; refused outside local"
+            )
+        if host.endswith(".local"):
+            raise ValueError(
+                f"platform {key}: active {label} host '{host}' ends in .local; "
+                f"refused outside local"
+            )
+    for domain in entry.domains:
+        if _domain_host(domain) in _LOCALHOST_HOSTS:
+            raise ValueError(
+                f"platform {key}: active CSP domain '{domain}' is localhost; refused outside local"
+            )
+
+
 def load_platform_registry(
     platforms_path: Path,
     recognized_scopes: frozenset[str],
     *,
     allow_empty: bool,
+    offline: bool = True,
 ) -> PlatformRegistry:
+    """Load and validate the registry. ``allow_empty`` tolerates an empty / all-inactive registry
+    (local). ``offline`` (the ``ENV``-derived offline/local signal, see ``Settings.is_offline_env``)
+    tolerates test/placeholder/localhost/non-https ACTIVE issuers and localhost CSP domains; when
+    False (a real deployment) each active entry must be a real https trusted issuer — gap
+    CFG-02/AUTHRT-1 + CFG-04.
+
+    ``offline`` defaults True (permissive) because the ONLY production caller is
+    ``Settings.platform_registry``, which always passes the real, ENV-derived signal explicitly
+    (offline=False in a real deployment) — that is where the production trust boundary is enforced.
+    The default preserves the historical direct-load contract that local test fixtures rely on; a
+    caller wanting production-strict checking must opt in with ``offline=False``."""
     data = json.loads(platforms_path.read_text())
     platforms = data.get("platforms", {})
     integrations = data.get("integrations", {})
@@ -119,6 +192,11 @@ def load_platform_registry(
 
     if not allow_empty and not any(e.active for e in by_issuer.values()):
         raise ValueError("platforms.json has no active platform outside local")
+
+    if not offline:
+        for entry in by_issuer.values():
+            if entry.active:
+                _reject_untrusted_active_platform(entry)
 
     scopes: dict[str, tuple[str, ...]] = {}
     for integration, slugs in integrations.items():

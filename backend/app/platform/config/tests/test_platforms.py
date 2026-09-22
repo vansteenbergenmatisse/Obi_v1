@@ -114,13 +114,20 @@ def test_platforms_no_active_platform_outside_local_stops_startup(tmp_path):
 
 def test_platforms_real_file_loads(tmp_path):
     """panel cm-config · substep 1.2.3
-    The real knowledge-base/config/platforms.json loads under the real scopes in strict mode."""
+    The real knowledge-base/config/platforms.json loads under the real scopes in strict mode.
+
+    Updated for gap CFG-02: this now passes offline=True. The committed file's only active
+    platform (datahub) still carries TODO placeholder issuer/jwks, which the CFG-02 trust guard
+    refuses outside offline (proven by test_platforms_active_placeholder_issuer_refused_outside_
+    offline). Loading the real file therefore only succeeds in an offline/local env until datahub
+    gets a real https issuer — which is exactly the guard doing its job, not a weakening."""
     reg = load_platform_registry(
         DEFAULT_PLATFORMS_PATH,
         load_recognized_knowledge_scopes(),
         allow_empty=False,
+        offline=True,
     )
-    # strict mode did not raise -> at least one active platform is present (datahub).
+    # did not raise -> at least one active platform is present (datahub).
     assert reg.allowed_scopes_for("mews") == {"obi-mews-test", "obi-general-test"}
 
 
@@ -183,3 +190,97 @@ def test_platforms_empty_registry_allowed_locally(tmp_path):
     p = _write(tmp_path, {"platforms": {}, "integrations": {}})
     reg = load_platform_registry(p, RECOGNIZED, allow_empty=True)
     assert reg.active_domains() == []
+
+
+# --- gap CFG-02 / AUTHRT-1: an untrusted ACTIVE platform is refused OUTSIDE offline --------------
+# An active entry is a fully-trusted JWT issuer whose domains seed the embed frame CSP. Outside
+# offline it must be a real, https, non-localhost third party — never a test/placeholder issuer.
+# Every case below is gated on offline=False; the two regression tests prove offline=True (the
+# local embed test flow) is untouched.
+
+
+def test_platforms_active_localhost_issuer_refused_outside_offline(tmp_path):
+    """gap CFG-02/AUTHRT-1 · an ACTIVE platform whose issuer host is localhost is a fake trusted
+    issuer in production — refused when offline=False, naming the entry; allowed when offline."""
+    plat = {"acme": _platform(issuer="https://localhost", jwks_url="https://ex.test/j")}
+    p = _write(tmp_path, _data(platforms=plat, integrations={}))
+    with pytest.raises(ValueError, match="acme") as exc:
+        load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
+    assert "localhost" in str(exc.value)
+    # offline (the local embed test flow) tolerates it.
+    load_platform_registry(p, RECOGNIZED, allow_empty=True, offline=True)
+
+
+def test_platforms_active_dotlocal_jwks_refused_outside_offline(tmp_path):
+    """gap CFG-02 · an ACTIVE platform whose jwks host ends .local is refused outside offline."""
+    plat = {"acme": _platform(issuer="https://ex.test", jwks_url="https://acme.local/j")}
+    p = _write(tmp_path, _data(platforms=plat, integrations={}))
+    with pytest.raises(ValueError, match="acme") as exc:
+        load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
+    assert ".local" in str(exc.value)
+
+
+def test_platforms_active_placeholder_issuer_refused_outside_offline(tmp_path):
+    """gap CFG-02 · an ACTIVE platform with a TODO/PLACEHOLDER issuer (the committed datahub
+    shape) is refused outside offline, naming the entry."""
+    plat = {"datahub": _platform(issuer="TODO until 4.x", jwks_url="TODO until 4.x", domains=[])}
+    p = _write(tmp_path, _data(platforms=plat, integrations={}))
+    with pytest.raises(ValueError, match="datahub") as exc:
+        load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
+    assert "placeholder" in str(exc.value).lower()
+
+
+def test_platforms_active_non_https_issuer_refused_outside_offline(tmp_path):
+    """gap CFG-02 · an ACTIVE platform with a non-https issuer is refused outside offline."""
+    plat = {
+        "acme": _platform(issuer="http://acme.example.com", jwks_url="https://acme.example.com/j")
+    }
+    p = _write(tmp_path, _data(platforms=plat, integrations={}))
+    with pytest.raises(ValueError, match="acme") as exc:
+        load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
+    assert "https" in str(exc.value)
+
+
+def test_platforms_active_localhost_domain_refused_outside_offline(tmp_path):
+    """gap CFG-04 · a localhost CSP domain on an ACTIVE entry must never reach the production
+    frame-ancestors — refused at load when offline=False, naming the entry."""
+    plat = {
+        "acme": _platform(
+            issuer="https://acme.example.com",
+            jwks_url="https://acme.example.com/j",
+            domains=["app.acme.example.com", "localhost:3000"],
+        )
+    }
+    p = _write(tmp_path, _data(platforms=plat, integrations={}))
+    with pytest.raises(ValueError, match="acme") as exc:
+        load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
+    assert "localhost" in str(exc.value)
+
+
+def test_platforms_inactive_untrusted_entry_allowed_outside_offline(tmp_path):
+    """gap CFG-02 · the guard only touches ACTIVE entries — an INACTIVE placeholder/localhost
+    entry (the committed mews/toast/opera-cloud shape) still loads outside offline."""
+    plat = {
+        "acme": _platform(issuer="https://acme.example.com", jwks_url="https://acme.example.com/j"),
+        "ph": _platform(issuer="PLACEHOLDER", jwks_url="PLACEHOLDER", domains=[], active=False),
+    }
+    p = _write(tmp_path, _data(platforms=plat, integrations={}))
+    reg = load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
+    assert reg.by_issuer("PLACEHOLDER") is not None
+    assert reg.platform_for("PLACEHOLDER") is None
+
+
+def test_platforms_local_override_file_refused_outside_offline():
+    """gap CFG-02 · the committed platforms.local.json (test-* issuers, localhost jwks/domains)
+    must NOT load as a production registry — refused when offline=False."""
+    local_file = DEFAULT_PLATFORMS_PATH.parent / "platforms.local.json"
+    with pytest.raises(ValueError):
+        load_platform_registry(local_file, RECOGNIZED, allow_empty=False, offline=False)
+
+
+def test_platforms_local_override_file_still_loads_when_offline():
+    """gap CFG-02 regression · platforms.local.json STILL loads under offline=True — the local
+    embed test flow (test-* issuers, localhost domains) must keep working unchanged."""
+    local_file = DEFAULT_PLATFORMS_PATH.parent / "platforms.local.json"
+    reg = load_platform_registry(local_file, RECOGNIZED, allow_empty=True, offline=True)
+    assert "localhost:3000" in reg.active_domains()

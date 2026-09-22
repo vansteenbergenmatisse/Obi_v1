@@ -84,3 +84,16 @@ def test_obi_identity_text_reads_the_file_when_present(tmp_path) -> None:
 def test_obi_identity_text_is_empty_when_file_missing_does_not_raise(tmp_path) -> None:
     missing = tmp_path / "nope.md"
     assert Settings(obi_identity_path=str(missing)).obi_identity_text == ""
+
+
+# -- gap CFG-05: the canonical offline/local env-value set, pinned against silent drift -----------
+
+
+def test_offline_env_value_set_is_the_canonical_cross_side_contract() -> None:
+    """gap CFG-05 · the backend offline/local env-value set is pinned here and MUST stay identical
+    to the frontend's LOCAL_OR_DEV_ENVS (frontend/src/features/embed/csp.ts, with its own mirror
+    test). 'development' is offline/local on BOTH sides — the single canonical treatment — so that
+    setting only ENV or only APP_ENV can no longer gate the two apps inconsistently. A change here
+    without the matching frontend change is the silent-drift bug this test exists to stop."""
+    expected = {"local", "dev", "development", "test", "ci"}
+    assert expected == settings_module._OFFLINE_ENVS

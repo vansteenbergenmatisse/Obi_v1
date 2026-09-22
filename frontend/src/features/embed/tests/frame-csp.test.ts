@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { computeEmbedCsp } from "../csp";
+import { computeEmbedCsp, LOCAL_OR_DEV_ENVS } from "../csp";
 import { activeDomains } from "../platforms";
 
 const ORIGINAL_PLATFORMS_PATH = process.env.PLATFORMS_PATH;
@@ -60,6 +60,38 @@ describe("computeEmbedCsp", () => {
   it("fails closed (ok: false) when no active domains exist outside local/dev", () => {
     const result = computeEmbedCsp([], false);
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("computeEmbedCsp localhost filtering (gap CFG-04)", () => {
+  it("omits localhost/127.0.0.1 domains from frame-ancestors outside local/dev", () => {
+    const result = computeEmbedCsp(["app.mews.com", "localhost:3000", "127.0.0.1:8080"], false);
+    expect(result.ok).toBe(true);
+    expect(result.header).toBe("frame-ancestors app.mews.com");
+    expect(result.header).not.toContain("localhost");
+    expect(result.header).not.toContain("127.0.0.1");
+    expect(result.header).not.toContain("*");
+  });
+
+  it("fails closed when every active domain is localhost outside local/dev", () => {
+    const result = computeEmbedCsp(["localhost:3000", "127.0.0.1"], false);
+    expect(result.ok).toBe(false);
+  });
+
+  it("keeps localhost domains when local/dev — the embed test flow (regression)", () => {
+    const result = computeEmbedCsp(["localhost:3000", "localhost:3100"], true);
+    expect(result.ok).toBe(true);
+    expect(result.header).toBe("frame-ancestors localhost:3000 localhost:3100");
+  });
+});
+
+describe("env signal contract (gap CFG-05)", () => {
+  it("pins the canonical local/dev env-value set shared with the backend _OFFLINE_ENVS", () => {
+    // MUST stay identical to backend/app/platform/config/settings.py::_OFFLINE_ENVS
+    // (pinned there by test_offline_env_value_set_is_the_canonical_cross_side_contract).
+    expect(new Set(LOCAL_OR_DEV_ENVS)).toEqual(
+      new Set(["local", "dev", "development", "test", "ci"]),
+    );
   });
 });
 

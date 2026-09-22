@@ -21,7 +21,14 @@ if TYPE_CHECKING:
 # Envs where a missing hosted-provider key or DB role falls back to a safe offline default
 # instead of failing (PLAN 4.6.10) — was duplicated as a local constant in
 # embeddings_client.py/reranker_client.py; both now call Settings.is_offline_env() instead.
-_OFFLINE_ENVS = {"local", "test", "dev", "ci"}
+#
+# CANONICAL cross-side env signal (gap CFG-05): this set is the single source of truth for what
+# counts as offline/local/dev/CI, and MUST stay identical to the frontend's LOCAL_OR_DEV_ENVS
+# (frontend/src/features/embed/csp.ts). 'development' is treated as offline/local on BOTH sides —
+# the one canonical treatment — so a deployment that sets only ENV or only APP_ENV can no longer
+# gate the two apps inconsistently. The env var NAMES stay put (ENV here, APP_ENV on the frontend);
+# only this accepted-value set is aligned. A contract test on each side pins it against drift.
+_OFFLINE_ENVS = {"local", "dev", "development", "test", "ci"}
 
 # Operator-editable static identity block for Obi's per-user identity path (operator-requested
 # 2026-09-12). Lives at the repo-root config/obi_identity.md — one place an operator edits directly
@@ -287,10 +294,17 @@ class Settings(BaseSettings):
         )
 
         path = Path(self.platforms_path) if self.platforms_path else DEFAULT_PLATFORMS_PATH
+        # A real deployment is: not an offline/local env AND the test-only escape hatch is off.
+        # allow_empty_platforms is documented as "set only by the test suite" (and is set globally
+        # in the backend conftest) to mean "this test must not depend on a valid platform registry"
+        # — so it relaxes BOTH the zero-active guard (allow_empty) and, here, the CFG-02/AUTHRT-1 +
+        # CFG-04 trust guard (offline). It is never set in a real deployment, where the guard fires.
+        relax = self.allow_empty_platforms or self.is_offline_env()
         return load_platform_registry(
             path,
             self.knowledge_scope_set,
-            allow_empty=self.allow_empty_platforms or self.is_offline_env(),
+            allow_empty=relax,
+            offline=relax,
         )
 
     @model_validator(mode="after")
