@@ -207,6 +207,24 @@ Both repaired together (failing-test-first; done in the main window, same disclo
 
 **Consecutive-clean counter: still 0 of 2.** Waves 8 and 9 must both be clean.
 
+## Wave 8 — Fresh independent re-audit (2026-09-22) — NOT CLEAN → counter stays 0
+
+Five FRESH auditors on HEAD fa6ccf6 (post-SEC-RW7). Because Waves 6 and 7 each found one more esoteric loopback-parity edge, this wave was directed to END the tail: the auth auditor and the cross-cut critic each ran a LARGE cross-runtime differential of the loopback twins (both real runtimes executed — backend via `uv run python`, frontend csp.ts via `node --experimental-strip-types`), and the cross-cut critic additionally enumerated EVERY `isdigit`/`int()` site to confirm that class is closed. Gate re-verified before the wave: backend unit 623 · kb 23 · backend db 281/1xf · kb db 18 · frontend vitest 286 · typecheck/boundaries clean.
+
+Three domains (browser/CSP, authz+identity+lifecycle, config/migration/CI/test-infra) returned detailed CLEAN — the SEC-RW7 trim verified a strict no-op on well-formed inputs and the exact twin of the backend strip; the classify_scope change verified behaviour-preserving and strictly fail-closed and unreachable in v1; RLS isolation re-proven on the local DB; both DB guards precede bootstrap; CI skip-guard tied to the single allowlisted xfail; RW6/RW7 tests revert-simulated as non-vacuous. The two differential auditors BOTH found the same one finding:
+
+- **W8-A1-1 (LOW, confirmed twin-divergence + missing-test):** Python `str.strip()` and JS `String.prototype.trim()` remove DIFFERENT edge whitespace — they disagree on exactly six code points: Python-only U+001C-U+001F + U+0085, JS-only U+FEFF. So the backend `_is_loopback_host`/`_domain_host`/`_is_dot_local_host` (`.strip()`) and the frontend `isLocalhostDomain` (`.trim()`) classified a host carrying one of those six oppositely (e.g. `localhost<BOM>` slipped past the backend production trust guard while the frontend stripped it as loopback). TWO independent auditors ran independent differentials (3,779 and 3,137 inputs) and converged on the IDENTICAL six-char set, and every divergence in both corpora contained one of those six chars — so the divergence set is complete. LOW/fail-closed/operator-config-only (platforms.json is operator-edited, never request input), but a twin-invariant violation and the ROOT of the recurring tail rather than another leaf.
+
+### Wave-8 repair (SEC-RW8) — DONE (committed 8173a0c)
+
+The definitive tail-ender: instead of patching six more characters, both twins now strip ONE shared explicit union set of every code point either runtime strips — backend `_EDGE_WHITESPACE`/`_strip_edges`, frontend `EDGE_WHITESPACE`/`stripEdges` — replacing bare `.strip()`/`.trim()` at all host-matching sites. The set is the EXACT union (U+200B, stripped by neither, is excluded and pinned by a not-over-stripped test). Verified equivalent by the coordinator's OWN cross-runtime differential: 3,993 inputs (every whitespace/control/format code point <= U+FFFF x 10 loopback/non-loopback bases), backend (Python) vs the real csp.ts (node) — **0 divergences** (was 149 before). 8 new backend + 2 new frontend tests, red-before-green. Failing-test-first; done in the main window (same disclosed spend-limit deviation; independence from Waves 9+10). **Gate:** backend unit 623->630 · full backend db 281/1xf · kb 23+18 · frontend vitest 286->288 · typecheck/ruff/pyright clean · boundaries OK.
+
+The `isdigit`/`int()` class was independently confirmed fully closed by the cross-cut critic's site-by-site enumeration (every other site is SAFE: no `int()`, or ASCII-guarded, or fail-closed-reject). With both the digit class and the whitespace-strip class now closed by construction, the loopback-parity tail should be exhausted.
+
+**Consecutive-clean counter: still 0 of 2.** Waves 9 and 10 must both be clean.
+
+
+
 
 
 
