@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import httpx
 import pytest
@@ -17,6 +18,32 @@ from app.platform.clients.reranker_client import (
 from app.platform.config import Settings
 
 _DOCS = [(1001, "onboarding guide"), (1002, "deploy steps"), (2002, "expense policy")]
+
+
+@pytest.fixture
+def prod_platforms(tmp_path: Path) -> str:
+    """A valid production platform registry (one real https ACTIVE issuer) so a non-offline
+    Settings(env="production") can be constructed without tripping the fail-closed platform-trust
+    guard (gap CFG-A/CFG-C) — these tests exercise the reranker factory, not the registry."""
+    p = tmp_path / "platforms.json"
+    p.write_text(
+        json.dumps(
+            {
+                "platforms": {
+                    "acme": {
+                        "issuer": "https://acme.example.com",
+                        "jwks_url": "https://acme.example.com/.well-known/jwks.json",
+                        "domains": ["app.acme.example.com"],
+                        "lifetime_minutes": 60,
+                        "algs": ["RS256"],
+                        "active": True,
+                    }
+                },
+                "integrations": {},
+            }
+        )
+    )
+    return str(p)
 
 
 def test_fake_is_deterministic_order_preserving_and_truncates() -> None:
@@ -139,12 +166,22 @@ def test_factory_falls_back_to_fake_offline_without_key() -> None:
     assert isinstance(build_reranker(settings), FakeReranker)
 
 
-def test_factory_raises_in_production_without_key() -> None:
-    settings = Settings(reranker_provider="cohere", reranker_api_key="", env="production")
+def test_factory_raises_in_production_without_key(prod_platforms: str) -> None:
+    settings = Settings(
+        reranker_provider="cohere",
+        reranker_api_key="",
+        env="production",
+        platforms_path=prod_platforms,
+    )
     with pytest.raises(RerankError):
         build_reranker(settings)
 
 
-def test_factory_builds_cohere_with_key() -> None:
-    settings = Settings(reranker_provider="cohere", reranker_api_key="co-test", env="production")
+def test_factory_builds_cohere_with_key(prod_platforms: str) -> None:
+    settings = Settings(
+        reranker_provider="cohere",
+        reranker_api_key="co-test",
+        env="production",
+        platforms_path=prod_platforms,
+    )
     assert isinstance(build_reranker(settings), CohereReranker)

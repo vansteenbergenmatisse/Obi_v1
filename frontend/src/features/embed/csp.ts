@@ -10,12 +10,20 @@
  */
 
 /**
- * CANONICAL cross-side env signal (gap CFG-05): the accepted `APP_ENV` values that count as
- * local/dev/test/CI. MUST stay identical to the backend's `_OFFLINE_ENVS`
- * (`backend/app/platform/config/settings.py`). `"development"` is treated as offline/local on BOTH
- * sides — the one canonical treatment — so a deployment that sets only `APP_ENV` or only `ENV` can
- * no longer gate the two apps inconsistently. The env var NAMES stay put (`APP_ENV` here, `ENV` on
- * the backend); only this accepted-value set is aligned. A contract test on each side pins it.
+ * The accepted `APP_ENV` values that count as local/dev/test/CI for this frontend (gap CFG-H).
+ *
+ * This set is intentionally NOT claimed to be identical to the backend's `_OFFLINE_ENVS`
+ * (`backend/app/platform/config/settings.py`). The two apps read different vars with different
+ * defaults and different production signals, and each fails closed on its own terms:
+ *  - Backend: `ENV` defaults to "" and is treated as PRODUCTION when unset/unknown — only an
+ *    explicit `local`/`test`/`ci` label relaxes its platform-trust guard (`dev`/`development` are
+ *    NOT offline there).
+ *  - Frontend: the real production signal is `NODE_ENV=production` (set by Next); `APP_ENV` is only
+ *    an explicit override, and `isLocalOrDevEnv()` falls back to `NODE_ENV !== "production"` when
+ *    `APP_ENV` is unset. `"development"` stays in this local/dev set because that is Next's own
+ *    dev `NODE_ENV`, so `dev`/`development` relaxation is a frontend concern only.
+ * A contract test on each side pins its own set; the earlier "identical cross-side contract" claim
+ * is retired.
  */
 export const LOCAL_OR_DEV_ENVS: ReadonlySet<string> = new Set([
   "local",

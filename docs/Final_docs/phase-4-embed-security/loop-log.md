@@ -64,4 +64,10 @@ Six independent adversarial auditors (none were implementers), each attacking on
 
 Repair slices R1–R5 follow (separate agents, failing-test-first). R1 and R4 carry the HIGH findings.
 
+### Wave-1 repairs
+
+**R1 — fail-closed trust boundary — DONE (committed).** Fixes CFG-A (HIGH) + CFG-B + CFG-C + CFG-H. `Settings.env` default `local`→`""` (unset ⇒ production); `_OFFLINE_ENVS` narrowed to `{local,test,ci}`; `offline=is_offline_env()` and `allow_empty=offline and allow_empty_platforms` (escape hatch can't relax the guard outside offline); false alignment comments corrected in settings.py + csp.ts. PROOF: `ENV=production` Settings() vs committed registry now RAISES on the datahub TODO placeholder. Blast-radius handled: conftest sets ENV=test; 4 pre-existing tests that relied on the CFG-C bug (built Settings(env="production")) given valid-prod registries (not weakened). 6 new fail-closed tests (TDD red first). **Gate:** backend unit 555 · full backend db 278/1xf · kb 35 · vitest 256 · typecheck/ruff/pyright clean · boundaries green. Residual for R3: frame-csp.test.ts stale comment re: matching backend _OFFLINE_ENVS.
+
+_R2 — backend platform gating (active-gate AUTH-1/CIP-A2 + integration↔issuer binding CIP-A1): next._
+
 

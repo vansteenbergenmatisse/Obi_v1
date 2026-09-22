@@ -10,6 +10,11 @@ from __future__ import annotations
 
 import os
 
+# FAIL-CLOSED default (gap CFG-A): Settings.env now defaults to "" (treated as PRODUCTION) instead
+# of "local", so the suite must opt into an offline env EXPLICITLY or every Settings() would fire
+# the platform-trust guard against the committed placeholder registry. "test" is in _OFFLINE_ENVS.
+# setdefault so an explicit shell/CI `ENV` still wins; a real env var also outranks the root .env.
+os.environ.setdefault("ENV", "test")
 os.environ.setdefault("EMBEDDING_DIM", "256")
 os.environ.setdefault("EMBEDDING_PROVIDER", "fake")
 os.environ.setdefault("EMBEDDING_MODEL", "fake")

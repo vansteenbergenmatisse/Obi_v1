@@ -7,7 +7,9 @@ DSN is enough, and every hosted provider falls back to its offline fake in the t
 
 from __future__ import annotations
 
+import json
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -15,6 +17,32 @@ import pytest
 from app import main
 from app.platform.config import Settings
 from schema import engine as engine_mod
+
+
+@pytest.fixture
+def prod_platforms(tmp_path: Path) -> str:
+    """A valid production platform registry (one real https ACTIVE issuer) so a non-offline
+    Settings(env="production") can be constructed without tripping the fail-closed platform-trust
+    guard (gap CFG-A/CFG-C) — this test exercises the reader-engine wiring, not the registry."""
+    p = tmp_path / "platforms.json"
+    p.write_text(
+        json.dumps(
+            {
+                "platforms": {
+                    "acme": {
+                        "issuer": "https://acme.example.com",
+                        "jwks_url": "https://acme.example.com/.well-known/jwks.json",
+                        "domains": ["app.acme.example.com"],
+                        "lifetime_minutes": 60,
+                        "algs": ["RS256"],
+                        "active": True,
+                    }
+                },
+                "integrations": {},
+            }
+        )
+    )
+    return str(p)
 
 
 @pytest.fixture(autouse=True)
@@ -50,6 +78,7 @@ def test_cm_root_reads_settings(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_cm_root_reader_engine_fails_closed_without_reader_url_outside_local(
     monkeypatch: pytest.MonkeyPatch,
+    prod_platforms: str,
 ) -> None:
     """panel cm-root · substep p0-s0_5-reg-code-map
     Step 2 — building the reader engine through the wiring fails closed: outside an offline env
@@ -59,6 +88,7 @@ def test_cm_root_reader_engine_fails_closed_without_reader_url_outside_local(
         env="production",
         database_reader_url="",
         database_url="postgresql+psycopg://w:w@localhost:1/writer_db",
+        platforms_path=prod_platforms,
     )
     # get_reader_engine reads the global get_settings(), not the arg passed to build_answer_service.
     monkeypatch.setattr(engine_mod, "get_settings", lambda: settings)

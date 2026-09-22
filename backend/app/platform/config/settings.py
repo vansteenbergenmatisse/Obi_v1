@@ -20,15 +20,23 @@ if TYPE_CHECKING:
 
 # Envs where a missing hosted-provider key or DB role falls back to a safe offline default
 # instead of failing (PLAN 4.6.10) — was duplicated as a local constant in
-# embeddings_client.py/reranker_client.py; both now call Settings.is_offline_env() instead.
+# embeddings_client.py/reranker_client.py; both now call Settings.is_offline_env() instead. This
+# same set gates the platform-trust boundary in front of the /chat JWT-issuer path, so it is
+# security-relevant: only a genuine local/CI label may relax that guard.
 #
-# CANONICAL cross-side env signal (gap CFG-05): this set is the single source of truth for what
-# counts as offline/local/dev/CI, and MUST stay identical to the frontend's LOCAL_OR_DEV_ENVS
-# (frontend/src/features/embed/csp.ts). 'development' is treated as offline/local on BOTH sides —
-# the one canonical treatment — so a deployment that sets only ENV or only APP_ENV can no longer
-# gate the two apps inconsistently. The env var NAMES stay put (ENV here, APP_ENV on the frontend);
-# only this accepted-value set is aligned. A contract test on each side pins it against drift.
-_OFFLINE_ENVS = {"local", "dev", "development", "test", "ci"}
+# FAIL-CLOSED, narrowed set (gaps CFG-A/CFG-B): only genuine local/CI labels count as offline.
+# `dev`/`development` were deliberately DROPPED — a public deployment labelled `dev`/`development`/
+# `staging`, or one where ENV was simply never set (see the `env` field default of ""), is treated
+# as PRODUCTION so the platform-trust guard and the zero-active guard both fire. Relaxation now
+# requires an EXPLICIT offline opt-in.
+#
+# NOTE (gap CFG-H): this set is intentionally NOT identical to the frontend's LOCAL_OR_DEV_ENVS
+# (frontend/src/features/embed/csp.ts). The two apps read different vars with different defaults and
+# different production signals — the backend fails closed on an unset ENV (production by default),
+# while the frontend's real production signal is `NODE_ENV=production` (set by Next) with `APP_ENV`
+# only an explicit override. The earlier "identical cross-side contract" claim is retired; each side
+# now fails closed on its own terms, pinned by its own contract test.
+_OFFLINE_ENVS = {"local", "test", "ci"}
 
 # Operator-editable static identity block for Obi's per-user identity path (operator-requested
 # 2026-09-12). Lives at the repo-root config/obi_identity.md — one place an operator edits directly
@@ -45,7 +53,11 @@ class Settings(BaseSettings):
     )
 
     # runtime
-    env: str = "local"
+    # FAIL-CLOSED default (gap CFG-A): empty, NOT "local". An unset or unknown ENV is not in
+    # _OFFLINE_ENVS, so is_offline_env() is False and the deployment is treated as PRODUCTION —
+    # the platform-trust guard and the zero-active guard fire. Local dev and the test suite must
+    # opt in EXPLICITLY (ENV=local / ENV=test); see .env.example and the backend conftest.
+    env: str = ""
     log_level: str = "INFO"
 
     # database
@@ -294,17 +306,23 @@ class Settings(BaseSettings):
         )
 
         path = Path(self.platforms_path) if self.platforms_path else DEFAULT_PLATFORMS_PATH
-        # A real deployment is: not an offline/local env AND the test-only escape hatch is off.
-        # allow_empty_platforms is documented as "set only by the test suite" (and is set globally
-        # in the backend conftest) to mean "this test must not depend on a valid platform registry"
-        # — so it relaxes BOTH the zero-active guard (allow_empty) and, here, the CFG-02/AUTHRT-1 +
-        # CFG-04 trust guard (offline). It is never set in a real deployment, where the guard fires.
-        relax = self.allow_empty_platforms or self.is_offline_env()
+        # FAIL-CLOSED wiring (gap CFG-C). The trust boundary (`offline`) is driven by the
+        # ENV-derived signal ALONE — the test-only escape hatch can never turn it off. In a real
+        # deployment is_offline_env() is False, so offline=False and every ACTIVE entry must be a
+        # real https trusted issuer (CFG-02/AUTHRT-1 + CFG-04), no matter what ALLOW_EMPTY_PLATFORMS
+        # is set to.
+        #
+        # allow_empty_platforms is documented as "set only by the test suite" — it lets a test skip
+        # depending on a valid registry (an empty / all-inactive one). It is GATED on offline so it
+        # cannot relax the zero-active guard outside an offline env: outside offline, allow_empty is
+        # always False and the zero-active guard fires regardless of the hatch.
+        offline = self.is_offline_env()
+        allow_empty = offline and self.allow_empty_platforms
         return load_platform_registry(
             path,
             self.knowledge_scope_set,
-            allow_empty=relax,
-            offline=relax,
+            allow_empty=allow_empty,
+            offline=offline,
         )
 
     @model_validator(mode="after")

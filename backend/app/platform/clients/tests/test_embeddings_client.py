@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from math import sqrt
+from pathlib import Path
 
 import httpx
 import pytest
@@ -15,6 +16,32 @@ from app.platform.clients.embeddings_client import (
     build_embedding_provider,
 )
 from app.platform.config import Settings
+
+
+@pytest.fixture
+def prod_platforms(tmp_path: Path) -> str:
+    """A valid production platform registry (one real https ACTIVE issuer) so a non-offline
+    Settings(env="production") can be constructed without tripping the fail-closed platform-trust
+    guard (gap CFG-A/CFG-C) — these tests exercise the embedding factory, not the registry."""
+    p = tmp_path / "platforms.json"
+    p.write_text(
+        json.dumps(
+            {
+                "platforms": {
+                    "acme": {
+                        "issuer": "https://acme.example.com",
+                        "jwks_url": "https://acme.example.com/.well-known/jwks.json",
+                        "domains": ["app.acme.example.com"],
+                        "lifetime_minutes": 60,
+                        "algs": ["RS256"],
+                        "active": True,
+                    }
+                },
+                "integrations": {},
+            }
+        )
+    )
+    return str(p)
 
 
 def _l2(v: list[float]) -> float:
@@ -114,9 +141,13 @@ def test_factory_falls_back_to_fake_offline_without_key() -> None:
     assert provider.dim == 16
 
 
-def test_factory_raises_in_production_without_key() -> None:
+def test_factory_raises_in_production_without_key(prod_platforms: str) -> None:
     settings = Settings(
-        embedding_provider="openai", embedding_dim=16, openai_api_key="", env="production"
+        embedding_provider="openai",
+        embedding_dim=16,
+        openai_api_key="",
+        env="production",
+        platforms_path=prod_platforms,
     )
     with pytest.raises(EmbeddingError):
         build_embedding_provider(settings)
