@@ -177,6 +177,76 @@ describe("Obi loader", () => {
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
 
+  it("LC-5: a token fetch in flight when Obi.clear() runs never posts obi:token", async () => {
+    // The click-time fetch hangs; we resolve it by hand AFTER clear() so the fetch is genuinely
+    // still in flight at logout — the exact resurrection window LC-5 closes.
+    let resolveFetch: ((response: Response) => void) | undefined;
+    fetchMock.mockImplementation(
+      () => new Promise<Response>((resolve) => (resolveFetch = resolve)),
+    );
+
+    const Obi = await loadObi();
+    Obi.init({ tokenUrl: TOKEN_URL });
+
+    const iframe = document.querySelector("iframe") as HTMLIFrameElement;
+    const postMessageSpy = vi.fn();
+    Object.defineProperty(iframe, "contentWindow", { value: { postMessage: postMessageSpy } });
+
+    const button = document.querySelector("button") as HTMLButtonElement;
+    button.click(); // posts obi:open + starts the (hanging) token fetch
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+
+    Obi.clear(); // logout while the fetch is still in flight
+
+    // The in-flight fetch now resolves with a perfectly valid token — it must be dropped.
+    resolveFetch?.(new Response(JSON.stringify({ token: fakeJwt(3600) }), { status: 200 }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(postMessageSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "obi:token" }),
+      expect.anything(),
+    );
+  });
+
+  it("LC-5: a renewal fetch in flight when Obi.init re-points never posts the stale token", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    const token1 = fakeJwt(120); // renewal fires ~60s in (120s exp − 60s renew-before)
+    let resolveRenewal: ((response: Response) => void) | undefined;
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ token: token1 }), { status: 200 }))
+      .mockImplementationOnce(
+        () => new Promise<Response>((resolve) => (resolveRenewal = resolve)),
+      );
+
+    const Obi = await loadObi();
+    Obi.init({ tokenUrl: TOKEN_URL });
+
+    const button = document.querySelector("button") as HTMLButtonElement;
+    button.click();
+    await vi.advanceTimersByTimeAsync(0); // click-time fetch resolves token1 + schedules renewal
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(65_000); // renewal fires → fetch #2 is now in flight
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    // Re-point Obi at a different signed-in user before the renewal resolves.
+    Obi.init({ tokenUrl: "/api/test-hosts/toast/obi-token" });
+    const newIframe = document.querySelector("iframe") as HTMLIFrameElement;
+    const newSpy = vi.fn();
+    Object.defineProperty(newIframe, "contentWindow", { value: { postMessage: newSpy } });
+
+    // The prior identity's renewal now resolves — its token must NOT reach the re-pointed frame.
+    resolveRenewal?.(new Response(JSON.stringify({ token: fakeJwt(3600) }), { status: 200 }));
+    await vi.advanceTimersByTimeAsync(0);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(newSpy).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "obi:token" }),
+      expect.anything(),
+    );
+  });
+
   it("Obi.destroy() removes the launcher and iframe so no widget is left in the DOM", async () => {
     const Obi = await loadObi();
     Obi.init({ tokenUrl: TOKEN_URL });

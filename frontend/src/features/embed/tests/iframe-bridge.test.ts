@@ -15,6 +15,14 @@ function post(data: unknown, origin: string, source: MessageEventSource | null =
   window.dispatchEvent(new MessageEvent("message", { data, origin, source }));
 }
 
+/** A syntactically-valid JWT carrying the given display-only business claims (no real signature —
+ * the bridge decodes claims for equality only, never for auth). */
+function jwtWithClaims(claims: Record<string, unknown>): string {
+  const header = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const payload = btoa(JSON.stringify(claims));
+  return `${header}.${payload}.signature`;
+}
+
 describe("initIframeBridge", () => {
   let teardown: (() => void) | undefined;
   let warnSpy: ReturnType<typeof vi.spyOn>;
@@ -95,6 +103,70 @@ describe("initIframeBridge", () => {
 
     expect(onOpen).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("BIT-7: rejects obi:token with a missing token (currentToken stays null)", () => {
+    const onToken = vi.fn();
+    teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN], onToken });
+
+    post({ type: "obi:token" }, ALLOWED_ORIGIN);
+
+    expect(getToken()).toBeNull();
+    expect(onToken).not.toHaveBeenCalled();
+  });
+
+  it("BIT-7: rejects obi:token with a non-string token (currentToken stays null)", () => {
+    const onToken = vi.fn();
+    teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN], onToken });
+
+    post({ type: "obi:token", token: 12345 }, ALLOWED_ORIGIN);
+    post({ type: "obi:token", token: { jwt: "x" } }, ALLOWED_ORIGIN);
+    post({ type: "obi:token", token: "" }, ALLOWED_ORIGIN);
+
+    expect(getToken()).toBeNull();
+    expect(onToken).not.toHaveBeenCalled();
+  });
+
+  it("BIT-7: ignores an unknown message type (e.g. obi:evil) — no token stored, no callback", () => {
+    const onToken = vi.fn();
+    const onOpen = vi.fn();
+    const onClear = vi.fn();
+    teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN], onToken, onOpen, onClear });
+
+    expect(() =>
+      post({ type: "obi:evil", token: "jwt-abc" }, ALLOWED_ORIGIN),
+    ).not.toThrow();
+
+    expect(getToken()).toBeNull();
+    expect(onToken).not.toHaveBeenCalled();
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(onClear).not.toHaveBeenCalled();
+  });
+
+  it("LC-2/LC-3/LC-6: fires onScopeChange when a renewal token changes integration/company", () => {
+    const onScopeChange = vi.fn();
+    teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN], onScopeChange });
+
+    // First token establishes the scope — no prior scope to differ from, so no reset.
+    post(
+      { type: "obi:token", token: jwtWithClaims({ integration: "mews", company_id: "c1" }) },
+      ALLOWED_ORIGIN,
+    );
+    expect(onScopeChange).not.toHaveBeenCalled();
+
+    // A renewal for the SAME scope (only exp refreshed) must NOT reset the conversation.
+    post(
+      { type: "obi:token", token: jwtWithClaims({ integration: "mews", company_id: "c1" }) },
+      ALLOWED_ORIGIN,
+    );
+    expect(onScopeChange).not.toHaveBeenCalled();
+
+    // A token whose integration/company differ DID cross into another corpus/identity → reset.
+    post(
+      { type: "obi:token", token: jwtWithClaims({ integration: "toast", company_id: "c2" }) },
+      ALLOWED_ORIGIN,
+    );
+    expect(onScopeChange).toHaveBeenCalledTimes(1);
   });
 
   it("resets to null token on re-init (a fresh frame load never carries a stale token)", () => {

@@ -45,6 +45,10 @@ let iframeEl: HTMLIFrameElement | null = null;
 let launcherEl: HTMLButtonElement | null = null;
 let renewTimer: ReturnType<typeof setTimeout> | null = null;
 let isOpen = false;
+// Bumped on every lifecycle boundary (`init`, `clear`, `destroy`). A token fetch captures it at
+// the top and only posts/schedules if it still matches — so a fetch already in flight when the
+// session is cleared or re-pointed cannot resurrect a token by resolving late (LC-5).
+let epoch = 0;
 
 // The launcher renders Obi's two-tone sparkle mark (the "star"), pixel-identical to the main
 // site's `ChatLauncher` (`features/chat/ui/chat-launcher.tsx` + `assistant-mark.tsx`). Values are
@@ -99,6 +103,9 @@ function scheduleRenewal(tokenUrl: string, token: string): void {
  * loop.
  */
 async function fetchAndSendToken(tokenUrl: string, isRetry = false): Promise<void> {
+  // Capture the lifecycle epoch this fetch belongs to. If `clear()`/`destroy()`/`init()` bumps it
+  // while we await, this fetch is stale and must not deliver its token (LC-5).
+  const capturedEpoch = epoch;
   let response: Response;
   try {
     response = await fetch(tokenUrl, { credentials: "same-origin" });
@@ -106,7 +113,8 @@ async function fetchAndSendToken(tokenUrl: string, isRetry = false): Promise<voi
     return;
   }
   if (response.status === 401 && !isRetry) {
-    await fetchAndSendToken(tokenUrl, true);
+    // Don't even retry a fetch whose session was cleared/re-pointed mid-flight.
+    if (epoch === capturedEpoch) await fetchAndSendToken(tokenUrl, true);
     return;
   }
   if (!response.ok) return;
@@ -114,6 +122,11 @@ async function fetchAndSendToken(tokenUrl: string, isRetry = false): Promise<voi
   const body = (await response.json().catch(() => null)) as { token?: string } | null;
   const token = body?.token;
   if (!token) return;
+
+  // Stale fetch: the session was cleared or re-pointed while this request was in flight. Dropping
+  // it here is the whole point — a cleared token must stay cleared, a re-pointed one must not be
+  // overwritten by the previous identity's late-arriving token.
+  if (epoch !== capturedEpoch) return;
 
   postToFrame({ type: MSG_TOKEN, token });
   scheduleRenewal(tokenUrl, token);
@@ -176,7 +189,9 @@ function showWidget(tokenUrl: string): void {
 
 /** Host-side hide only — the launcher is the single open/close control (the frame has no Close
  * chrome when embedded). Keeps the token and conversation intact so re-opening resumes; use
- * `Obi.clear()` for a real logout that forgets both. */
+ * `Obi.clear()` for a real logout, which posts `obi:clear` so the frame both forgets the token
+ * and tears the conversation down (the frame's bridge calls the session's `restart()` — see
+ * `app/embed/embed-frame.tsx`), and drops any in-flight token fetch (LC-5). */
 function hideWidget(): void {
   if (iframeEl) iframeEl.style.display = "none";
   launcherEl?.setAttribute("aria-expanded", "false");
@@ -194,11 +209,16 @@ function init(options: ObiInitOptions): void {
   // launcher/iframe. The fresh iframe also means the previous user's in-frame conversation is gone
   // — no answer from one identity can carry over to the next.
   if (iframeEl || launcherEl) destroy();
+  // New lifecycle: any token fetch still in flight from a prior init/session is now stale (LC-5).
+  epoch += 1;
   iframeEl = injectIframe();
   launcherEl = injectLauncherButton(() => toggleWidget(options.tokenUrl));
 }
 
 function clear(): void {
+  // New lifecycle epoch first: an in-flight token fetch that resolves after this must not post its
+  // token or schedule a renewal (LC-5) — cancelling only the timer below would miss it.
+  epoch += 1;
   if (renewTimer) {
     clearTimeout(renewTimer);
     renewTimer = null;
@@ -212,6 +232,8 @@ function clear(): void {
  * in place to re-open), this leaves no Obi elements behind — used to re-init cleanly under a
  * different tokenUrl, and available to hosts that need to fully unmount the widget. */
 function destroy(): void {
+  // New lifecycle epoch: any in-flight token fetch is now stale and must not deliver (LC-5).
+  epoch += 1;
   if (renewTimer) {
     clearTimeout(renewTimer);
     renewTimer = null;

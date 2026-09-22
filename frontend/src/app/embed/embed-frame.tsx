@@ -13,8 +13,8 @@
  */
 "use client";
 
-import { useEffect, useState } from "react";
-import { ChatSessionProvider, FloatingFrame, PanelBody } from "@/features/chat";
+import { useEffect, useRef, useState } from "react";
+import { ChatSessionProvider, FloatingFrame, PanelBody, onUnauthorized, useChatSession } from "@/features/chat";
 import { initIframeBridge } from "@/features/embed";
 
 export interface EmbedFrameProps {
@@ -24,25 +24,51 @@ export interface EmbedFrameProps {
 }
 
 export function EmbedFrame({ allowedOrigins }: EmbedFrameProps) {
+  // The bridge lives INSIDE the provider (as `EmbedBridge`) so `obi:clear`/scope-change/401 can
+  // reach `useChatSession().restart()` — a logout must abort any in-flight stream and wipe the
+  // thread, not just hide the panel on an always-mounted session (LC-1/LC-4).
+  return (
+    <ChatSessionProvider>
+      <EmbedBridge allowedOrigins={allowedOrigins} />
+    </ChatSessionProvider>
+  );
+}
+
+function EmbedBridge({ allowedOrigins }: EmbedFrameProps) {
   const [open, setOpen] = useState(false);
+  const { restart } = useChatSession();
+  // `restart` is a fresh closure each render; hold it in a ref so the bridge/subscription effects
+  // depend only on `allowedOrigins`. Re-running `initIframeBridge` resets the in-memory token to
+  // null, so it must NOT re-run on every render.
+  const restartRef = useRef(restart);
+  restartRef.current = restart;
 
   useEffect(() => {
     return initIframeBridge({
       allowedOrigins,
-      // Host launcher clicked → show the panel. `obi:clear` (logout/session end) closes it and the
-      // bridge forgets the token.
+      // Host launcher clicked → show the panel.
       onOpen: () => setOpen(true),
-      onClear: () => setOpen(false),
+      // `obi:clear` (logout/session end): the bridge forgets the token AND the conversation is
+      // torn down — restart() aborts any in-flight stream (so a late answer generated under the
+      // pre-logout token can never land) and clears messages + conversationId, then the panel
+      // closes. A re-open starts a fresh, empty thread (LC-1/LC-4).
+      onClear: () => {
+        restartRef.current();
+        setOpen(false);
+      },
+      // A silent renewal that changed the company/integration scope resets the open conversation
+      // so no prior-scope answer bleeds across (LC-2/LC-3/LC-6).
+      onScopeChange: () => restartRef.current(),
     });
   }, [allowedOrigins]);
 
-  return (
-    <ChatSessionProvider>
-      {open ? (
-        <FloatingFrame>
-          <PanelBody />
-        </FloatingFrame>
-      ) : null}
-    </ChatSessionProvider>
-  );
+  // A backend 401 on the answer path (a stale/revoked token) clears stale UI (LC-6). Kept separate
+  // from the bridge effect so its own subscription lifecycle is independent.
+  useEffect(() => onUnauthorized(() => restartRef.current()), []);
+
+  return open ? (
+    <FloatingFrame>
+      <PanelBody />
+    </FloatingFrame>
+  ) : null;
 }

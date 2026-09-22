@@ -14,4 +14,6 @@ Six independent read-only research agents (auth & host-key, browser/iframe, auth
 
 ### Implementation slices
 
-_S1 — embed lifecycle & logout: recorded below as it completes._
+**S1 — embed lifecycle & logout — DONE (committed).** Implemented by an independent implementation agent, test-first; verified independently in the main window. Closed LC-1/LC-4 (obi:clear now routes through the chat session's `restart()` — aborts the in-flight stream, clears messages + conversationId — so it is a real logout, not a panel hide), LC-5 (module-scoped epoch guard drops a stale in-flight token fetch after clear/re-point), LC-2/3/6 (bridge decodes display-only integration+company claims and resets the conversation on a scope-changing renewal; a 401 drives a subscribed onUnauthorized→restart), BIT-7 (runtime non-empty-string guard on the obi:token field). 9 new tests. **Gate:** vitest 240→249 passed · typecheck clean · Playwright embed e2e 4 passed · boundaries green. Client-side claim decode is display/equality-only, never trust-bearing (backend TokenVerifier stays authoritative). Files: app/embed/embed-frame.tsx, features/chat/index.ts, features/embed/{iframe-bridge,loader}.ts + 3 test files.
+
+_S2 — production config guard: next._

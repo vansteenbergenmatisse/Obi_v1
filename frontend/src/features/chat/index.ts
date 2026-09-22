@@ -10,6 +10,8 @@ export { ChatWidget } from "./ui/chat-widget";
 // (app/embed/embed-frame.tsx) which owns its own open/close rather than mounting ChatWidget.
 export { FloatingFrame } from "./ui/floating-frame";
 export { PanelBody } from "./ui/panel-body";
-export { ChatSessionProvider } from "./ui/chat-session-provider";
+export { ChatSessionProvider, useChatSession } from "./ui/chat-session-provider";
+// The `/embed` frame subscribes this to clear stale UI when the backend rejects the token (401).
+export { onUnauthorized } from "./api/chat-client";
 export type { ChatMessage, MessageRole, MessageStatus } from "./model/messages";
 export { handlePostChat, handlePatchFeedback } from "./server/route-handlers";
