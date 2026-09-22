@@ -55,3 +55,24 @@ def test_numeric_principal_argument_is_never_reinterpreted_as_space_trust() -> N
     """
     policy = PrincipalPermissionPolicy(space_of={2002: 200}, restrictions={2002: {"acct-alice"}})
     assert policy.allowed(2002, space_id=None, principal="200") is False
+
+
+def test_r3_acl_principalless_reader_default_denies_restricted_pages() -> None:
+    """panel r3-acl · gap CIP-5 (v1 defense-in-depth invariant).
+
+    Page-level principal ACL is enforced only in this app-layer policy today — 0009 gives
+    ``page_restriction`` a coarse ``USING(true)`` reader policy, so there is no DB/RLS backstop
+    behind this method (a known, disclosed defense-in-depth gap; safe in v1 only because
+    ``build_auth_context`` sets ``principal=None`` for every embedded user). This test PINS the
+    load-bearing invariant so it can never be silently bypassed before a real per-principal ACL
+    (and its DB backstop) is enabled: with a restriction set present, a principal-less reader
+    (``principal=None``) sees an unrestricted page and is DENIED a restricted one.
+    """
+    policy = PrincipalPermissionPolicy(
+        space_of={1002: 100, 2002: 100},
+        restrictions={2002: {"acct-alice"}},  # 2002 restricted; 1002 unrestricted
+    )
+    # unrestricted page: a principal-less reader may see it
+    assert policy.allowed(1002, space_id=None, principal=None) is True
+    # restricted page: a principal-less reader is default-denied (no identity -> unrestricted only)
+    assert policy.allowed(2002, space_id=None, principal=None) is False

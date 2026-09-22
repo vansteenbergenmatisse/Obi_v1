@@ -48,6 +48,17 @@ class AuthContext:
     token_subject: str | None
 
 
+def _identity_key(claims: VerifiedClaims) -> str:
+    """Gap CIP-4: namespace the token subject by its (already-verified) issuer so two different
+    trusted issuers that both mint a token with the same `sub` never collide across the four
+    identity-keyed mechanisms that consume `token_subject` — the rate-limit bucket
+    (`router._rate_limit_key`), the idempotency key (`router._idempotency_cache_key`), the
+    answer-cache key (`answer_cache._cache_key`) and the audit subject fingerprint
+    (`answer_service`). The NUL separator is unambiguous: it cannot appear in a JWT `iss`/`sub`
+    JSON string value, so no `sub` can forge a different (issuer, subject) split of the key."""
+    return f"{claims.issuer}\x00{claims.subject}"
+
+
 def general_only_context() -> AuthContext:
     """The tokenless / internal / eval path: general-only, no identity, no principal."""
     return AuthContext(
@@ -71,7 +82,7 @@ def build_auth_context(claims: VerifiedClaims, registry: PlatformRegistry) -> Au
             allowed_scopes=(_GENERAL,),
             allowed_sources=_DEFAULT_SOURCES,
             principal=None,
-            token_subject=claims.subject,
+            token_subject=_identity_key(claims),
         )
     scopes = registry.scopes_for(claims.integration)
     if scopes is None:
@@ -83,5 +94,5 @@ def build_auth_context(claims: VerifiedClaims, registry: PlatformRegistry) -> Au
         allowed_scopes=tuple(scopes),
         allowed_sources=_DEFAULT_SOURCES,
         principal=None,  # v1: embedded users have no per-person Confluence ACL
-        token_subject=claims.subject,
+        token_subject=_identity_key(claims),
     )

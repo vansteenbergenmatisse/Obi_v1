@@ -767,7 +767,12 @@ def test_s_audit_query_trace_persists_every_named_field_plus_subject_and_feedbac
     assert row.answer == done["answer"]
     assert row.citations["markers"]
     assert row.feedback == 1
-    assert row.subject_hash == sha256_text("user-s-audit").hex()
+    # Gap CIP-4: the audit fingerprint is the hash of the ISSUER-NAMESPACED identity key
+    # (`f"{issuer}\x00{subject}"`), not the raw `sub` — so identical `sub` from two trusted
+    # issuers never collide in the trace. `_StubTokenVerifier` signs `issuer="test-iss"`, subject
+    # = the header value "user-s-audit".
+    assert row.subject_hash == sha256_text("test-iss\x00user-s-audit").hex()
+    assert row.subject_hash != sha256_text("user-s-audit").hex()  # NOT the raw-subject hash
     assert row.subject_hash != "user-s-audit"
 
 

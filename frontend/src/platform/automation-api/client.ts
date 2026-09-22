@@ -4,6 +4,12 @@
  * here; that stays in `features/chat`, the client's sole consumer today.
  */
 
+// Gap BIT-10: build-time server-only trip-wire. This module reads the host shared secret
+// (`CHAT_API_KEY`, non-`NEXT_PUBLIC_`) below; importing it from a Client Component must fail the
+// build rather than rely on convention (mirrors `features/embed/platforms.ts`). The secret cannot
+// leak today — no client importer — but this makes an accidental one impossible, not merely absent.
+import "server-only";
+
 export class AutomationApiConfigError extends Error {}
 
 export interface AutomationApiConfig {

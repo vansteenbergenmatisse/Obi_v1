@@ -61,7 +61,8 @@ def test_builds_scoped_context(tmp_path):
     assert ctx.allowed_scopes == ("obi-general-test", "obi-mews-test")
     assert ctx.principal is None  # v1: embedded users are principal-less
     assert ctx.allowed_sources == ("confluence:default",)
-    assert ctx.token_subject == "u1"
+    # CIP-4: token_subject is issuer-namespaced (NUL-separated), not the bare `sub`
+    assert ctx.token_subject == "https://app.mews.com\x00u1"
     assert ctx.company_id == "c1"
 
 
@@ -78,7 +79,8 @@ def test_no_business_values_is_general_only(tmp_path):
     )
     assert ctx.allowed_scopes == ("obi-general-test",)
     assert ctx.integration is None
-    assert ctx.token_subject == "u1"
+    # CIP-4: still token-identified, and issuer-namespaced
+    assert ctx.token_subject == "https://app.mews.com\x00u1"
 
 
 def test_unknown_integration_raises(tmp_path):
@@ -92,3 +94,95 @@ def test_general_only_context_helper():
     assert ctx.token_subject is None
     assert ctx.principal is None
     assert ctx.allowed_sources == ("confluence:default",)
+
+
+def test_issuer_participates_in_identity_key(tmp_path):
+    """Gap CIP-4: the identity key is issuer-namespaced, so it is not the bare `sub` claim — the
+    (already-verified) issuer must appear in `token_subject`, separated by NUL."""
+    ctx = build_auth_context(_claims(subject="u1"), _registry(tmp_path))
+    assert ctx.token_subject == "https://app.mews.com\x00u1"
+    assert "\x00" in ctx.token_subject
+
+
+def test_same_subject_different_issuer_yields_distinct_token_subject(tmp_path):
+    """Gap CIP-4: two trusted issuers that both mint the same `sub` must NOT collide on the
+    identity key — otherwise their rate-limit / idempotency / answer-cache buckets and audit
+    fingerprint would cross-contaminate."""
+    reg = _registry(tmp_path)
+    a = build_auth_context(_claims(issuer="https://app.mews.com", subject="shared"), reg)
+    b = build_auth_context(_claims(issuer="https://other.example.com", subject="shared"), reg)
+    assert a.token_subject is not None and b.token_subject is not None
+    assert a.token_subject != b.token_subject
+    # both still carry the same underlying sub — only the issuer namespace distinguishes them
+    assert a.token_subject.endswith("\x00shared")
+    assert b.token_subject.endswith("\x00shared")
+
+
+def test_general_only_branch_is_also_issuer_namespaced(tmp_path):
+    """Gap CIP-4: the no-business-values branch (still token-identified) is namespaced too, so a
+    tokened general-only user of one issuer can't collide with another issuer's same `sub`."""
+    reg = _registry(tmp_path)
+    a = build_auth_context(
+        _claims(
+            issuer="https://app.mews.com",
+            subject="g",
+            integration=None,
+            company_id=None,
+            company_name=None,
+        ),
+        reg,
+    )
+    b = build_auth_context(
+        _claims(
+            issuer="https://other.example.com",
+            subject="g",
+            integration=None,
+            company_id=None,
+            company_name=None,
+        ),
+        reg,
+    )
+    assert a.integration is None and b.integration is None
+    assert a.token_subject != b.token_subject
+
+
+def test_namespaced_subject_yields_distinct_downstream_identity_keys(tmp_path):
+    """Gap CIP-4: prove the namespacing actually separates the four identity-keyed mechanisms —
+    the rate-limit key, the idempotency key, the answer-cache key, and the audit subject hash —
+    for two issuers sharing a `sub`. Each key must differ across the two contexts."""
+    from starlette.requests import Request
+
+    from app.features.rag_agent.application.answer_cache import _cache_key
+    from app.features.rag_agent.schemas import ChatMessage
+    from app.features.rag_agent.server.router import _idempotency_cache_key, _rate_limit_key
+    from app.shared.hashing import sha256_text
+
+    reg = _registry(tmp_path)
+    a = build_auth_context(_claims(issuer="https://app.mews.com", subject="shared"), reg)
+    b = build_auth_context(_claims(issuer="https://other.example.com", subject="shared"), reg)
+
+    req = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/chat",
+            "headers": [],
+            "query_string": b"",
+            "client": ("198.51.100.7", 12345),
+            "server": ("testserver", 80),
+            "scheme": "http",
+        }
+    )
+    history = [ChatMessage(role="user", content="what is the vpn policy")]
+
+    assert a.token_subject is not None and b.token_subject is not None
+    # rate-limit key (C2): sha256 over the namespaced subject
+    assert _rate_limit_key(req, a) != _rate_limit_key(req, b)
+    # answer-cache key (PLAN 5)
+    assert _cache_key(history, a) != _cache_key(history, b)
+    # idempotency key (C7): same header value, different identity -> different key
+    key_a = _idempotency_cache_key("idem-1", a, history)
+    key_b = _idempotency_cache_key("idem-1", b, history)
+    assert key_a != key_b
+    # audit subject fingerprint (C9): sha256(token_subject)
+    assert sha256_text(a.token_subject).hex() != sha256_text(b.token_subject).hex()
