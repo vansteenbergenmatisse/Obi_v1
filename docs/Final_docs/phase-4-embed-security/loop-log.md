@@ -72,7 +72,10 @@ Repair slices R1–R5 follow (separate agents, failing-test-first). R1 and R4 ca
 
 **R3 — frontend CSP completeness + tests — DONE (committed).** BIT-A1: the SEC-S2 localhost strip reached only `computeEmbedCsp`, not `page.tsx toOrigins` (which built the bridge allow-list) — it emitted localhost + plaintext-http origins in prod. Fix: shared `effectiveEmbedderDomains()`/`toEmbedderOrigins()` in csp.ts used by BOTH (https-only for real domains outside local/dev; loopback only local/dev; fail-closed preserved). LC-F1 (composed scope-change reset test), LC-F2 (real base64url decoder tests), CFG-H residual (stale frame-csp comment corrected). 7 new tests. **Gate:** vitest 256→263 · typecheck clean · e2e 4.
 
-_R4 — test-harness live-host guard (CFG-D) + flake isolation (CFG-E): next._
+**R5 — CI skip-guard + honest deploy-gate doc — DONE (committed).** CFG-F: ci.yml now fails on any unexpected skip/xpass/new-xfail (allowlisting the one known Planned worker xfail) and runs on `push:[main]` + `merge_group`, not only PRs. CFG-G: runbook states the deploy gate is MANUAL today (no pipeline) + where it must be wired; added a clearly-labelled local smoke step (not the gate). Validated locally: skip-guard exits 0 for `not db` (566/17) and `db` (281/1xf, known xfail allowed); ci.yml parses; smoke exits 0. Files: .github/workflows/ci.yml, docs/runbooks/deploy-readiness-scope-rls.md.
+
+**R4 — test-harness live-host guard (CFG-D) + flake isolation (CFG-E) — RESET, re-running.** First attempt aborted mid-refactor when the subagent hit an account spend limit (external billing block), leaving a partial harness consolidation (an untracked `backend/db_test_harness.py` + a few half-converted files). The partial edits were DISCARDED to a clean base (R1's committed conftest restored); nothing broken was committed. Re-dispatched fresh from the clean base.
+
 
 
 

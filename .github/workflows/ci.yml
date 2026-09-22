@@ -1,11 +1,26 @@
 # Obi's four commit-gating levels (substep 0.5.1, docs/Final_docs/0.5-regression-tests/harness.md).
 # One job, four steps that mirror the root Makefile's test-unit / test-db / test-ui / eval targets
-# exactly, plus a coverage-floor guard. Runs on every pull request, to any branch — there was no
-# CI in this repo before this substep; GitHub Actions is the default absent a competing tool.
+# exactly, plus a coverage-floor guard and a skip-guard. There was no CI in this repo before
+# substep 0.5.1; GitHub Actions is the default absent a competing tool.
+#
+# Triggers (CFG-F): the gate runs on every pull request to any branch AND on the mainline itself —
+# `push` to main and the `merge_group` queue — so a merge to main cannot land unchecked even when a
+# PR was fast-forwarded, a branch-protection rule was missing, or a change reached main outside the
+# PR flow. Branch protection ("Require status checks to pass: obi four-level check") is still the
+# recommended enforcement knob in the repo settings; the mainline triggers here make the gate run
+# regardless, rather than trusting that knob alone.
+#
+# Skip-guard (CFG-F): the coverage floor below counts COLLECTED tests, but pytest collects
+# @pytest.mark.skip tests and still exits 0 — a mandatory security regression could be skipped while
+# the count stays above the floor. The test-unit / test-db steps therefore run pytest with -rsxX and
+# fail the job on any unexpected skip/xfail/xpass (see those steps).
 name: CI
 
 on:
   pull_request:
+  push:
+    branches: [main]
+  merge_group:
 
 jobs:
   obi-checks:
@@ -49,11 +64,81 @@ jobs:
             exit 1
           fi
 
-      - name: make test-unit
-        run: make test-unit
+      # make test-unit runs `pytest -m "not db"` across the backend and knowledge-base trees.
+      # PYTEST_ADDOPTS=-rsxX makes pytest print one short-summary line per skipped (SKIPPED),
+      # xfailed (XFAIL) and xpassed (XPASS) test. The skip-guard then fails the job on:
+      #   * ANY real skip (a silently disabled test — zero tolerance), and
+      #   * ANY xpass (a strict-xfail that started passing — its marker must be removed), and
+      #   * ANY xfail other than the one known intentional strict-xfail: the Planned tg-deactivate
+      #     worker test (test_delete_marks_the_active_version_superseded, built in 2.2.4).
+      # The `not db` selection has none of these today, so this exits 0.
+      - name: make test-unit (fail on any unexpected skip/xfail — CFG-F)
+        env:
+          PYTEST_ADDOPTS: "-rsxX"
+        run: |
+          log="$RUNNER_TEMP/test-unit.log"
+          make test-unit 2>&1 | tee "$log"
+          if grep -E '^SKIPPED ' "$log"; then
+            echo "::error::A test was SKIPPED. CI treats every skip as a silently disabled test (CFG-F): un-skip it, or convert it to a strict xfail if the behaviour is genuinely Planned."
+            exit 1
+          fi
+          if grep -E '^XPASS ' "$log"; then
+            echo "::error::A strict-xfail test XPASSED — the behaviour now works, so remove its xfail marker (CFG-F)."
+            exit 1
+          fi
+          unexpected="$(grep -E '^XFAIL ' "$log" | grep -vF 'test_delete_marks_the_active_version_superseded' || true)"
+          if [ -n "$unexpected" ]; then
+            echo "::error::Unexpected xfail(s). Only the Planned tg-deactivate worker test may xfail (CFG-F):"
+            echo "$unexpected"
+            exit 1
+          fi
+          echo "skip-guard: no unexpected skips/xfails in the 'not db' suite."
 
-      - name: make test-db
-        run: make test-db
+      # Same skip-guard for the database suite. Here the one known intentional strict-xfail
+      # (the Planned tg-deactivate worker test) IS present and is explicitly allowed; any NEW
+      # skip/xfail/xpass beyond it fails the job.
+      - name: make test-db (fail on any unexpected skip/xfail — CFG-F)
+        env:
+          PYTEST_ADDOPTS: "-rsxX"
+        run: |
+          log="$RUNNER_TEMP/test-db.log"
+          make test-db 2>&1 | tee "$log"
+          if grep -E '^SKIPPED ' "$log"; then
+            echo "::error::A db test was SKIPPED. CI treats every skip as a silently disabled test (CFG-F): un-skip it, or convert it to a strict xfail if the behaviour is genuinely Planned."
+            exit 1
+          fi
+          if grep -E '^XPASS ' "$log"; then
+            echo "::error::A strict-xfail db test XPASSED — the behaviour now works, so remove its xfail marker (CFG-F)."
+            exit 1
+          fi
+          unexpected="$(grep -E '^XFAIL ' "$log" | grep -vF 'test_delete_marks_the_active_version_superseded' || true)"
+          if [ -n "$unexpected" ]; then
+            echo "::error::Unexpected xfail(s). Only the Planned tg-deactivate worker test may xfail (CFG-F):"
+            echo "$unexpected"
+            exit 1
+          fi
+          echo "skip-guard: no unexpected skips/xfails in the 'db' suite (the one Planned tg-deactivate xfail is allowed)."
+
+      # CFG-G — SMOKE TEST ONLY, NOT the production deploy gate. The SEC-S4
+      # `check-deploy-readiness` CLI (docs/runbooks/deploy-readiness-scope-rls.md) has no automated
+      # caller today because no deploy pipeline exists yet; it is run by hand before a real deploy.
+      # This step only PROVES the CLI runs green against a freshly-migrated database (regression
+      # canary for the customer-scope RLS backstop). It is NOT the authoritative pre-serve gate:
+      # once a deploy mechanism exists, the check MUST be wired into it as a blocking pre-serve step
+      # (against the real target DSN), per the runbook. make test-db above tore compose down, so
+      # this stands its own local Postgres back up, migrates to head, then runs the check.
+      - name: deploy-readiness check — smoke only (CFG-G, NOT the production gate)
+        run: |
+          make up
+          for i in $(seq 1 30); do
+            docker exec omniboost_rag_pg pg_isready -U rag -d omniboost_rag >/dev/null 2>&1 && break
+            sleep 1
+          done
+          docker exec omniboost_rag_pg psql -U rag -d omniboost_rag -f /docker-entrypoint-initdb.d/01-roles.sql
+          cd backend
+          export DATABASE_URL=postgresql+psycopg://rag:rag@localhost:5434/omniboost_rag
+          uv run alembic -c ../knowledge-base/migrations/alembic.ini upgrade head
+          uv run python scripts/setup_supabase.py check-deploy-readiness
 
       - name: Set up pnpm
         uses: pnpm/action-setup@v4
