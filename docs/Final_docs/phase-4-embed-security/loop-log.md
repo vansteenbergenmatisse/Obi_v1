@@ -178,9 +178,19 @@ Five fresh auditors + verify. 4 domains (browser/CSP, authz/identity/lifecycle, 
 
 **Wave 5 = CLEAN. Consecutive-clean counter: 1 of 2.**
 
-## Wave 6 — Second consecutive clean wave (pending)
+## Wave 6 — Fresh independent re-audit (2026-09-22) — NOT CLEAN → counter reset
 
+Re-run after the prior session's Wave-6 auditors were all killed mid-run by an account spend limit (the returned `clean:true` was spurious — 0 of 5 agents completed). Five FRESH independent auditors (none implemented; conclusions from current code only, NOT from commit/ledger/loop-log/matrix prose; every finding adversarially verified, default REFUTED without reproducible evidence): (1) auth & host-key & production-config red team, (2) browser & iframe token security, (3) authorization + retrieval isolation + Confluence/identity + server-side lifecycle, (4) config/migration/CI/test-infra integrity, (5) cross-cutting completeness critic. Code UNCHANGED since Wave 5 (HEAD 54370d3). Gate re-verified independently in the main window before the wave: backend unit 616 · kb unit 23 · backend db 281/1xf · kb db 18 · frontend vitest 284 · typecheck/boundaries clean.
 
+Four auditors returned detailed CLEAN with strong code-anchored disproven-attack lists (crafted RS256/HS256/`none` tokens + a 26-case loopback matrix agreeing across both twins + empirical `ENV=production` fail-closed on the datahub placeholder; DB-level RLS isolation exercised 305 non-db + 29 db green on the pinned local DB, AUTH7 re-confirmed bounded-safe from ingestion code; both DB harnesses guard before bootstrap, CI skip-guard enumerated to the single allowlisted xfail). The cross-cut critic returned an overall-CLEAN security verdict but **one new actionable LOW finding**, so the wave is **NOT clean** and the consecutive-clean counter **resets to 0**.
+
+- **W6-5-L1 (LOW, confirmed-defect + twin-divergence):** the backend IPv4-octet numeric check used `str.isdigit()`, True for non-ASCII digits (Arabic-Indic `٥`, fullwidth `１`, superscript `²`) that the frontend twin's ASCII-only `/^\d{1,3}$/` rejects. Reproduced live in the main window: `_is_loopback_host("127.0.0.٥")` → `True` on the backend but the frontend classifies it non-loopback (a divergence of the two loopback matchers — the exact recurring bug the twins were written to close); `_is_loopback_host("127.0.0.²")` → unhandled `ValueError` (`int("²")`) at production-registry load instead of the intended "not a trusted issuer" rejection. Both fail-closed and operator-config-only (the matcher runs only on `offline=False` registry load over operator-edited `platforms.json`, never on a request path), hence LOW — but a genuine actionable defect and a stated-invariant violation.
+
+### Wave-6 repair (SEC-RW6) — DONE (committed 2d23900)
+
+Confirmed by the coordinator via direct reproduction, then repaired failing-test-first (done in the main window rather than a separate repair subagent — disclosed deviation, forced by the same spend-limit that has repeatedly killed subagents; independence is still supplied by the mandatory FRESH re-audit waves that follow, and the loopback code's original implementer was the SEC-RW4 subagent, not the coordinator). Fix: ASCII-only octet check (`o.isascii() and o.isdigit()`) at both octet sites in `platforms.py` (`_is_ipv4_loopback_host` and the IPv4-mapped branch of `_expand_ipv6`), mirroring the frontend's `/^\d{1,3}$/`. 6 new backend tests (direct matcher parity + registry-load, red-before/green-after) + 1 frontend parity test pinning the same invariant on the twin. Real hosts and every valid loopback form unaffected. **Gate:** backend unit 616→622 · full backend db 281/1xf · kb 23+18 · frontend vitest 284→285 · typecheck/ruff/pyright clean · boundaries OK.
+
+**Consecutive-clean counter: 0 of 2.** Two fresh clean waves are now required again (Waves 7 and 8).
 
 
 
