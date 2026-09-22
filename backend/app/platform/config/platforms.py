@@ -134,7 +134,11 @@ def _is_ipv4_loopback_host(host: str) -> bool:
     octets = host.split(".")
     if len(octets) != 4:
         return False
-    if not all(o.isdigit() and len(o) <= 3 and int(o) <= 255 for o in octets):
+    # ``o.isascii() and o.isdigit()`` — ASCII decimal digits only, mirroring the frontend twin's
+    # ``/^\d{1,3}$/`` (JS ``\d`` is ASCII-only). Bare ``str.isdigit()`` is True for non-ASCII digits
+    # (Arabic-Indic ``٥``, fullwidth ``１``, superscript ``²``), which would both DIVERGE from the
+    # frontend and make ``int("²")`` raise — gap W6-5-L1.
+    if not all(o.isascii() and o.isdigit() and len(o) <= 3 and int(o) <= 255 for o in octets):
         return False
     return octets[0] == "127"
 
@@ -160,7 +164,10 @@ def _expand_ipv6(host: str) -> list[int] | None:
             return None
         vals: list[int] = []
         for o in octets:
-            if not o.isdigit() or len(o) > 3:
+            # ASCII decimal digits only (mirrors csp.ts ``/^\d{1,3}$/``); bare ``str.isdigit()``
+            # accepts non-ASCII digits that diverge from the frontend and can make ``int`` raise —
+            # gap W6-5-L1.
+            if not (o.isascii() and o.isdigit()) or len(o) > 3:
                 return None
             n = int(o)
             if n > 255:

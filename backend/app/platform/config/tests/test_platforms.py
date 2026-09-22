@@ -14,6 +14,8 @@ import pytest
 from app.platform.config.knowledge_scopes import load_recognized_knowledge_scopes
 from app.platform.config.platforms import (
     DEFAULT_PLATFORMS_PATH,
+    _is_ipv4_loopback_host,
+    _is_loopback_host,
     load_platform_registry,
 )
 
@@ -471,6 +473,43 @@ def test_platforms_active_alias_lookalike_host_not_refused_outside_offline(tmp_p
     plat = {
         "acme": _platform(issuer=f"https://{host}", jwks_url=f"https://{host}/j", domains=[host])
     }
+    p = _write(tmp_path, _data(platforms=plat, integrations={}))
+    reg = load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
+    assert reg.by_issuer(f"https://{host}") is not None
+
+
+# --- W6-5-L1: backend/frontend loopback-matcher parity on non-ASCII digits -----------------------
+# gap W6-5-L1 (Wave-6 cross-cut audit): the octet numeric check used ``str.isdigit()``, which is
+# True for non-ASCII digits (Arabic-Indic, fullwidth, superscript) that the frontend twin's
+# ASCII-only ``/^\d{1,3}$/`` rejects — so ``127.0.0.<arabic-5>`` was loopback on the backend but not
+# the frontend (a twin divergence, the exact recurring bug the twins were written to close), and
+# ``127.0.0.<superscript-2>`` raised an unhandled ``ValueError`` (``int()`` on the octet) at
+# production-registry load instead of the intended "not a trusted issuer" rejection. Both twins must
+# agree: a non-ASCII-digit octet is NOT a numeric octet, so the host is a normal (non-loopback) host
+# and the matcher must never raise.
+
+_NON_ASCII_DIGIT_HOSTS = [
+    "127.0.0.٥",  # Arabic-Indic digit five — isdigit() True, ASCII \d False
+    "127.0.0.²",  # superscript two — isdigit() True but int() raises
+    "127.0.0.１",  # fullwidth digit one — isdigit() True, ASCII \d False
+]
+
+
+@pytest.mark.parametrize("host", _NON_ASCII_DIGIT_HOSTS)
+def test_loopback_matcher_treats_non_ascii_digit_octet_as_non_loopback(host):
+    """gap W6-5-L1 · a host whose final octet is a non-ASCII "digit" is NOT a 127.0.0.0/8 literal
+    (parity with the frontend's ASCII-only ``/^\\d{1,3}$/``); the matcher returns False and never
+    raises. Locks the twin invariant that a divergence here is the recurring loopback bug."""
+    assert _is_ipv4_loopback_host(host) is False
+    assert _is_loopback_host(host) is False
+
+
+@pytest.mark.parametrize("host", _NON_ASCII_DIGIT_HOSTS)
+def test_platforms_non_ascii_digit_issuer_loads_as_real_host_outside_offline(tmp_path, host):
+    """gap W6-5-L1 · a non-ASCII-digit host on an ACTIVE issuer is treated as an ordinary (non-
+    loopback) host — it loads outside offline without raising, exactly as the frontend twin would
+    keep it as a real embedder domain rather than stripping it as localhost."""
+    plat = {"acme": _platform(issuer=f"https://{host}", jwks_url=f"https://{host}/j", domains=[])}
     p = _write(tmp_path, _data(platforms=plat, integrations={}))
     reg = load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
     assert reg.by_issuer(f"https://{host}") is not None

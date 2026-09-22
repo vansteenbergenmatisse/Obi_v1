@@ -131,6 +131,15 @@ describe("isLocalhostDomain — full loopback set (gap BIT-A-R1)", () => {
     // 256 is not a valid octet — not a loopback IPv4 (and not 127.x anyway)
     expect(isLocalhostDomain("127.0.0.256")).toBe(false);
   });
+
+  it("does NOT treat a non-ASCII-digit octet as a numeric loopback octet (twin parity, gap W6-5-L1)", () => {
+    // `\d` is ASCII-only, so these are ordinary (non-loopback) hosts — the backend twin
+    // `_is_ipv4_loopback_host` must agree (bare Python `str.isdigit()` would wrongly accept them
+    // and can even throw). ٥ Arabic-Indic 5, １ fullwidth 1, ² superscript 2.
+    expect(isLocalhostDomain("127.0.0.٥")).toBe(false);
+    expect(isLocalhostDomain("127.0.0.１")).toBe(false);
+    expect(isLocalhostDomain("127.0.0.²")).toBe(false);
+  });
 });
 
 describe("expanded loopback stripping outside local/dev (gap BIT-A-R1)", () => {
