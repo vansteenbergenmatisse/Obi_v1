@@ -237,6 +237,23 @@ Five FRESH auditors on HEAD 201de7f (post-SEC-RW8). Gate re-verified before the 
 
 **Wave 9 = CLEAN. Consecutive-clean counter: 1 of 2.** Wave 10 must also be clean to meet the mandate's two-consecutive-clean exit.
 
+## Wave 10 — CLEAN (consecutive-clean #2 → EXIT) (2026-09-22)
+
+Four FRESH auditors on HEAD 0905ad2 (code UNCHANGED since Wave 9 — only docs commits between). Gate re-verified: backend unit 630 · kb 23 · backend db 281/1xf · kb db 18 · frontend vitest 288 · typecheck/boundaries clean · Playwright embed e2e 4. All four returned CLEAN:
+
+- **Auth/host-key + differential:** independent 547-input cross-runtime loopback differential (both real runtimes) → 0 divergences; full JWT/host-key/config attack matrix refuted (empirically: ENV=production Settings() raises on the datahub placeholder; platforms.local.json also rejected under production). Did not re-file the recorded deferred CI-differential idea.
+- **Browser/iframe:** every requirement enforced by current source + backed by a non-vacuous test; 288/288 pass; all 7 attacks refuted. One non-defect noted (internal active-domains route returns only already-public domains).
+- **Authz/identity/lifecycle:** all 8 isolation attacks refuted with reproduction; RLS exercised on the local DB (306 non-db + 23 db); reader confirmed a non-owner RLS-subject role; AUTH7 re-confirmed bounded-safe with fresh ingestion evidence; cache/rate-limit issuer-namespacing verified injective.
+- **Config/migration/CI + cross-cut:** suite counts confirmed (630/288); prod fail-closed exercised empirically; migration-0010 gate literals match schema/migration; CI skip-guard tied to the single allowlisted xfail; both DB guards precede bootstrap; single-source CSP/bridge helper confirmed; secret handling traced end-to-end; the loopback twin's deferred CI differential noted, not a finding.
+
+No actionable finding of any severity from any auditor. **Wave 10 = CLEAN. Consecutive-clean counter: 2 of 2.**
+
+## LOOP EXIT — two consecutive clean waves met (2026-09-22)
+
+The mandate's clean-exit criteria are satisfied for the locally-provable core: every target requirement has an implementation location and an automated proof; all suites green (backend unit 630, backend db 281/1xf, kb 23+18, frontend vitest 288, Playwright embed e2e 4, typecheck/ruff/pyright/boundaries clean); all targeted mutations caught by the tests (SEC-MUT + each new control carries a revert→red test, confirmed empirically by the audit waves); no unresolved critical/high/medium core finding — every finding this loop was LOW and is fixed; docs + ledger + progress-log match the verified state; migration 0010 recorded as inert-for-local / mandatory-before-prod; and **Waves 9 and 10 are two consecutive fresh independent clean waves**. Real Base / Data Hub staging readiness remains a separate external gate (see the final report). Final report: `FINAL-REPORT.md` in this folder.
+
+
+
 
 
 
