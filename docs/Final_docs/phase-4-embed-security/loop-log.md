@@ -43,5 +43,25 @@ Six independent read-only research agents (auth & host-key, browser/iframe, auth
 
 Full-suite state at phase close: backend unit 548 · full backend db 278 passed/1 xfailed · kb 17 unit + 18 db · frontend vitest 256 · typecheck clean · ruff/format clean · boundaries green · Playwright embed e2e 4 (from S1). Two open tracked findings carried into the audit wave: FLAKE-1 (pre-existing ingestion test flake) and FINDING-AUTH7 (parent-fetch scope-GUC opt-out).
 
-## Wave 1 — First independent audit (pending)
+## Wave 1 — First independent audit (2026-09-22)
+
+Six independent adversarial auditors (none were implementers), each attacking one domain from code+tests only, told NOT to trust commit/docstring/ledger claims. Every finding then adversarially verified by a separate skeptic (default REFUTED without reproducible code evidence). Result: **15 CONFIRMED, 0 needs-investigation, 1 REFUTED** (22 agents).
+
+**REFUTED:** ISO-AUTH-1 (high) — a claimed scope-derivation tenant-isolation bypass; the verifier disproved it from code.
+
+### Triage (coordinator) → repair slices
+
+- **CFG-A (HIGH) + CFG-B + CFG-C + CFG-H** — the SEC-S2 trust guard is FAIL-OPEN: `Settings.env` defaults to `'local'` → `is_offline_env()` True → `_reject_untrusted_active_platform` + zero-active guard SKIPPED when ENV is unset/forgotten in a real deployment; `allow_empty_platforms` alone also disables both guards regardless of env; the CFG-05 "aligned" comment is false for the unset-default case (backend default `local` vs frontend `NODE_ENV` fallback). → **R1** (settings fail-closed + doc). This is the top-priority fix — a security boundary defaulting open. Caught in my own SEC-S2 work by the audit.
+- **AUTH-1 == CIP-A2 (MED)** — inactive platforms are not gated at the `/chat` backend path; `platform_for`/`.active` has zero call sites on the request path, so the documented two-tier model's access-gating half is unimplemented; deactivating a platform does not revoke backend scope. → **R2** (active-gate at the AuthContext boundary).
+- **CIP-A1 (MED)** — the `integration` claim is resolved against a GLOBAL map with no issuer binding; any trusted issuer can claim any integration and get that tenant's scopes. Mostly mitigated today by R2's active-gate (only `datahub` active; as the hub it legitimately asserts product integrations; `mews`/`toast` inactive → gated out). Must be bound before `mews`/`toast` activate. → **R2** (per-platform allowed-integrations allow-list; `datahub`'s allowed set = OWNER DECISION, built to the design's mews/toast/opera-cloud default and flagged). 
+- **BIT-A1 (MED)** — the SEC-S2 CSP localhost strip was applied only to `computeEmbedCsp`, not to the OTHER consumer of `activeDomains()`: `app/embed/page.tsx toOrigins()` still emits localhost origins (and fabricates plaintext `http://`) into the iframe-bridge allow-list in production. → **R3** (frontend CSP completeness).
+- **CFG-D (HIGH)** — four duplicated db-test harnesses (`test_s_reader_role_usage.py`, `test_vector_data_nearest.py`, `test_vector_data_keyword.py`, `test_s_reader_curated_fetch.py`) omit the `_require_local_host` guard that was added after two live-Supabase incidents → they `drop_all`/`create_all` + provision a known-credential reader role on whatever DATABASE_URL resolves to. → **R4** (guard/consolidate harnesses). Live-data-loss risk; out of the embed core but serious.
+- **CFG-E (MED)** — ROOT CAUSE of FLAKE-1: the duplicated session-scoped harnesses share one test DB + one lru_cache engine singleton with TRUNCATE-only (no per-test rollback) isolation → intermittent cross-test contamination. → **R4** (consolidate + deterministic per-test isolation).
+- **CFG-F (LOW)** — CI coverage floor measures COLLECTED not EXECUTED tests (a `@pytest.mark.skip`'d security test still counts); CI is PR-only. → **R5** (CI skip/execution guard).
+- **CFG-G (LOW)** — the SEC-S4 deploy gate is a hand-run CLI with no automated caller (no deploy pipeline exists to wire it into). → **R5** (accept + tighten the doc claim to "manual until a pipeline exists"; already close).
+- **LC-F1 (LOW, missing-test)** — no composed embed-frame test for a scope-changing token renewal resetting the conversation (only the unit callback is asserted). → **R3**.
+- **LC-F2 (LOW, missing-test)** — `decodeScope`/`decodeExpMs` are only tested against padded standard base64, never a real url-safe unpadded base64url JWT payload. → **R3**.
+
+Repair slices R1–R5 follow (separate agents, failing-test-first). R1 and R4 carry the HIGH findings.
+
 
