@@ -26,4 +26,22 @@ Six independent read-only research agents (auth & host-key, browser/iframe, auth
 
 **S4 — migration-0010 deploy-readiness gate — DONE (committed).** Independent implementer; verified in the main window. Closed MIG-02: `check_deploy_readiness()` + `check-deploy-readiness` CLI phase on setup_supabase.py — read-only catalog check that both scope-RLS policies exist AS RESTRICTIVE FOR SELECT with RLS enabled, else fails loud (rc 10, "do not expose the reader path"). Asserts ENABLE not FORCE (per ADR-0013). Recorded 0010's local-inert / prod-mandatory status in docs/runbooks/deploy-readiness-scope-rls.md; no new ADR (0014 already owns the decision). 2 DB tests (ready + fails-closed, rolled back). **Gate:** deploy-readiness db 2 passed · backend unit 543 · boundaries green · ruff/pyright clean. Files: setup_supabase.py, test_deploy_readiness_check.py + docs/runbooks/deploy-readiness-scope-rls.md.
 
-_S5 — regression-test-only coverage: next (AUTH-6, AUTH-7, CIP-1, CIP-3, AUTHRT-2/3/4, BIT-2/BIT-9; CIP-2 already covered by S3's principalless-reader pinning test)._
+**S5 — regression-test coverage — DONE (committed).** 12 tests, ZERO production code changed. AUTH-6 (end-to-end /chat mews-vs-toast isolation, non-vacuous with a toast-token control), AUTH-7 (scoped search excludes a toast child from parent expansion), CIP-1 (body principal inert), CIP-3 (distinct subjects never share a cache entry), AUTHRT-2 (JWKS cached + finite timeout), AUTHRT-3 (missing sub/exp rejected), AUTHRT-4 (body principal can't split the rate-limit bucket), BIT-2 (token never in URL/history), BIT-9 (JWT never in console). CIP-2 already covered by S3. **Gate:** backend unit 543→548 · full backend db 271→278 · vitest 253→256 · typecheck/ruff clean · boundaries green. Meaningfulness of AUTH-6/AUTH-7 proven via a deleted scratch probe. Files: test_chat_endpoint.py, test_retrieval_knowledge_scope.py, test_answer_cache.py, test_token_verifier.py, loader.test.ts, iframe-bridge.test.ts.
+
+- **FINDING-AUTH7 (design, for auditor-3 to weigh):** `HybridRetriever.fetch_parent_texts` sets the scope GUC to `'*'` (ADR-0014), so a parent chunk with a DIFFERENT scope tag than its authorized child IS surfaced to the generator. Cannot arise via normal ingestion (parent+child share the page's tags); safe because expansion only runs on already-scoped-authorized child ids (locked by the sibling test). Actual behavior pinned; theoretical concern recorded, not fixed (would require changing ADR-0014 design).
+
+---
+
+## Implementation phase (S1–S5) complete — commits
+
+- e927e25 docs baseline + matrix
+- 34efc45 SEC-S1 embed lifecycle & logout
+- 26ced91 SEC-S2 production config guard
+- 6816168 SEC-S3 identity namespacing + defense-in-depth (+ ADR-0019)
+- 0a8aa67 SEC-S4 migration-0010 deploy gate (+ runbook)
+- (this) SEC-S5 regression coverage
+
+Full-suite state at phase close: backend unit 548 · full backend db 278 passed/1 xfailed · kb 17 unit + 18 db · frontend vitest 256 · typecheck clean · ruff/format clean · boundaries green · Playwright embed e2e 4 (from S1). Two open tracked findings carried into the audit wave: FLAKE-1 (pre-existing ingestion test flake) and FINDING-AUTH7 (parent-fetch scope-GUC opt-out).
+
+## Wave 1 — First independent audit (pending)
+

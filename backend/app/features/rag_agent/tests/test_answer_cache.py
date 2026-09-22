@@ -7,7 +7,7 @@ cross a principal, a knowledge-scope allow-list, or a token-subject boundary."""
 
 from __future__ import annotations
 
-from app.features.rag_agent.application.answer_cache import CachingAnswerService
+from app.features.rag_agent.application.answer_cache import CachingAnswerService, _cache_key
 from app.features.rag_agent.application.auth_context import AuthContext
 from app.features.rag_agent.schemas import Answer, ChatMessage
 
@@ -159,6 +159,28 @@ def test_different_token_subject_is_not_served_from_cache() -> None:
     cache.answer(_history("what is the vpn policy"), _auth(token_subject="user-b"))
 
     assert len(inner.calls) == 2
+
+
+def test_cip3_distinct_token_subjects_never_share_a_cache_key_or_entry() -> None:
+    """gap CIP-3 · ADR-0014. Two verified users with byte-for-byte identical history (and identical
+    principal/scopes) must never collide in the answer cache: the `token_subject` is part of the
+    key, so their keys differ AND a first user's entry is never replayed to the second. Asserts BOTH
+    the key-level property (no collision by construction) and the behavioral one (no cross-subject
+    hit through `CachingAnswerService`), so a regression in either the key or its use is caught."""
+    history = _history("what is the vpn policy")
+    user_a = _auth(token_subject="user-a")
+    user_b = _auth(token_subject="user-b")
+
+    # key level: same history/principal/scopes, different subject -> different cache key.
+    assert _cache_key(history, user_a) != _cache_key(history, user_b)
+
+    # behavioral level: user B's identical question is a miss, never user A's cached Answer.
+    inner = _CountingProvider()
+    cache = CachingAnswerService(inner, ttl_seconds=60.0)
+    first = cache.answer(history, user_a)
+    second = cache.answer(history, user_b)
+    assert len(inner.calls) == 2  # recomputed for B, not served from A's entry
+    assert first != second  # distinct Answers (distinct trace ids), no cross-subject replay
 
 
 def test_max_entries_bounds_the_cache() -> None:

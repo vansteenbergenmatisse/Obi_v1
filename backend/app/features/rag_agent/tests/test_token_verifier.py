@@ -7,12 +7,15 @@ that to a 401 with no detail leaked)."""
 from __future__ import annotations
 
 import json
+import math
 import time
+from types import SimpleNamespace
 
 import jwt
 import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from app.features.rag_agent.server import token_verifier
 from app.features.rag_agent.server.token_verifier import TokenError, TokenVerifier
 from app.platform.config.platforms import load_platform_registry
 
@@ -154,3 +157,88 @@ def test_no_business_claims_is_valid(registry, keypair):
     assert vc.integration is None
     assert vc.company_id is None
     assert vc.subject == "u1"
+
+
+def test_missing_sub_rejected(registry, keypair):
+    """gap AUTHRT-3: `sub` is a required registered claim (REQUIRED_CLAIMS) — a token without it is
+    rejected before it can identify anyone (mirrors test_missing_iat_rejected)."""
+    now = int(time.time())
+    tok = jwt.encode(
+        {"iss": ISS, "aud": "obi", "iat": now, "exp": now + 60},
+        keypair,
+        algorithm="RS256",
+        headers={"kid": "k1"},
+    )
+    with pytest.raises(TokenError):
+        _verifier(registry, keypair).verify(tok)
+
+
+def test_missing_exp_rejected(registry, keypair):
+    """gap AUTHRT-3: `exp` is a required registered claim — a token without an expiry is rejected
+    (a non-expiring embed token must never be accepted; mirrors test_missing_iat_rejected)."""
+    now = int(time.time())
+    tok = jwt.encode(
+        {"iss": ISS, "aud": "obi", "sub": "u1", "iat": now},
+        keypair,
+        algorithm="RS256",
+        headers={"kid": "k1"},
+    )
+    with pytest.raises(TokenError):
+        _verifier(registry, keypair).verify(tok)
+
+
+def _fake_pyjwk_client_class(keypair, *, constructions: list[dict[str, object]]):
+    """A stand-in for `jwt.PyJWKClient` that records every construction's url + kwargs and resolves
+    every token to the test keypair's public key — patched over `token_verifier.jwt.PyJWKClient` so
+    the REAL default factory runs (no `jwks_client_factory` override) while staying network-free."""
+
+    class _FakePyJWKClient:
+        def __init__(self, url: str, **kwargs: object) -> None:
+            constructions.append({"url": url, **kwargs})
+
+        def get_signing_key_from_jwt(self, token: str) -> SimpleNamespace:
+            return SimpleNamespace(key=keypair.public_key())
+
+    return _FakePyJWKClient
+
+
+def test_authrt2_jwks_client_is_built_once_per_issuer_across_verifies(
+    registry, keypair, monkeypatch
+):
+    """gap AUTHRT-2 · C4. The JWKS client is cached per `jwks_url`: two `verify()` calls for the
+    same issuer construct exactly one client, so the IdP's JWKS endpoint is not rebuilt/re-fetched
+    per token (bounding outbound load and letting PyJWKClient's own key cache do its job)."""
+    constructions: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        token_verifier.jwt,
+        "PyJWKClient",
+        _fake_pyjwk_client_class(keypair, constructions=constructions),
+    )
+
+    verifier = TokenVerifier(registry)  # default factory, exercised through the patched client
+    verifier.verify(_sign(keypair))
+    verifier.verify(_sign(keypair))
+
+    assert len(constructions) == 1  # one build, cached by jwks_url across both verifies
+    assert constructions[0]["url"] == "https://app.mews.com/j"
+
+
+def test_authrt2_default_jwks_factory_passes_a_finite_positive_timeout(
+    registry, keypair, monkeypatch
+):
+    """gap AUTHRT-2 · C4. The REAL default JWKS-client factory (no override) constructs its
+    `PyJWKClient` with a finite, positive `timeout`, so a slow or hung IdP JWKS endpoint can never
+    stall a chat request indefinitely. Inspects the kwargs the default factory actually passes."""
+    constructions: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        token_verifier.jwt,
+        "PyJWKClient",
+        _fake_pyjwk_client_class(keypair, constructions=constructions),
+    )
+
+    TokenVerifier(registry).verify(_sign(keypair))  # default factory, not a stub override
+
+    assert constructions and "timeout" in constructions[0]
+    timeout = constructions[0]["timeout"]
+    assert isinstance(timeout, (int, float))
+    assert math.isfinite(timeout) and timeout > 0

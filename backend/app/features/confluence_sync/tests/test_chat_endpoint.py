@@ -28,6 +28,7 @@ from app.platform.clients import build_embedding_provider, build_reranker
 from app.platform.config import Settings
 from schema.engine import get_reader_sessionmaker, get_sessionmaker
 
+from ._helpers import index_page
 from .test_answer_workflow import (
     _build_retriever,
     _CitingGenerator,
@@ -1192,3 +1193,177 @@ def test_r1_short_vague_question_writes_no_query_trace_row(gateway, settings: Se
     assert done["citations"] == []
     assert done["traceId"] is None
     assert _query_trace_row_count() == before  # no new query_trace row
+
+
+# --- customer-isolation + body-inertness regression tests -------------------------------------
+
+
+def _set_chunk_tags(page_id: int, tags: list[str]) -> None:
+    """Stamp a page's chunk knowledge-scope tags directly (the label->tag pipeline is proven
+    elsewhere, e.g. test_scope_tagging_*; here we only need the retrieval-side boundary)."""
+    with get_sessionmaker()() as s:
+        s.execute(
+            text("UPDATE chunk SET tags = :tags WHERE page_id = :pid"),
+            {"tags": tags, "pid": page_id},
+        )
+        s.commit()
+
+
+def _trace_page_and_chunk_ids(trace_id: int) -> tuple[list[int], list[int]]:
+    with get_sessionmaker()() as s:
+        row = s.execute(
+            text("SELECT retrieved_page_ids, retrieved_chunk_ids FROM query_trace WHERE id = :id"),
+            {"id": trace_id},
+        ).one()
+    return list(row.retrieved_page_ids or []), list(row.retrieved_chunk_ids or [])
+
+
+def _active_child_chunk_ids(page_id: int) -> set[int]:
+    with get_sessionmaker()() as s:
+        return {
+            int(r[0])
+            for r in s.execute(
+                text("SELECT id FROM chunk WHERE page_id = :p AND kind = 1 AND is_active"),
+                {"p": page_id},
+            )
+        }
+
+
+def test_auth6_chat_isolates_a_toast_page_from_a_mews_token_end_to_end(
+    gateway, settings: Settings
+) -> None:
+    """gap AUTH-6 · ADR-0014 customer-isolation backstop (panels s-source / r3-deny).
+
+    End-to-end proof through the real `POST /chat` surface (token -> AuthContext -> AnswerService
+    -> reader-role retrieval -> query_trace + citations), not just the retriever unit: a Mews-token
+    request must never surface a Toast-tagged page's id or chunk id in its trace or citations, while
+    the Mews-authorized page IS returned and cited. The Toast control below proves the Toast page is
+    genuinely retrievable for that query — so the Mews-side absence is real isolation, not an empty
+    corpus or an unfindable page (this test cannot pass by returning nothing)."""
+    index_page(gateway, settings, 3002, 1)  # "Mews PMS Sync Setup"
+    index_page(gateway, settings, 3004, 1)  # "Toast POS Menu Sync"
+    _set_chunk_tags(3002, ["obi-mews-test"])
+    _set_chunk_tags(3004, ["obi-toast-test"])
+
+    chat_settings = _chat_settings(settings)
+    app = create_app(settings=chat_settings, start_scheduler=False)
+    app.state.answer_service = _grounded_service(gateway, chat_settings)
+    app.state.token_verifier = _StubTokenVerifier(
+        {
+            "mews-jwt": VerifiedClaims(
+                issuer="https://app.mews.com",
+                subject="u-mews",
+                company_id="c1",
+                company_name="Hotel",
+                integration="mews",
+            ),
+            "toast-jwt": VerifiedClaims(
+                issuer="https://pos.toasttab.com",
+                subject="u-toast",
+                company_id="c2",
+                company_name="Diner",
+                integration="toast",
+            ),
+        }
+    )
+    client = TestClient(app)
+    question = "How does the sync work and what happens when it fails?"
+    toast_chunk_ids = _active_child_chunk_ids(3004)
+    assert toast_chunk_ids  # the toast page really produced searchable child chunks
+
+    # Control: a Toast-authorized caller DOES retrieve and cite the Toast page for this query.
+    toast_done = _parse_sse(
+        client.post(
+            "/chat",
+            json={"history": [{"role": "user", "content": question}]},
+            headers={**_auth(), "x-obi-token": "toast-jwt"},
+        ).text
+    )[-1]
+    toast_pages, _ = _trace_page_and_chunk_ids(int(toast_done["traceId"]))
+    assert 3004 in toast_pages
+    assert any(str(c["pageId"]) == "3004" for c in toast_done["citations"])
+
+    # The Mews caller: the Toast page id/chunk ids never appear in the trace or citations, while the
+    # Mews-authorized page IS present and cited (allowed content returned -> not passing by empty).
+    resp = client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": question}]},
+        headers={**_auth(), "x-obi-token": "mews-jwt"},
+    )
+    assert resp.status_code == 200
+    done = _parse_sse(resp.text)[-1]
+    page_ids, chunk_ids = _trace_page_and_chunk_ids(int(done["traceId"]))
+
+    assert 3004 not in page_ids  # toast page id never retrieved for a mews token
+    assert not (set(chunk_ids) & toast_chunk_ids)  # nor any toast chunk id
+    assert 3002 in page_ids  # the mews page IS retrieved
+    assert done["refused"] is False
+    assert done["citations"]  # grounded, non-empty
+    assert all(str(c["pageId"]) != "3004" for c in done["citations"])
+    assert any(str(c["pageId"]) == "3002" for c in done["citations"])
+
+
+def test_cip1_forwarded_body_principal_is_inert_scope_and_principal_unchanged(
+    gateway, settings: Settings
+) -> None:
+    """gap CIP-1 · ADR-0014, ADR-0004 default-deny. A body-supplied `principal` (a well-shaped,
+    non-numeric garbage value the shape validator accepts) is inert: it never reaches the
+    AuthContext the read path runs under. The served scope stays exactly the verified token's
+    scopes and the recorded auth `principal` is None (v1 embedded users are always principal-less).
+    Proven by capturing the AuthContext `/chat` forwards into the service."""
+    chat_settings = _chat_settings(settings)
+    spy = _SpyAnswerService()
+    app = create_app(settings=chat_settings, start_scheduler=False)
+    app.state.answer_service = spy
+    app.state.token_verifier = _StubTokenVerifier(
+        {
+            "mews-jwt": VerifiedClaims(
+                issuer="https://app.mews.com",
+                subject="u-mews",
+                company_id="c1",
+                company_name="Hotel",
+                integration="mews",
+            )
+        }
+    )
+    client = TestClient(app)
+
+    resp = client.post(
+        "/chat",
+        json={
+            "history": [{"role": "user", "content": "hi"}],
+            "principal": "acct-injected-evil",  # accepted by shape validation, must be ignored
+        },
+        headers={**_auth(), "x-obi-token": "mews-jwt"},
+    )
+
+    assert resp.status_code == 200
+    assert len(spy.calls) == 1
+    served = spy.calls[0]
+    assert served.principal is None  # body principal never became the read-path principal
+    # scope is exactly the verified mews token's scopes (general + mews), unmoved by the body value
+    assert served.allowed_scopes == ("obi-general-test", "obi-mews-test")
+
+
+def test_authrt4_body_principal_cannot_split_the_token_subject_rate_limit_bucket(
+    gateway, settings: Settings
+) -> None:
+    """gap AUTHRT-4 · C2 (securing-http-and-llm-endpoints). The rate-limit bucket derives from the
+    verified `token_subject`, never the body `principal`. Two requests carrying the SAME token but
+    DIFFERENT body principals share one bucket — so the second is limited (429). If the body
+    principal could influence the key, a caller would dodge the limit by rotating it per request."""
+    chat_settings = _chat_settings(settings, chat_rate_limit_per_minute=1)
+    app = create_app(settings=chat_settings, start_scheduler=False)
+    app.state.answer_service = _grounded_service(gateway, chat_settings)
+    app.state.token_verifier = _StubTokenVerifier()  # default: subject == the x-obi-token value
+    client = TestClient(app)
+
+    body_a = {"history": [{"role": "user", "content": "hi"}], "principal": "acct-alpha"}
+    body_b = {"history": [{"role": "user", "content": "hi"}], "principal": "acct-beta"}
+    same_token = {**_auth(), "x-obi-token": "alice"}
+
+    first = client.post("/chat", json=body_a, headers=same_token)
+    second = client.post("/chat", json=body_b, headers=same_token)
+
+    assert first.status_code == 200
+    assert second.status_code == 429  # same token subject -> same bucket, body principal ignored

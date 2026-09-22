@@ -169,6 +169,31 @@ describe("initIframeBridge", () => {
     expect(onScopeChange).toHaveBeenCalledTimes(1);
   });
 
+  it("BIT-9: logs rejection codes/events only — the token value never reaches any console output", () => {
+    // Negative test: accepted-vs-rejected is logged as fixed code strings, never the JWT. Drive an
+    // accepted path plus both rejection paths, all carrying the SAME token, and assert no console
+    // channel ever received the token value.
+    const token = "jwt.SECRET-payload.sig-value";
+    const otherSpies = (["log", "info", "error", "debug"] as const).map((m) =>
+      vi.spyOn(console, m).mockImplementation(() => undefined),
+    );
+    teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN] });
+
+    post({ type: "obi:token", token }, ALLOWED_ORIGIN); // accepted (no console)
+    post({ type: "obi:token", token }, DISALLOWED_ORIGIN); // rejected origin -> warn code
+    post({ type: "obi:token", token }, ALLOWED_ORIGIN, null); // non-parent source -> warn code
+
+    // Non-vacuous: the accepted token really was stored, so "never logged" is a real guarantee.
+    expect(getToken()).toBe(token);
+    expect(warnSpy).toHaveBeenCalled(); // the rejections DID log — with codes only
+    for (const spy of [warnSpy, ...otherSpies]) {
+      for (const call of spy.mock.calls) {
+        expect(JSON.stringify(call)).not.toContain(token);
+      }
+    }
+    for (const spy of otherSpies) spy.mockRestore();
+  });
+
   it("resets to null token on re-init (a fresh frame load never carries a stale token)", () => {
     teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN] });
     post({ type: "obi:token", token: "jwt-abc" }, ALLOWED_ORIGIN);

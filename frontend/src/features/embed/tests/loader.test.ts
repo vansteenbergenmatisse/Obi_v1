@@ -283,4 +283,77 @@ describe("Obi loader", () => {
       credentials: "same-origin",
     });
   });
+
+  it("BIT-2: the user token never lands in the URL, query, hash, or a history entry", async () => {
+    // Negative test: the JWT is held in a module-scoped variable and posted to the frame only —
+    // it must never be written to the address bar or pushed into session history (where it would
+    // leak via referrer, bookmarks, or back/forward).
+    const token = fakeJwt(3600);
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ token }), { status: 200 }));
+    const pushSpy = vi.spyOn(window.history, "pushState");
+    const replaceSpy = vi.spyOn(window.history, "replaceState");
+
+    const Obi = await loadObi();
+    Obi.init({ tokenUrl: TOKEN_URL });
+    const iframe = document.querySelector("iframe") as HTMLIFrameElement;
+    const postMessageSpy = vi.fn();
+    Object.defineProperty(iframe, "contentWindow", { value: { postMessage: postMessageSpy } });
+
+    (document.querySelector("button") as HTMLButtonElement).click();
+
+    // Non-vacuous: the token is genuinely fetched and delivered (to the frame via postMessage),
+    // so "absent from the URL" below is a real guarantee, not a flow that never had a token.
+    await vi.waitFor(() => {
+      expect(postMessageSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "obi:token", token }),
+        window.location.origin,
+      );
+    });
+
+    expect(window.location.href).not.toContain(token);
+    expect(window.location.search).not.toContain(token);
+    expect(window.location.hash).not.toContain(token);
+    for (const spy of [pushSpy, replaceSpy]) {
+      for (const call of spy.mock.calls) {
+        expect(JSON.stringify(call)).not.toContain(token);
+      }
+    }
+
+    pushSpy.mockRestore();
+    replaceSpy.mockRestore();
+  });
+
+  it("BIT-9: the loader never writes the token value to any console output", async () => {
+    // Negative test: the loader may log lifecycle events, but never the JWT itself. Spy every
+    // console channel across the full token flow (open, fetch, deliver, and a failed-fetch path).
+    const token = fakeJwt(3600);
+    const consoleSpies = (["log", "info", "warn", "error", "debug"] as const).map((m) =>
+      vi.spyOn(console, m).mockImplementation(() => undefined),
+    );
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ token }), { status: 200 }))
+      .mockRejectedValueOnce(new Error("network down")); // renewal path also must not log the token
+
+    const Obi = await loadObi();
+    Obi.init({ tokenUrl: TOKEN_URL });
+    const iframe = document.querySelector("iframe") as HTMLIFrameElement;
+    const postMessageSpy = vi.fn();
+    Object.defineProperty(iframe, "contentWindow", { value: { postMessage: postMessageSpy } });
+
+    (document.querySelector("button") as HTMLButtonElement).click();
+    await vi.waitFor(() => {
+      expect(postMessageSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "obi:token", token }),
+        window.location.origin,
+      );
+    });
+    Obi.clear(); // exercise another lifecycle branch
+
+    for (const spy of consoleSpies) {
+      for (const call of spy.mock.calls) {
+        expect(JSON.stringify(call)).not.toContain(token);
+      }
+      spy.mockRestore();
+    }
+  });
 });
