@@ -286,3 +286,23 @@ rule) and a db test proving a retagged-parent is filtered. Surfaced by the Phase
 (AUTH-7 / AUTH7-REWEIGH), 2026-09-22.
 Where it would go: `retriever.py fetch_parent_texts` + `answer_service.py`; a new ADR amending 0014.
 Added: 2026-09-22
+
+## Mechanized cross-runtime loopback-twin differential in CI (loopback-twin-differential-ci)
+What: the backend loopback/.local host matcher (`platforms.py` `_domain_host`/`_is_loopback_host`/
+`_is_dot_local_host`/`_EDGE_WHITESPACE`) and its frontend twin (`csp.ts` `isLocalhostDomain`/`stripEdges`/
+`EDGE_WHITESPACE`) must classify every host identically. Today that parity is enforced by parallel,
+hand-written per-side tests (test_platforms.py + frame-csp.test.ts), which are non-vacuous but mirror each
+other by hand. Optional durable guard: a CI job that runs BOTH real runtimes (backend via `uv run python`,
+frontend `csp.ts` via `node --experimental-strip-types` — csp.ts already carries the zero-Node-import
+property that makes this cheap) over a shared generated corpus and fails on any divergence.
+Why not now: the twins are PROVEN equivalent at HEAD — three independent Phase-4 audit differentials this
+loop (Wave-9 auditors + coordinator) ran ~882,000 inputs total (incl. a full BMP sweep, astral chars, and
+interior-substitution stressing `.lower()`/`.toLowerCase()` and `int()`/`Number()` parsing) with ZERO
+disagreements, and the per-side tests are non-vacuous (revert-to-native-strip goes red, confirmed
+empirically). The completeness-critic auditor judged the tail closed with no missing test. So this is
+drift-PREVENTION for future one-sided edits, not a live gap; it adds a cross-tree runtime coupling (Python
+test invoking Node, or a dedicated CI step) whose flakiness/maintenance cost the owner should weigh. Surfaced
+as W9-A1-OBS (explicitly "NOT a defect") by the Phase-4 embed security loop, Wave 9, 2026-09-22.
+Where it would go: a new `.github/workflows/ci.yml` step (or a `backend/tools/` differential script invoked
+there); the corpus generator + both-runtime harness the Wave-8/9 auditors already prototyped.
+Added: 2026-09-22

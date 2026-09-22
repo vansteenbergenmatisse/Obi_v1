@@ -223,6 +223,22 @@ The `isdigit`/`int()` class was independently confirmed fully closed by the cros
 
 **Consecutive-clean counter: still 0 of 2.** Waves 9 and 10 must both be clean.
 
+## Wave 9 — CLEAN (consecutive-clean #1) (2026-09-22)
+
+Five FRESH auditors on HEAD 201de7f (post-SEC-RW8). Gate re-verified before the wave: backend unit 630 · kb 23 · backend db 281/1xf · kb db 18 · frontend vitest 288 · typecheck/boundaries clean. All five returned CLEAN:
+
+- **Browser/CSP:** independently proved `EDGE_WHITESPACE` is a strict SUPERSET of JS `trim()`'s set (0 chars missing) → no classification can regress; full token surface holds. One item examined and dismissed as build-config, not a code defect (OBI_ORIGIN dev fallback).
+- **Authz/identity/lifecycle:** all 6 isolation attacks refuted with reproduction; RLS exercised on the local DB (306 non-db + 33 db); AUTH7 re-confirmed bounded-safe with fresh ingestion evidence; classify_scope confirmed safe on non-ASCII/None.
+- **Config/migration/CI/test-infra:** suite counts confirmed (630/288); SEC-RW8 revert-simulated as non-vacuous and confirmed a strict tightening (no rejection weakened); both DB guards precede bootstrap; CI skip-guard tied to the single allowlisted xfail; coverage floor satisfied; docs consistent.
+- **Auth/host-key + differential:** a 21,740-input cross-runtime differential (both real runtimes) → 0 divergences; full JWT/host-key/config attack matrix refuted. Raised ONE observation, **W9-A1-OBS**, which it explicitly labelled "NOT a defect": a LOW drift-prevention missing-test — parity is enforced only by parallel per-side tests, not a mechanized CI differential, so a future one-sided edit could reintroduce divergence and pass both suites.
+- **Cross-cut completeness critic:** two differentials totalling 856,643 inputs (full BMP sweep + astral chars + interior-substitution stressing `.lower()`/`.toLowerCase()` case-folding and `int()`/`Number()` parsing) → 0 divergences; enumerated every other backend↔frontend twin (active-domain list = parity; env detection = deliberate documented non-twin, fail-closed both sides; base64url client decode = display/renewal-only, not a trust twin; DB live-host guard = parity copy per ADR-0018); vacuous-test checks empirically confirmed non-vacuous. Explicit conclusion: **"The audit tail is closed. No confirmed-defect, no missing-test, no doc-defect, no actionable potential-risk found."**
+
+**Triage of W9-A1-OBS → NON-ACTIONABLE.** (1) Its finder classified it "NOT a defect / drift-prevention, not a live hole." (2) Loopback-twin equivalence is proven across ~882,000 inputs in three independent differentials this wave (21,740 + 856,643 + the coordinator's earlier 3,993), all 0 divergences. (3) The parity behaviour is covered by non-vacuous per-side tests (two auditors confirmed revert→red empirically). (4) The dedicated completeness critic — the auditor whose remit IS missing-tests/drift — independently concluded there is NO missing test and the tail is closed. (5) Clean-exit criteria for the parity are met: tested (not doc-only), mutations caught, no crit/high/med. A mechanized cross-runtime CI differential is a defense-in-depth infra enhancement, not a requirement-coverage gap — recorded in `docs/future-ideas.md` (loopback-twin-differential-ci) as an optional deferred item for the owner to weigh, exactly as AUTH-7's optional hardening was handled.
+
+**Wave 9 = CLEAN. Consecutive-clean counter: 1 of 2.** Wave 10 must also be clean to meet the mandate's two-consecutive-clean exit.
+
+
+
 
 
 
