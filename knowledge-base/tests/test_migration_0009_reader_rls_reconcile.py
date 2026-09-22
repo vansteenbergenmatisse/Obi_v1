@@ -75,7 +75,7 @@ def _alembic_config() -> Config:
 @pytest.fixture
 def migration_engine() -> Iterator[Engine]:
     base = make_url(get_settings().database_url)
-    dbname = f"{base.database}_migration_test"
+    dbname = f"{base.database}_migration_0009_test"
     test_url = base.set(database=dbname)
     admin_url = base.set(database="postgres").render_as_string(hide_password=False)
     test_url_str = test_url.render_as_string(hide_password=False)

@@ -271,3 +271,18 @@ Why not now: owner asked to leave it open and double-check later (2026-09-18); i
 and nothing depends on the missing column. Revisit when we do the event_ledger / audit-trail work.
 Where it would go: a design-review page fix, or an event_ledger schema + write change; panel d-event_ledger.
 Added: 2026-09-18
+
+## Parent-text fetch scope-GUC opt-out — optional defense-in-depth (auth7-parent-scope)
+What: `HybridRetriever.fetch_parent_texts` sets `app.allowed_knowledge_scopes = '*'` for the parent-text
+fetch (ADR-0014), so the RESTRICTIVE `chunk_scope_read` policy does not re-filter parents by scope. Two
+independent audit waves confirmed this is NOT a vulnerability today: parent expansion only ever runs on
+child ids that already passed the scoped search, and a page's parent and child share the page's tags, so a
+foreign-tagged parent cannot arise through normal ingestion. Optional hardening: pass the request's
+`allowed_scopes` into `fetch_parent_texts` / `apply_knowledge_scope` instead of `'*'`, so a hypothetical
+retagged parent would also be filtered at the DB — a second lock behind the already-safe child gate.
+Why not now: it would change intentional ADR-0014 behavior for a confirmed non-vulnerability; both audit
+waves rated it working/low. A change here would need a new ADR (it alters 0014's documented parent-fetch
+rule) and a db test proving a retagged-parent is filtered. Surfaced by the Phase-4 embed security loop
+(AUTH-7 / AUTH7-REWEIGH), 2026-09-22.
+Where it would go: `retriever.py fetch_parent_texts` + `answer_service.py`; a new ADR amending 0014.
+Added: 2026-09-22

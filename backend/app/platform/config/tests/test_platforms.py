@@ -286,6 +286,82 @@ def test_platforms_local_override_file_still_loads_when_offline():
     assert "localhost:3000" in reg.active_domains()
 
 
+# --- gap BIT-A-R1: the loopback guard matches the FULL frontend set -------------------------------
+# The frontend's isLocalhostDomain (frontend/src/features/embed/csp.ts) was widened to the whole
+# loopback set — ::1, 0.0.0.0, the whole 127.0.0.0/8 block and *.localhost — but this backend guard
+# still used an exact {"localhost","127.0.0.1"} match, so a production ACTIVE platform on one of the
+# MISSED loopback forms slipped through. Each host below is such a form and must be refused outside
+# offline; a real host and a 127-lookalike hostname must NOT be over-matched.
+
+_LOOPBACK_URL_HOSTS = [
+    "https://[::1]/",  # IPv6 loopback, bracketed URL form -> urlsplit host "::1"
+    "https://127.0.0.2",  # inside 127.0.0.0/8, not the bare .0.1
+    "https://127.255.255.255",  # top of the 127.0.0.0/8 block
+    "https://0.0.0.0",  # wildcard-bind address
+    "https://foo.localhost",  # *.localhost
+]
+
+
+@pytest.mark.parametrize("issuer", _LOOPBACK_URL_HOSTS)
+def test_platforms_active_loopback_issuer_refused_outside_offline(tmp_path, issuer):
+    """gap BIT-A-R1 · an ACTIVE platform whose ISSUER host is any loopback form the exact-match set
+    missed (::1, 127.0.0.2, 127.255.255.255, 0.0.0.0, *.localhost) is refused outside offline,
+    naming the entry — matching the widened frontend csp.ts set."""
+    plat = {"acme": _platform(issuer=issuer, jwks_url="https://ex.test/j", domains=[])}
+    p = _write(tmp_path, _data(platforms=plat, integrations={}))
+    with pytest.raises(ValueError, match="acme") as exc:
+        load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
+    assert "loopback" in str(exc.value).lower()
+    # offline (the local embed test flow) tolerates it, unchanged.
+    load_platform_registry(p, RECOGNIZED, allow_empty=True, offline=True)
+
+
+@pytest.mark.parametrize("jwks", _LOOPBACK_URL_HOSTS)
+def test_platforms_active_loopback_jwks_refused_outside_offline(tmp_path, jwks):
+    """gap BIT-A-R1 · the same widened set applies to the JWKS host, not only the issuer."""
+    plat = {"acme": _platform(issuer="https://ex.test", jwks_url=jwks, domains=[])}
+    p = _write(tmp_path, _data(platforms=plat, integrations={}))
+    with pytest.raises(ValueError, match="acme") as exc:
+        load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
+    msg = str(exc.value)
+    assert "loopback" in msg.lower()
+    assert "jwks_url" in msg
+
+
+@pytest.mark.parametrize(
+    "domain",
+    ["127.0.0.2", "127.255.255.255", "0.0.0.0", "[::1]:3000", "foo.localhost", "localhost:3000"],
+)
+def test_platforms_active_loopback_csp_domain_refused_outside_offline(tmp_path, domain):
+    """gap BIT-A-R1 · a CSP domain on any widened loopback form (incl. bracketed IPv6 with a port
+    and the 127.0.0.0/8 block) must never reach production frame-ancestors — refused outside
+    offline, naming the entry."""
+    plat = {
+        "acme": _platform(
+            issuer="https://acme.example.com",
+            jwks_url="https://acme.example.com/j",
+            domains=["app.acme.example.com", domain],
+        )
+    }
+    p = _write(tmp_path, _data(platforms=plat, integrations={}))
+    with pytest.raises(ValueError, match="acme") as exc:
+        load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
+    assert "loopback" in str(exc.value).lower()
+
+
+@pytest.mark.parametrize("host", ["app.mews.com", "127.example.com"])
+def test_platforms_active_real_and_lookalike_host_not_refused_outside_offline(tmp_path, host):
+    """gap BIT-A-R1 · a real production host (app.mews.com) and a hostname that merely STARTS with
+    "127." (127.example.com — not a numeric 127.0.0.0/8 literal) load fine outside offline as both
+    issuer/jwks host and CSP domain; the strict numeric check must not over-match them."""
+    plat = {
+        "acme": _platform(issuer=f"https://{host}", jwks_url=f"https://{host}/j", domains=[host])
+    }
+    p = _write(tmp_path, _data(platforms=plat, integrations={}))
+    reg = load_platform_registry(p, RECOGNIZED, allow_empty=False, offline=False)
+    assert reg.by_issuer(f"https://{host}") is not None
+
+
 # --- CIP-A1: per-platform allowed_integrations allow-list ----------------------------------------
 # Each platform declares which integration CLAIM VALUES it may assert; a value not in the global
 # integrations map stops startup naming the offender, and the loaded entry exposes the tuple.

@@ -219,3 +219,56 @@ def test_allow_empty_platforms_does_not_permit_zero_active_outside_offline(
             allow_empty_platforms=True,
             platforms_path=str(empty),
         )
+
+
+# -- AUTHRT-REGISTRY-RELOAD: platform_registry is cached (parsed + validated once) ----------------
+# A plain @property re-read AND re-validated platforms.json on EVERY access, so one /chat request
+# (token_verifier + build_auth_context) parsed it several times; it is now a @cached_property. Fail-
+# closed startup validation is unchanged — a bad file still raises at first Settings() construction.
+
+
+def test_platform_registry_parsed_once_and_same_instance(
+    _clean_env: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AUTHRT-REGISTRY-RELOAD · the loader runs exactly once (at construction, via the fail-closed
+    validator) and repeated `platform_registry` accesses return the SAME cached instance without
+    re-parsing the file."""
+    from app.platform.config import platforms as platforms_module
+    from app.platform.config.platforms import PlatformRegistry
+
+    calls = {"n": 0}
+    real_loader = platforms_module.load_platform_registry
+
+    def _counting_loader(
+        platforms_path: Path,
+        recognized_scopes: frozenset[str],
+        *,
+        allow_empty: bool,
+        offline: bool = True,
+    ) -> PlatformRegistry:
+        calls["n"] += 1
+        return real_loader(
+            platforms_path, recognized_scopes, allow_empty=allow_empty, offline=offline
+        )
+
+    monkeypatch.setattr(platforms_module, "load_platform_registry", _counting_loader)
+
+    s = Settings(env="production", platforms_path=_valid_prod_platforms_json(tmp_path))
+    # construction validated the registry exactly once (the _require_valid_platform_registry gate).
+    assert calls["n"] == 1
+
+    first = s.platform_registry
+    second = s.platform_registry
+    assert first is second  # same cached object
+    assert calls["n"] == 1  # no re-parse / re-validate on repeated access
+
+
+def test_platform_registry_bad_file_still_raises_at_construction(
+    _clean_env: None, tmp_path: Path
+) -> None:
+    """AUTHRT-REGISTRY-RELOAD · caching does NOT weaken fail-closed: a malformed platforms.json
+    still raises at first Settings() construction (the cache only holds a validated registry)."""
+    bad = tmp_path / "platforms.json"
+    bad.write_text("{ not valid json")
+    with pytest.raises(ValidationError):
+        Settings(env="production", platforms_path=str(bad))

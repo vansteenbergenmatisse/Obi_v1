@@ -120,6 +120,36 @@ describe("Obi loader", () => {
     }
   });
 
+  it("BIT-3/BIT-9: the loader never writes the fetched token to web storage or a cookie", async () => {
+    // The loader fetches the token and hands it to the frame via postMessage only — it must never
+    // persist it. Non-vacuous: we wait for the obi:token post (token genuinely handled), then assert
+    // nothing durable was written. (jsdom here exposes sessionStorage; localStorage guarded for portability.)
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ token: fakeJwt(3600) }), { status: 200 }),
+    );
+    sessionStorage.clear();
+    globalThis.localStorage?.clear();
+    const cookieBefore = document.cookie;
+
+    const Obi = await loadObi();
+    Obi.init({ tokenUrl: TOKEN_URL });
+    const iframe = document.querySelector("iframe") as HTMLIFrameElement;
+    const postMessageSpy = vi.fn();
+    Object.defineProperty(iframe, "contentWindow", { value: { postMessage: postMessageSpy } });
+    (document.querySelector("button") as HTMLButtonElement).click();
+
+    await vi.waitFor(() => {
+      expect(postMessageSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "obi:token" }),
+        window.location.origin,
+      );
+    });
+
+    expect(sessionStorage.length).toBe(0);
+    expect(globalThis.localStorage?.length ?? 0).toBe(0);
+    expect(document.cookie).toBe(cookieBefore);
+  });
+
   it("Obi.clear() posts obi:clear to the exact OBI_ORIGIN", async () => {
     const Obi = await loadObi();
     Obi.init({ tokenUrl: TOKEN_URL });

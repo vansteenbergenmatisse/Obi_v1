@@ -139,7 +139,30 @@ Results (all on the correct branch):
 
 **Outcome:** every targeted mutation is now caught. One real weak test found and sharpened — exactly what mutation testing is for.
 
-## Wave 3 — Second fresh independent re-audit (pending)
+## Wave 3 — Second fresh independent re-audit (2026-09-22)
+
+Five fresh auditors + adversarial verify (14 agents). **35 fixed-confirmed, 2 partially-fixed, 8 confirmed new findings (1 MED + 7 LOW), 1 refuted.** NOT clean → repaired (SEC-RW3), counter still 0.
+
+- **XCUT-1 (MED, confirmed-defect):** BIT-A-R1 broadened the FRONTEND loopback strip but the BACKEND trust guard (`_LOCALHOST_HOSTS`) still matched only exact localhost/127.0.0.1 → ::1/0.0.0.0/127.0.0.0-8/*.localhost passed the production issuer/JWKS+CSP guard. (The recurring fixed-in-one-place pattern.)
+- **AUTHRT-REGISTRY-RELOAD (LOW):** platform registry re-read+re-validated per request.
+- **TESTINFRA-1 (LOW):** 3 migration tests share a db name (safe only sequentially).
+- **BIT-B1 (LOW, missing-test):** no loader-side storage-write guard.
+- **AUTH-DOC-2 / XCUT-2 / CFG-DOC-1 (LOW docs):** stale doc strings (CFG-DOC-1 pre-existing, not from this pass).
+- **AUTH7-REWEIGH (false-positive):** FINDING-AUTH7 independently confirmed bounded-safe again.
+- REFUTED: 1.
+
+### Wave-3 repairs (SEC-RW3) — DONE (committed)
+
+- **XCUT-1:** broadened backend `_reject_untrusted_active_platform` to the frontend's full loopback set (`_is_loopback_host`/`_is_ipv4_loopback_host`; issuer/jwks + CSP domain; `_domain_host` port-strip fixed for `[::1]:3000`); rejection tests added. This also makes the csp.ts XCUT-2 docstrings accurate (backend now backs the frontend), so XCUT-2 needed no separate edit.
+- **AUTHRT-REGISTRY-RELOAD:** process-level keyed registry cache (survives model_copy; fail-closed first-load preserved); cache tests added.
+- **TESTINFRA-1:** unique migration db names (_migration_0007/0009/0010_test).
+- **BIT-B1:** loader storage-write guard test (mutation-verified).
+- **AUTH-DOC-2 / CFG-DOC-1:** doc strings corrected. Fixed an E501 my RW2 AUTH-DOC-1 edit introduced (rewrapped, keeps lint baseline).
+- **AUTH7:** confirmed-safe; optional hardening deferred (would change ADR-0014 design for a non-vuln) → recorded in docs/future-ideas.
+
+**Combined gate:** backend unit 566→590 · kb unit 23 · backend db 281/1xf · kb db 18 · frontend vitest 275→276 · typecheck/ruff clean · boundaries OK.
+
+## Wave 4 + Wave 5 — two consecutive clean waves required (pending)
 
 
 

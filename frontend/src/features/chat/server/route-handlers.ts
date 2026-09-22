@@ -72,9 +72,10 @@ function extractUserToken(request: Request): string | undefined {
 
 const IDEMPOTENCY_HEADER = "idempotency-key";
 // Resource-exhaustion ceiling, not a business-rule cap (see validation.ts) — must stay above the
-// backend's own legitimate max so its real caps (chat_max_images_per_turn=4 x
-// chat_max_image_bytes=5_000_000) stay authoritative, not silently pre-empted here. Base64 inflates
-// raw bytes by ~4/3: 4 * 5_000_000 * 4/3 ~= 26.7MB for one turn's images alone. 30MB leaves headroom
+// backend's own legitimate max so its real caps (chat_max_images_per_turn=3 x
+// chat_max_image_bytes=3_000_000, decision w-composer-images 2026-09-18) stay authoritative, not
+// silently pre-empted here. Base64 inflates raw bytes by ~4/3: 3 * 3_000_000 * 4/3 = 12MB for one
+// turn's images alone. 30MB leaves ample headroom
 // for JSON/text overhead while still bounding a pathologically oversized body (PLAN 7.8 fix — the
 // pre-image 200_000 ceiling, set at Phase 4.5 for text-only history, was never raised when Phase 7
 // added image attachments, so it 413'd almost every real screenshot/photo before reaching the backend).

@@ -10,9 +10,10 @@ signing alg is on the allow-list (RS256, ES256); every platform's allowed_integr
 real integration (a key of the integrations map — gap CIP-A1); an empty registry, or one with zero
 active platforms, stops startup outside local (allow_empty=False). Outside offline (offline=False)
 an ACTIVE platform must further be a real production trusted issuer — an https issuer/jwks on a real
-host, never a TODO/PLACEHOLDER string, localhost/127.0.0.1 or .local host, and no localhost CSP
-domain (gap CFG-02/AUTHRT-1 + CFG-04); offline/local keeps loading platforms.local.json's test-*
-issuers and localhost domains unchanged.
+host, never a TODO/PLACEHOLDER string, a .local host, or ANY loopback address (localhost/
+*.localhost, the whole 127.0.0.0/8 block, 0.0.0.0 or IPv6 ::1 — the same set the frontend csp.ts
+strips, gap BIT-A-R1), and no loopback CSP domain (gap CFG-02/AUTHRT-1 + CFG-04); offline/local
+keeps loading platforms.local.json's test-* issuers and localhost domains unchanged.
 
 Lives at ``knowledge-base/config/platforms.json`` beside ``knowledge_scopes.json`` — one global
 place an operator edits directly, readable from either app (mirrors knowledge_scopes.py).
@@ -35,7 +36,6 @@ _MAX_LIFETIME = 1440
 # issuer whose domains seed the embed frame's CSP, so it must be a real, https, non-localhost third
 # party — never a test/placeholder issuer. These are the markers of a not-yet-real entry.
 _PLACEHOLDER_MARKERS = ("TODO", "PLACEHOLDER")
-_LOCALHOST_HOSTS = frozenset({"localhost", "127.0.0.1"})
 
 # backend/app/platform/config/platforms.py -> repo root is 4 levels up; the file lives beside
 # knowledge_scopes.json under knowledge-base/config/ (relocated in substep 1.2.3).
@@ -107,18 +107,71 @@ def _url_host(value: str) -> str:
 
 def _domain_host(domain: str) -> str:
     """Lowercased host of a bare ``host[:port]`` CSP domain entry (these are stored without a
-    scheme, e.g. "localhost:3000" / "app.mews.com")."""
+    scheme, e.g. "localhost:3000" / "app.mews.com" / "[::1]:3000"). Mirrors the frontend's
+    ``isLocalhostDomain`` port/bracket handling (``frontend/src/features/embed/csp.ts``) so an IPv6
+    literal is not mangled: bracketed IPv6 (``[::1]:3000``) yields the text inside the brackets; a
+    bare IPv6 literal (more than one ``:``) is left whole; a plain ``host[:port]`` drops one
+    trailing ``:port``."""
     host = domain.strip().lower()
-    return host.rsplit(":", 1)[0] if ":" in host else host
+    if not host:
+        return host
+    if host.startswith("["):
+        close = host.find("]")
+        return host[1:] if close == -1 else host[1:close]
+    if host.count(":") > 1:
+        return host
+    return host.split(":", 1)[0]
+
+
+def _is_ipv4_loopback_host(host: str) -> bool:
+    """A ``127.0.0.0/8`` IPv4 loopback literal — ``127.`` followed by three numeric octets, each
+    0–255. Deliberately a strict numeric-IPv4 check so a hostname that merely starts with ``127.``
+    (e.g. ``127.example.com``) is NOT treated as loopback (gap BIT-A-R1). Mirrors csp.ts
+    ``isIpv4LoopbackHost``."""
+    octets = host.split(".")
+    if len(octets) != 4:
+        return False
+    if not all(o.isdigit() and len(o) <= 3 and int(o) <= 255 for o in octets):
+        return False
+    return octets[0] == "127"
+
+
+def _is_loopback_host(host: str) -> bool:
+    """True when a bare host resolves to the local loopback — the FULL set the frontend's
+    ``isLocalhostDomain`` (``frontend/src/features/embed/csp.ts``) treats as localhost, kept in
+    step with it (gap BIT-A-R1) so none of it can become a trusted issuer host or embedder origin
+    outside local/dev:
+
+    - ``localhost`` and any ``*.localhost``;
+    - the whole ``127.0.0.0/8`` block (``127.x.x.x`` with valid octets), not just ``127.0.0.1``;
+    - the ``0.0.0.0`` wildcard-bind address;
+    - IPv6 loopback ``::1``, whether bare (``::1``) or arriving bracketed (``[::1]``).
+
+    A real hostname like ``127.example.com`` is NOT over-matched (see ``_is_ipv4_loopback_host``).
+    """
+    h = host.strip().lower()
+    if h.startswith("[") and h.endswith("]"):
+        h = h[1:-1]
+    if h == "localhost" or h.endswith(".localhost"):
+        return True
+    if h == "0.0.0.0":  # noqa: S104 — matching the bind-all address, not binding to it
+        return True
+    if h == "::1":
+        return True
+    return _is_ipv4_loopback_host(h)
 
 
 def _reject_untrusted_active_platform(entry: PlatformEntry) -> None:
-    """gap CFG-02/AUTHRT-1 + CFG-04 — refuse an ACTIVE platform that is not a real production
-    trusted issuer, naming the offending entry. Applied by ``load_platform_registry`` only when
-    ``offline`` is False; local/test/dev keep loading ``platforms.local.json`` with its ``test-*``
-    issuers and localhost domains unchanged. An active entry's issuer/jwks must be an https URL on
-    a real host (not a ``TODO``/``PLACEHOLDER`` string, not ``localhost``/``127.0.0.1``, not a
-    ``.local`` host), and none of its CSP domains may be localhost."""
+    """gap CFG-02/AUTHRT-1 + CFG-04 (loopback set widened for gap BIT-A-R1) — refuse an ACTIVE
+    platform that is not a real production trusted issuer, naming the offending entry. Applied by
+    ``load_platform_registry`` only when ``offline`` is False; local/test/ci keep loading
+    ``platforms.local.json`` with its ``test-*`` issuers and localhost domains unchanged
+    (``dev``/``development`` are NOT offline — see ``settings.py`` ``_OFFLINE_ENVS``). An active
+    entry's issuer/jwks must be an https URL on a real host — not a ``TODO``/``PLACEHOLDER`` string,
+    not a ``.local`` host, and not any loopback address (``localhost``/``*.localhost``, the whole
+    ``127.0.0.0/8`` block, ``0.0.0.0``, or IPv6 ``::1``) — and none of its CSP domains may be a
+    loopback address. The loopback set is the SAME one the frontend's ``isLocalhostDomain`` strips
+    (``frontend/src/features/embed/csp.ts``); see ``_is_loopback_host``."""
     key = entry.key
     for label, value in (("issuer", entry.issuer), ("jwks_url", entry.jwks_url)):
         upper = value.upper()
@@ -133,9 +186,10 @@ def _reject_untrusted_active_platform(entry: PlatformEntry) -> None:
                 f"platform {key}: active {label} '{value}' is not https; refused outside local"
             )
         host = _url_host(value)
-        if host in _LOCALHOST_HOSTS:
+        if _is_loopback_host(host):
             raise ValueError(
-                f"platform {key}: active {label} host '{host}' is localhost; refused outside local"
+                f"platform {key}: active {label} host '{host}' is a localhost/loopback address; "
+                f"refused outside local"
             )
         if host.endswith(".local"):
             raise ValueError(
@@ -143,9 +197,10 @@ def _reject_untrusted_active_platform(entry: PlatformEntry) -> None:
                 f"refused outside local"
             )
     for domain in entry.domains:
-        if _domain_host(domain) in _LOCALHOST_HOSTS:
+        if _is_loopback_host(_domain_host(domain)):
             raise ValueError(
-                f"platform {key}: active CSP domain '{domain}' is localhost; refused outside local"
+                f"platform {key}: active CSP domain '{domain}' is a localhost/loopback address; "
+                f"refused outside local"
             )
 
 

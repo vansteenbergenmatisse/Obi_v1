@@ -43,6 +43,22 @@ _OFFLINE_ENVS = {"local", "test", "ci"}
 # (the platform + scope config now sit under knowledge-base/config/). settings.py -> root is 4 up.
 DEFAULT_OBI_IDENTITY_PATH = Path(__file__).resolve().parents[4] / "config" / "obi_identity.md"
 
+# AUTHRT-REGISTRY-RELOAD: process cache for the parsed + validated platform registry, keyed on the
+# exact inputs a load depends on (resolved path + the ENV-derived trust flags + the recognized-scope
+# set). A plain `property` re-read AND re-validated platforms.json on EVERY access, so one /chat
+# request (TokenVerifier + build_auth_context) parsed it several times, and a file changing between
+# two reads could make them transiently disagree; caching pins ONE instance for a given config.
+#
+# Keyed (not a bare @cached_property on Settings) precisely because Settings is `model_copy`- d in
+# tests and elsewhere: a cached_property lives in the instance __dict__, so a copy would carry the
+# ORIGINAL registry over even when the copy overrides `platforms_path`. Keying on the resolved
+# inputs means a copy with a different path/flags recomputes, while an identical config reuses.
+#
+# Fail-closed is unchanged: a load only reaches the cache AFTER load_platform_registry validated it,
+# so a malformed/untrusted file still raises (and is never cached) at first construction — the
+# `_require_valid_platform_registry` validator drives the first load at boot.
+_PLATFORM_REGISTRY_CACHE: dict[tuple[str, bool, bool, frozenset[str]], PlatformRegistry] = {}
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -279,8 +295,9 @@ class Settings(BaseSettings):
 
     def is_offline_env(self) -> bool:
         """True in local/test/ci — envs where a missing hosted key or DB role is a safe
-        default-to-fake / default-to-writer fallback rather than a real deployment gap. 'dev'/
-        'development' are NOT offline (CFG-B): a dev/staging deployment is guarded like production."""
+        default-to-fake / default-to-writer fallback rather than a real deployment gap.
+        'dev'/'development' are NOT offline (CFG-B): a dev/staging deployment is guarded
+        like production."""
         return self.env.lower() in _OFFLINE_ENVS
 
     @property
@@ -301,6 +318,15 @@ class Settings(BaseSettings):
 
     @property
     def platform_registry(self) -> PlatformRegistry:
+        """The parsed + validated platform registry for this Settings' config, reused from a
+        process cache (AUTHRT-REGISTRY-RELOAD) so a single /chat request — which touches it via the
+        ``TokenVerifier`` AND ``build_auth_context`` — no longer re-reads and re-validates the JSON
+        file on every access. See ``_PLATFORM_REGISTRY_CACHE`` for why the cache is keyed on the
+        resolved inputs rather than held on the instance (it survives ``Settings.model_copy``).
+
+        Fail-closed is unchanged: a bad/untrusted file raises inside ``load_platform_registry``
+        BEFORE anything is cached, and ``_require_valid_platform_registry`` drives that first load
+        at construction, so a malformed registry still stops boot exactly as before."""
         from app.platform.config.platforms import (
             DEFAULT_PLATFORMS_PATH,
             load_platform_registry,
@@ -319,12 +345,18 @@ class Settings(BaseSettings):
         # always False and the zero-active guard fires regardless of the hatch.
         offline = self.is_offline_env()
         allow_empty = offline and self.allow_empty_platforms
-        return load_platform_registry(
-            path,
-            self.knowledge_scope_set,
-            allow_empty=allow_empty,
-            offline=offline,
-        )
+        scopes = self.knowledge_scope_set
+        cache_key = (str(path), offline, allow_empty, scopes)
+        cached = _PLATFORM_REGISTRY_CACHE.get(cache_key)
+        if cached is None:
+            cached = load_platform_registry(
+                path,
+                scopes,
+                allow_empty=allow_empty,
+                offline=offline,
+            )
+            _PLATFORM_REGISTRY_CACHE[cache_key] = cached
+        return cached
 
     @model_validator(mode="after")
     def _require_general_knowledge_scope(self) -> Settings:
