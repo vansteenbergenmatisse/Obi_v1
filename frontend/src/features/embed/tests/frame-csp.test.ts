@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { computeEmbedCsp, LOCAL_OR_DEV_ENVS } from "../csp";
+import { computeEmbedCsp, LOCAL_OR_DEV_ENVS, toEmbedderOrigins } from "../csp";
 import { activeDomains } from "../platforms";
 
 const ORIGINAL_PLATFORMS_PATH = process.env.PLATFORMS_PATH;
@@ -85,10 +85,54 @@ describe("computeEmbedCsp localhost filtering (gap CFG-04)", () => {
   });
 });
 
-describe("env signal contract (gap CFG-05)", () => {
-  it("pins the canonical local/dev env-value set shared with the backend _OFFLINE_ENVS", () => {
-    // MUST stay identical to backend/app/platform/config/settings.py::_OFFLINE_ENVS
-    // (pinned there by test_offline_env_value_set_is_the_canonical_cross_side_contract).
+describe("toEmbedderOrigins — bridge allow-list scheme + loopback posture (gap BIT-A1)", () => {
+  it("outside local/dev emits ONLY https origins for real domains and drops every loopback origin", () => {
+    const origins = toEmbedderOrigins(
+      ["app.mews.com", "localhost:3000", "127.0.0.1:8080"],
+      false,
+    );
+    expect(origins).toEqual(["https://app.mews.com"]);
+    // No plaintext-http origin, and no loopback origin at all, in production.
+    expect(origins.some((o) => o.startsWith("http://"))).toBe(false);
+    expect(origins.join(" ")).not.toContain("localhost");
+    expect(origins.join(" ")).not.toContain("127.0.0.1");
+  });
+
+  it("outside local/dev emits https for every real domain, never plaintext http", () => {
+    expect(toEmbedderOrigins(["app.mews.com", "pos.toasttab.com"], false)).toEqual([
+      "https://app.mews.com",
+      "https://pos.toasttab.com",
+    ]);
+  });
+
+  it("keeps loopback origins and both schemes in local/dev (the embed test flow, regression)", () => {
+    expect(toEmbedderOrigins(["localhost:3000", "app.mews.com"], true)).toEqual([
+      "https://localhost:3000",
+      "http://localhost:3000",
+      "https://app.mews.com",
+      "http://app.mews.com",
+    ]);
+  });
+
+  it("never emits a wildcard in either environment", () => {
+    for (const origin of [
+      ...toEmbedderOrigins(["app.mews.com", "localhost:3000"], true),
+      ...toEmbedderOrigins(["app.mews.com", "localhost:3000"], false),
+    ]) {
+      expect(origin).not.toBe("*");
+      expect(origin).not.toContain("*");
+    }
+  });
+});
+
+describe("env signal contract (gap CFG-H)", () => {
+  it("pins the frontend's own canonical local/dev env-value set", () => {
+    // This is the FRONTEND's OWN set and is intentionally allowed to differ from the backend's
+    // ENV-based _OFFLINE_ENVS (backend/app/platform/config/settings.py), which has since narrowed
+    // to drop dev/development. The two sides read different vars — the frontend keys off
+    // NODE_ENV/APP_ENV (so "development" stays in, matching Next's own dev NODE_ENV); the backend
+    // keys off ENV. Each side pins its own set independently; there is no "identical cross-side
+    // contract." See csp.ts's LOCAL_OR_DEV_ENVS docstring.
     expect(new Set(LOCAL_OR_DEV_ENVS)).toEqual(
       new Set(["local", "dev", "development", "test", "ci"]),
     );

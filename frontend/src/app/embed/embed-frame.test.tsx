@@ -60,6 +60,14 @@ async function sendMessage(text: string) {
   await userEvent.click(screen.getByRole("button", { name: "Send" }));
 }
 
+/** A syntactically-valid JWT carrying display-only business claims (no real signature — the bridge
+ * decodes claims for scope-equality only, never for auth). Mirrors iframe-bridge.test.ts. */
+function jwtWithClaims(claims: Record<string, unknown>): string {
+  const header = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const payload = btoa(JSON.stringify(claims));
+  return `${header}.${payload}.signature`;
+}
+
 describe("EmbedFrame lifecycle", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
@@ -152,6 +160,51 @@ describe("EmbedFrame lifecycle", () => {
     await screen.findByRole("textbox", { name: /message/i });
     expect(screen.queryByText("LATE ANSWER")).not.toBeInTheDocument();
     expect(screen.queryByText("hanging question")).not.toBeInTheDocument();
+  });
+
+  it("LC-F1: a scope-changing obi:token renewal resets the active conversation (onScopeChange → restart)", async () => {
+    const requestBodies: Array<{ conversationId?: string }> = [];
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+      requestBodies.push(init?.body ? JSON.parse(init.body as string) : {});
+      return Promise.resolve(
+        okStreamResponse([
+          sse({ type: "start", conversationId: "conv-1" }),
+          sse({ type: "done", answer: "Mews answer", citations: [], traceId: "trace-1", refused: false }),
+        ]),
+      );
+    });
+
+    render(<EmbedFrame allowedOrigins={[ORIGIN]} />);
+    postFromHost({ type: "obi:open" });
+    await screen.findByRole("textbox", { name: /message/i });
+
+    // Establish the first scope, then hold a real conversation under it.
+    postFromHost({
+      type: "obi:token",
+      token: jwtWithClaims({ integration: "mews", company_id: "c1" }),
+    });
+    await sendMessage("mews question");
+    expect(await screen.findByText("mews question")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Mews answer")).toBeInTheDocument());
+
+    // A silent renewal into a DIFFERENT company/integration must tear the conversation down so no
+    // prior-scope answer bleeds across — onScopeChange → restart() (LC-2/LC-3/LC-6).
+    postFromHost({
+      type: "obi:token",
+      token: jwtWithClaims({ integration: "toast", company_id: "c2" }),
+    });
+
+    // A scope change is not a logout: the panel stays open, but the prior thread is gone.
+    await waitFor(() =>
+      expect(screen.queryByText("mews question")).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByText("Mews answer")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: /message/i })).toBeInTheDocument();
+
+    // ...and conversationId was reset: the next turn opens a brand-new conversation.
+    await sendMessage("toast question");
+    await waitFor(() => expect(requestBodies).toHaveLength(2));
+    expect(requestBodies[1].conversationId).toBeUndefined();
   });
 
   it("LC-6: a backend 401 drives the subscribed onUnauthorized handler, clearing stale UI", async () => {

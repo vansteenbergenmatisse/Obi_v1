@@ -56,6 +56,33 @@ function isLocalhostDomain(domain: string): boolean {
   return host === "localhost" || host === "127.0.0.1";
 }
 
+/**
+ * The active platform domains that may actually embed/drive the frame in THIS environment — the
+ * single source of truth shared by BOTH consumers of `activeDomains()` (gap BIT-A1): the CSP's
+ * `frame-ancestors` (`computeEmbedCsp`) and the postMessage allow-list the frame accepts messages
+ * from (`app/embed/page.tsx`'s `toEmbedderOrigins`). Outside local/dev every localhost/127.0.0.1
+ * domain is stripped (a production frame must never trust the loopback); local/dev keeps them for
+ * the embed test flow. Routing both consumers through here is what keeps the CSP and the bridge
+ * allow-list from ever diverging — previously only `computeEmbedCsp` filtered, so the bridge
+ * trusted localhost embedders in production.
+ */
+export function effectiveEmbedderDomains(domains: string[], isLocalOrDev: boolean): string[] {
+  return isLocalOrDev ? domains : domains.filter((d) => !isLocalhostDomain(d));
+}
+
+/**
+ * The exact host-page origins the frame's postMessage bridge accepts messages from, built from the
+ * active platform domains (gap BIT-A1). Outside local/dev this emits ONLY `https://` origins for
+ * real domains and NO loopback origin at all — a production frame must never accept postMessages
+ * from localhost or over plaintext `http://`. In local/dev both schemes are emitted for every
+ * domain (the embed test flow runs on plain `http://localhost:<port>`). Never `"*"`.
+ */
+export function toEmbedderOrigins(domains: string[], isLocalOrDev: boolean): string[] {
+  return effectiveEmbedderDomains(domains, isLocalOrDev).flatMap((domain) =>
+    isLocalOrDev ? [`https://${domain}`, `http://${domain}`] : [`https://${domain}`],
+  );
+}
+
 export interface EmbedCspResult {
   /** `false` means the caller must respond 403 instead of serving `/embed` at all. */
   ok: boolean;
@@ -77,7 +104,7 @@ export interface EmbedCspResult {
  * domains intact (the embed test flow).
  */
 export function computeEmbedCsp(domains: string[], isLocalOrDev: boolean): EmbedCspResult {
-  const effective = isLocalOrDev ? domains : domains.filter((d) => !isLocalhostDomain(d));
+  const effective = effectiveEmbedderDomains(domains, isLocalOrDev);
   if (effective.length === 0 && !isLocalOrDev) {
     return { ok: false, header: "frame-ancestors 'none'" };
   }

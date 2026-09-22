@@ -163,6 +163,43 @@ describe("Obi loader", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("LC-F2: decodes exp from a REAL base64url payload (url-safe -/_, no = padding) and schedules renewal on it", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date"] });
+    // Force the payload's STANDARD base64 to carry +, / and = (via a padded claim), then convert to
+    // the real base64url alphabet — so the loader's `-`→`+` / `_`→`/` + padless atob is exercised,
+    // not just btoa's padded-standard form.
+    const stdPayload = btoa(
+      JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 120, pad: "co-????>>>" }),
+    );
+    expect(/[+/=]/.test(stdPayload)).toBe(true); // fixture guard: non-trivial base64url case
+    const b64urlPayload = stdPayload.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+    expect(b64urlPayload).not.toContain("=");
+    const header = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+    const token1 = `${header}.${b64urlPayload}.signature`; // exp = 120s, base64url-encoded
+    const token2 = fakeJwt(3600);
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ token: token1 }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ token: token2 }), { status: 200 }));
+
+    const Obi = await loadObi();
+    Obi.init({ tokenUrl: TOKEN_URL });
+    const iframe = document.querySelector("iframe") as HTMLIFrameElement;
+    Object.defineProperty(iframe, "contentWindow", { value: { postMessage: vi.fn() } });
+    const button = document.querySelector("button") as HTMLButtonElement;
+    button.click();
+
+    await vi.advanceTimersByTimeAsync(0); // click-time fetch resolves token1 + schedules renewal
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Still before the scheduled renewal (~60s in: 120s exp − 60s renew-before).
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    // Past the renewal point — proving decodeExpMs read exp=120s from the base64url payload.
+    await vi.advanceTimersByTimeAsync(40_000);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("retries the token-endpoint fetch once on a 401 from the platform's own server", async () => {
     fetchMock
       .mockResolvedValueOnce(new Response(null, { status: 401 }))

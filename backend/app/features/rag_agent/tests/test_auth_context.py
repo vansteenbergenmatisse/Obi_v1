@@ -11,6 +11,8 @@ import json
 import pytest
 
 from app.features.rag_agent.application.auth_context import (
+    InactivePlatformError,
+    IntegrationNotAllowedError,
     UnknownIntegrationError,
     build_auth_context,
     general_only_context,
@@ -18,28 +20,40 @@ from app.features.rag_agent.application.auth_context import (
 from app.features.rag_agent.server.token_verifier import VerifiedClaims
 from app.platform.config.platforms import load_platform_registry
 
+_RECOGNIZED = frozenset({"obi-general-test", "obi-mews-test", "obi-toast-test"})
+
+
+def _build_registry(tmp_path, platforms, integrations, *, allow_empty=True):
+    p = tmp_path / "platforms.json"
+    p.write_text(json.dumps({"platforms": platforms, "integrations": integrations}))
+    return load_platform_registry(p, _RECOGNIZED, allow_empty=allow_empty)
+
+
+def _entry(issuer, *, active=True, allowed_integrations):
+    return {
+        "issuer": issuer,
+        "jwks_url": "j",
+        "domains": [],
+        "lifetime_minutes": 60,
+        "algs": ["RS256"],
+        "active": active,
+        "allowed_integrations": allowed_integrations,
+    }
+
 
 def _registry(tmp_path):
-    p = tmp_path / "platforms.json"
-    p.write_text(
-        json.dumps(
-            {
-                "platforms": {
-                    "mews": {
-                        "issuer": "https://app.mews.com",
-                        "jwks_url": "j",
-                        "domains": ["app.mews.com"],
-                        "lifetime_minutes": 60,
-                        "algs": ["RS256"],
-                        "active": True,
-                    }
-                },
-                "integrations": {"mews": ["obi-mews-test"]},
-            }
-        )
-    )
-    return load_platform_registry(
-        p, frozenset({"obi-general-test", "obi-mews-test"}), allow_empty=False
+    # mews is the self-serving platform under test; `other` is a SECOND active platform that also
+    # vends the mews integration, so the CIP-4 two-issuer identity tests (same `sub`, different
+    # issuer) both resolve to a scoped context now that build_auth_context gates on the active
+    # platform + its allowed_integrations (AUTH-1 / CIP-A1).
+    return _build_registry(
+        tmp_path,
+        {
+            "mews": _entry("https://app.mews.com", allowed_integrations=["mews"]),
+            "other": _entry("https://other.example.com", allowed_integrations=["mews"]),
+        },
+        {"mews": ["obi-mews-test"]},
+        allow_empty=False,
     )
 
 
@@ -86,6 +100,129 @@ def test_no_business_values_is_general_only(tmp_path):
 def test_unknown_integration_raises(tmp_path):
     with pytest.raises(UnknownIntegrationError):
         build_auth_context(_claims(integration="wordpress"), _registry(tmp_path))
+
+
+# --- AUTH-1 / CIP-A2: an inactive platform is not served at the AuthContext boundary ------------
+
+
+def test_inactive_platform_token_is_denied(tmp_path):
+    """AUTH-1 / CIP-A2: a validly-verified token whose issuing platform is active=false must NOT
+    receive scoped access — the gate consults the registry's ACTIVE view (platform_for), not the
+    verify-only by_issuer view. An inactive platform should not be served at all."""
+    reg = _build_registry(
+        tmp_path,
+        {
+            "mews": _entry("https://app.mews.com", allowed_integrations=["mews"]),
+            "toast": _entry(
+                "https://pos.toasttab.com", active=False, allowed_integrations=["toast"]
+            ),
+        },
+        {"mews": ["obi-mews-test"], "toast": ["obi-toast-test"]},
+    )
+    claims = VerifiedClaims(
+        issuer="https://pos.toasttab.com",
+        subject="u1",
+        company_id="c1",
+        company_name="R",
+        integration="toast",
+    )
+    with pytest.raises(InactivePlatformError):
+        build_auth_context(claims, reg)
+
+
+def test_inactive_platform_general_only_token_also_denied(tmp_path):
+    """AUTH-1 / CIP-A2: even a general-only (integration=None) token from an inactive platform is
+    denied — an inactive platform is not served, business values or not."""
+    reg = _build_registry(
+        tmp_path,
+        {
+            "mews": _entry("https://app.mews.com", allowed_integrations=["mews"]),
+            "toast": _entry(
+                "https://pos.toasttab.com", active=False, allowed_integrations=["toast"]
+            ),
+        },
+        {"mews": ["obi-mews-test"], "toast": ["obi-toast-test"]},
+    )
+    claims = VerifiedClaims(
+        issuer="https://pos.toasttab.com",
+        subject="u1",
+        company_id=None,
+        company_name=None,
+        integration=None,
+    )
+    with pytest.raises(InactivePlatformError):
+        build_auth_context(claims, reg)
+
+
+def test_active_platform_general_only_is_allowed(tmp_path):
+    """A token with integration=None from an ACTIVE platform stays general-only (allowed) — the
+    active gate does not block the tokenless-business-values path."""
+    ctx = build_auth_context(
+        _claims(company_id=None, company_name=None, integration=None), _registry(tmp_path)
+    )
+    assert ctx.allowed_scopes == ("obi-general-test",)
+    assert ctx.integration is None
+    assert ctx.token_subject == "https://app.mews.com\x00u1"
+
+
+# --- CIP-A1: the integration claim is bound to the issuing platform's allow-list ----------------
+
+
+def test_cross_issuer_integration_is_rejected(tmp_path):
+    """CIP-A1: a token signed by issuer A (mews, allowed only ["mews"]) that claims issuer B's
+    integration (toast) is REJECTED — a trusted issuer can no longer assert any integration and
+    reach another tenant's scopes."""
+    reg = _build_registry(
+        tmp_path,
+        {
+            "mews": _entry("https://app.mews.com", allowed_integrations=["mews"]),
+            "toast": _entry("https://pos.toasttab.com", allowed_integrations=["toast"]),
+        },
+        {"mews": ["obi-mews-test"], "toast": ["obi-toast-test"]},
+    )
+    claims = VerifiedClaims(
+        issuer="https://app.mews.com",
+        subject="u1",
+        company_id="c1",
+        company_name="Hotel",
+        integration="toast",  # mews is not allowed to assert toast
+    )
+    with pytest.raises(IntegrationNotAllowedError):
+        build_auth_context(claims, reg)
+
+
+def test_hub_vends_multiple_product_integrations(tmp_path):
+    """CIP-A1 (hub model): the Data-Hub-style platform is allowed to assert several product
+    integrations and each resolves to that product's scopes."""
+    reg = _build_registry(
+        tmp_path,
+        {"datahub": _entry("https://hub.example.com", allowed_integrations=["mews", "toast"])},
+        {"mews": ["obi-mews-test"], "toast": ["obi-toast-test"]},
+    )
+
+    def _hub_claims(integration):
+        return VerifiedClaims(
+            issuer="https://hub.example.com",
+            subject="u1",
+            company_id="c1",
+            company_name="Co",
+            integration=integration,
+        )
+
+    assert build_auth_context(_hub_claims("mews"), reg).allowed_scopes == (
+        "obi-general-test",
+        "obi-mews-test",
+    )
+    assert build_auth_context(_hub_claims("toast"), reg).allowed_scopes == (
+        "obi-general-test",
+        "obi-toast-test",
+    )
+
+
+def test_self_serving_platform_asserting_own_integration_is_allowed(tmp_path):
+    """CIP-A1: the ordinary case — a self-serving platform asserting its OWN integration works."""
+    ctx = build_auth_context(_claims(integration="mews"), _registry(tmp_path))
+    assert ctx.allowed_scopes == ("obi-general-test", "obi-mews-test")
 
 
 def test_general_only_context_helper():

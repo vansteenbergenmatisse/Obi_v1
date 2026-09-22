@@ -151,7 +151,7 @@ from starlette.responses import StreamingResponse
 from app.features.rag_agent.application.answer_service import AnswerProvider
 from app.features.rag_agent.application.auth_context import (
     AuthContext,
-    UnknownIntegrationError,
+    AuthContextError,
     build_auth_context,
     general_only_context,
 )
@@ -255,14 +255,16 @@ def _resolve_auth_context(
     """PLAN 11.1c (ADR-0014). Turn the platform-signed `X-Obi-Token` into the frozen `AuthContext`
     that drives scope. No token -> the general-only context (the tokenless internal/eval path, and
     the pilot fallback while platforms are still being onboarded). A present-but-invalid token, or a
-    verified-but-unknown integration, is a bare 401 — no detail leaked about which check failed."""
+    verified token an AuthContext gate refuses — an inactive platform (AUTH-1/CIP-A2), an
+    integration the issuer may not assert (CIP-A1), or an unknown integration — is a bare 401, no
+    detail leaked about which check failed."""
     raw = request.headers.get(_OBI_TOKEN_HEADER, "")
     if not raw:
         return general_only_context()
     try:
         claims = verifier.verify(raw)
         return build_auth_context(claims, settings.platform_registry)
-    except (TokenError, UnknownIntegrationError) as exc:
+    except (TokenError, AuthContextError) as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token") from exc
 
 

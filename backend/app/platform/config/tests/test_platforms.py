@@ -284,3 +284,73 @@ def test_platforms_local_override_file_still_loads_when_offline():
     local_file = DEFAULT_PLATFORMS_PATH.parent / "platforms.local.json"
     reg = load_platform_registry(local_file, RECOGNIZED, allow_empty=True, offline=True)
     assert "localhost:3000" in reg.active_domains()
+
+
+# --- CIP-A1: per-platform allowed_integrations allow-list ----------------------------------------
+# Each platform declares which integration CLAIM VALUES it may assert; a value not in the global
+# integrations map stops startup naming the offender, and the loaded entry exposes the tuple.
+
+
+def test_platforms_allowed_integration_not_in_map_stops_startup(tmp_path):
+    """CIP-A1 · an allowed_integrations value with no matching integrations-map key stops startup,
+    naming the offending platform and the bad value."""
+    plat = {"mews": _platform(issuer="https://app.mews.com", allowed_integrations=["toast"])}
+    p = _write(tmp_path, _data(platforms=plat, integrations={"mews": ["obi-mews-test"]}))
+    with pytest.raises(ValueError, match="mews") as exc:
+        load_platform_registry(p, RECOGNIZED, allow_empty=False)
+    assert "allowed_integration" in str(exc.value)
+    assert "toast" in str(exc.value)
+
+
+def test_platforms_entry_exposes_allowed_integrations(tmp_path):
+    """CIP-A1 · a valid allowed_integrations list is carried onto the loaded PlatformEntry."""
+    plat = {"mews": _platform(issuer="https://app.mews.com", allowed_integrations=["mews"])}
+    p = _write(tmp_path, _data(platforms=plat, integrations={"mews": ["obi-mews-test"]}))
+    reg = load_platform_registry(p, RECOGNIZED, allow_empty=False)
+    entry = reg.by_issuer("https://app.mews.com")
+    assert entry is not None
+    assert entry.allowed_integrations == ("mews",)
+
+
+def test_platforms_allowed_integrations_defaults_empty(tmp_path):
+    """CIP-A1 · a platform with no allowed_integrations key loads with an empty tuple (it may
+    assert no integration — only general-only tokens)."""
+    plat = {"mews": _platform(issuer="https://app.mews.com")}
+    p = _write(tmp_path, _data(platforms=plat, integrations={"mews": ["obi-mews-test"]}))
+    reg = load_platform_registry(p, RECOGNIZED, allow_empty=False)
+    entry = reg.by_issuer("https://app.mews.com")
+    assert entry is not None
+    assert entry.allowed_integrations == ()
+
+
+def test_platforms_real_file_datahub_vends_product_integrations():
+    """CIP-A1 · the committed registry's active hub (datahub) is allowed to assert every product
+    integration (OWNER TRUST DECISION — see platforms.json _readme)."""
+    reg = load_platform_registry(
+        DEFAULT_PLATFORMS_PATH,
+        load_recognized_knowledge_scopes(),
+        allow_empty=False,
+        offline=True,
+    )
+    entry = reg.by_issuer("TODO until 4.x")
+    assert entry is not None and entry.key == "datahub"
+    assert set(entry.allowed_integrations) == {"mews", "toast", "opera-cloud"}
+
+
+def test_platforms_local_file_allowed_integrations_match_test_hosts():
+    """CIP-A1 · platforms.local.json's test-* allow-lists match exactly what the frontend test-host
+    token routes mint (frontend/src/app/api/test-hosts/config.ts): test-mews->mews, test-toast->
+    toast, test-opera->opera-cloud, test-none-> () (mints a general-only, no-integration token) —
+    the local embed test flow must keep resolving."""
+    local_file = DEFAULT_PLATFORMS_PATH.parent / "platforms.local.json"
+    reg = load_platform_registry(local_file, RECOGNIZED, allow_empty=True, offline=True)
+    expected = {
+        "https://test-mews.local": ("mews",),
+        "https://test-toast.local": ("toast",),
+        "https://test-opera.local": ("opera-cloud",),
+        "https://test-none.local": (),
+    }
+    for issuer, allowed in expected.items():
+        entry = reg.by_issuer(issuer)
+        assert entry is not None, issuer
+        assert entry.allowed_integrations == allowed, issuer

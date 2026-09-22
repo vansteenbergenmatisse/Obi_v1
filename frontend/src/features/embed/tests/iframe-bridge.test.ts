@@ -23,6 +23,16 @@ function jwtWithClaims(claims: Record<string, unknown>): string {
   return `${header}.${payload}.signature`;
 }
 
+/** A JWT whose payload is encoded in the REAL base64url alphabet (url-safe `-`/`_`, `=` padding
+ * stripped) — what an actual JWT looks like, unlike `btoa`'s padded-standard base64. Exercises the
+ * bridge's `-`→`+` / `_`→`/` conversion and its padless `atob`. */
+function jwtWithClaimsB64url(claims: Record<string, unknown>): string {
+  const header = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }));
+  const std = btoa(JSON.stringify(claims));
+  const payload = std.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return `${header}.${payload}.signature`;
+}
+
 describe("initIframeBridge", () => {
   let teardown: (() => void) | undefined;
   let warnSpy: ReturnType<typeof vi.spyOn>;
@@ -164,6 +174,38 @@ describe("initIframeBridge", () => {
     // A token whose integration/company differ DID cross into another corpus/identity → reset.
     post(
       { type: "obi:token", token: jwtWithClaims({ integration: "toast", company_id: "c2" }) },
+      ALLOWED_ORIGIN,
+    );
+    expect(onScopeChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("LC-F2: decodeScope reads claims from a REAL base64url payload (url-safe -/_, no = padding)", () => {
+    const onScopeChange = vi.fn();
+    teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN], onScopeChange });
+
+    // A claim value whose STANDARD base64 carries +, / and = — so the url-safe conversion in the
+    // fixture (and the bridge's inverse `-`→`+` / `_`→`/` + padless atob) is genuinely exercised;
+    // a padded-standard-base64 fixture via btoa alone would never hit the `-`/`_` branch.
+    const claims = { integration: "mews", company_id: "co-????>>>" };
+    const std = btoa(JSON.stringify(claims));
+    expect(/[+/=]/.test(std)).toBe(true); // fixture guard: this really is a non-trivial base64url case
+    const b64urlToken = jwtWithClaimsB64url(claims);
+    expect(b64urlToken.split(".")[1]).not.toContain("="); // no padding, url-safe alphabet
+
+    // A standard-base64 token establishes the scope; the base64url token carries the SAME claims,
+    // so if the url-safe payload decoded correctly it must NOT count as a scope change.
+    post({ type: "obi:token", token: jwtWithClaims(claims) }, ALLOWED_ORIGIN);
+    expect(onScopeChange).not.toHaveBeenCalled();
+    post({ type: "obi:token", token: b64urlToken }, ALLOWED_ORIGIN);
+    expect(onScopeChange).not.toHaveBeenCalled();
+
+    // A base64url token whose claims DIFFER must decode correctly and trigger the reset — proving
+    // the decode read the real values, not garbage.
+    post(
+      {
+        type: "obi:token",
+        token: jwtWithClaimsB64url({ integration: "toast", company_id: "c2" }),
+      },
       ALLOWED_ORIGIN,
     );
     expect(onScopeChange).toHaveBeenCalledTimes(1);

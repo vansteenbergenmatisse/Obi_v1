@@ -7,6 +7,8 @@ Only the two LLM stages (rewrite, generation) are faked — same discipline as
 from __future__ import annotations
 
 import json
+import tempfile
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -45,12 +47,63 @@ pytestmark = (
 _API_KEY = "test-chat-key"
 
 
+def _write_test_platforms() -> str:
+    """AUTH-1/CIP-A1/CIP-A2 (gap repair): build_auth_context now gates on the ACTIVE platform +
+    its allowed_integrations, so a verified token is only served when its issuer is an ACTIVE
+    registry entry allowed to assert its integration. The committed platforms.json has only the
+    placeholder `datahub` active (mews/toast/opera-cloud are inactive), so these functional /chat
+    tests point at a purpose-built registry whose issuers ARE active with the right allow-lists:
+      - `test-iss` (the default `_StubTokenVerifier()` issuer, integration=None) active, no
+        integrations -> a general-only tokened request is served (its token_subject still drives
+        the rate-limit / idempotency / answer-cache keys these tests assert on);
+      - `https://app.mews.com` active, allowed ["mews"]; `https://pos.toasttab.com` active, allowed
+        ["toast"] -> the mews/toast isolation + scope tests resolve to their own scopes only.
+    Written once per test session under a temp dir; `_chat_settings` wires it via `platforms_path`.
+    """
+    d = Path(tempfile.mkdtemp(prefix="obi-chat-platforms-"))
+    path = d / "platforms.json"
+
+    def _p(issuer: str, allowed: list[str]) -> dict:
+        return {
+            "issuer": issuer,
+            "jwks_url": f"{issuer}/jwks",
+            "domains": [],
+            "lifetime_minutes": 60,
+            "algs": ["RS256"],
+            "active": True,
+            "allowed_integrations": allowed,
+        }
+
+    path.write_text(
+        json.dumps(
+            {
+                "platforms": {
+                    "test-iss": _p("test-iss", []),
+                    "mews": _p("https://app.mews.com", ["mews"]),
+                    "toast": _p("https://pos.toasttab.com", ["toast"]),
+                },
+                "integrations": {
+                    "mews": ["obi-mews-test"],
+                    "toast": ["obi-toast-test"],
+                    "opera-cloud": ["obi-operacloud-test"],
+                },
+            }
+        )
+    )
+    return str(path)
+
+
+# Session-stable path; individual tests may still override `platforms_path` via `_chat_settings`.
+_TEST_PLATFORMS_PATH = _write_test_platforms()
+
+
 def _chat_settings(base: Settings, **overrides) -> Settings:
     return base.model_copy(
         update={
             "chat_api_key": _API_KEY,
             "chat_rate_limit_per_minute": 100,
             "chat_stream_interval_ms": 0,  # keep tests fast
+            "platforms_path": _TEST_PLATFORMS_PATH,  # see _write_test_platforms (gap repair)
             **overrides,
         }
     )

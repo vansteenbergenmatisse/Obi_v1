@@ -36,6 +36,9 @@ from .application.answer_cache import CachingAnswerService
 from .application.answer_service import AnswerProvider, AnswerService
 from .application.auth_context import (
     AuthContext,
+    AuthContextError,
+    InactivePlatformError,
+    IntegrationNotAllowedError,
     UnknownIntegrationError,
     build_auth_context,
     general_only_context,
@@ -67,7 +70,10 @@ __all__ = [
     "AuthContext",
     "build_auth_context",
     "general_only_context",
+    "AuthContextError",
     "UnknownIntegrationError",
+    "InactivePlatformError",
+    "IntegrationNotAllowedError",
     "TokenVerifier",
     "TokenError",
     "VerifiedClaims",

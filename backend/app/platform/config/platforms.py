@@ -6,9 +6,10 @@ to the live obi-*-test knowledge scopes and holds the trusted-issuer verificatio
 Validated at startup, after the tag map, rules in order, each error naming the offending entry:
 every mapped scope exists in knowledge_scopes.json; 'classified' is never mappable; the general
 scope is added by the loader, never listed by hand; lifetime_minutes sits within 1..1440; every
-signing alg is on the allow-list (RS256, ES256); an empty registry, or one with zero active
-platforms, stops startup outside local (allow_empty=False). Outside offline (offline=False) an
-ACTIVE platform must further be a real production trusted issuer — an https issuer/jwks on a real
+signing alg is on the allow-list (RS256, ES256); every platform's allowed_integrations value is a
+real integration (a key of the integrations map — gap CIP-A1); an empty registry, or one with zero
+active platforms, stops startup outside local (allow_empty=False). Outside offline (offline=False)
+an ACTIVE platform must further be a real production trusted issuer — an https issuer/jwks on a real
 host, never a TODO/PLACEHOLDER string, localhost/127.0.0.1 or .local host, and no localhost CSP
 domain (gap CFG-02/AUTHRT-1 + CFG-04); offline/local keeps loading platforms.local.json's test-*
 issuers and localhost domains unchanged.
@@ -52,6 +53,14 @@ class PlatformEntry:
     lifetime_minutes: int
     algs: tuple[str, ...]
     active: bool
+    # gap CIP-A1: the integration CLAIM VALUES this platform is trusted to assert. A self-serving
+    # platform lists only its own integration (e.g. mews -> ["mews"]); a hub (datahub) lists the
+    # product integrations it may vend. build_auth_context rejects a verified token whose
+    # `integration` is not in the issuing platform's list, so a trusted issuer can no longer assert
+    # any integration and reach another tenant's scopes. Empty () => the platform may assert no
+    # integration (general-only tokens only). Every listed value is validated at load to exist in
+    # the global `integrations` map (loader below), naming the offender.
+    allowed_integrations: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +188,14 @@ def load_platform_registry(
                 raise ValueError(
                     f"platform {key}: algorithm '{alg}' not in allow-list (RS256, ES256)"
                 )
+        # gap CIP-A1: every integration this platform is trusted to assert must be a real
+        # integration (a key of the global integrations map), or startup stops naming the offender.
+        allowed_integrations = tuple(str(v) for v in raw.get("allowed_integrations", []))
+        for value in allowed_integrations:
+            if value not in integrations:
+                raise ValueError(
+                    f"platform {key}: allowed_integration '{value}' not in integrations map"
+                )
         entry = PlatformEntry(
             key=key,
             issuer=str(raw["issuer"]),
@@ -187,6 +204,7 @@ def load_platform_registry(
             lifetime_minutes=lifetime,
             algs=algs,
             active=bool(raw.get("active", False)),
+            allowed_integrations=allowed_integrations,
         )
         by_issuer[entry.issuer] = entry
 

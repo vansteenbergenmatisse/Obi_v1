@@ -10,8 +10,21 @@ v1 scope decisions (spec §6): integration-level content scoping only. `principa
 for embedded users (open Confluence pages only, no per-person page ACL). `company_id`/`company_name`
 are carried for audit/future use but are NEVER a scope axis — two users of the same integration in
 different companies see the same knowledge scopes (done-when 3a). A token with no business values
-degrades to general-only (not refused); an unknown integration raises `UnknownIntegrationError`
-(the router maps it to 401)."""
+from an ACTIVE platform degrades to general-only (not refused); every failure below raises an
+`AuthContextError` the router maps to a bare 401.
+
+Two authorization gates run here, at the trust boundary (not in the verifier, which intentionally
+verifies-without-serving — PLAN 11.1c):
+  - AUTH-1 / CIP-A2: the issuing platform must be ACTIVE. Verification (token_verifier.by_issuer)
+    admits an inactive platform's validly-signed token; this gate consults the registry's ACTIVE
+    view (`platform_for`) and denies it — an inactive platform is not served at all
+    (`InactivePlatformError`).
+  - CIP-A1: the verified `integration` claim must be one the issuing platform is trusted to assert
+    (`PlatformEntry.allowed_integrations`). A self-serving platform (mews/toast/opera-cloud) may
+    assert only its own integration; a hub (datahub) may vend the product integrations it lists.
+    Otherwise `IntegrationNotAllowedError` — so a trusted issuer can no longer claim any
+    integration and reach another tenant's scopes. An integration that is not a real integration
+    at all raises `UnknownIntegrationError`."""
 
 from __future__ import annotations
 
@@ -33,8 +46,24 @@ _GENERAL = "obi-general-test"
 _DEFAULT_SOURCES = ("confluence:default",)
 
 
-class UnknownIntegrationError(ValueError):
-    """The verified integration claim is not in the platform registry -> the router returns 401."""
+class AuthContextError(ValueError):
+    """Any reason a verified token cannot be turned into a scoped AuthContext. The router catches
+    this base and returns a bare 401 (no detail leaked about which gate failed)."""
+
+
+class UnknownIntegrationError(AuthContextError):
+    """The verified integration claim is not a real integration (not in the registry's integration
+    map) -> the router returns 401."""
+
+
+class InactivePlatformError(AuthContextError):
+    """AUTH-1 / CIP-A2: the verified issuer's platform is not active, so it is not served at all
+    (even for a general-only token) -> the router returns 401."""
+
+
+class IntegrationNotAllowedError(AuthContextError):
+    """CIP-A1: the verified issuer is a trusted platform, but is not trusted to assert this
+    (otherwise-real) integration -> the router returns 401."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +102,11 @@ def general_only_context() -> AuthContext:
 
 
 def build_auth_context(claims: VerifiedClaims, registry: PlatformRegistry) -> AuthContext:
+    # AUTH-1 / CIP-A2: gate on the ACTIVE view, not the verify-only by_issuer view. An inactive
+    # platform's token verifies (token_verifier.by_issuer) but is not served here at all.
+    entry = registry.platform_for(claims.issuer)
+    if entry is None:
+        raise InactivePlatformError(claims.issuer)
     if claims.integration is None:
         # no business values -> general only, still identified by the token subject
         return AuthContext(
@@ -87,6 +121,12 @@ def build_auth_context(claims: VerifiedClaims, registry: PlatformRegistry) -> Au
     scopes = registry.scopes_for(claims.integration)
     if scopes is None:
         raise UnknownIntegrationError(claims.integration)
+    # CIP-A1: bind the integration claim to the issuing platform's allow-list — a trusted issuer
+    # may only assert an integration it is trusted to vend, never another tenant's.
+    if claims.integration not in entry.allowed_integrations:
+        raise IntegrationNotAllowedError(
+            f"platform {entry.key} may not assert integration '{claims.integration}'"
+        )
     return AuthContext(
         company_id=claims.company_id,
         company_name=claims.company_name,
