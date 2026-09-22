@@ -32,7 +32,12 @@ def classify_scope(scope: str | None) -> tuple[int | None, str | None]:
     (returns ``(space_id, None)``); anything else — including ``None`` — is a principal identity
     (returns ``(None, principal)``). Callers must classify at the boundary and pass the explicit
     pair onward; nothing downstream re-derives trust kind from string shape."""
-    if scope is not None and scope.isdigit():
+    # ``isascii() and isdigit()`` — ASCII decimal digits only. Bare ``str.isdigit()`` is also True
+    # for non-ASCII digits (Arabic-Indic, fullwidth, superscript), and ``int()`` then raises on some
+    # of them. A real space-id is always an ASCII decimal string, so this is behaviour-preserving
+    # for every legitimate input and removes the latent crash before any future phase wires a
+    # caller-supplied scope here (same class as gap W6-5-L1; today ``scope`` is always None in v1).
+    if scope is not None and scope.isascii() and scope.isdigit():
         return int(scope), None
     return None, scope
 

@@ -154,6 +154,11 @@ export function isLocalhostDomain(domain: string): boolean {
     host = raw.split(":")[0];
   }
 
+  // Strip whitespace the extraction can leave INSIDE the value (`[ ::1]` → ` ::1`, `127.0.0.1 :80`
+  // → `127.0.0.1 `), mirroring the backend twin `_is_loopback_host`'s unconditional `.strip()` in
+  // platforms.py — without this the two matchers diverge on such malformed inputs (gap W7-A1-1).
+  host = host.trim();
+
   // Normalize a single trailing FQDN dot (`localhost.`, `127.0.0.1.`, `acme.local.`).
   if (host.endsWith(".") && !host.endsWith("..")) host = host.slice(0, -1);
 

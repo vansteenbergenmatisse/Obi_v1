@@ -140,6 +140,18 @@ describe("isLocalhostDomain — full loopback set (gap BIT-A-R1)", () => {
     expect(isLocalhostDomain("127.0.0.１")).toBe(false);
     expect(isLocalhostDomain("127.0.0.²")).toBe(false);
   });
+
+  it("strips whitespace left inside the extracted host so it matches the backend (gap W7-A1-1)", () => {
+    // The backend twin `_is_loopback_host` unconditionally `.strip()`s the extracted host, so
+    // `[ ::1]` / `127.0.0.1 :80` are loopback there; the frontend must trim the same way or the two
+    // matchers diverge on such malformed operator-config domains. Backend is the stricter (fail-
+    // closed) side, so this is defense-in-depth parity, not a live bypass.
+    expect(isLocalhostDomain("[ ::1]")).toBe(true);
+    expect(isLocalhostDomain("[::1 ]")).toBe(true);
+    expect(isLocalhostDomain("[ ::ffff:127.0.0.1]")).toBe(true);
+    expect(isLocalhostDomain("[ 127.0.0.1]")).toBe(true);
+    expect(isLocalhostDomain("127.0.0.1 :80")).toBe(true);
+  });
 });
 
 describe("expanded loopback stripping outside local/dev (gap BIT-A-R1)", () => {

@@ -27,6 +27,18 @@ def test_classify_scope_splits_digit_strings_from_principal_ids() -> None:
     assert classify_scope(None) == (None, None)
 
 
+def test_classify_scope_treats_non_ascii_digits_as_principal_never_raises() -> None:
+    """A scope whose "digits" are non-ASCII (Arabic-Indic, fullwidth, superscript) is NOT a numeric
+    space-id — ``str.isdigit()`` is True for them but ``int()`` would raise (or silently succeed and
+    diverge from the ASCII-only intent). classify_scope must treat them as an opaque principal
+    string and never raise (same crash class as gap W6-5-L1; ``scope`` is always None in v1, but
+    this removes the latent crash before any future caller-supplied scope)."""
+    assert classify_scope("²") == (None, "²")  # superscript two — int("²") would raise
+    assert classify_scope("٥") == (None, "٥")  # Arabic-Indic five
+    assert classify_scope("１") == (None, "１")  # fullwidth one
+    assert classify_scope("12٣") == (None, "12٣")  # mixed ASCII + non-ASCII
+
+
 def test_space_scope_grants_space_and_blocks_others() -> None:
     policy = PrincipalPermissionPolicy(
         space_of={1002: 100, 2002: 200}, restrictions={1002: {"acct-alice"}}
