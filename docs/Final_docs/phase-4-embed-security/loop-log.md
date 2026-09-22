@@ -192,5 +192,22 @@ Confirmed by the coordinator via direct reproduction, then repaired failing-test
 
 **Consecutive-clean counter: 0 of 2.** Two fresh clean waves are now required again (Waves 7 and 8).
 
+## Wave 7 — Fresh independent re-audit (2026-09-22) — NOT CLEAN → counter stays 0
+
+Five FRESH independent auditors on HEAD f5582fe (post-SEC-RW6), same five domains, each told to FIRST prove the SEC-RW6 loopback fix holds with no regression, THEN re-sweep the complete core; conclusions from code only, adversarial, default-REFUTED. Gate re-verified before the wave: backend unit 622 · kb 23 · backend db 281/1xf · kb db 18 · frontend vitest 285 · typecheck/boundaries clean.
+
+Three domains (browser/CSP, authz+identity+lifecycle, config/migration/CI/test-infra) returned detailed CLEAN — SEC-RW6 confirmed backend-only and non-vacuous (the auditor reproduced the revert: the 6 W6-5-L1 tests go red), csp.ts unaffected and correct, RLS isolation re-proven on the local DB, both DB harness guards precede bootstrap, CI skip-guard tied to the single allowlisted xfail, coverage floor 945≫625. The auth/host-key auditor and the cross-cut critic each surfaced one item:
+
+- **W7-A1-1 (LOW, confirmed twin-divergence + missing-test):** the backend `_is_loopback_host` unconditionally `.strip()`s the extracted host, so `[ ::1]` / `[::1 ]` / `[ ::ffff:127.0.0.1]` / `[ 127.0.0.1]` / `127.0.0.1 :80` (whitespace INSIDE the value) classify as loopback on the backend, but the frontend twin `isLocalhostDomain` (csp.ts) never re-trimmed the bracket/plain-host extraction → it classified them as non-loopback. A twin-invariant violation (the two matchers must agree). Confirmed by the coordinator: the backend returns loopback=True for all five, the frontend returned false before the fix. NOT a live bypass — the backend is the stricter, fail-closed side (rejects the platform at registry load) and `[ ::1]` is not a browser-matchable origin — but actionable, so the wave is NOT clean.
+- **classify_scope note (cross-cut, potential-risk → DISPROVEN for v1):** `permission.py:classify_scope` uses bare `str.isdigit()` then `int()`, the same crash class as W6-5-L1 (`int("²")` raises). The coordinator independently traced reachability and DISPROVED it for v1: the only live caller is `answer_service` `scope = auth.principal`, hardcoded None on all three AuthContext branches; body principal is inert and numeric-rejected (`_reject_numeric_principal`). So `classify_scope` only ever sees None in v1 → `(None, None)`, no `int()`. Not an actionable v1 finding, but a latent future-phase crash — hardened proactively (see below) rather than deferred, to kill the whole `isdigit→int` class in one slice.
+
+### Wave-7 repair (SEC-RW7) — DONE (committed ea9f33b)
+
+Both repaired together (failing-test-first; done in the main window, same disclosed spend-limit deviation as SEC-RW6, independence supplied by Waves 8+9). W7-A1-1: `host.trim()` after extraction in csp.ts, mirroring the backend's unconditional strip — verified both twins now agree loopback=True on all five malformed forms; 1 frontend parity test. classify_scope: `isascii() and isdigit()` (behaviour-preserving — real space-ids are ASCII decimal), 4 backend tests (superscript/Arabic/fullwidth/mixed). The other three `isdigit` sites were reviewed and left: `run_baseline.py` (isdigit-then-string-compare, no `int()`, eval harness), `setup_supabase.py` (parses the DB's own trusted pgvector version, operator tool), `_reject_numeric_principal` (isdigit-then-raise, no `int()`, over-broad rejection is the safe direction) — none are the crash class. **Gate:** backend unit 622→623 · full backend db 281/1xf · kb 23+18 · frontend vitest 285→286 · typecheck/ruff/pyright clean · boundaries OK.
+
+**Consecutive-clean counter: still 0 of 2.** Waves 8 and 9 must both be clean.
+
+
+
 
 
