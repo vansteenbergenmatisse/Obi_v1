@@ -29,7 +29,7 @@ import sys
 from pathlib import Path
 
 from sqlalchemy import text
-from sqlalchemy.engine import make_url
+from sqlalchemy.engine import Connection, make_url
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.platform.config import get_settings
@@ -360,10 +360,95 @@ def verify_isolation() -> int:
     return 0
 
 
+# --- MIG-02 / ADR-0014: deploy-readiness gate for the customer-scope RLS backstop --------------
+# Migration 0010 installs the RESTRICTIVE customer-scope policies (schema.apply_chunk_scope_rls /
+# apply_curated_scope_rls) that are Obi's fail-closed tenant backstop. `alembic upgrade head`
+# applies them, but nothing otherwise blocks a deploy where head < 0010, or where a downgrade left
+# them dropped — in which case the customer/tenant axis silently fails OPEN. These are the exact
+# policy + table names those functions create (mirrored here as literals, as the tests do).
+_SCOPE_RLS_POLICIES = (
+    ("chunk", "chunk_scope_read"),
+    ("curated_knowledge_entry", "curated_knowledge_entry_scope_read"),
+)
+
+
+def check_deploy_readiness(conn: Connection | None = None) -> int:
+    """Gate before the reader path is exposed in production (MIG-02 / ADR-0014).
+
+    Migration 0010 installs the RESTRICTIVE customer-scope RLS policies that are Obi's fail-closed
+    tenant backstop. ``alembic upgrade head`` applies them, but nothing otherwise blocks a deploy
+    where head < 0010 or a downgrade left them dropped — the customer axis then silently fails OPEN.
+    Reading straight from the catalog (``pg_policies`` + ``pg_class.relrowsecurity``), this asserts
+    BOTH scope-RLS SELECT policies exist ``AS RESTRICTIVE`` on their tables AND row security is
+    ENABLEd there. Any gap -> the deploy is refused (non-zero, naming what is missing). Read-only;
+    the local pgvector store (0010 applied) passes. Pass an open ``conn`` to check inside a caller's
+    transaction (tests); otherwise a connection is opened on the settings/env DSN, like every phase.
+    """
+    if conn is None:
+        with engine_mod.get_engine().connect() as owned:
+            return check_deploy_readiness(owned)
+
+    missing: list[str] = []
+    db = conn.execute(text("SELECT current_database()")).scalar_one()
+    print(f"target db : {db!r}  host {_mask(get_settings().database_url)}")
+    for table, policy in _SCOPE_RLS_POLICIES:
+        if conn.execute(text("SELECT to_regclass(:t)"), {"t": table}).scalar() is None:
+            missing.append(f"table {table!r} is absent (schema not migrated?)")
+            print(f"  {table}.{policy}: table MISSING")
+            continue
+        row = conn.execute(
+            text(
+                "SELECT permissive, cmd FROM pg_policies "
+                "WHERE schemaname = 'public' AND tablename = :t AND policyname = :p"
+            ),
+            {"t": table, "p": policy},
+        ).one_or_none()
+        enabled = conn.execute(
+            text("SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass(:t)"),
+            {"t": table},
+        ).scalar_one()
+        restrictive_select = bool(
+            row is not None and row[0] == "RESTRICTIVE" and row[1] == "SELECT"
+        )
+        if row is None:
+            missing.append(f"policy {policy!r} on {table!r} is ABSENT")
+        elif not restrictive_select:
+            missing.append(
+                f"policy {policy!r} on {table!r} is not RESTRICTIVE/SELECT "
+                f"(permissive={row[0]}, cmd={row[1]})"
+            )
+        if not enabled:
+            missing.append(f"row security is NOT enabled on {table!r}")
+        print(
+            f"  {table}.{policy}: present={row is not None} "
+            f"restrictive_select={restrictive_select} rls_enabled={bool(enabled)}"
+        )
+
+    if missing:
+        print(
+            "FAIL: the customer-scope RLS backstop (migration 0010 / ADR-0014) is NOT in place:",
+            file=sys.stderr,
+        )
+        for m in missing:
+            print(f"  - {m}", file=sys.stderr)
+        print(
+            "Do NOT expose the reader path until `alembic upgrade head` (>= 0010) is applied — the "
+            "customer/tenant axis fails OPEN without these policies.",
+            file=sys.stderr,
+        )
+        return 10
+    print(
+        "OK: both customer-scope RLS policies present (RESTRICTIVE/SELECT, RLS enabled) — "
+        "reader path safe to expose."
+    )
+    return 0
+
+
 _PHASES = {
     "preflight": preflight,
     "provision-reader": provision_reader,
     "verify-isolation": verify_isolation,
+    "check-deploy-readiness": check_deploy_readiness,
 }
 
 
