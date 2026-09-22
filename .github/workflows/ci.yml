@@ -136,6 +136,11 @@ jobs:
           done
           docker exec omniboost_rag_pg psql -U rag -d omniboost_rag -f /docker-entrypoint-initdb.d/01-roles.sql
           cd backend
+          # ENV=test so backend Settings resolves OFFLINE (like every pytest step). Without it, CI
+          # has no ENV var and no .env, so R1's fail-closed default treats this as production and
+          # get_settings() raises on the committed datahub TODO-placeholder registry before the
+          # check even runs (CROSS-1). This is a local smoke, not a real deploy, so offline is correct.
+          export ENV=test
           export DATABASE_URL=postgresql+psycopg://rag:rag@localhost:5434/omniboost_rag
           uv run alembic -c ../knowledge-base/migrations/alembic.ini upgrade head
           uv run python scripts/setup_supabase.py check-deploy-readiness

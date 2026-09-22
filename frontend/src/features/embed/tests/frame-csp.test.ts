@@ -12,7 +12,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
-import { computeEmbedCsp, LOCAL_OR_DEV_ENVS, toEmbedderOrigins } from "../csp";
+import {
+  computeEmbedCsp,
+  effectiveEmbedderDomains,
+  isLocalhostDomain,
+  LOCAL_OR_DEV_ENVS,
+  toEmbedderOrigins,
+} from "../csp";
 import { activeDomains } from "../platforms";
 
 const ORIGINAL_PLATFORMS_PATH = process.env.PLATFORMS_PATH;
@@ -82,6 +88,88 @@ describe("computeEmbedCsp localhost filtering (gap CFG-04)", () => {
     const result = computeEmbedCsp(["localhost:3000", "localhost:3100"], true);
     expect(result.ok).toBe(true);
     expect(result.header).toBe("frame-ancestors localhost:3000 localhost:3100");
+  });
+});
+
+describe("isLocalhostDomain — full loopback set (gap BIT-A-R1)", () => {
+  it("matches localhost and any *.localhost, with or without a port", () => {
+    expect(isLocalhostDomain("localhost")).toBe(true);
+    expect(isLocalhostDomain("localhost:3000")).toBe(true);
+    expect(isLocalhostDomain("app.localhost")).toBe(true);
+    expect(isLocalhostDomain("app.localhost:8080")).toBe(true);
+    expect(isLocalhostDomain("LOCALHOST")).toBe(true);
+  });
+
+  it("matches the whole 127.0.0.0/8 loopback block with valid octets", () => {
+    expect(isLocalhostDomain("127.0.0.1")).toBe(true);
+    expect(isLocalhostDomain("127.0.0.1:8080")).toBe(true);
+    expect(isLocalhostDomain("127.0.0.2")).toBe(true);
+    expect(isLocalhostDomain("127.255.255.255")).toBe(true);
+    expect(isLocalhostDomain("127.1.2.3:9000")).toBe(true);
+  });
+
+  it("matches the 0.0.0.0 wildcard-bind address", () => {
+    expect(isLocalhostDomain("0.0.0.0")).toBe(true);
+    expect(isLocalhostDomain("0.0.0.0:5000")).toBe(true);
+  });
+
+  it("matches IPv6 loopback ::1, bare and bracketed with a port", () => {
+    expect(isLocalhostDomain("::1")).toBe(true);
+    expect(isLocalhostDomain("[::1]")).toBe(true);
+    expect(isLocalhostDomain("[::1]:3000")).toBe(true);
+  });
+
+  it("does NOT treat a real public host as loopback", () => {
+    expect(isLocalhostDomain("app.mews.com")).toBe(false);
+    expect(isLocalhostDomain("pos.toasttab.com:443")).toBe(false);
+  });
+
+  it("does NOT treat a hostname that merely starts with 127. as an IPv4 loopback", () => {
+    expect(isLocalhostDomain("127.example.com")).toBe(false);
+    expect(isLocalhostDomain("localhost.evil.com")).toBe(false);
+    expect(isLocalhostDomain("notlocalhost")).toBe(false);
+    // 256 is not a valid octet — not a loopback IPv4 (and not 127.x anyway)
+    expect(isLocalhostDomain("127.0.0.256")).toBe(false);
+  });
+});
+
+describe("expanded loopback stripping outside local/dev (gap BIT-A-R1)", () => {
+  const loopbackDomains = ["::1", "[::1]:3000", "127.0.0.2", "127.255.255.255", "0.0.0.0:5000"];
+
+  it("effectiveEmbedderDomains strips every loopback form and keeps the real domain", () => {
+    expect(
+      effectiveEmbedderDomains([...loopbackDomains, "app.mews.com"], false),
+    ).toEqual(["app.mews.com"]);
+  });
+
+  it("effectiveEmbedderDomains keeps every loopback form in local/dev", () => {
+    expect(effectiveEmbedderDomains([...loopbackDomains, "app.mews.com"], true)).toEqual([
+      ...loopbackDomains,
+      "app.mews.com",
+    ]);
+  });
+
+  it("toEmbedderOrigins emits only the https real-domain origin outside local/dev", () => {
+    const origins = toEmbedderOrigins([...loopbackDomains, "app.mews.com"], false);
+    expect(origins).toEqual(["https://app.mews.com"]);
+    expect(origins.join(" ")).not.toContain("::1");
+    expect(origins.join(" ")).not.toContain("127.");
+    expect(origins.join(" ")).not.toContain("0.0.0.0");
+  });
+
+  it("computeEmbedCsp drops every loopback form from frame-ancestors outside local/dev", () => {
+    const result = computeEmbedCsp([...loopbackDomains, "app.mews.com"], false);
+    expect(result.ok).toBe(true);
+    expect(result.header).toBe("frame-ancestors app.mews.com");
+    expect(result.header).not.toContain("::1");
+    expect(result.header).not.toContain("127.");
+    expect(result.header).not.toContain("0.0.0.0");
+    expect(result.header).not.toContain("*");
+  });
+
+  it("computeEmbedCsp fails closed when every domain is a loopback form outside local/dev", () => {
+    const result = computeEmbedCsp(loopbackDomains, false);
+    expect(result.ok).toBe(false);
   });
 });
 

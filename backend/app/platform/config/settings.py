@@ -265,7 +265,7 @@ class Settings(BaseSettings):
     # integration->scope map lives in knowledge-base/config/platforms.json (see platform_registry
     # below), beside knowledge_scopes.json; this file only holds where to read it (PLATFORMS_PATH)
     # and whether an empty/inactive registry is tolerated. platforms_path empty -> the default
-    # under knowledge-base/config/. The env NAME decides the "outside local" rule: local/test/dev/ci
+    # under knowledge-base/config/. The env NAME decides the "outside local" rule: local/test/ci
     # tolerate an empty or all-inactive registry; a real deployment requires >=1 active platform.
     # allow_empty_platforms forces tolerance regardless (set only by the test suite).
     platforms_path: str = ""
@@ -278,8 +278,9 @@ class Settings(BaseSettings):
     obi_identity_path: str = ""
 
     def is_offline_env(self) -> bool:
-        """True in local/test/dev/ci — envs where a missing hosted key or DB role is a safe
-        default-to-fake / default-to-writer fallback rather than a real deployment gap."""
+        """True in local/test/ci — envs where a missing hosted key or DB role is a safe
+        default-to-fake / default-to-writer fallback rather than a real deployment gap. 'dev'/
+        'development' are NOT offline (CFG-B): a dev/staging deployment is guarded like production."""
         return self.env.lower() in _OFFLINE_ENVS
 
     @property

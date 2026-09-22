@@ -91,7 +91,29 @@ Repair slices R1–R5 follow (separate agents, failing-test-first). R1 and R4 ca
 
 Full-suite state after Wave-1 repairs: backend unit 570 · full backend db 281 passed/1xf (deterministic, cascade gone) · kb 17+18 · frontend vitest 263 · typecheck clean · Playwright embed e2e 4 · boundaries green.
 
-## Wave 2 — Fresh independent re-audit + mutation testing (pending)
+## Wave 2 — Fresh independent re-audit (2026-09-22)
+
+Six FRESH auditors (none audited or implemented before), each: (1) confirm each Wave-1 fix holds by re-attacking the current code, (2) hunt regressions the repairs introduced, (3) re-sweep for new findings. Plus a cross-cutting completeness critic. Every new finding adversarially verified. Result: **42 fix-confirmations (39 fixed-confirmed, 1 n/a, 1 partially-fixed, 1 still-broken), 4 CONFIRMED new findings, 2 refuted, 0 needs-investigation** (12 agents). NOT a clean wave → repaired, clean-wave counter reset.
+
+All Wave-1 core fixes independently CONFIRMED holding (fail-closed env, offline trust guard, token-verifier attack matrix, host-key, body-inertness, issuer-namespaced subject, active-gate, integration binding, CSP shared-helper, obi:clear lifecycle, flake fix, CI skip-guard). New findings (all repaired below):
+
+- **CFG-D-KB-1 (HIGH, confirmed-defect):** SEC-R4 guarded the BACKEND db harnesses but the KNOWLEDGE-BASE db-test harnesses (7 suites) still `CREATE DATABASE` + reset the rag_reader password on any resolved host with NO live-host guard — same live-data risk R4 closed, in the tree R4 didn't touch.
+- **CROSS-1 (HIGH, regression-from-repair):** the CI deploy-readiness smoke step SEC-R5 added crashes in CI — ENV is unset there (no .env), so R1's fail-closed default makes get_settings() raise on the datahub placeholder before the check runs. R5×R1 interaction.
+- **BIT-A-R1 (LOW→real, potential-risk):** `isLocalhostDomain` matched only exact `localhost`/`127.0.0.1`; `::1`, the `127.0.0.0/8` block, and `0.0.0.0` slipped through into the prod trusted-embedder set.
+- **AUTH-DOC-1 (LOW, doc):** two settings.py doc strings still listed `dev` as offline, contradicting the CFG-B fix.
+
+REFUTED (2): held under adversarial verification. FINDING-AUTH7 was independently RE-WEIGHED by W2A3 and judged acceptably bounded (parent expansion only runs on already-scope-authorized child ids; a page's parent+child share tags).
+
+### Wave-2 repairs (RW2) — DONE (committed)
+
+- **CFG-D-KB-1 (HIGH):** added `knowledge-base/tests/_db_guard.py` (`require_local_host`, ADR-0018-clean COPY of the backend guard — KB imports nothing from backend) + `knowledge-base/tests/conftest.py` (autouse, db-gated fixture running BEFORE any harness bootstrap) + `test_db_host_guard.py` (6 tests). Negative proof: forcing a remote DATABASE_URL raises at setup before any CREATE DATABASE, verified against two harnesses. KB db 18 passed, KB unit 23, boundaries OK.
+- **CROSS-1 (HIGH):** `.github/workflows/ci.yml` — added `export ENV=test` to the deploy-readiness smoke step so backend Settings resolves offline like every pytest step (no fail-closed crash on the placeholder registry). Verified the check exits 0 with ENV=test.
+- **BIT-A-R1 (LOW):** `csp.ts isLocalhostDomain` broadened to the full loopback set (`localhost`/`*.localhost`, `127.0.0.0/8` strict numeric, `0.0.0.0`, `::1` bare+bracketed) while excluding hostnames like `127.example.com`; 10 new tests. vitest 264→274.
+- **AUTH-DOC-1 (LOW, doc):** corrected the two stale `dev`-is-offline strings in settings.py to `local/test/ci` + noted dev/development are guarded.
+
+**Combined gate:** backend unit 570 · kb unit 23 · backend db 281/1xf · kb db 18 · frontend vitest 274 · typecheck clean · boundaries OK.
+
+## Mutation testing + Wave 3 (pending)
 
 
 

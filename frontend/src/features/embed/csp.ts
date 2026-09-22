@@ -46,14 +46,50 @@ export function isLocalOrDevEnv(): boolean {
   return process.env.NODE_ENV !== "production";
 }
 
+/** A `127.0.0.0/8` IPv4 loopback literal — `127.` followed by three numeric octets, each 0–255.
+ * Deliberately a strict numeric-IPv4 check so a hostname that merely starts with `127.`
+ * (e.g. `127.example.com`) is NOT treated as loopback (gap BIT-A-R1). */
+function isIpv4LoopbackHost(host: string): boolean {
+  const octets = host.split(".");
+  if (octets.length !== 4) return false;
+  if (!octets.every((o) => /^\d{1,3}$/.test(o) && Number(o) <= 255)) return false;
+  return octets[0] === "127";
+}
+
 /**
- * A bare `host[:port]` CSP domain that resolves to the local loopback (gap CFG-04). Domains are
- * stored without a scheme (e.g. `"localhost:3000"`, `"app.mews.com"`), so strip any `:port` before
- * comparing. Kept in step with the backend's `_LOCALHOST_HOSTS` guard in `platforms.py`.
+ * A bare `host[:port]` CSP domain that resolves to the local loopback (gap CFG-04, widened for gap
+ * BIT-A-R1). Domains are stored without a scheme (e.g. `"localhost:3000"`, `"app.mews.com"`,
+ * `"[::1]:3000"`). This is a pure host check that treats the FULL loopback set as localhost so none
+ * of it can become a trusted embedder origin / frame-ancestor outside local/dev:
+ *  - `localhost` and any `*.localhost`;
+ *  - the whole `127.0.0.0/8` block (`127.x.x.x` with valid octets), not just `127.0.0.1`;
+ *  - the `0.0.0.0` wildcard-bind address;
+ *  - IPv6 loopback `::1`, whether bare (`::1`) or bracketed with a port (`[::1]:3000`).
+ * A trailing `:port` is stripped only when unambiguous: bracketed IPv6 uses the text inside `[...]`,
+ * a bare IPv6 literal (more than one `:`) is left whole, and a plain `host[:port]` drops one
+ * `:port`. Kept in step with the backend's loopback guard in `platforms.py`.
  */
-function isLocalhostDomain(domain: string): boolean {
-  const host = domain.trim().toLowerCase().split(":")[0];
-  return host === "localhost" || host === "127.0.0.1";
+export function isLocalhostDomain(domain: string): boolean {
+  const raw = domain.trim().toLowerCase();
+  if (raw === "") return false;
+
+  let host: string;
+  if (raw.startsWith("[")) {
+    // Bracketed IPv6: `[host]` or `[host]:port` — the host is the text between the brackets.
+    const close = raw.indexOf("]");
+    host = close === -1 ? raw.slice(1) : raw.slice(1, close);
+  } else if ((raw.match(/:/g)?.length ?? 0) > 1) {
+    // A bare IPv6 literal (multiple colons) — never strip a "port".
+    host = raw;
+  } else {
+    // Plain `host` or `host:port` — drop a single trailing `:port`.
+    host = raw.split(":")[0];
+  }
+
+  if (host === "localhost" || host.endsWith(".localhost")) return true;
+  if (host === "0.0.0.0") return true;
+  if (host === "::1") return true;
+  return isIpv4LoopbackHost(host);
 }
 
 /**
