@@ -257,4 +257,27 @@ describe("getToken", () => {
     expect(localGet).not.toHaveBeenCalled();
     localGet.mockRestore();
   });
+
+  it("never WRITES the token to web storage or a cookie when handling obi:token (BIT-3/BIT-9)", () => {
+    // The rule is "never a cookie / localStorage / sessionStorage" — a READ-only spy misses a
+    // WRITE, and in jsdom a `Storage.prototype.setItem` spy is NOT hit by `sessionStorage.setItem`
+    // (the instance has its own method), so we assert storage CONTENTS directly (a write bumps
+    // `.length`). Non-vacuous: getToken() proves the token was genuinely handled, not dropped.
+    // (This jsdom env exposes sessionStorage; localStorage is guarded defensively for portability.)
+    sessionStorage.clear();
+    globalThis.localStorage?.clear();
+    const cookieBefore = document.cookie;
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN] });
+
+    post({ type: "obi:token", token: "jwt-secret-xyz" }, ALLOWED_ORIGIN);
+
+    expect(getToken()).toBe("jwt-secret-xyz");
+    expect(sessionStorage.length).toBe(0); // no sessionStorage write
+    expect(globalThis.localStorage?.length ?? 0).toBe(0); // no localStorage write
+    expect(document.cookie).toBe(cookieBefore); // no cookie write
+
+    teardown();
+    warn.mockRestore();
+  });
 });

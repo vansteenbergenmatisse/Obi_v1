@@ -113,7 +113,33 @@ REFUTED (2): held under adversarial verification. FINDING-AUTH7 was independentl
 
 **Combined gate:** backend unit 570 · kb unit 23 · backend db 281/1xf · kb db 18 · frontend vitest 274 · typecheck clean · boundaries OK.
 
-## Mutation testing + Wave 3 (pending)
+## Targeted mutation testing (2026-09-22)
+
+Deliberately broke each security boundary, one mutation at a time, confirmed the guarding test goes RED, reverted. **First attempt was INVALID and discarded:** the `isolation: worktree` agent created its worktree from the WRONG branch (`feat/rag-phase-3.5`, the pre-hardening base — a worktree can't reuse the branch checked out in the main tree), so it saw none of the SEC-* controls and reported 8 as "N/A — doesn't exist". Redone correctly IN THE MAIN TREE (correct branch, deps present) with per-mutation `git checkout` reverts + a final clean assertion.
+
+Results (all on the correct branch):
+
+| Boundary | Mutation | Detected? |
+|---|---|---|
+| Fail-closed env (CFG-A) | env default → "local" | RED ✓ (3 failed) |
+| Active-gate (AUTH-1) | platform_for → by_issuer | RED ✓ (2) |
+| Integration binding (CIP-A1) | skip allowed_integrations check | RED ✓ (1) |
+| Issuer-namespaced subject (CIP-4) | return raw subject | RED ✓ |
+| Deploy gate (MIG-02) | check_deploy_readiness return 10→0 | RED ✓ (1) |
+| KB live-host guard (CFG-D-KB-1) | require_local_host no-op | RED ✓ (2) |
+| principal-None invariant (CIP-5) | principal=None → non-None | RED ✓ (1) |
+| BIT-7 token-string guard | drop the guard | RED ✓ (2) |
+| Loopback strip (BIT-A-R1) | drop ::1 branch | RED ✓ (5) |
+| obi:clear → restart (LC-1/4) | onClear no restart | RED ✓ (2) |
+| scope-change → restart (LC-F1) | onScopeChange no-op | RED ✓ (1) |
+| **Token web-storage WRITE (BIT-3/9)** | **sessionStorage.setItem** | **was GREEN → GAP FOUND** |
+| host-key / origin / source / postMessage-'*' / scope-filter / scopes_for isolation / permission.allowed / body-scope / HS256 | (validated on identical code) | RED ✓ |
+
+**GAP FOUND + FIXED:** the web-storage guard test spied only `Storage.prototype.getItem` (a READ); a `sessionStorage.setItem` WRITE went undetected. Added a content-based write-guard test (asserts `sessionStorage.length===0` + cookie unchanged + token genuinely handled). NOTE: the first fix attempt used `localStorage.clear()`, which is undefined in this jsdom env (a false red); corrected to a defensively-guarded sessionStorage/cookie content check. Re-verified: unmutated → full frontend suite 275 passed; mutated (setItem) → RED. HS256 note: the step-2 alg check is redundantly backstopped by `jwt.decode(algorithms=...)` at step 4, so the property (HS256 rejected) stays guarded either way.
+
+**Outcome:** every targeted mutation is now caught. One real weak test found and sharpened — exactly what mutation testing is for.
+
+## Wave 3 — Second fresh independent re-audit (pending)
 
 
 
