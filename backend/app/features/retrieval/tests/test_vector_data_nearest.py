@@ -11,25 +11,19 @@ SQL text/params against a spy session, and neither seeds more than a handful of 
 proves the ``LIMIT 75`` actually truncates a result set behaviorally). These tests seed real chunk
 rows and real RLS state to prove it.
 
-``app/features/retrieval/tests/`` has no ``conftest.py`` of its own (its sibling tests are pure-fake
-unit tests with no database need), so this file wires its own module-local harness — reusing the
-exact same ``schema.schema`` primitives and connection pattern as
-``app/features/confluence_sync/tests/conftest.py`` (``create_all``, ``ensure_reader_role``,
-``apply_chunk_rls``, ``apply_chunk_scope_rls``) rather than inventing a new one. The fixtures below
-are module-scoped (not in a shared ``conftest.py``), so they cannot affect this directory's other,
-DB-free test files.
+The session-scoped engine bootstrap (guard, ``*_test`` database, ``create_all``,
+``ensure_reader_role``, ``apply_chunk_rls``, ``apply_chunk_scope_rls``) is the shared
+``app.tests.db_harness``, run once per session via the root conftest's ``_shared_db_schema``
+fixture; the owner ``session`` fixture comes from the root conftest and per-test truncation from
+this directory's ``conftest.py``.
 """
 
 from __future__ import annotations
 
 import math
-import os
-from collections.abc import Iterator
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
 from app.features.retrieval.infrastructure.search_repo import (
@@ -39,88 +33,10 @@ from app.features.retrieval.infrastructure.search_repo import (
 )
 from app.platform.config import get_settings
 from schema import engine as engine_mod
-from schema import schema
 from schema.enums import DocState, PageStatus
 from schema.models import KIND_CHILD, Chunk, Document, DocumentVersion, PageSource
 
 pytestmark = pytest.mark.db  # panel vd-nearest · substep 0.5.3: real local Postgres
-
-_READER_ROLE = "rag_reader"
-_READER_PASSWORD = "rag_reader_test"
-_TABLES = ["chunk", "document_version", "document", "page_source"]
-
-
-def _ensure_database(url: str) -> None:
-    u = make_url(url)
-    admin_url = u.set(database="postgres")
-    admin = create_engine(admin_url, isolation_level="AUTOCOMMIT")
-    try:
-        with admin.connect() as conn:
-            exists = conn.execute(
-                text("SELECT 1 FROM pg_database WHERE datname = :n"), {"n": u.database}
-            ).scalar()
-            if not exists:
-                conn.execute(text(f'CREATE DATABASE "{u.database}"'))
-    finally:
-        admin.dispose()
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _configure_test_engine() -> Iterator[None]:
-    """Same bootstrap steps as confluence_sync/tests/conftest.py's ``_configure_test_engine``,
-    duplicated here (module-local, not a shared conftest.py) because this directory has none."""
-    base = make_url(get_settings().database_url)
-    test_url = base.set(database=f"{base.database}_test").render_as_string(hide_password=False)
-    _ensure_database(test_url)
-
-    os.environ["DATABASE_URL"] = test_url
-    get_settings.cache_clear()
-    engine_mod.get_engine.cache_clear()
-    engine_mod.get_sessionmaker.cache_clear()
-
-    eng = engine_mod.get_engine()
-    with eng.begin() as conn:
-        schema.drop_all(conn)
-        schema.create_all(conn)
-        schema.ensure_reader_role(conn, role=_READER_ROLE, password=_READER_PASSWORD)
-        schema.apply_chunk_rls(conn)
-        schema.apply_chunk_scope_rls(conn)
-
-    reader_url = (
-        make_url(test_url)
-        .set(username=_READER_ROLE, password=_READER_PASSWORD)
-        .render_as_string(hide_password=False)
-    )
-    os.environ["DATABASE_READER_URL"] = reader_url
-    get_settings.cache_clear()
-    engine_mod.get_reader_engine.cache_clear()
-    engine_mod.get_reader_sessionmaker.cache_clear()
-
-    yield
-    with eng.begin() as conn:
-        schema.drop_all(conn)
-    engine_mod.get_reader_engine().dispose()
-    eng.dispose()
-
-
-@pytest.fixture(autouse=True)
-def _truncate(_configure_test_engine: None) -> Iterator[None]:
-    eng = engine_mod.get_engine()
-    with eng.begin() as conn:
-        conn.execute(text(f"TRUNCATE {', '.join(_TABLES)} RESTART IDENTITY CASCADE"))
-    yield
-
-
-@pytest.fixture
-def session() -> Iterator[Session]:
-    """Owner-role session for seeding: bypasses RLS (ADR-0013 NO FORCE), same as the shared
-    confluence_sync harness's ``session`` fixture."""
-    s = engine_mod.get_sessionmaker()()
-    try:
-        yield s
-    finally:
-        s.rollback()
-        s.close()
 
 
 def _query_vector(dim: int) -> list[float]:

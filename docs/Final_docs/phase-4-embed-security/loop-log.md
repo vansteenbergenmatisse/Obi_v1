@@ -76,6 +76,24 @@ Repair slices R1–R5 follow (separate agents, failing-test-first). R1 and R4 ca
 
 **R4 — test-harness live-host guard (CFG-D) + flake isolation (CFG-E) — RESET, re-running.** First attempt aborted mid-refactor when the subagent hit an account spend limit (external billing block), leaving a partial harness consolidation (an untracked `backend/db_test_harness.py` + a few half-converted files). The partial edits were DISCARDED to a clean base (R1's committed conftest restored); nothing broken was committed. Re-dispatched fresh from the clean base.
 
+**R4 (retry) — DONE (committed).** CFG-D (HIGH): the `_require_local_host` guard was in 1 of 5 db harnesses; consolidated ALL five duplicated bootstraps into one shared `backend/app/tests/db_harness.py` (guard runs first, once, before any drop_all) + 4 guard tests (incl. patch-to-remote-host raises). CFG-E (FIXED): root cause was the DB-name CASCADE — each duplicated fixture re-derived the test-DB name from an already-mutated DATABASE_URL → 5 databases + 5 schema builds racing. Shared harness derives the name idempotently, builds once. **Validated:** full db suite 281 passed ×2 (main window) + subagent's 3 runs incl. reversed order; exactly ONE `omniboost_rag_test` DB remains. Isolation stays TRUNCATE (rollback not viable — reader is a separate role/engine needing committed data). **Gate:** backend unit 566→570 · db 281/1xf · guard 4 · boundaries/pyright/ruff clean. **FLAKE-1 RESOLVED** (root cause found + fixed).
+
+---
+
+## Wave-1 repairs COMPLETE (R1–R5) — commits
+
+- c5112b2 R1 fail-closed trust boundary (CFG-A/B/C/H)
+- 6f3c63c R2+R3 platform gating + integration binding + CSP completeness (AUTH-1/CIP-A2, CIP-A1, BIT-A1, LC-F1/F2, CFG-H residual)
+- 17446a5 R5 CI skip-guard + honest deploy-gate (CFG-F/G)
+- (this) R4 db-harness consolidation + flake fix (CFG-D/CFG-E)
+
+**All 15 Wave-1 confirmed findings resolved** (1 was refuted at audit). Two open items remaining, both surfaced-and-dispositioned: FLAKE-1 → fixed by R4; FINDING-AUTH7 → pinned as documented ADR-0014 behavior (parent-fetch scope opt-out, bounded — the Wave-2 auditor will re-weigh). One OWNER DECISION outstanding: datahub `allowed_integrations` (built to design default, reversible config).
+
+Full-suite state after Wave-1 repairs: backend unit 570 · full backend db 281 passed/1xf (deterministic, cascade gone) · kb 17+18 · frontend vitest 263 · typecheck clean · Playwright embed e2e 4 · boundaries green.
+
+## Wave 2 — Fresh independent re-audit + mutation testing (pending)
+
+
 
 
 

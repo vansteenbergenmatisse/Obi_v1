@@ -12,20 +12,17 @@ the real implementation, so the retriever's actual production code path (not a s
 executes. Neither test needs seeded rows: an empty result set still means the query ran, under
 whichever role opened the connection.
 
-``app/features/retrieval/tests/`` has no ``conftest.py`` of its own (its sibling tests are pure-fake
-unit tests with no database need), so this file wires its own module-local harness -- the same
-``schema.schema`` primitives and connection pattern as
-``app/features/confluence_sync/tests/conftest.py`` / ``test_vector_data_nearest.py``.
+The session-scoped engine bootstrap (guard, ``*_test`` database, schema + RLS + reader role) is the
+shared ``app.tests.db_harness``, run once per session via the root conftest's ``_shared_db_schema``
+fixture and opted into by ``retrieval/tests/conftest.py``'s ``db``-gated autouse isolation fixture.
 """
 
 from __future__ import annotations
 
-import os
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 
 import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.features.retrieval.application import retriever as retriever_module
@@ -34,65 +31,8 @@ from app.features.retrieval.domain.permission import PrincipalPermissionPolicy
 from app.platform.clients import build_embedding_provider, build_reranker
 from app.platform.config import Settings, get_settings
 from schema import engine as engine_mod
-from schema import schema
 
 pytestmark = pytest.mark.db  # substep 0.5.1: real local Postgres
-
-_READER_ROLE = "rag_reader"
-_READER_PASSWORD = "rag_reader_test"
-
-
-def _ensure_database(url: str) -> None:
-    u = make_url(url)
-    admin_url = u.set(database="postgres")
-    admin = create_engine(admin_url, isolation_level="AUTOCOMMIT")
-    try:
-        with admin.connect() as conn:
-            exists = conn.execute(
-                text("SELECT 1 FROM pg_database WHERE datname = :n"), {"n": u.database}
-            ).scalar()
-            if not exists:
-                conn.execute(text(f'CREATE DATABASE "{u.database}"'))
-    finally:
-        admin.dispose()
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _configure_test_engine() -> Iterator[None]:
-    """Same bootstrap steps as confluence_sync/tests/conftest.py's ``_configure_test_engine``,
-    duplicated here (module-local, not a shared conftest.py) because this directory has none."""
-    base = make_url(get_settings().database_url)
-    test_url = base.set(database=f"{base.database}_test").render_as_string(hide_password=False)
-    _ensure_database(test_url)
-
-    os.environ["DATABASE_URL"] = test_url
-    get_settings.cache_clear()
-    engine_mod.get_engine.cache_clear()
-    engine_mod.get_sessionmaker.cache_clear()
-
-    eng = engine_mod.get_engine()
-    with eng.begin() as conn:
-        schema.drop_all(conn)
-        schema.create_all(conn)
-        schema.ensure_reader_role(conn, role=_READER_ROLE, password=_READER_PASSWORD)
-        schema.apply_chunk_rls(conn)
-        schema.apply_chunk_scope_rls(conn)
-
-    reader_url = (
-        make_url(test_url)
-        .set(username=_READER_ROLE, password=_READER_PASSWORD)
-        .render_as_string(hide_password=False)
-    )
-    os.environ["DATABASE_READER_URL"] = reader_url
-    get_settings.cache_clear()
-    engine_mod.get_reader_engine.cache_clear()
-    engine_mod.get_reader_sessionmaker.cache_clear()
-
-    yield
-    with eng.begin() as conn:
-        schema.drop_all(conn)
-    engine_mod.get_reader_engine().dispose()
-    eng.dispose()
 
 
 def _retriever(settings: Settings) -> HybridRetriever:

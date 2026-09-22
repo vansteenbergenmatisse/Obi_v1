@@ -9,6 +9,10 @@ embedding provider. Production is unaffected — this file is only loaded by pyt
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
+
+import pytest
+from sqlalchemy.orm import Session
 
 # FAIL-CLOSED default (gap CFG-A): Settings.env now defaults to "" (treated as PRODUCTION) instead
 # of "local", so the suite must opt into an offline env EXPLICITLY or every Settings() would fire
@@ -32,3 +36,36 @@ os.environ.setdefault("ALLOW_EMPTY_PLATFORMS", "true")
 # value in os.environ outranks the .env file -> Settings falls back to DEFAULT_PLATFORMS_PATH under
 # knowledge-base/config/. An explicit shell export still wins (setdefault).
 os.environ.setdefault("PLATFORMS_PATH", "")
+
+
+# --- Shared database-test harness (see app/tests/db_harness.py) ------------------------------
+# One session-scoped schema build for the WHOLE db suite, replacing the five duplicated,
+# order-sensitive ``_configure_test_engine`` fixtures that each re-suffixed the test DB name and
+# independently dropped/recreated schema (the root cause of FLAKE-1). These fixtures are NOT
+# autouse: only db-marked suites opt in (via their package conftest's autouse ``_truncate``), so
+# ``make test-unit`` never spins up Postgres. Imports are function-local so collecting the pure
+# unit suite never imports SQLAlchemy engine wiring it does not need.
+
+
+@pytest.fixture(scope="session")
+def _shared_db_schema() -> Iterator[None]:
+    """Build the shared ``*_test`` schema + reader role + chunk RLS exactly once per session."""
+    from app.tests.db_harness import provision_test_database
+
+    yield from provision_test_database()
+
+
+@pytest.fixture
+def session(_shared_db_schema: None) -> Iterator[Session]:
+    """Owner-role session for direct DB seeding/asserting (bypasses RLS, ADR-0013 NO FORCE).
+
+    Tests commit explicitly when they need data visible to a separate reader connection.
+    """
+    from schema import engine as engine_mod
+
+    s = engine_mod.get_sessionmaker()()
+    try:
+        yield s
+    finally:
+        s.rollback()
+        s.close()

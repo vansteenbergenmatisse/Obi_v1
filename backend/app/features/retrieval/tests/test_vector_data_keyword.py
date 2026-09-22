@@ -4,96 +4,27 @@ and the ts_rank ordering, proven behaviorally against a real Postgres connection
 by ``test_search_repo_keyword.py``'s spy-session tests for the retrieval-stage-2 panel
 ``r2-keyword``; this file's job is the vector-database panel's own dedicated proof).
 
-``app/features/retrieval/tests/`` has no ``conftest.py`` of its own (its sibling tests are pure-fake
-unit tests with no database need), so this file wires its own module-local harness -- the same
-pattern ``test_vector_data_nearest.py`` already established for this directory, reusing the same
-``schema.schema`` primitives (``create_all``) rather than inventing a new one. The
-fixtures below are module-scoped (not in a shared ``conftest.py``), so they cannot affect this
-directory's other, DB-free test files.
+The session-scoped engine bootstrap is the shared ``app.tests.db_harness`` (run once per session
+via the root conftest's ``_shared_db_schema`` fixture); the owner ``session`` fixture comes from the
+root conftest and per-test truncation from this directory's ``conftest.py``. This file proves the
+keyword query's own OR-join/ts_rank shape as the table owner (RLS-exempt, ADR-0013 NO FORCE), so the
+shared harness's RLS policies do not affect it.
 """
 
 from __future__ import annotations
 
-import os
-from collections.abc import Iterator
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import create_engine, text
-from sqlalchemy.engine import make_url
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.features.retrieval.infrastructure.search_repo import keyword_search
 from app.platform.config import get_settings
-from schema import engine as engine_mod
-from schema import schema
 from schema.enums import DocState, PageStatus
 from schema.models import KIND_CHILD, Chunk, Document, DocumentVersion, PageSource
 
 pytestmark = pytest.mark.db  # panel vd-keyword · substep 0.5.3: real local Postgres
-
-_TABLES = ["chunk", "document_version", "document", "page_source"]
-
-
-def _ensure_database(url: str) -> None:
-    u = make_url(url)
-    admin_url = u.set(database="postgres")
-    admin = create_engine(admin_url, isolation_level="AUTOCOMMIT")
-    try:
-        with admin.connect() as conn:
-            exists = conn.execute(
-                text("SELECT 1 FROM pg_database WHERE datname = :n"), {"n": u.database}
-            ).scalar()
-            if not exists:
-                conn.execute(text(f'CREATE DATABASE "{u.database}"'))
-    finally:
-        admin.dispose()
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _configure_test_engine() -> Iterator[None]:
-    """Same bootstrap steps as ``test_vector_data_nearest.py``'s fixture of the same name,
-    duplicated here (module-local, not a shared conftest.py) because this directory has none.
-    This file never touches RLS or the reader role -- it only exercises the keyword query's own
-    OR-join/ts_rank shape as the table owner, so `create_all` alone is enough."""
-    base = make_url(get_settings().database_url)
-    test_url = base.set(database=f"{base.database}_test").render_as_string(hide_password=False)
-    _ensure_database(test_url)
-
-    os.environ["DATABASE_URL"] = test_url
-    get_settings.cache_clear()
-    engine_mod.get_engine.cache_clear()
-    engine_mod.get_sessionmaker.cache_clear()
-
-    eng = engine_mod.get_engine()
-    with eng.begin() as conn:
-        schema.drop_all(conn)
-        schema.create_all(conn)
-
-    yield
-    with eng.begin() as conn:
-        schema.drop_all(conn)
-    eng.dispose()
-
-
-@pytest.fixture(autouse=True)
-def _truncate(_configure_test_engine: None) -> Iterator[None]:
-    eng = engine_mod.get_engine()
-    with eng.begin() as conn:
-        conn.execute(text(f"TRUNCATE {', '.join(_TABLES)} RESTART IDENTITY CASCADE"))
-    yield
-
-
-@pytest.fixture
-def session() -> Iterator[Session]:
-    """Owner-role session for seeding and querying (bypasses RLS, ADR-0013 NO FORCE) -- this file
-    proves the keyword query's own shape, not row security, which is `vd-rls`'s panel."""
-    s = engine_mod.get_sessionmaker()()
-    try:
-        yield s
-    finally:
-        s.rollback()
-        s.close()
 
 
 def _seed_keyword_chunk(session: Session, *, page_id: int, tsv_text: str) -> None:
