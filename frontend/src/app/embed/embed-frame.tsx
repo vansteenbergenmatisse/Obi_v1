@@ -67,7 +67,9 @@ function EmbedBridge({ allowedOrigins }: EmbedFrameProps) {
   useEffect(() => onUnauthorized(() => restartRef.current()), []);
 
   return open ? (
-    <FloatingFrame>
+    // `fill`: obi.js sizes the iframe and draws its rounded corners + shadow, so the panel fills
+    // the iframe edge-to-edge — no left gap, no border seam inside the rounded corner.
+    <FloatingFrame fill>
       <PanelBody />
     </FloatingFrame>
   ) : null;

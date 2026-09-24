@@ -1,6 +1,6 @@
 # Obi, part by part — the complete brief, A to Z
 
-Generated on 2026-09-21 from `../docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
+Generated on 2026-09-23 from `docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
 
 ## 0 · How to read this brief
 
@@ -224,7 +224,7 @@ _Workflow label shown in the drawer: System overview_
 ##### Panel `ov-widget` · The Obi widget · [Implemented]
 - Kind: The widget
 - In plain words: The chat window inside Mews or Toast where a person types a question and gets a cited answer.
-- Today: Built in apps/web. Launcher, teaser, panel, composer, images, screenshot, six locales, dev-only scope switcher. Per-user JWT from the host; the shared pilot invite token is retired.
+- Today: Built in apps/web. Launcher, teaser, panel, composer, images, screenshot, six locales. Per-user JWT from the host; the shared pilot invite token is retired. The dev-only scope switcher was removed (owner request, 2026-09-23).
 - Steps:
   1. The widget is embedded in a platform's page with a scope from its config.
   2. The user asks. The widget calls its own proxy route.
@@ -470,7 +470,7 @@ _Top: the three parts and the two channels between them. Bottom: one Mews questi
 
 | Part | Owns | Belongs in its folder | Never does |
 |---|---|---|---|
-| Frontend | The chat window. The iframe handshake and the token held in memory. The proxy route that adds the host key. Six locales. Rendering of answers, citations, refusals and clarifying chips. | UI components. The proxy route. Shape checks on the request. The iframe bridge. A scope list generated from `knowledge_scopes.json` at build time for the dev switcher, without `classified`. | Decide who may see what. Hold a signing key. Talk to Postgres. |
+| Frontend | The chat window. The iframe handshake and the token held in memory. The proxy route that adds the host key. Six locales. Rendering of answers, citations, refusals and clarifying chips. | UI components. The proxy route. Shape checks on the request. The iframe bridge. | Decide who may see what. Hold a signing key. Talk to Postgres. |
 | Backend | The webhook and the sweeps. Ingestion. Token verification and the authorization context. Search, rerank, coverage, generation. The citation check and the support check. The audit trail. | The FastAPI app. The five features. The clients for Confluence, OpenAI, Cohere and Claude. The job worker. The eval runner. | Trust a scope or a principal from a request body. Serve a row the database policy hides. Render UI. |
 | Knowledge base | The schema. The two roles and the row policies. The migrations. The tag list. The integration-to-tags map. Curated seed data. The local Postgres for a laptop. | Models and DDL. Alembic versions. Config JSON. Seed scripts. docker-compose. | Hold page content in git. The content lives in Postgres and comes from Confluence. Hold application logic. |
 
@@ -586,7 +586,7 @@ _Workflow label shown in the drawer: Separation of concerns_
   |---|---|
   | Owns | the chat UI, six locales, rendering of answers and refusals, the iframe bridge (planned), the token in memory (planned), the proxy route |
   | Talks to | the backend only, over HTTPS POST /chat with SSE back |
-  | Reads from the knowledge base folder | the tag list, imported at build time; the widget's scope list is generated from it, without classified |
+  | Reads from the knowledge base folder | nothing at build time now - the dev widget scope list generated from the tag list was removed (2026-09-23) |
   | Never | decides access, holds a signing key, opens a database connection |
 - Where in the code:
   - `apps/web/src/features/chat/` — ui, api, server (proxy), model
@@ -859,18 +859,17 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ##### Panel `cm-config` · config/knowledge_scopes.json: the scope list · [Implemented]
 - Kind: File
 - In plain words: The tag list. A Confluence label in this file is a knowledge scope; add a name to add a tag.
-- Today: Loaded and validated at startup (fails if obi-general-test or classified is missing); classified is present but excluded from the recognized set, from GET /health, and from the widget list. Each entry now carries name + label + description; the widget's scope switcher is GENERATED from this file at build time (substep 1.2.2) — no hand-written copy, no drift test. platforms.json now sits beside it under knowledge-base/config/, loaded + validated at startup after the tag map (substep 1.2.3): six ordered rules each naming the offending entry, general added by the loader and never hand-listed, exposing allowed_scopes_for + platform_for; datahub is the first active platform and is logged at boot.
+- Today: Loaded and validated at startup (fails if obi-general-test or classified is missing); classified is present but excluded from the recognized set, from GET /health, and from the widget list. Each entry carries name + label + description. The dev-only widget scope switcher that used to be generated from this file was removed (owner request, 2026-09-23); the file now drives the backend recognized-scope set and /health only, not any client-side list. platforms.json now sits beside it under knowledge-base/config/, loaded + validated at startup after the tag map (substep 1.2.3): six ordered rules each naming the offending entry, general added by the loader and never hand-listed, exposing allowed_scopes_for + platform_for; datahub is the first active platform and is logged at boot.
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | Target list | general, mews, toast, classified (opera-cloud: confirm) |
-  | Read by | the backend loader at startup, and the widget build, which imports the same file and generates its scope list (no hand-written copy, no drift test) |
+  | Read by | the backend loader at startup (the dev widget scope list that used to import this file was removed, 2026-09-23) |
   | Matching | case-insensitive, exact |
   | Next to it (planned) | platforms.json: one entry per platform (issuer, key URL, domains) plus which tags each integration may see |
 - Where in the code:
   - `config/knowledge_scopes.json` — the list
   - `platform/config/knowledge_scopes.py` — load_recognized_knowledge_scopes
-  - `apps/web/src/features/chat/model/knowledge-scopes.ts` — generated from the JSON at build time, without classified
 - Code:
 ```
 {
@@ -2278,7 +2277,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `tg-config` · The scope list file · [Implemented]
 - Kind: Config
 - In plain words: The list of tag names in one small file. A name here is a tag; a name not here is ignored.
-- Today: knowledge-base/config/knowledge_scopes.json holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test and the reserved classified; the loader validates it at startup and returns the four recognized scopes (classified excluded); the widget list mirrors the same file minus classified, guarded by the drift test.
+- Today: knowledge-base/config/knowledge_scopes.json holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test and the reserved classified; the loader validates it at startup and returns the four recognized scopes (classified excluded). The dev widget scope list that used to mirror this file (minus classified) was removed (owner request, 2026-09-23).
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2286,11 +2285,10 @@ _Workflow label shown in the drawer: Knowledge scopes_
   | Today | obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test |
   | Target | general, mews, toast, classified (confirm opera-cloud) |
   | Rule | startup fails if general is missing |
-  | Also read by | the widget build, which imports the JSON and generates its scope list without classified |
+  | Also read by | the backend loader only; the dev widget scope list that used to import this JSON was removed (2026-09-23) |
 - Where in the code:
   - `config/knowledge_scopes.json` — the list
   - `platform/config/knowledge_scopes.py` — loader
-  - `apps/web/src/features/chat/model/knowledge-scopes.ts` — generated from the JSON at build time
 
 ##### Panel `ks-edit` · Edit knowledge_scopes.json · [Implemented, needs changing]
 - Kind: Knowledge scopes
@@ -2329,12 +2327,12 @@ _Workflow label shown in the drawer: Knowledge scopes_
 
 ##### Panel `ks-deploy` · Deploy · [Implemented, needs changing]
 - Kind: Knowledge scopes
-- In plain words: Ship the new file. The backend and the widget both read it.
-- Today: The widget's scope list is a hand-written copy, not generated at build time; a runtime drift test guards it against this file.
+- In plain words: Ship the new file. The backend reads it.
+- Today: The frontend no longer has a scope list: the dev widget scope switcher and its generated list were removed (owner request, 2026-09-23). Only the backend reads this file now.
 - Steps:
   1. The backend restarts and reads the new list.
-  2. The widget build imports the same file and generates its scope list, without classified.
-  3. Until both are deployed the old list is in force.
+  2. The frontend has no scope list to rebuild - only the backend reads this file now.
+  3. Until the backend is deployed the old list is in force.
 - Target and notes: Deploy the backend first. A widget sending a scope the backend does not know gets a 400.
 
 ##### Panel `ks-sweep` · The label sweep finds tagged pages · [Planned]
@@ -2359,7 +2357,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `ks-widget` · A widget uses the same slug · [Implemented, needs changing]
 - Kind: Knowledge scopes
 - In plain words: A widget uses the same tag name as its scope, so it only sees pages with that tag.
-- Today: The live /embed frame does not set a knowledgeScope prop; only the dev-only scope switcher sets it client-side today. The token-driven scope in step 3 is target, not current.
+- Today: The live /embed frame does not set a knowledgeScope prop; the client sends no scope and the token-driven scope (step 3) is derived server-side. The dev-only scope switcher that used to set it client-side was removed (owner request, 2026-09-23).
 - Steps:
   1. The embed config sets knowledgeScope to the slug, for example toast.
   2. The gate validates the slug against the list.
@@ -3552,17 +3550,20 @@ def decide_coverage(parts, parents, rerank, judge, t, band):
 
 ##### Panel `r5-generate` · Generate the answer · [Implemented]
 - Kind: Outside tool
-- In plain words: The model writes an answer from the numbered pieces only and marks each sentence with the number it used.
+- In plain words: The model writes an answer from the numbered pieces only and marks each sentence with the number it used, and it is told which business and platform it is helping.
+- Today: The system prompt is one general Obi persona (professional, helpful, concise; answers only from the cited evidence) in a cached block, plus a second, uncached block that carries this chat's verified company_name + integration so the answer knows which business and platform it serves. A missing value is omitted, never guessed; when the token has neither, no second block is added. Response context only - document access stays enforced by retrieval + the database (Locks 0-3), never by this block (owner request, 2026-09-23).
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | Model | claude-sonnet-5, max_tokens 800 |
-  | System prompt | cached; answer only from the numbered evidence; cite every factual claim |
+  | System prompt | one general Obi persona (professional, helpful, concise; answer only from the numbered evidence; cite every factual claim) in a cached block, plus a second, uncached block carrying this chat's verified company_name + integration |
   | PII | redact_pii runs on the assembled prompt text |
   | Errors | propagate; no fail-open here |
 - Where in the code:
-  - `rag_agent/infrastructure/llm_client.py` — AnthropicAnswerGenerator.generate
-  - `rag_agent/domain/prompt.py:37-78` — ANSWER_SYSTEM_PROMPT
+  - `rag_agent/infrastructure/llm_client.py` — AnthropicAnswerGenerator.generate (keyword-only company_name/integration -> uncached block)
+  - `rag_agent/domain/prompt.py:45-87` — ANSWER_SYSTEM_PROMPT (Obi persona + citation/grounding rules)
+  - `rag_agent/domain/prompt.py` — build_answer_context_block (verified company/integration; None when neither is known)
+  - `rag_agent/application/answer_service.py` — threads auth.company_name/integration from the verified AuthContext into generate
 
 ##### Panel `r5-enforce` · Valid citation-number checking · [Implemented]
 - Kind: Gate
@@ -3718,7 +3719,7 @@ Diagram (Launcher and teaser, panel, composer, scope from embed config, access t
 - **Launcher + teaser** A button in the corner. A nudge card appears after 3 seconds, and again 20 seconds after each close. Opening the panel is the only way into the conversation.
 - **Panel** A fixed overlay on the right, full height. Header with menus, the message thread over a decorative contour background, the composer at the bottom.
 - **Composer** Text, file attachments, clipboard paste, and the header's screenshot button all feed one attachment pipeline. Images are base64 on the newest turn only.
-- **Scope** The embed config says which platform this widget sits in. That becomes `knowledgeScope` on every request. A dev-only switcher exists behind an env flag for testing.
+- **Scope** The embed config says which platform this widget sits in. That becomes `knowledgeScope` on every request. Scope is derived server-side from the verified token; the old dev-only header switcher was removed (2026-09-23).
 - **User token** Today: a shared invite token per pilot, read from the URL and kept in session storage. Target: the host backend issues a signed token per user. The host page hands it to the Obi iframe by `postMessage`. The iframe keeps it in memory and the proxy forwards it. The backend derives company, integration and identity from it. Design: section 03.2.
 - **Proxy route** Adds the server key, forwards the body as-is, streams the SSE bytes back without buffering. Body size capped at 30 MB (four 5 MB images in base64 plus text).
 - **Render** Streamed tokens, citation chips with links, a red refusal banner with a human hand-off link, an indigo clarifying banner with option chips, and a labeled "looked at your image" block.
@@ -3771,17 +3772,16 @@ _Workflow label shown in the drawer: The widget_
 ##### Panel `w-scope` · Which platform is this widget in? · [Implemented, needs changing]
 - Kind: Config
 - In plain words: The widget knows which integration it lives in, and that becomes its scope on every question.
-- Today: The live /embed frame never sets a knowledgeScope prop; the dev-only scope switcher is the only client-side way scope is chosen today. The token, not this prop, will decide scope in the target.
+- Today: The live /embed frame never sets a knowledgeScope prop, so the client sends no scope and scope is derived server-side from the verified token. The dev-only header scope switcher that used to let a tester pick a scope has been removed (owner request, 2026-09-23) - the token is now the only thing that decides scope. The session still carries a knowledgeScope field (unset in the embed) as the plumbing for that value.
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | Set | once, by the embedding page, as the knowledgeScope prop |
-  | Sent | on every request as knowledgeScope |
-  | Dev switcher | behind NEXT_PUBLIC_SHOW_SCOPE_SWITCHER = true; never rendered in real embeds |
+  | Sent | on every request as knowledgeScope (unset in the embed) |
   | Target | the token carries the integration; a known slug that disagrees with it is ignored and logged; an unknown slug is a 400 |
 - Where in the code:
-  - `apps/web/src/features/chat/ui/scope-menu.tsx` — the dev switcher
-  - `apps/web/src/features/chat/model/knowledge-scopes.ts` — generated from knowledge_scopes.json at build time
+  - `frontend/src/features/chat/ui/chat-session-provider.tsx` — holds the knowledgeScope session field; unset in the embed, sent on every request
+  - `frontend/src/features/chat/server/validation.ts` — shape-checks a knowledgeScope on the request body (unknown value -> 400)
 
 ##### Panel `w-token` · The user token · [Implemented]
 - Kind: Auth

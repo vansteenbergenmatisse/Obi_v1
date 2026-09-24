@@ -29,6 +29,7 @@ from app.features.rag_agent.domain.prompt import (
     CLARIFICATION_SYSTEM_PROMPT,
     IMAGE_ANALYSIS_SYSTEM_PROMPT,
     SMALL_TALK_SYSTEM_PROMPT,
+    build_answer_context_block,
     build_answer_prompt,
     build_identity_context_block,
     build_identity_system_prompt,
@@ -72,8 +73,19 @@ class QueryRewriter(Protocol):
 
 @runtime_checkable
 class AnswerGenerator(Protocol):
-    def generate(self, query: str, evidence_block: str) -> str:
-        """Return a grounded answer citing the numbered markers in ``evidence_block``."""
+    def generate(
+        self,
+        query: str,
+        evidence_block: str,
+        *,
+        company_name: str | None = None,
+        integration: str | None = None,
+    ) -> str:
+        """Return a grounded answer citing the numbered markers in ``evidence_block``.
+
+        ``company_name`` / ``integration`` are the verified per-chat business context (which
+        business Obi is helping, which platform they use); a missing value is omitted, never
+        guessed. They are response context only and never affect access (Locks 0-3 still govern)."""
         ...
 
     def generate_small_talk(self, query: str) -> str:
@@ -160,11 +172,27 @@ class AnthropicAnswerGenerator:
         # the persona; the per-user identity rides a separate, uncached block. "" -> base prompt.
         self._identity_static_facts = identity_static_facts
 
-    def generate(self, query: str, evidence_block: str) -> str:
+    def generate(
+        self,
+        query: str,
+        evidence_block: str,
+        *,
+        company_name: str | None = None,
+        integration: str | None = None,
+    ) -> str:
+        # Two system blocks, mirroring `generate_identity`: a CACHED persona/style block
+        # (`ANSWER_SYSTEM_PROMPT`, constant per deployment, billed once) and an optional UNCACHED
+        # per-chat business-context block, so per-chat company/integration variation never busts the
+        # shared cache. The context block is dropped entirely when neither value is known — missing
+        # values are omitted, never guessed — and it is response context only, never access control.
+        system_blocks: list = [cached_system_block(ANSWER_SYSTEM_PROMPT)]
+        context_block = build_answer_context_block(company_name, integration)
+        if context_block is not None:
+            system_blocks.append({"type": "text", "text": context_block})
         return self._client.create_message(
             model=self._model,
             user_text=redact_pii(build_answer_prompt(query, evidence_block)),
-            system_blocks=[cached_system_block(ANSWER_SYSTEM_PROMPT)],
+            system_blocks=system_blocks,
             max_tokens=_ANSWER_MAX_TOKENS,
         )
 

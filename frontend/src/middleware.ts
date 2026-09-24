@@ -27,7 +27,16 @@ import { computeEmbedCsp, isLocalOrDevEnv } from "@/features/embed/csp";
 export async function middleware(request: NextRequest): Promise<NextResponse> {
   let domains: string[] = [];
   try {
-    const response = await fetch(new URL("/api/internal/active-domains", request.url));
+    // Fetch the active-domain list from the internal Node route. Prefer an explicit loopback
+    // origin (OBI_INTERNAL_ORIGIN) when set: behind a reverse proxy or tunnel, deriving the base
+    // from `request.url` makes the server loop back through its own PUBLIC hostname — which fails
+    // behind cloudflared (→ empty domains → frame-ancestors 'none' → the frame refuses to load)
+    // and is also an attacker-influenced fetch target via the Host header. Loopback removes both.
+    // Unset → unchanged same-origin behavior. `cache: "no-store"` honors the "never cached" contract.
+    const internalBase = process.env.OBI_INTERNAL_ORIGIN || request.url;
+    const response = await fetch(new URL("/api/internal/active-domains", internalBase), {
+      cache: "no-store",
+    });
     if (response.ok) {
       const body = (await response.json()) as { domains?: unknown };
       if (Array.isArray(body.domains)) {

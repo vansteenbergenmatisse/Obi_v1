@@ -611,3 +611,27 @@ def test_platforms_local_file_allowed_integrations_match_test_hosts():
         entry = reg.by_issuer(issuer)
         assert entry is not None, issuer
         assert entry.allowed_integrations == allowed, issuer
+
+
+def test_platforms_local_file_test_integrations_map_to_scoped_plus_general():
+    """CIP-A1 · the committed platforms.local.json (the localhost embed test's registry —
+    docs/Final_docs/brief/localhost-test.md) resolves each test integration to exactly its own scope
+    plus the always-added general scope, and never another integration's scope. This pins the
+    cross-integration isolation the localhost test demonstrates at the config layer: a mews token
+    can never resolve toast or opera-cloud content, and vice-versa."""
+    local_file = DEFAULT_PLATFORMS_PATH.parent / "platforms.local.json"
+    reg = load_platform_registry(local_file, RECOGNIZED, allow_empty=True, offline=True)
+    expected = {
+        "mews": ["obi-general-test", "obi-mews-test"],
+        "toast": ["obi-general-test", "obi-toast-test"],
+        "opera-cloud": ["obi-general-test", "obi-operacloud-test"],
+    }
+    for integration, scopes in expected.items():
+        assert reg.scopes_for(integration) == scopes, integration
+    # cross-integration isolation, negative case: no integration leaks another's product scope.
+    assert "obi-toast-test" not in (reg.scopes_for("mews") or [])
+    assert "obi-operacloud-test" not in (reg.scopes_for("mews") or [])
+    assert "obi-mews-test" not in (reg.scopes_for("toast") or [])
+    assert "obi-operacloud-test" not in (reg.scopes_for("toast") or [])
+    assert "obi-mews-test" not in (reg.scopes_for("opera-cloud") or [])
+    assert "obi-toast-test" not in (reg.scopes_for("opera-cloud") or [])

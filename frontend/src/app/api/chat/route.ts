@@ -5,6 +5,6 @@
  * (validation, auth, streaming passthrough to `backend`) is owned end to end by
  * `features/chat/server` and reached through the feature's public root.
  */
-import { handlePostChat } from "@/features/chat";
+import { handlePostChat } from "@/features/chat/server";
 
 export const POST = handlePostChat;

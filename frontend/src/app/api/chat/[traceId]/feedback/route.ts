@@ -5,7 +5,7 @@
  * route param; the proxy behavior lives in `features/chat/server`.
  */
 import type { NextRequest } from "next/server";
-import { handlePatchFeedback } from "@/features/chat";
+import { handlePatchFeedback } from "@/features/chat/server";
 
 export async function PATCH(
   request: NextRequest,

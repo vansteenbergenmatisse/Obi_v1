@@ -328,7 +328,15 @@ class AnswerService:
             },
         }
         evidence = build_evidence_block(evidence_hits, parent_texts)
-        raw_answer = self._generator.generate(rewritten, evidence)
+        # Per-chat business context for the answer prompt comes from the verified auth context
+        # only (never the request body). A missing value is passed through as None and omitted
+        # downstream, never guessed. Response context only; access stays governed by search/DB.
+        raw_answer = self._generator.generate(
+            rewritten,
+            evidence,
+            company_name=auth.company_name,
+            integration=auth.integration,
+        )
         cleaned, used_markers = enforce_citations(
             raw_answer, valid_markers=range(1, len(evidence_hits) + 1)
         )

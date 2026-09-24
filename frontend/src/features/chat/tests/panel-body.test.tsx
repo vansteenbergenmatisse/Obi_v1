@@ -351,6 +351,24 @@ describe("FloatingFrame layout (panel w-panel · Layout)", () => {
     // clamp(360px, 29%, 440px) wide, exactly as the design panel's Settings table states it.
     expect(root).toHaveClass("w-[clamp(360px,29%,440px)]");
   });
+
+  it("w_panel_fill_variant_fills_the_iframe_with_no_left_seam_or_clamped_width", () => {
+    // The `/embed` iframe already draws its own rounded corners + shadow (obi.js). In fill mode the
+    // panel fills that iframe edge-to-edge: no right-pin/clamped width leaving a left gap, and no
+    // `border-l` seam inside the rounded corner — so "Obi" sits flush to the left edge.
+    const { container } = render(
+      <FloatingFrame fill>
+        <div>content</div>
+      </FloatingFrame>,
+    );
+
+    const root = container.querySelector<HTMLElement>("[data-obi-widget-root]");
+    expect(root).toBeInTheDocument();
+    expect(root).toHaveClass("fixed", "inset-0");
+    expect(root).not.toHaveClass("right-0");
+    expect(root).not.toHaveClass("w-[clamp(360px,29%,440px)]");
+    expect(root).not.toHaveClass("border-l");
+  });
 });
 
 describe("PanelBody parts (panel w-panel · Parts)", () => {

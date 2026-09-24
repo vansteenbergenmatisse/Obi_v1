@@ -101,13 +101,22 @@ class _FakeGenerator:
             question="Which system do you mean?", options=["Muse", "Toast"]
         )
         self.called_with: list[tuple[str, str]] = []
+        self.generate_context: list[tuple[str | None, str | None]] = []
         self.small_talk_called_with: list[str] = []
         self.image_analysis_called_with: list[tuple[str, tuple]] = []
         self.clarification_called_with: list[str] = []
         self.identity_called_with: list[tuple[str, IdentityFacts]] = []
 
-    def generate(self, query: str, evidence_block: str) -> str:
+    def generate(
+        self,
+        query: str,
+        evidence_block: str,
+        *,
+        company_name: str | None = None,
+        integration: str | None = None,
+    ) -> str:
         self.called_with.append((query, evidence_block))
+        self.generate_context.append((company_name, integration))
         return self._text
 
     def generate_small_talk(self, query: str) -> str:
@@ -143,7 +152,14 @@ class _RaisingClassifier:
 
 
 class _RaisingGenerator:
-    def generate(self, query: str, evidence_block: str) -> str:
+    def generate(
+        self,
+        query: str,
+        evidence_block: str,
+        *,
+        company_name: str | None = None,
+        integration: str | None = None,
+    ) -> str:
         raise AssertionError("generator must not be called once refusal is decided")
 
     def generate_small_talk(self, query: str) -> str:
@@ -258,6 +274,32 @@ def test_grounded_answer_with_rewrite_and_persisted_trace() -> None:
     assert session is not None and session.committed
     assert row.answer == result.text
     assert row.rewritten_query == "rewritten q"
+
+
+def test_grounded_answer_threads_verified_business_context_into_generate() -> None:
+    """operator request 2026-09-23: the grounded answer call receives company_name/integration
+    from the VERIFIED auth context (never the request body), so Obi knows which business it is
+    helping and which platform they use. The tokenless path threads None (nothing guessed)."""
+    retriever = _FakeRetriever(
+        {"q": RetrievalResult(hits=[_HIT_A], trace_id=None)},
+        parent_texts={501: "Some grounding text."},
+    )
+    generator = _FakeGenerator("Answer with a citation [1].")
+    service, _ = _service(retriever, _FakeRewriter("q"), generator)
+
+    service.answer(
+        [ChatMessage(role="user", content="how do I get access?")],
+        _auth(integration="opera-cloud", company_name="Hotel Co", company_id="42"),
+    )
+    assert generator.generate_context == [("Hotel Co", "opera-cloud")]
+
+    # tokenless/general path: no verified business identity, so None is threaded, never guessed
+    generator_general = _FakeGenerator("Answer with a citation [1].")
+    service_general, _ = _service(retriever, _FakeRewriter("q"), generator_general)
+    service_general.answer(
+        [ChatMessage(role="user", content="how do I get access?")], general_only_context()
+    )
+    assert generator_general.generate_context == [(None, None)]
 
 
 def test_rewrite_disabled_skips_rewriter_and_uses_verbatim_query() -> None:

@@ -12,7 +12,7 @@ PG_CONTAINER := omniboost_rag_pg
 # other workflows) — matches docker-compose.yml's POSTGRES_USER/PASSWORD/DB and host port 5434.
 DB_URL_LOCAL := postgresql+psycopg://rag:rag@localhost:5434/omniboost_rag
 
-.PHONY: up down migrate test test-unit test-db test-ui eval boundaries check web-dev fmt reingest
+.PHONY: up down migrate test test-unit test-db test-ui eval boundaries check web-dev api embed-dev tunnel fmt reingest
 
 ## up: start Postgres (pgvector) in the background.
 up:
@@ -101,9 +101,31 @@ check: boundaries test
 reingest:
 	cd $(AUTOMATION) && uv run python scripts/run_reconciliation_once.py
 
-## web-dev: run the Next.js dev server.
+## web-dev: run the Next.js dev server (port 3000). For the EMBED test use `embed-dev` instead —
+## the local platform registry pins JWKS on :3100, so :3000 makes JWKS fetch 404 and every token 401.
 web-dev:
 	pnpm --filter web dev
+
+## api: run the backend (FastAPI) on :8000 for the localhost embed test (docs/Final_docs/brief/localhost-test.md).
+## Reads the root .env (ENV=local, PLATFORMS_PATH, CHAT_API_KEY). To use the fully-local pgvector DB
+## instead of the .env DATABASE_URL, prefix: `DATABASE_URL=$(DB_URL_LOCAL) make api`.
+api:
+	cd $(AUTOMATION) && uv run uvicorn app.main:app --port 8000 --reload
+
+## embed-dev: run the frontend on :3100 (NOT :3000) so the local test hosts' JWKS URLs resolve and
+## a minted test token verifies. Rebuilds public/obi.js first. Pair with `make api`; then open
+## http://localhost:3100/test-hosts/{toast,mews,opera-cloud,multi}. The dev-only scope switcher
+## (the header tag icon) stays off here so the embed matches a real embed; prefix
+## `NEXT_PUBLIC_SHOW_SCOPE_SWITCHER=true` to bring it back for scope-isolation checks (PLAN 10.8).
+embed-dev:
+	cd frontend && pnpm run build:obi && pnpm exec next dev --port 3100
+
+## tunnel: expose the local frontend (:3100) on a public HTTPS URL for a self-only "test online".
+## Run `make api` and `make embed-dev` first (two other terminals). Starts a cloudflared quick
+## tunnel, injects its random hostname into platforms.local.json so the embed CSP/postMessage gate
+## accepts it, prints the public /test-hosts/none URL, and restores the registry on Ctrl-C.
+tunnel:
+	scripts/tunnel-embed-test.sh
 
 ## fmt: format and lint-fix the automation code with Ruff.
 fmt:

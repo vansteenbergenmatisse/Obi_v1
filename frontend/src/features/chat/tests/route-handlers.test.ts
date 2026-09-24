@@ -12,15 +12,16 @@ vi.mock("@/platform/automation-api", () => ({
 }));
 
 // panel w-proxy · substep p0-s0_5-reg-the-widget — "Path" check: the two app router entry files
-// must route to the right handlers. Stubbing the feature barrel (rather than importing it for
-// real) keeps this a pure wiring assertion and avoids pulling the barrel's unrelated React UI
-// exports into this node-environment (*.test.ts) file.
+// must route to the right handlers. Stubbing the feature's SERVER root (rather than importing it
+// for real) keeps this a pure wiring assertion. The routes import `@/features/chat/server` (not the
+// client root), so the secret-carrying proxy never enters a client bundle — see the /embed
+// server-only regression in client-root-no-server-imports.test.ts.
 const { handlePostChatSpy, handlePatchFeedbackSpy } = vi.hoisted(() => ({
   handlePostChatSpy: vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 })),
   handlePatchFeedbackSpy: vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 })),
 }));
 
-vi.mock("@/features/chat", () => ({
+vi.mock("@/features/chat/server", () => ({
   handlePostChat: handlePostChatSpy,
   handlePatchFeedback: handlePatchFeedbackSpy,
 }));

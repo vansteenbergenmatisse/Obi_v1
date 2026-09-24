@@ -569,7 +569,7 @@ details.sec[open]>summary .show{display:none}
       <summary><h3>What each part owns</h3></summary>
     <table class="wide">
       <tr><th>Part</th><th>Owns</th><th>Belongs in its folder</th><th>Never does</th></tr>
-      <tr><td>Frontend</td><td>The chat window. The iframe handshake and the token held in memory. The proxy route that adds the host key. Six locales. Rendering of answers, citations, refusals and clarifying chips.</td><td>UI components. The proxy route. Shape checks on the request. The iframe bridge. A scope list generated from <code>knowledge_scopes.json</code> at build time for the dev switcher, without <code>classified</code>.</td><td>Decide who may see what. Hold a signing key. Talk to Postgres.</td></tr>
+      <tr><td>Frontend</td><td>The chat window. The iframe handshake and the token held in memory. The proxy route that adds the host key. Six locales. Rendering of answers, citations, refusals and clarifying chips.</td><td>UI components. The proxy route. Shape checks on the request. The iframe bridge.</td><td>Decide who may see what. Hold a signing key. Talk to Postgres.</td></tr>
       <tr><td>Backend</td><td>The webhook and the sweeps. Ingestion. Token verification and the authorization context. Search, rerank, coverage, generation. The citation check and the support check. The audit trail.</td><td>The FastAPI app. The five features. The clients for Confluence, OpenAI, Cohere and Claude. The job worker. The eval runner.</td><td>Trust a scope or a principal from a request body. Serve a row the database policy hides. Render UI.</td></tr>
       <tr><td>Knowledge base</td><td>The schema. The two roles and the row policies. The migrations. The tag list. The integration-to-tags map. Curated seed data. The local Postgres for a laptop.</td><td>Models and DDL. Alembic versions. Config JSON. Seed scripts. docker-compose.</td><td>Hold page content in git. The content lives in Postgres and comes from Confluence. Hold application logic.</td></tr>
     </table>
@@ -2002,7 +2002,7 @@ Company: Hotel Group Example · Integration: toast · Scopes: toast, general</pr
       <li><b>Launcher + teaser</b><span>A button in the corner. A nudge card appears after 3 seconds, and again 20 seconds after each close. Opening the panel is the only way into the conversation.</span></li>
       <li><b>Panel</b><span>A fixed overlay on the right, full height. Header with menus, the message thread over a decorative contour background, the composer at the bottom.</span></li>
       <li><b>Composer</b><span>Text, file attachments, clipboard paste, and the header's screenshot button all feed one attachment pipeline. Images are base64 on the newest turn only.</span></li>
-      <li><b>Scope</b><span>The embed config says which platform this widget sits in. That becomes <code>knowledgeScope</code> on every request. A dev-only switcher exists behind an env flag for testing.</span></li>
+      <li><b>Scope</b><span>The embed config says which platform this widget sits in. That becomes <code>knowledgeScope</code> on every request. Scope is derived server-side from the verified token; the old dev-only header switcher was removed (2026-09-23).</span></li>
       <li><b>User token</b><span>Today: a shared invite token per pilot, read from the URL and kept in session storage. Target: the host backend issues a signed token per user. The host page hands it to the Obi iframe by <code>postMessage</code>. The iframe keeps it in memory and the proxy forwards it. The backend derives company, integration and identity from it. Design: <a href="#embed">section 03.2</a>.</span></li>
       <li><b>Proxy route</b><span>Adds the server key, forwards the body as-is, streams the SSE bytes back without buffering. Body size capped at 30 MB (four 5 MB images in base64 plus text).</span></li>
       <li><b>Render</b><span>Streamed tokens, citation chips with links, a red refusal banner with a human hand-off link, an indigo clarifying banner with option chips, and a labeled "looked at your image" block.</span></li>
@@ -2618,7 +2618,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "The widget",
 "h": "The Obi widget",
 "st": "built",
-"today": "Built in apps/web. Launcher, teaser, panel, composer, images, screenshot, six locales, dev-only scope switcher. Per-user JWT from the host; the shared pilot invite token is retired.",
+"today": "Built in apps/web. Launcher, teaser, panel, composer, images, screenshot, six locales. Per-user JWT from the host; the shared pilot invite token is retired. The dev-only scope switcher was removed (owner request, 2026-09-23).",
 "s": [
 "The widget is embedded in a platform's page with a scope from its config.",
 "The user asks. The widget calls its own proxy route.",
@@ -3004,7 +3004,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "File",
 "h": "config/knowledge_scopes.json: the scope list",
 "st": "built",
-"today": "Loaded and validated at startup (fails if obi-general-test or classified is missing); classified is present but excluded from the recognized set, from GET /health, and from the widget list. Each entry now carries name + label + description; the widget's scope switcher is GENERATED from this file at build time (substep 1.2.2) — no hand-written copy, no drift test. platforms.json now sits beside it under knowledge-base/config/, loaded + validated at startup after the tag map (substep 1.2.3): six ordered rules each naming the offending entry, general added by the loader and never hand-listed, exposing allowed_scopes_for + platform_for; datahub is the first active platform and is logged at boot.",
+"today": "Loaded and validated at startup (fails if obi-general-test or classified is missing); classified is present but excluded from the recognized set, from GET /health, and from the widget list. Each entry carries name + label + description. The dev-only widget scope switcher that used to be generated from this file was removed (owner request, 2026-09-23); the file now drives the backend recognized-scope set and /health only, not any client-side list. platforms.json now sits beside it under knowledge-base/config/, loaded + validated at startup after the tag map (substep 1.2.3): six ordered rules each naming the offending entry, general added by the loader and never hand-listed, exposing allowed_scopes_for + platform_for; datahub is the first active platform and is logged at boot.",
 "f": [
 [
 "Target list",
@@ -3012,7 +3012,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 [
 "Read by",
-"the backend loader at startup, and the widget build, which imports the same file and generates its scope list (no hand-written copy, no drift test)"
+"the backend loader at startup (the dev widget scope list that used to import this file was removed, 2026-09-23)"
 ],
 [
 "Matching",
@@ -3031,10 +3031,6 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 [
 "platform/config/knowledge_scopes.py",
 "load_recognized_knowledge_scopes"
-],
-[
-"apps/web/src/features/chat/model/knowledge-scopes.ts",
-"generated from the JSON at build time, without classified"
 ]
 ],
 "c": "{\n  \"scopes\": [\"general\", \"mews\", \"toast\", \"classified\"]\n}",
@@ -4523,7 +4519,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 [
 "Also read by",
-"the widget build, which imports the JSON and generates its scope list without classified"
+"the backend loader only; the dev widget scope list that used to import this JSON was removed (2026-09-23)"
 ]
 ],
 "files": [
@@ -4534,14 +4530,10 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 [
 "platform/config/knowledge_scopes.py",
 "loader"
-],
-[
-"apps/web/src/features/chat/model/knowledge-scopes.ts",
-"generated from the JSON at build time"
 ]
 ],
 "simple": "The list of tag names in one small file. A name here is a tag; a name not here is ignored.",
-"today": "knowledge-base/config/knowledge_scopes.json holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test and the reserved classified; the loader validates it at startup and returns the four recognized scopes (classified excluded); the widget list mirrors the same file minus classified, guarded by the drift test."
+"today": "knowledge-base/config/knowledge_scopes.json holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test and the reserved classified; the loader validates it at startup and returns the four recognized scopes (classified excluded). The dev widget scope list that used to mirror this file (minus classified) was removed (owner request, 2026-09-23)."
 },
 "tg-state": {
 "n": "Data",
@@ -5829,7 +5821,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 [
 "System prompt",
-"cached; answer only from the numbered evidence; cite every factual claim"
+"one general Obi persona (professional, helpful, concise; answer only from the numbered evidence; cite every factual claim) in a cached block, plus a second, uncached block carrying this chat's verified company_name + integration"
 ],
 [
 "PII",
@@ -5843,14 +5835,23 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "files": [
 [
 "rag_agent/infrastructure/llm_client.py",
-"AnthropicAnswerGenerator.generate"
+"AnthropicAnswerGenerator.generate (keyword-only company_name/integration -> uncached block)"
 ],
 [
-"rag_agent/domain/prompt.py:37-78",
-"ANSWER_SYSTEM_PROMPT"
+"rag_agent/domain/prompt.py:45-87",
+"ANSWER_SYSTEM_PROMPT (Obi persona + citation/grounding rules)"
+],
+[
+"rag_agent/domain/prompt.py",
+"build_answer_context_block (verified company/integration; None when neither is known)"
+],
+[
+"rag_agent/application/answer_service.py",
+"threads auth.company_name/integration from the verified AuthContext into generate"
 ]
 ],
-"simple": "The model writes an answer from the numbered pieces only and marks each sentence with the number it used."
+"simple": "The model writes an answer from the numbered pieces only and marks each sentence with the number it used, and it is told which business and platform it is helping.",
+"today": "The system prompt is one general Obi persona (professional, helpful, concise; answers only from the cited evidence) in a cached block, plus a second, uncached block that carries this chat's verified company_name + integration so the answer knows which business and platform it serves. A missing value is omitted, never guessed; when the token has neither, no second block is added. Response context only - document access stays enforced by retrieval + the database (Locks 0-3), never by this block (owner request, 2026-09-23)."
 },
 "r5-enforce": {
 "n": "Gate",
@@ -6181,11 +6182,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 [
 "Sent",
-"on every request as knowledgeScope"
-],
-[
-"Dev switcher",
-"behind NEXT_PUBLIC_SHOW_SCOPE_SWITCHER = true; never rendered in real embeds"
+"on every request as knowledgeScope (unset in the embed)"
 ],
 [
 "Target",
@@ -6194,16 +6191,16 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 "files": [
 [
-"apps/web/src/features/chat/ui/scope-menu.tsx",
-"the dev switcher"
+"frontend/src/features/chat/ui/chat-session-provider.tsx",
+"holds the knowledgeScope session field; unset in the embed, sent on every request"
 ],
 [
-"apps/web/src/features/chat/model/knowledge-scopes.ts",
-"generated from knowledge_scopes.json at build time"
+"frontend/src/features/chat/server/validation.ts",
+"shape-checks a knowledgeScope on the request body (unknown value -> 400)"
 ]
 ],
 "simple": "The widget knows which integration it lives in, and that becomes its scope on every question.",
-"today": "The live /embed frame never sets a knowledgeScope prop; the dev-only scope switcher is the only client-side way scope is chosen today. The token, not this prop, will decide scope in the target."
+"today": "The live /embed frame never sets a knowledgeScope prop, so the client sends no scope and scope is derived server-side from the verified token. The dev-only header scope switcher that used to let a tester pick a scope has been removed (owner request, 2026-09-23) - the token is now the only thing that decides scope. The session still carries a knowledgeScope field (unset in the embed) as the plumbing for that value."
 },
 "w-token": {
 "n": "Auth",
@@ -7231,12 +7228,12 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "st": "change",
 "s": [
 "The backend restarts and reads the new list.",
-"The widget build imports the same file and generates its scope list, without classified.",
-"Until both are deployed the old list is in force."
+"The frontend has no scope list to rebuild - only the backend reads this file now.",
+"Until the backend is deployed the old list is in force."
 ],
 "note": "Deploy the backend first. A widget sending a scope the backend does not know gets a 400.",
-"simple": "Ship the new file. The backend and the widget both read it.",
-"today": "The widget's scope list is a hand-written copy, not generated at build time; a runtime drift test guards it against this file."
+"simple": "Ship the new file. The backend reads it.",
+"today": "The frontend no longer has a scope list: the dev widget scope switcher and its generated list were removed (owner request, 2026-09-23). Only the backend reads this file now."
 },
 "ks-sweep": {
 "n": "Knowledge scopes",
@@ -7274,7 +7271,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "In the target the token decides the scope. A known slug that disagrees with the token is ignored and logged. An unknown slug is still a 400 before any search."
 ],
 "simple": "A widget uses the same tag name as its scope, so it only sees pages with that tag.",
-"today": "The live /embed frame does not set a knowledgeScope prop; only the dev-only scope switcher sets it client-side today. The token-driven scope in step 3 is target, not current."
+"today": "The live /embed frame does not set a knowledgeScope prop; the client sends no scope and the token-driven scope (step 3) is derived server-side. The dev-only scope switcher that used to set it client-side was removed (owner request, 2026-09-23)."
 },
 "ks-remove": {
 "n": "Knowledge scopes",
@@ -7518,7 +7515,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 [
 "Reads from the knowledge base folder",
-"the tag list, imported at build time; the widget's scope list is generated from it, without classified"
+"nothing at build time now - the dev widget scope list generated from the tag list was removed (2026-09-23)"
 ],
 [
 "Never",

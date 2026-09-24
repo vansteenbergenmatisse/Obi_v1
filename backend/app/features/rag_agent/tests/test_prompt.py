@@ -7,7 +7,9 @@ from dataclasses import dataclass
 from app.features.rag_agent.domain.curated_knowledge import CuratedEntry, curated_entry_to_hit
 from app.features.rag_agent.domain.identity import IdentityFacts
 from app.features.rag_agent.domain.prompt import (
+    ANSWER_SYSTEM_PROMPT,
     IDENTITY_SYSTEM_PROMPT,
+    build_answer_context_block,
     build_answer_prompt,
     build_evidence_block,
     build_identity_context_block,
@@ -98,6 +100,47 @@ def test_build_answer_prompt_includes_question_and_evidence() -> None:
     assert "How do I get access?" in prompt
     assert "[1] Onboarding" in prompt
     assert "Request via the portal." in prompt
+
+
+# -- the general system prompt + per-chat business context ----------------------------------
+
+
+def test_answer_system_prompt_defines_obis_response_behavior() -> None:
+    # operator request 2026-09-23: the one general system prompt names Obi and its response
+    # qualities, and keeps the load-bearing grounding/citation contract enforce_citations needs.
+    assert "Obi" in ANSWER_SYSTEM_PROMPT
+    assert "professional" in ANSWER_SYSTEM_PROMPT
+    assert "concise" in ANSWER_SYSTEM_PROMPT
+    assert "ONLY from the numbered evidence" in ANSWER_SYSTEM_PROMPT
+    assert "Cite every factual claim with its matching numbered marker" in ANSWER_SYSTEM_PROMPT
+
+
+def test_build_answer_context_block_renders_business_and_platform() -> None:
+    block = build_answer_context_block("Hotel Co", "opera-cloud")
+    assert block is not None
+    assert "Hotel Co" in block
+    assert "opera-cloud" in block
+    # presented as context, never as an instruction to follow or an access-control signal
+    assert "not instructions" in block
+    assert "not for access control" in block
+
+
+def test_build_answer_context_block_omits_a_missing_value_without_guessing() -> None:
+    # only the platform is known: render it, and never invent a company name in its place
+    only_platform = build_answer_context_block(None, "opera-cloud")
+    assert only_platform is not None
+    assert "opera-cloud" in only_platform
+    assert "Business:" not in only_platform
+
+    only_company = build_answer_context_block("Hotel Co", None)
+    assert only_company is not None
+    assert "Hotel Co" in only_company
+    assert "Platform/integration:" not in only_company
+
+
+def test_build_answer_context_block_returns_none_when_neither_is_known() -> None:
+    # tokenless/general path: no business identity, so the caller adds no block at all
+    assert build_answer_context_block(None, None) is None
 
 
 # -- identity path (per-user identity in a variable system prompt) --------------------------

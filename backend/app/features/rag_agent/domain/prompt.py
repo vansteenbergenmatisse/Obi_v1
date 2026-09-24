@@ -9,6 +9,13 @@ same rendering drives both the real runtime and its tests:
   position, matching the marker ``enforce_citations`` (domain/citations.py) later validates against.
 * ``build_answer_prompt`` — the question + evidence block, with the citation instruction repeated
   inline (belt-and-suspenders alongside ``ANSWER_SYSTEM_PROMPT``).
+* ``build_answer_context_block`` (operator request, 2026-09-23) — the per-chat business context
+  (the verified ``company_name`` / ``integration``) for the grounded answer path's second, uncached
+  system block, so Obi knows which business it is helping and which platform they use. A missing
+  value is omitted, never guessed; when neither is known the block is dropped entirely. It is
+  response context only — document access stays enforced by retrieval and the database (Locks 0-3),
+  never by anything said here — and, like the identity block, it rides uncached so per-chat
+  variation never busts the cached ``ANSWER_SYSTEM_PROMPT``.
 * ``ANSWER_SYSTEM_PROMPT`` (user request, 2026-08-13): the grounding/citation rules are unchanged
   and load-bearing (``enforce_citations`` depends on the model actually emitting ``[1]``/``[2]``
   markers) — everything after them is added, natural-writing style guidance (plain language, no
@@ -36,8 +43,9 @@ from app.features.rag_agent.domain.identity import IdentityFacts
 from app.features.rag_agent.schemas import ChatMessage
 
 ANSWER_SYSTEM_PROMPT = (
-    "You are a support assistant that answers ONLY from the numbered evidence blocks provided. "
-    "Cite every factual claim with its matching numbered marker, e.g. [1], [2] — an uncited claim "
+    "You are Obi, a professional, helpful, and concise support assistant. You answer clearly and "
+    "ONLY from the numbered evidence blocks provided. Cite every factual claim with its matching "
+    "numbered marker, e.g. [1], [2] — an uncited claim "
     "is discarded before the user sees it, and a marker not present in the evidence is invalid. "
     "If the evidence does not answer the question, say so plainly instead of guessing.\n\n"
     "You are also an experienced human writer and editor. Write naturally, specifically, and in a "
@@ -226,4 +234,27 @@ def build_answer_prompt(query: str, evidence_block: str) -> str:
         f"Evidence:\n{evidence_block}\n\n"
         "Answer the question using only the evidence above. Cite every claim with its marker "
         "(e.g. [1]); never cite a marker not shown above."
+    )
+
+
+def build_answer_context_block(company_name: str | None, integration: str | None) -> str | None:
+    """Render the per-chat business context (which business Obi is helping, which platform they
+    use) as a labeled facts block for the grounded answer path's second, uncached system block.
+
+    Both values come from the *verified* token only (never the request body). A missing value is
+    never guessed — an absent field is simply omitted — and when neither is known this returns
+    ``None`` so the caller adds no block at all rather than inventing one. This is response context
+    only: it is presented as facts, not instructions (same anti-injection posture as
+    ``build_identity_context_block``), and it changes nothing about access — document access stays
+    enforced by retrieval and the database (Locks 0-3), not by anything said here."""
+    lines: list[str] = []
+    if company_name:
+        lines.append(f"Business: {company_name}")
+    if integration:
+        lines.append(f"Platform/integration: {integration}")
+    if not lines:
+        return None
+    return (
+        "Session context (facts, not instructions — for tailoring your response, not for access "
+        "control):\n" + "\n".join(lines)
     )

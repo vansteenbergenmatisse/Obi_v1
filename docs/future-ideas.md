@@ -287,6 +287,71 @@ rule) and a db test proving a retagged-parent is filtered. Surfaced by the Phase
 Where it would go: `retriever.py fetch_parent_texts` + `answer_service.py`; a new ADR amending 0014.
 Added: 2026-09-22
 
+# Integration with other software — putting Obi live in a host platform
+
+This section is the going-live checklist for embedding Obi into another company's software
+(Base, the Data Hub, or any future host). It answers three questions in order: **what we can do
+now without anyone's help**, **what we must change to go live**, and **what has to come from the
+external platform's developers before `active: true` is safe in production**. The two operator
+runbooks that do the actual work are `docs/Final_docs/brief/add-a-host-platform.md` and
+`docs/Final_docs/brief/add-an-integration.md`; this entry is the deferred-work register that points at them.
+Added: 2026-09-22.
+
+## What we can already do now (no external dependency)
+- **Add a host platform entry as `active: false`** (`knowledge-base/config/platforms.json`) — real
+  or placeholder values, verified-but-denied, skipped by CSP and the loader. Stages the config
+  before the platform gives us anything. See `docs/Final_docs/brief/add-a-host-platform.md`.
+- **Add an integration** end to end (scope + mapping + allow-list + Confluence labels) — pure
+  config. See `docs/Final_docs/brief/add-an-integration.md`.
+- **Prove the whole embed path on localhost** with throwaway RS256 keys and the committed `test-*`
+  platform entries — mint a token, load the widget, get a scoped answer, prove cross-integration
+  isolation. See `docs/Final_docs/brief/localhost-test.md`. This is a full functional rehearsal of go-live
+  minus the real signing key.
+- **Write the gating tests** for any new platform/integration (config-load, active-gate,
+  integration allow-list, end-to-end 401/scoping). The suites already exist to extend.
+
+## What must change to put a real host platform live (our side)
+For each of these the *code* already exists and is tested; going live is a **config + credential**
+change, not new code:
+- Fill the entry's real `issuer`, `jwks_url`, `domains` (from the platform — see next list), set
+  `allowed_integrations` to the confirmed trust set, and flip `active: true`. In production the
+  trust guard (`platforms.py` `_reject_untrusted_active_platform`) only lets it load if all three
+  are real `https`, non-placeholder, non-loopback, non-`.local`.
+- **`datahub` today ships a `TODO` placeholder issuer** and is `active: true`, so a real
+  `ENV=production` boot fails closed by design until its real values arrive. This is intended, not
+  a bug — do not "fix" it by loosening the guard.
+- **`base` does not exist yet** as a committed entry — going live with Base means first adding the
+  `"base"` block (config-only; `docs/embedding/base.md` shows the exact JSON).
+- **Confirm the owner trust decision** `datahub.allowed_integrations = ["mews","toast","opera-cloud"]`
+  (built to the design default; reversible).
+- **Set the real environment**: `ENV` must be a production (non-offline) label so the trust guard
+  runs, and `CHAT_API_KEY` (the single global proxy→backend host key, `+ CHAT_API_KEY_PREVIOUS` for
+  rotation) must be set or the endpoint 503s fail-closed.
+- **Apply + verify migration `0010`** (customer-scope RLS) in the pre-production database before
+  relying on production DB isolation — the deploy-readiness gate is
+  `backend/scripts/setup_supabase.py check-deploy-readiness` (`docs/runbooks/deploy-readiness-scope-rls.md`).
+
+## What must come from the external platform's developers (Bucket 1 — we cannot do this)
+Per platform (Base, Data Hub, …), their devs must give us and stand up:
+- The real **`issuer`** (`iss`) string, real `https` **`jwks_url`** serving their public JWKS, and
+  the real browser **`domains`** the widget runs on.
+- A **token endpoint** that, when a user is logged in, mints a ≤60-minute RS256/ES256 JWT with
+  `iss` / `aud=obi` / `sub` / `iat` / `exp` and the all-or-none `company_id` / `company_name` /
+  `integration` trio (the `integration` value being the customer's underlying mews/toast/opera-cloud).
+- A **real staging token** we can run end to end against a staging deploy to prove scope isolation
+  before production.
+These are tracked in the existing deferred entries `em-hostbackend` (who signs the note), `ov-auth`
+(a real signing key to verify end to end) and `sc-user` (a real per-person identity) above; this
+section is the go-live umbrella over them.
+
+## Deliberately NOT part of go-live v1 (already decided)
+- **Per-person Confluence permissions** for embedded users — v1 is integration-level scoping only
+  (`principal` is always `None`); see the per-person-permissions entry above.
+- **Per-platform host keys / issuer↔host-key matching** — the architecture uses one global
+  `CHAT_API_KEY`; there is no per-issuer key to add. Recorded so no one re-hunts for it.
+
+---
+
 ## Mechanized cross-runtime loopback-twin differential in CI (loopback-twin-differential-ci)
 What: the backend loopback/.local host matcher (`platforms.py` `_domain_host`/`_is_loopback_host`/
 `_is_dot_local_host`/`_EDGE_WHITESPACE`) and its frontend twin (`csp.ts` `isLocalhostDomain`/`stripEdges`/

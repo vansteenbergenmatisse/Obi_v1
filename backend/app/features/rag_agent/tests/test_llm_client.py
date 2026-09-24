@@ -125,6 +125,39 @@ def test_generate_sends_natural_writing_style_guidance_alongside_citation_rules(
     assert "human writer" in system_text
 
 
+def test_generate_attaches_verified_business_context_as_an_uncached_second_block() -> None:
+    """operator request 2026-09-23
+    The per-chat company/integration ride in a SECOND system block so Obi knows which business it
+    is helping and which platform they use — and that block is UNCACHED (no cache_control), while
+    the persona block stays cached, so per-chat variation never busts the shared prompt cache."""
+    seen: list[dict] = []
+    generator = AnthropicAnswerGenerator(_client_capturing(seen), "answer-model")
+    generator.generate(
+        "how do I get access?",
+        "[1] Onboarding Guide\nRequest via the portal.",
+        company_name="Hotel Co",
+        integration="opera-cloud",
+    )
+
+    system = seen[0]["system"]
+    assert len(system) == 2
+    assert system[0]["cache_control"] == {"type": "ephemeral"}  # persona still cached
+    assert "cache_control" not in system[1]  # per-chat context is uncached
+    assert "Hotel Co" in system[1]["text"]
+    assert "opera-cloud" in system[1]["text"]
+
+
+def test_generate_adds_no_business_block_when_context_is_missing() -> None:
+    """operator request 2026-09-23
+    Tokenless/general path (no verified company/integration): nothing is guessed — only the single
+    cached persona block is sent, exactly as before this change."""
+    seen: list[dict] = []
+    generator = AnthropicAnswerGenerator(_client_capturing(seen), "answer-model")
+    generator.generate("how do I get access?", "[1] Onboarding Guide\nRequest via the portal.")
+
+    assert len(seen[0]["system"]) == 1
+
+
 def test_generate_small_talk_sends_the_small_talk_system_prompt_and_redacts_pii() -> None:
     seen: list[dict] = []
     generator = AnthropicAnswerGenerator(_client_capturing(seen), "answer-model")
