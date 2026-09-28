@@ -1,0 +1,45 @@
+page 1670873122: original labels=['obi-toast-test'] tags=['obi-toast-test']
+
+[rule 4] add second recognized label 'obi-mews-test' (sharing, no re-embed)
+2026-09-25 11:01:06 [info     ] job_succeeded                  job_id=21 job_type=sync_page
+  [PASS] page_source.tags share both ['obi-mews-test', 'obi-toast-test']
+  [PASS] active chunk.tags include 'obi-mews-test'
+  [PASS] active_doc_version_id unchanged (no re-embed)
+
+[rule 3] remove one label 'obi-mews-test', 'obi-toast-test' stays (metadata-only)
+2026-09-25 11:01:08 [info     ] job_succeeded                  job_id=22 job_type=sync_page
+  [PASS] tags now ['obi-toast-test']
+  [PASS] page still indexed (a recognized tag remains)
+  [PASS] active_doc_version_id unchanged (no re-embed)
+
+[rule 2] remove the last recognized label 'obi-toast-test' (purge)
+2026-09-25 11:01:10 [info     ] job_succeeded                  job_id=23 job_type=sync_page
+  [PASS] page_source row is gone
+  [PASS] zero rows for the page (purged), total_rows=0
+
+[rule 5] add the first recognized label 'obi-toast-test' to the untagged page (build)
+2026-09-25 11:01:13 [warning  ] contextualization_meta_refusal_discarded reply='I cannot provide context for this chunk because the document provided contains only this single line: "grapes are the on'
+2026-09-25 11:01:13 [info     ] job_succeeded                  job_id=24 job_type=sync_page
+  [PASS] page indexed again (page_source row present)
+  [PASS] active chunks embedded (2)
+  [PASS] active chunk.tags include 'obi-toast-test'
+  [PASS] a full build ran (action='indexed', not metadata_only)
+
+[rule 7] add the reserved 'classified' label (purge)
+2026-09-25 11:01:16 [info     ] job_succeeded                  job_id=25 job_type=sync_page
+  [PASS] page_source row is gone
+  [PASS] zero rows (classified purge), total_rows=0
+2026-09-25 11:01:19 [warning  ] contextualization_meta_refusal_discarded reply='I don\'t have access to the full document, only the single chunk "grapes are the only fruit." Without additional content '
+2026-09-25 11:01:21 [info     ] job_succeeded                  job_id=26 job_type=sync_page
+  [PASS] page re-indexed after removing classified + re-adding a recognized tag
+
+[rules 1 + 6] skipped (--no-manual)
+
+[rule 8] page 1670971395 untouched throughout
+  [PASS] the other page's version id, chunk ids and tags are byte-identical
+
+[restore] original labels
+  [PASS] labels restored to ['obi-toast-test']
+2026-09-25 11:01:23 [info     ] job_succeeded                  job_id=27 job_type=sync_page
+
+OK — every sync-rule check that ran passed and original labels were restored.
