@@ -858,7 +858,14 @@ class _LeakyClarifyingGenerator:
     this test can assert the *wire* payload built from its return value stays confined to the
     whitelisted PLAN 9.3 fields regardless of what the collaborator returns."""
 
-    def generate(self, query: str, evidence_block: str) -> str:
+    def generate(
+        self,
+        query: str,
+        evidence_block: str,
+        *,
+        company_name: str | None = None,
+        integration: str | None = None,
+    ) -> str:
         raise AssertionError("generate must not be called: the clarification branch bypasses it")
 
     def generate_small_talk(self, query: str) -> str:

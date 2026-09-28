@@ -41,7 +41,14 @@ class _EchoRewriter:
 class _CitingGenerator:
     """Deterministic stand-in: cites every numbered marker present in the evidence block."""
 
-    def generate(self, query: str, evidence_block: str) -> str:
+    def generate(
+        self,
+        query: str,
+        evidence_block: str,
+        *,
+        company_name: str | None = None,
+        integration: str | None = None,
+    ) -> str:
         markers = sorted({int(m) for m in re.findall(r"\[(\d+)\]", evidence_block)})
         if not markers:
             return "No grounded evidence was provided."
@@ -60,7 +67,14 @@ class _CitingGenerator:
 class _SilentGenerator:
     """Deterministic stand-in that cites nothing — exercises the no-grounded-claim refusal path."""
 
-    def generate(self, query: str, evidence_block: str) -> str:
+    def generate(
+        self,
+        query: str,
+        evidence_block: str,
+        *,
+        company_name: str | None = None,
+        integration: str | None = None,
+    ) -> str:
         return "This answer cites nothing."
 
     def generate_small_talk(self, query: str) -> str:
@@ -85,7 +99,14 @@ class _SmallTalkOnlyGenerator:
     """Raises if the grounded path is ever reached — proves the small-talk short-circuit skips
     retrieval/rewrite/refusal entirely, even against a real indexed corpus."""
 
-    def generate(self, query: str, evidence_block: str) -> str:
+    def generate(
+        self,
+        query: str,
+        evidence_block: str,
+        *,
+        company_name: str | None = None,
+        integration: str | None = None,
+    ) -> str:
         raise AssertionError("generate must not be called for small talk")
 
     def generate_small_talk(self, query: str) -> str:
