@@ -50,3 +50,9 @@ frontend/blob-report/
 # Obi agent harness scratch: the /obi-change active-substep marker and the
 # settings.json fallback profile file. Session-local, never committed.
 .obi/
+
+# Temporary working docs: the read-every-session forward roadmap and the
+# cross-session context handoff. Deliberately not part of the committed record
+# (the ledger/progress-log are the canonical history); deleted when the work lands.
+docs/Final_docs/plan.md
+TEMP_CLAUDE_CONTEXT_HANDOFF.md
