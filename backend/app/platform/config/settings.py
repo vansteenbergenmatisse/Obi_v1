@@ -234,6 +234,13 @@ class Settings(BaseSettings):
     # reconciliation
     lightweight_recon_cron: str = "0 3 * * *"
     complete_recon_interval_days: int = 14
+    # Freshness SLA (substep 2.0.1, decision `freshness-target`, owner-resolved 2026-09-24): the
+    # number of seconds between an editor clicking Publish and the change being searchable when the
+    # webhook is up. 60 s is the *tested* SLA every freshness test asserts against (the live 2.5.3
+    # proof, the e-monitor telemetry read this field, never a hardcoded literal); <= 20 s stays the
+    # aspiration recorded in docs/plan/decisions.md. This substep only defines the number — the
+    # daily sweep fallback and monitoring are wired in later substeps.
+    freshness_target_seconds: int = 60
 
     # webhook ingress guards
     webhook_rate_limit_per_minute: int = 300
