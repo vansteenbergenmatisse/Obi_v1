@@ -3555,8 +3555,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "i2-labels": {
 "n": "Gate",
 "h": "Labels to scope state",
-"st": "change",
-"today": "Labels intersected with the scope list. One provider label plus general is fine. Two provider labels give zero label tags and a warning. Result unioned with source_scope tags.",
+"st": "built",
+"today": "Every recognized label becomes a tag (no conflict zeroing); visibility is tags && allowed_scopes overlap, and empty tags are private (fail-closed, migration 0014). No app-code delta remains. Proven by test_sync_rules_visibility.py + test_customer_isolation_backstop.py.",
 "f": [
 [
 "ok",
@@ -3673,7 +3673,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "i2-gone": {
 "n": "Outcome",
 "h": "Gone, classified, or unlabeled: deactivate",
-"st": "change",
+"st": "built",
 "f": [
 [
 "Triggers",
@@ -3699,12 +3699,12 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "Add classified: chunks gone from the table, not only inactive."
 ],
 "simple": "The page was deleted, lost its tag, or got the classified tag. It leaves search now.",
-"today": "Only status trashed/archived/deleted and missing metadata trigger deactivation today; the classified-label and last-recognized-label-removed triggers do not exist yet."
+"today": "Delete/trash/archive, an unreachable source, the classified label, and removal of the last recognized knowledge-scope label all PURGE every row of the page (purge_page in versioning.py), not soft-deactivate; a restore/re-tag re-indexes as a first build. Proven by test_sync_rules_delete.py and test_sync_rules_membership.py."
 },
 "i2-rebuild": {
 "n": "Outcome",
 "h": "Rebuild a new version",
-"st": "change",
+"st": "built",
 "f": [
 [
 "When",
@@ -3712,7 +3712,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 [
 "Reuse",
-"today: a child keeps its vector when its stable_key (position plus body text) matches; target: no reuse"
+"none — every child is embedded on every rebuild (D1 / 2.3.1); no stable_key vector reuse"
 ],
 [
 "Next",
@@ -3730,8 +3730,9 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ]
 ],
 "s": [],
-"note": "Target: a rebuild means the whole page. Every parent and every child is created new and every child is embedded. Nothing from the old version is reused.",
-"simple": "Something in the page changed, so the whole page is built again from scratch."
+"note": "A rebuild means the whole page: every parent and every child is created new and every child is embedded. Nothing from the old version is reused.",
+"simple": "Something in the page changed, so the whole page is built again from scratch.",
+"today": "A body edit AND a rename both trigger a full rebuild that re-embeds every child (title_changed in _REBUILD_CLASSES). Attachment-only rebuild is deferred to substep 2.4.1 (D2, strict xfail). Proven by test_sync_rules_rebuild.py."
 },
 "i2-meta": {
 "n": "Outcome",
@@ -3951,8 +3952,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "i3-embed": {
 "n": "Outside tool",
 "h": "Embed every child",
-"st": "change",
-"today": "OpenAI text-embedding-3-large at 3072 dims (from .env). Code default is Voyage voyage-3-large at 1024. VOYAGE_API_KEY is set and verified; the bake-off is not run.",
+"st": "built",
+"today": "OpenAI text-embedding-3-large at 3072 dims (from .env); code default is Voyage voyage-3-large at 1024. VOYAGE_API_KEY is set and verified; the bake-off is not run. Every child is contextualised and embedded afresh on each rebuild — no stable_key vector reuse (versioning.py::_resolve_children; §13 step 5). Proven by test_sync_rules_rebuild.py::test_in3_body_edit_reembeds_every_chunk_no_reuse.",
 "f": [
 [
 "Batch",
@@ -3981,7 +3982,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "provider, model, dim"
 ]
 ],
-"note": "Today only changed children are embedded (stable_key reuse). Target: all children of the page, every rebuild. Simpler, and no stale title vectors.",
+"note": "Every child of the page is contextualised and embedded afresh on every rebuild — no stable_key vector reuse (D1 / substep 2.3.1). Simpler, and no stale title vectors.",
 "simple": "Sends every small piece of the page to the embedding model and stores the 3072 numbers that come back. All pieces, every rebuild."
 },
 "i3-attach": {
@@ -4251,11 +4252,11 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "f": [
 [
 "Keep",
-"the two most recent superseded versions"
+"nothing — retain 0 (D1); there is no rollback window"
 ],
 [
 "Delete",
-"older ones; chunk rows cascade via FK"
+"the just-superseded version in the swap transaction; chunk rows cascade via FK"
 ]
 ],
 "files": [
@@ -4264,7 +4265,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "_gc_superseded"
 ]
 ],
-"simple": "Keeps the last two old versions for rollback and deletes older ones."
+"simple": "Deletes the just-superseded version and its chunks in the swap transaction. Retain 0 — no rollback window (D1).",
+"today": "Retain 0 (D1): the just-superseded version and its chunks are deleted in the swap transaction — no rollback window (versioning.py::_gc_superseded); test_in3_rebuild_deletes_old_version_rows_immediately + test_i4_gc_keeps_zero_superseded_versions."
 },
 "i4-rollback": {
 "n": "Operator action",
@@ -4330,8 +4332,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "tg-remove": {
 "n": "Editor action",
 "h": "Remove the last recognized label",
-"st": "build",
-"today": "Today the page keeps its source_scope tags and stays in the index. A page with no recognized tag is invisible to scoped queries but still stored.",
+"st": "built",
+"today": "Removing the last recognized knowledge-scope label (or leaving only unrelated labels) purges every row of the page — not soft-deactivate — via the label-gated membership check in confluence_sync/application/sync_service.py (handle_sync_page). Folder roots (source_scope) no longer keep it in. Proven by test_sync_rules_membership.py::test_tags_remove_last_recognized_label_removes_rows and ::test_tags_unrelated_labels_alone_do_not_keep_page.",
 "s": [
 "Confluence sends label_deleted.",
 "Ingestion stage 2 finds no recognized label: scope_state = unlabeled.",
@@ -4353,7 +4355,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "tg-classified": {
 "n": "Editor action",
 "h": "Add the classified label",
-"st": "build",
+"st": "built",
 "s": [
 "Confluence sends label_added.",
 "Ingestion stage 2 sees classified: state = classified, regardless of other labels.",
@@ -4366,24 +4368,25 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "A classified page never appears in any scope, with any token, in any test."
 ],
 "note": "Deleting rather than deactivating means a database dump or a bug that ignores is_active still cannot leak the content.",
-"simple": "An editor adds classified. The page leaves search and its pieces are deleted, whatever other tags it has."
+"simple": "An editor adds classified. The page leaves search and its pieces are deleted, whatever other tags it has.",
+"today": "The reserved 'classified' label is detected on the raw labels in handle_sync_page and routes to purge_page: every row of the page is deleted (chunk, document_version, document, page_source, restrictions), not just deactivated; removing it later re-indexes as a first index. Proven by test_in2_classified_label_removes_rows (backend/app/features/confluence_sync/tests/test_sync_rules_delete.py)."
 },
 "tg-two": {
 "n": "Editor mistake",
 "h": "Two provider labels on one page",
-"st": "change",
-"today": "Zero label tags, a knowledge_scope_conflict warning, the page keeps its source_scope tags. Combined with the empty-tags-means-global rule this can make the page visible everywhere.",
+"st": "built",
+"today": "Built (§13 step 3, D4): two recognized provider labels are legitimate sharing — the page resolves to both tags and is retrievable in each of those scopes, never public. Proven by test_sync_rules_visibility.py. The panel body (simple / steps / tests) was reconciled to D4 on 2026-09-25; the retired 'conflict / hidden from everyone' framing is recorded in 0.4-design-review/plan-corrections.md.",
 "s": [
-"Ingestion stage 2 sets scope_state = conflict.",
-"The scope policy hides every row whose state is not ok.",
-"The warning names the page and the labels.",
-"An editor removes one label; the next sync sets state = ok."
+"Ingestion stage 2 resolves every recognized label into the page's tags — no conflict state.",
+"The scope policy shows the page in each matching scope: tags && allowed_scopes.",
+"No warning is raised: two provider tags is normal sharing, not a mistake.",
+"Removing one label leaves the other; the next sync keeps the page visible in that scope."
 ],
 "t": [
-"mews + toast: zero results for a Mews user, zero for a Toast user, zero for general.",
-"Fix the labels: results return without a rebuild."
+"mews + toast: found by a Mews user and a Toast user, not by an operacloud user.",
+"Remove one label: the page is still found in the remaining scope, with no rebuild."
 ],
-"simple": "A page carries two platform tags at once. That is a mistake, so the page is hidden from everyone until fixed."
+"simple": "A page carries two platform tags at once. That is legitimate sharing (D4): the page resolves to both tags and is retrievable in each of those scopes — never public."
 },
 "tg-edit": {
 "n": "Editor action",
@@ -4444,12 +4447,13 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "add a recognized label again; the next sync re-indexes"
 ]
 ],
-"simple": "The page's pieces are switched off and search cannot see them."
+"simple": "The page's pieces are switched off and search cannot see them.",
+"today": "Narrowed (§13 step 1): deactivate_page is no longer the delete/classified path (those PURGE now) — it survives only for the reconciliation source-scope-loss sweep (reconciliation.py:206-216). Recorded in 0.4-design-review/plan-corrections.md."
 },
 "tg-purge": {
 "n": "Outcome",
 "h": "Deactivate and purge",
-"st": "build",
+"st": "built",
 "f": [
 [
 "Does",
@@ -4460,7 +4464,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "page_source (with state classified) so the sweep knows to skip it"
 ]
 ],
-"simple": "The page's pieces are switched off and deleted."
+"simple": "The page's pieces are switched off and deleted.",
+"today": "purge_page deletes every row a page owns — version, document, chunks, page_source, restrictions — in one FK-safe transaction (page_source is deleted too; D4 retired the 'keep with state classified' wording). Proven by test_sync_rules_delete.py."
 },
 "tg-conflict": {
 "n": "Outcome",
@@ -4484,7 +4489,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "on the next sync after the labels are fixed"
 ]
 ],
-"simple": "The page is marked as a conflict and hidden. Fix the tags in Confluence and the next sync brings it back."
+"simple": "The page is marked as a conflict and hidden. Fix the tags in Confluence and the next sync brings it back.",
+"today": "Retired (§13 step 3, D4): there is no conflict/hide state — two provider labels share both scopes and no knowledge_scope_conflict log line is emitted. panel.py has no 'retired' status word, so the status is left unchanged; the retirement is recorded in 0.4-design-review/plan-corrections.md."
 },
 "tg-rebuild": {
 "n": "Outcome",
@@ -4560,17 +4566,17 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "c": "CREATE TYPE scope_state AS ENUM ('ok','conflict','classified','unlabeled');\nALTER TABLE chunk ADD COLUMN scope_state scope_state NOT NULL DEFAULT 'unlabeled';\nALTER TABLE page_source ADD COLUMN scope_state scope_state NOT NULL DEFAULT 'unlabeled';",
 "note": "Backfill: every active chunk with a recognized tag becomes ok. The readiness gate (verify_knowledge_scope_backfill.py) must report zero rows in any other state before the new policy goes live.",
 "simple": "One word per page: ok, conflict, classified, or unlabeled. Only ok pages are ever shown.",
-"today": "Does not exist yet: no scope_state enum, no chunk/page_source columns, and no consumer reads it."
+"today": "Retired (§13 step 3, D4/§7): scope_state was never built (no enum, no column); state is materialized as the tag set on chunk.tags/page_source.tags, and the only non-ok value (conflict) is gone. No 'retired' status word exists; retirement recorded in 0.4-design-review/plan-corrections.md."
 },
 "tg-filter": {
 "n": "Step",
 "h": "The filter that uses tags",
 "st": "change",
-"today": "App predicate tags && :scopes behind a flag, default off, plus the 0010 RESTRICTIVE policy — coded and tested, not yet applied to Supabase.",
+"today": "The 0010 RESTRICTIVE policy is live on Supabase and, after migration 0014 (2026-09-25), floor-less: '*' OR tags && allowed_scopes (scope_state retired, D4). The app predicate tags && :scopes stays behind a flag, default off (PLAN 10.7).",
 "f": [
 [
 "Target policy",
-"scope_state = 'ok' AND tags && allowed_scopes"
+"wildcard OR tags && allowed_scopes (scope_state retired, D4)"
 ],
 [
 "Wildcard",
@@ -4581,7 +4587,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "kept as a planner hint on ix_chunk_tags_gin"
 ]
 ],
-"c": "CREATE POLICY chunk_scope_read ON chunk AS RESTRICTIVE FOR SELECT\n  USING (\n    scope_state = 'ok' AND (\n      current_setting('app.allowed_knowledge_scopes', true) = '*'\n      OR tags && string_to_array(current_setting('app.allowed_knowledge_scopes', true), ',')\n    )\n  );",
+"c": "CREATE POLICY chunk_scope_read ON chunk AS RESTRICTIVE FOR SELECT\n  USING (\n    current_setting('app.allowed_knowledge_scopes', true) = '*'\n    OR tags && string_to_array(current_setting('app.allowed_knowledge_scopes', true), ',')\n  );",
 "files": [
 [
 "platform/db/schema.py",
@@ -5266,12 +5272,12 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "r3-scope": {
 "n": "Lock 2",
 "h": "Scope row security",
-"st": "unverified",
-"today": "Migration 0010 adds chunk_scope_read and curated_knowledge_entry_scope_read as RESTRICTIVE policies: wildcard OR cardinality(tags) = 0 OR overlap. Coded and tested (502 tests), not applied to Supabase yet. The app predicate is flag-gated and off by default in code.",
+"st": "built",
+"today": "Migration 0014 (D3) applied to Supabase on 2026-09-25: chunk_scope_read is now pure '*' OR tags && allowed_scopes, mirrored in schema.py. Verified live as rag_reader — empty tags visible to no scope; mews/toast/operacloud/general each return 2, '*' returns 8. RESTRICTIVE, ANDed with the source policy. App predicate stays flag-gated, off by default (PLAN 10.7).",
 "f": [
 [
 "Target predicate",
-"scope_state = 'ok' AND (wildcard OR tags && allowed_scopes)"
+"wildcard OR tags && allowed_scopes (scope_state retired, D4; empty tags match nobody, D3)"
 ],
 [
 "Removed",
@@ -5305,7 +5311,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "Two-label page: zero rows in every scope.",
 "classified: zero rows even with the wildcard, because its chunks are deleted."
 ],
-"simple": "Lock 2: the database shows only pieces whose tag matches this person's integration (or general) and whose state is ok."
+"simple": "Lock 2: the database shows only pieces whose tag matches this person's integration (or general). Empty tags match nobody."
 },
 "r3-acl": {
 "n": "Lock 3",
@@ -7259,7 +7265,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "Tags on the chunks are the recognized labels.",
 "The page is now searchable in that scope."
 ],
-"simple": "The queued pages run through ingestion and become searchable in that scope."
+"simple": "The queued pages run through ingestion and become searchable in that scope.",
+"today": "Membership is now label-gated (never-bend rule 5): a first-seen page with no recognized knowledge-scope label is never ingested (no version, chunk, or page_source row); a page carrying at least one recognized label is indexed in that scope. Enforced in sync_service.handle_sync_page. Proven by test_sync_rules_membership.py::test_in2_untagged_page_never_indexed."
 },
 "ks-widget": {
 "n": "Knowledge scopes",
@@ -7455,9 +7462,10 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "s": [
 "New chunks and their vectors are inserted inactive.",
 "One transaction flips the version pointer.",
-"Old vectors go inactive and leave the HNSW result set at once. Rows are deleted after two more versions."
+"Old vectors go inactive and leave the HNSW result set at once. Their rows are deleted in the same swap transaction (retain 0, D1)."
 ],
-"simple": "When a page is rebuilt, all its old numbers go off and all its new numbers go on in one switch."
+"simple": "When a page is rebuilt, all its old numbers go off and all its new numbers go on in one switch.",
+"today": "Old vectors leave the live set and are deleted in the same swap (retain 0); test_vd_swap_old_vectors_leave_the_live_set_and_are_deleted_at_once. §13 step 5."
 },
 "r2-aclsql": {
 "n": "Retrieval stage 2",

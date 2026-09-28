@@ -476,6 +476,15 @@ class ReconciliationRun(Base):
     errors: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
     report: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
+    # PLAN 2.0.3 — reindex progress (kind='reindex'): a visible, queryable, restart-surviving
+    # counter, deliberately explicit columns rather than buried in `report` JSONB. total_pages /
+    # pages_done drive "the job row shows progress"; `cursor` is the resumable batch cursor (the
+    # last tagged page_id enqueued) so a crashed reindex continues from the next page instead of
+    # from zero. Zero-defaulted / nullable so the lightweight and complete sweeps ignore them.
+    total_pages: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    pages_done: Mapped[int] = mapped_column(Integer, nullable=False, server_default=text("0"))
+    cursor: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
     __table_args__ = (Index("ix_reconciliation_run_started_at", "started_at"),)
 
 

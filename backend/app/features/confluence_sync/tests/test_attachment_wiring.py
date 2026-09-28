@@ -71,6 +71,7 @@ def test_placeholder_pdf_and_xlsx_degrade_to_no_chunk_not_a_crash(
     # page 1002's architecture-diagram.pdf / capacity-plan.xlsx are backed by a plain-text
     # placeholder file, not a real binary — native parsing must fail closed to "" (never raise),
     # so attachment_to_blocks contributes nothing for them, not garbage text.
+    gateway.set_labels(1002, ["obi-general-test"])  # recognized label: pass the 2.2.4 gate
     with session_scope() as s:
         outcome = handle_sync_page(s, page_id=1002, gateway=gateway, settings=settings)
     assert outcome.action == "indexed"
@@ -129,12 +130,13 @@ def test_i2_nochange_no_change_resync_still_stamps_last_reconciled_at(
         assert after.last_reconciled_at is not None  # stamped by the no-change resync
 
 
-def test_unchanged_attachment_reuses_embedding_across_a_body_driven_rebuild(
+def test_unchanged_attachment_carries_forward_across_a_body_driven_rebuild(
     gateway: FixtureConfluenceGateway, settings: Settings
 ) -> None:
-    """An unrelated body edit (v1 -> v3) still carries forward the unchanged attachment's chunk
-    with its prior embedding reused (diff_chunks), not recomputed — the diff mechanism is content-
-    addressed via the attachment's own title-keyed heading path, agnostic to origin."""
+    """An unrelated body edit (v1 -> v3) carries the unchanged attachment's chunk forward: it is
+    re-embedded from scratch like every child (sync rule 6 — no vector reuse), but its content is
+    identical (same title-keyed heading path and text), so the content-addressed stable_key is
+    unchanged and the deterministic embedder returns the same vector."""
     index_page(gateway, settings, 1001, 1)
     before = next(c for c in active_child_chunks(1001) if "code of conduct" in c.display_content)
     embedding_before = before.embedding
@@ -142,8 +144,8 @@ def test_unchanged_attachment_reuses_embedding_across_a_body_driven_rebuild(
 
     index_page(gateway, settings, 1001, 3)  # v3 body edit; attachments unchanged
     after = next(c for c in active_child_chunks(1001) if "code of conduct" in c.display_content)
-    assert after.stable_key == stable_key_before
-    assert after.embedding == embedding_before
+    assert after.stable_key == stable_key_before  # content-addressed: unchanged content, same key
+    assert after.embedding == embedding_before  # same text + deterministic embedder -> same vector
 
 
 def test_oversized_attachment_metadata_is_skipped_before_download(
@@ -162,6 +164,7 @@ def test_unfetchable_attachment_is_skipped_not_a_sync_failure(
     attachments = gateway.get_attachments(1001)
     checklist = next(a for a in attachments if a["title"] == "welcome-checklist.txt")
     gateway.set_attachment_content(checklist["downloadLink"], None)  # simulate a failed download
+    gateway.set_labels(1001, ["obi-general-test"])  # recognized label: pass the 2.2.4 gate
 
     with session_scope() as s:
         outcome = handle_sync_page(s, page_id=1001, gateway=gateway, settings=settings)

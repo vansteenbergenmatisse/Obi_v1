@@ -1,4 +1,5 @@
-"""Garbage collection: only the two most recent superseded versions survive a rebuild."""
+"""Garbage collection: retain 0 — a rebuild deletes the just-superseded version and its chunks in
+the same transaction, so only the active version ever survives (sync rule 6 / D1, no rollback)."""
 
 from __future__ import annotations
 
@@ -10,13 +11,13 @@ from schema.models import Chunk, DocumentVersion
 
 from ._helpers import count_versions, index_page, read
 
-pytestmark = pytest.mark.db  # substep 0.5.2 · panel i4-gc: real local Postgres via conftest
+pytestmark = pytest.mark.db  # substep 2.3.1 · panel i4-gc: real local Postgres via conftest
 
 
-def test_i4_gc_keeps_the_two_most_recent_superseded_versions(gateway, settings):
-    """panel i4-gc · substep 0.5.2
-    After a page has been rebuilt four times, exactly the two most recently superseded
-    versions (v2 and v3) plus the active version (v4) remain."""
+def test_i4_gc_keeps_zero_superseded_versions(gateway, settings):
+    """panel i4-gc · substep 2.3.1 (D1)
+    After a page has been rebuilt four times, no superseded version survives — only the active
+    version (v4) remains. Retain 0: nothing is kept for rollback."""
     index_page(gateway, settings, 1002, version=1)
     index_page(gateway, settings, 1002, version=2)
     index_page(gateway, settings, 1002, version=3)
@@ -32,18 +33,14 @@ def test_i4_gc_keeps_the_two_most_recent_superseded_versions(gateway, settings):
         ).all()
 
     by_version = {cf_version: state for cf_version, state in rows}
-    assert by_version == {
-        2: DocState.superseded,
-        3: DocState.superseded,
-        4: DocState.active,
-    }
-    assert count_versions(1002) == 3  # v2, v3 retained (retain=2) + active v4
+    assert by_version == {4: DocState.active}  # only the active version survives — retain 0
+    assert count_versions(1002) == 1
 
 
-def test_i4_gc_deletes_older_versions_and_cascades_chunks(gateway, settings):
-    """panel i4-gc · substep 0.5.2
-    The version beyond the retention window (v1) is deleted outright, and its chunk rows
-    are gone too, proving the FK cascade — not merely orphaned rows."""
+def test_i4_gc_deletes_the_superseded_version_and_cascades_chunks(gateway, settings):
+    """panel i4-gc · substep 2.3.1 (D1)
+    A single rebuild deletes the just-superseded version (v1) outright, and its chunk rows are gone
+    too, proving the FK cascade — not merely orphaned or retired rows."""
     index_page(gateway, settings, 1002, version=1)
 
     with read() as s:
@@ -53,9 +50,7 @@ def test_i4_gc_deletes_older_versions_and_cascades_chunks(gateway, settings):
             )
         ).scalar_one()
 
-    index_page(gateway, settings, 1002, version=2)
-    index_page(gateway, settings, 1002, version=3)
-    index_page(gateway, settings, 1002, version=4)
+    index_page(gateway, settings, 1002, version=2)  # one rebuild -> v1 is superseded then GC'd
 
     with read() as s:
         assert s.get(DocumentVersion, v1_id) is None
@@ -63,3 +58,4 @@ def test_i4_gc_deletes_older_versions_and_cascades_chunks(gateway, settings):
             s.execute(select(Chunk.id).where(Chunk.doc_version_id == v1_id)).scalars().all()
         )
         assert remaining_chunks == []
+    assert count_versions(1002) == 1  # only the active v2 remains

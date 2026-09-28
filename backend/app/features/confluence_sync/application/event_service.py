@@ -25,6 +25,18 @@ from schema.enums import EventProcStatus
 JOB_SYNC_PAGE = "sync_page"
 JOB_DELETE_PAGE = "delete_page"
 JOB_RECONCILE_SPACE = "reconcile_space"
+JOB_REINDEX = "reindex"  # PLAN 2.0.3: one job that rebuilds every tagged page in resumable batches
+
+# Webhook event_type -> the closed `reason` vocabulary carried on the job (a trace hint only;
+# the worker's decide_command is authoritative on the current state).
+_EVENT_REASON = {
+    "label_added": "tag_added",
+    "label_deleted": "tag_removed",
+}
+
+
+def _reason_for_event(event_type: str) -> str:
+    return _EVENT_REASON.get(event_type, "edited")
 
 
 @dataclass
@@ -83,20 +95,23 @@ def _enqueue_for_event(
             session,
             job_type=JOB_DELETE_PAGE,
             idempotency_key=key,
-            payload={"status": envelope.status or "trashed"},
+            payload={"status": envelope.status or "trashed", "reason": "page_gone"},
             page_id=envelope.page_id,
             cf_version=envelope.cf_version,
             priority=50,  # deletions are higher priority
             source_event_id=event_id,
         )
-    # everything else -> sync_page (re-fetch, classify, version-guard on the worker)
+    # everything else -> sync_page (the worker re-decides + version-guards on current state)
     ver = envelope.cf_version if envelope.cf_version is not None else "na"
     key = f"{JOB_SYNC_PAGE}:{envelope.page_id}:{envelope.event_type}:{ver}:{schema}"
     return enqueue_job(
         session,
         job_type=JOB_SYNC_PAGE,
         idempotency_key=key,
-        payload={"event_type": envelope.event_type},
+        payload={
+            "event_type": envelope.event_type,
+            "reason": _reason_for_event(envelope.event_type),
+        },
         page_id=envelope.page_id,
         cf_version=envelope.cf_version,
         source_event_id=event_id,

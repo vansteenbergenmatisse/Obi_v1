@@ -69,6 +69,7 @@ class ConfluenceGateway(Protocol):
     def get_page_meta(self, page_id: int) -> ConfluencePageMeta | None: ...
     def get_page(self, page_id: int) -> ConfluencePage | None: ...
     def list_space_pages(self, space_id: int) -> list[ConfluencePageMeta]: ...
+    def list_pages_by_label(self, space_id: int, labels: list[str]) -> list[ConfluencePageMeta]: ...
     def get_labels(self, page_id: int) -> list[str]: ...
     def get_restrictions(self, page_id: int) -> list[str]: ...
     def get_attachments(self, page_id: int) -> list[dict]: ...
@@ -213,7 +214,7 @@ class HttpConfluenceClient:
     def list_space_pages(self, space_id: int) -> list[ConfluencePageMeta]:
         """Follow cursor-based pagination to enumerate every page in a space."""
         pages: list[ConfluencePageMeta] = []
-        params: dict = {"limit": 100, "space-id": space_id, "status": "current"}
+        params: dict | None = {"limit": 100, "space-id": space_id, "status": "current"}
         url = f"{self._api}/pages"
         while True:
             resp = self._get(url, params=params)
@@ -233,6 +234,59 @@ class HttpConfluenceClient:
             url = str(httpx.URL(self._base).join(next_link))
             params = None  # cursor is embedded in next_link
         return pages
+
+    def list_pages_by_label(self, space_id: int, labels: list[str]) -> list[ConfluencePageMeta]:
+        """Discover tagged pages a ``source_scope`` root may not cover, via CQL label search.
+
+        The sweep unions these with the ``source_scope``-covered pages so a freshly-tagged page
+        outside any configured root still becomes a candidate; the worker's ``decide_command``
+        then authorizes it (or not). The CQL MUST filter on ``space.id = <id>`` — a bare
+        ``space = <number>`` is read by Confluence as a space *key*, not an id.
+
+        ``labels`` come from the recognized-scope config (trusted, lowercase kebab); they are
+        quoted for the ``label in (...)`` clause. No request-body input reaches this query. Runs
+        through ``_get`` so it inherits the shared timeout, retry, and circuit breaker (C4).
+        """
+        wanted = [lbl.strip() for lbl in labels if lbl and lbl.strip()]
+        if not wanted:
+            return []
+        in_list = ", ".join('"' + lbl.replace('"', "") + '"' for lbl in wanted)
+        cql = (
+            f"space.id = {int(space_id)} AND type = page AND status = current "
+            f"AND label in ({in_list})"
+        )
+        pages: list[ConfluencePageMeta] = []
+        params: dict | None = {"cql": cql, "limit": 100, "expand": "space,version,ancestors"}
+        url = f"{self._base}/rest/api/content/search"
+        while True:
+            resp = self._get(url, params=params)
+            resp.raise_for_status()
+            data = resp.json()
+            for item in data.get("results", []):
+                pages.append(self._meta_from_cql(item))
+            next_link = (data.get("_links", {}) or {}).get("next")
+            if not next_link:
+                break
+            url = str(httpx.URL(self._base).join(next_link))
+            params = None  # cursor embedded in next_link
+        return pages
+
+    def _meta_from_cql(self, item: dict) -> ConfluencePageMeta:
+        """Map one CQL (REST v1 content) result to :class:`ConfluencePageMeta`."""
+        space = item.get("space", {}) or {}
+        version = item.get("version", {}) or {}
+        ancestors = item.get("ancestors", []) or []
+        parent_id = int(ancestors[-1]["id"]) if ancestors else None
+        return ConfluencePageMeta(
+            page_id=int(item["id"]),
+            space_id=int(space.get("id") or 0),
+            parent_id=parent_id,
+            title=item.get("title", ""),
+            status=item.get("status", "current"),
+            version_number=int(version.get("number", 1)),
+            version_created_at=version.get("when") or datetime.now().astimezone(),
+            source_url=_webui(self._base, item.get("_links", {})),
+        )
 
     def get_labels(self, page_id: int) -> list[str]:
         resp = self._get(f"{self._api}/pages/{page_id}/labels")

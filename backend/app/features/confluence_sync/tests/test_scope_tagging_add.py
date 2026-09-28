@@ -43,20 +43,21 @@ def test_tg_add_label_only_change_updates_tags_without_rebuild(gateway, settings
     """panel tg-add · substep 0.5.2
     Adding a new recognized label to an already-indexed page (no other content change) updates
     its knowledge-scope tags in place without re-embedding: active_doc_version_id is unchanged."""
-    # page 1001 starts with only its fixture labels (onboarding/engineering/guide), none recognized.
-    gateway.set_labels(1001, ["onboarding"])
+    # Post-2.2.4 a page is only indexed once it carries a recognized label, so it starts in a
+    # scope (general) rather than tag-less; the ADD unions a second scope onto it.
+    gateway.set_labels(1001, ["obi-general-test", "onboarding"])
     index_page(gateway, settings, 1001, version=1)
 
     with read() as s:
         page_source = s.get(PageSource, 1001)
         assert page_source is not None
-        assert page_source.tags == []  # no recognized tag yet
+        assert page_source.tags == ["obi-general-test"]  # its single starting scope
     version_before_row = active_version(1001)
     assert version_before_row is not None
     version_before = version_before_row.id
 
-    # ADD a new label alongside the existing one; same page content, no version bump.
-    gateway.set_labels(1001, ["onboarding", "obi-mews-test"])
+    # ADD a new label alongside the existing ones; same page content, no version bump.
+    gateway.set_labels(1001, ["obi-general-test", "onboarding", "obi-mews-test"])
     enqueue_sync(1001, 1, key="sync:1001:label-add")
     result = run_once(gateway, settings, owner="test")
 

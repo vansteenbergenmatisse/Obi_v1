@@ -1,5 +1,5 @@
 """Worker + sync-service guarantees: first index, atomic re-index, version guard, metadata-only,
-delete/deactivate."""
+delete/purge (sync rule 1 — delete purges every row; see test_sync_rules_delete.py)."""
 
 from __future__ import annotations
 
@@ -13,14 +13,20 @@ from sqlalchemy.orm import Session as SASession
 from app.features.confluence_sync.application.event_service import (
     JOB_DELETE_PAGE,
     JOB_RECONCILE_SPACE,
+    JOB_REINDEX,
     JOB_SYNC_PAGE,
 )
-from app.features.confluence_sync.application.sync_service import SyncOutcome, target_versions
+from app.features.confluence_sync.application.sync_service import SyncOutcome
 from app.features.confluence_sync.application.worker import HANDLERS, drain, run_once
-from app.features.ingestion import build_ingestion_services, decide_body_fetch, get_local_state
+from app.features.ingestion import (
+    build_ingestion_services,
+    decide_body_fetch,
+    get_local_state,
+    target_versions,
+)
 from schema.engine import session_scope
-from schema.enums import DocState, JobStatus, PageStatus
-from schema.models import Chunk, DocumentVersion, Job, PageRestriction, PageSource
+from schema.enums import JobStatus
+from schema.models import Chunk, Job, PageRestriction, PageSource
 
 from ._helpers import (
     active_child_chunks,
@@ -28,7 +34,6 @@ from ._helpers import (
     active_versions_count,
     child_chunks_for_version,
     count_versions,
-    enqueue_delete,
     enqueue_sync,
     index_page,
     read,
@@ -65,7 +70,7 @@ def test_content_change_swaps_version_atomically(gateway, settings):
     assert result is not None and result.status == "succeeded"
     assert result.outcome.action == "indexed"
     assert active_version(1001).cf_version == 3
-    assert count_versions(1001) == 2  # old retained for rollback
+    assert count_versions(1001) == 1  # retain 0: the old version is GC'd in the swap (no rollback)
     assert active_versions_count(1001) == 1  # exactly one active — no mixed versions
     # every active child chunk belongs to the new active version
     new_id = active_version(1001).id
@@ -141,12 +146,12 @@ def test_vd_swap_pointer_flip_is_one_atomic_transaction(gateway, settings, monke
     assert {c.id for c in active_child_chunks(1001)} == v1_child_ids
 
 
-def test_vd_swap_old_vectors_go_inactive_at_once_but_rows_persist(gateway, settings):
-    """panel vd-swap · substep p0-s0_5-reg-the-vector-database
-    The instant a rebuild activates, the superseded version's child rows leave the live
-    (is_active) set at once -- same transaction, no lag -- yet the rows and their vectors are not
-    deleted: they persist, same ids, embeddings intact, until i4-gc's own two-more-versions
-    retention window reaps them (proven separately by test_versioning_gc.py; not re-proven here)."""
+def test_vd_swap_old_vectors_leave_the_live_set_and_are_deleted_at_once(gateway, settings):
+    """panel vd-swap · substep 2.3.1 (D1)
+    The instant a rebuild activates, the superseded version's child rows leave the live (is_active)
+    set -- same transaction, no lag -- and, with retain 0 (no rollback window), are deleted in that
+    same swap rather than lingering: their rows and vectors do not survive. Only the new active
+    version's chunks remain live (retain-0 GC proven separately in test_versioning_gc.py)."""
     index_page(gateway, settings, 1001, version=1)
     v1_id = active_version(1001).id
 
@@ -156,15 +161,16 @@ def test_vd_swap_old_vectors_go_inactive_at_once_but_rows_persist(gateway, setti
     assert all(c.embedding is not None for c in before)
 
     gateway.set_version(1001, 3)
-    enqueue_sync(1001, 3, key="sync:1001:v3-old-inactive")
+    enqueue_sync(1001, 3, key="sync:1001:v3-old-gone")
     result = run_once(gateway, settings, owner="test")
     assert result is not None and result.status == "succeeded"
 
-    after = child_chunks_for_version(v1_id)
-    # same rows, still carrying their vectors, but no longer in the live/HNSW set
-    assert {c.id for c in after} == {c.id for c in before}
-    assert all(c.is_active is False for c in after)
-    assert all(c.embedding is not None for c in after)
+    # the old version's rows are gone in the same swap (retain 0), not merely retired
+    assert child_chunks_for_version(v1_id) == []
+    new_id = active_version(1001).id
+    assert new_id != v1_id
+    new_children = child_chunks_for_version(new_id)
+    assert new_children and all(c.is_active for c in new_children)
 
 
 def test_contextualization_version_bump_rebuilds_at_same_cf_version(gateway, settings):
@@ -189,7 +195,7 @@ def test_contextualization_version_bump_rebuilds_at_same_cf_version(gateway, set
     assert result is not None and result.status == "succeeded", result
     assert result.outcome.action == "indexed"  # config change routes to a rebuild, not no_change
     assert active_version(1001).contextualization_version == bumped.contextualization_version
-    assert count_versions(1001) == 2  # new version created, old retained for rollback
+    assert count_versions(1001) == 1  # retain 0: the config-bump rebuild GC's the old version
     assert active_versions_count(1001) == 1  # exactly one active — no mixed versions
 
 
@@ -319,8 +325,10 @@ def test_d_page_restriction_unchanged_hash_leaves_rows_untouched(gateway, settin
         )
 
     # A label change (not a restriction change) still triggers a metadata-only sync — proving
-    # the guard is keyed on access_scope_hash specifically, not on "some metadata changed".
-    gateway.set_labels(2002, ["finance", "confidential", "extra-marker"])
+    # the guard is keyed on access_scope_hash specifically, not on "some metadata changed". Keep a
+    # recognized label (obi-general-test) so the page stays a member (2.2.4) and the change stays
+    # metadata-only rather than becoming a purge.
+    gateway.set_labels(2002, ["obi-general-test", "finance", "confidential", "extra-marker"])
     enqueue_sync(2002, 1, key="sync:2002:label-only-restrictions-preserved")
     result = run_once(gateway, settings, owner="test")
 
@@ -345,7 +353,14 @@ def test_i2_fetch_always_refetches_meta_labels_restrictions_attachments_even_whe
     list -- even a true no-op resync where nothing at all changed -- because a change can only
     be detected by comparing against a fresh fetch. Only the body fetch is conditional on
     decide_body_fetch (proved separately by
-    test_in2_body_fetch_skipped_when_unchanged_required_on_version_bump)."""
+    test_in2_body_fetch_skipped_when_unchanged_required_on_version_bump).
+
+    Post trigger/ingestion split (D4, minimal SyncCommand contract): meta and labels are fetched
+    TWICE per sync -- once by the trigger orchestrator to decide the command, once by the
+    ingestion command handler to do the work. The double-fetch is the disclosed cost of keeping
+    the contract minimal (page_id, action, scopes, reason) rather than threading fetched state
+    across the layer boundary. Restrictions and attachments are still fetched once (only the
+    ingestion side needs them)."""
     index_page(gateway, settings, 1001, version=3)
 
     calls = {"meta": 0, "labels": 0, "restrictions": 0, "attachments": 0}
@@ -380,7 +395,9 @@ def test_i2_fetch_always_refetches_meta_labels_restrictions_attachments_even_whe
 
     assert result is not None
     assert isinstance(result.outcome, SyncOutcome) and result.outcome.action == "no_change"
-    assert calls == {"meta": 1, "labels": 1, "restrictions": 1, "attachments": 1}
+    # meta/labels fetched by both layers (trigger decides, ingestion does — D4 double-fetch);
+    # restrictions/attachments only by the ingestion side.
+    assert calls == {"meta": 2, "labels": 2, "restrictions": 1, "attachments": 1}
 
 
 def test_i2_inplace_writes_page_source_and_every_active_chunk(gateway, settings):
@@ -412,41 +429,26 @@ def test_i2_inplace_writes_page_source_and_every_active_chunk(gateway, settings)
     assert all(c.access_scope != scope_before for c in after_chunks)  # EVERY chunk, not just one
 
 
-def test_delete_deactivates_page(gateway, settings):
-    index_page(gateway, settings, 1001, version=3)
-    assert active_child_chunks(1001)
-
-    enqueue_delete(1001, "trashed", key="del:1001")
-    result = run_once(gateway, settings, owner="test")
-
-    assert result.outcome.action == "deactivated"
-    assert active_child_chunks(1001) == []
-    with read() as s:
-        assert s.get(PageSource, 1001).page_status == PageStatus.trashed
-
-
-@pytest.mark.xfail(strict=True, reason="tg-deactivate is Planned; built in 2.2.4")
-def test_delete_marks_the_active_version_superseded(gateway, settings):
-    """panel tg-deactivate · substep 2.5
-    Does: page_status updated, active version superseded, chunks inactive — deactivate_page must
-    flip the deactivated page's DocumentVersion.state, not only the page and its chunks."""
-    index_page(gateway, settings, 1001, version=3)
-    deactivated_version_id = active_version(1001).id
-
-    enqueue_delete(1001, "trashed", key="del:1001:supersede")
-    result = run_once(gateway, settings, owner="test")
-
-    assert result.outcome.action == "deactivated"
-    with read() as s:
-        dv = s.get(DocumentVersion, deactivated_version_id)
-        assert dv.state == DocState.superseded
+# Delete/trash/archive now PURGES every row of the page (sync rule 1, panel i2-gone) rather than
+# soft-deactivating it — see test_sync_rules_delete.py (test_in2_delete_page_removes_rows and
+# test_in2_delete_then_restore_full_rebuilds). The former test_delete_deactivates_page (which
+# asserted is_active=False + page_status=trashed) and the strict-xfail
+# test_delete_marks_the_active_version_superseded (which tracked deactivate_page flipping
+# DocumentVersion.state, decisions.md row tg-deactivate-xfail) are retired here: purge deletes the
+# document_version row outright, so there is no superseded state left to assert. (substep 2.2.4,
+# sync-rules §13 step 1.)
 
 
 def test_i1_handle_handler_set_covers_sync_delete_reconcile():
-    """panel i1-handle · substep 0.5.2
-    HANDLERS wires exactly the three job types the panel names -- sync_page, delete_page,
-    reconcile_space -- no more, no fewer."""
-    assert set(HANDLERS.keys()) == {JOB_SYNC_PAGE, JOB_DELETE_PAGE, JOB_RECONCILE_SPACE}
+    """panel i1-handle · substep 0.5.2 (extended by 2.0.3)
+    HANDLERS wires exactly the job types the panel names -- sync_page, delete_page,
+    reconcile_space -- plus the reindex job added in substep 2.0.3, no more, no fewer."""
+    assert set(HANDLERS.keys()) == {
+        JOB_SYNC_PAGE,
+        JOB_DELETE_PAGE,
+        JOB_RECONCILE_SPACE,
+        JOB_REINDEX,
+    }
 
 
 def test_i1_handle_and_complete_roll_back_together_on_handler_failure(
@@ -457,17 +459,20 @@ def test_i1_handle_and_complete_roll_back_together_on_handler_failure(
     handler that raises after it has already staged the new version/chunks in-session must leave
     the job failed (not succeeded), complete_job never having run, and no partial index change
     persisted."""
-    import app.features.confluence_sync.application.sync_service as sync_service
+    import app.features.ingestion.application.command_handler as command_handler
 
     # stage_and_activate (the real index mutation: new DocumentVersion + active chunks) runs
-    # first in handle_sync_page's rebuild branch; _replace_restrictions runs right after it, still
-    # inside the same (uncommitted) transaction 2. Raising here proves the earlier, already
-    # flushed mutation is rolled back too, not just skipped.
+    # first in apply_sync_command's rebuild branch; _replace_restrictions runs right after it,
+    # still inside the same (uncommitted) transaction 2. Raising here proves the earlier, already
+    # flushed mutation is rolled back too, not just skipped. (Post-split the "do the work" half
+    # lives in the ingestion command handler; the worker still runs it inside transaction 2.)
     def boom(*args, **kwargs):
         raise RuntimeError("boom-mid-handler")
 
-    monkeypatch.setattr(sync_service, "_replace_restrictions", boom)
+    monkeypatch.setattr(command_handler, "_replace_restrictions", boom)
 
+    gateway.set_labels(1001, ["obi-general-test"])  # recognized label: page passes the 2.2.4
+    # membership gate so the rebuild branch (and the boom mid-handler) actually runs
     enqueue_sync(1001, 3, key="sync:1001:atomic-fail")
     result = run_once(gateway, settings, owner="test")
 

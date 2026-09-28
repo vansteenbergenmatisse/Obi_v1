@@ -343,3 +343,248 @@ not: `docs/Final_docs/` contains only `0.5-regression-tests/`. The action plan s
 ledger is `docs/Final_docs/ledger.md`, not `docs/plan/ledger.md`. These path references should be
 corrected to the real locations in a dedicated pass; left unchanged here to avoid a broad find-replace
 across the 450 KB plan without the owner's go-ahead on the exact target paths.
+
+---
+
+## Sync-rules corrections — substep 2.2.4 series (§13 step 1), 2026-09-24
+
+The owner-approved sync-rules plan (`docs/Final_docs/sync-rules/plan.md`, decisions D1–D4) is the
+resolution of the `live-0.5.3-cm-docs` "decision needed" in `docs/plan/decisions.md`: fix the code
+to match never-bend rule 1/5, and retire `scope_state`. These panel moves land as the §13 series
+executes. **Step 1 (delete/classified purge + restore) is done**; the panel `today`/status flips on
+`obi-rag-system-flow.html` and `obi-action-plan.html` are batched to the end of the series (§13
+step 6), so this pass records the corrections and flips only the panels whose target is fully met.
+
+| panel / substep | mark | reason (what changed vs the design page as written) |
+|---|---|---|
+| `i2-gone` | changed | Delete/trash/archive and `classified` now **purge** every row (chunk, document_version, document, page_source, page_restriction), not soft-deactivate. Last-recognized-label-removed trigger still pending (§13 step 2). `today` line updated; status stays `change` until the series completes. |
+| `tg-classified` | built | Fully met by step 1: the reserved `classified` label detected on raw labels → `purge_page` → zero rows; restore/re-tag re-indexes as a first index. Proven by `test_in2_classified_label_removes_rows`. Status flipped to `built`. |
+| `tg-purge` | changed → built | The mechanism (`purge_page`) is built and tested, BUT its design wording ("Keeps `page_source` with state `classified` so the sweep knows to skip it") is **corrected**: purge deletes `page_source` too. That "keep with state" rested on the `scope_state` enum, which D4 retires; restore is now a first index (`page_source` gone → `local is None`). Security outcome (never leaks) is preserved by deleting the rows outright + RLS fail-closed (D3, §13 step 4). |
+| `tg-deactivate` | changed | `deactivate_page` (flip `is_active`, leave rows) is **no longer** the delete/classified path — replaced by purge. `deactivate_page` survives only for the reconciliation source-scope-loss sweep (unchanged this substep). The strict-xfail `test_delete_marks_the_active_version_superseded` (decisions row `tg-deactivate-xfail`) is retired: purge deletes the `document_version` row, so there is no superseded state to assert. |
+
+Panels moved by later steps of this series (recorded here for the map, flipped when their step
+lands): `tg-remove`/`ks-index` membership (§13 step 2); `tg-two`/`tg-conflict`/`tg-state` +
+`scope_state` retirement (§13 step 3, D4); `3.4.1` RLS fail-closed (§13 step 4, D3); `i3-embed`
+no-reuse, `i2-rebuild` title, `i4-gc` retain-0 (§13 step 5, D1); `2.4.3` rollback retired (D1).
+
+## Sync-rules corrections — substep 2.2.4 series (§13 step 2: rule 2 + membership gate), 2026-09-24
+
+Label-gated membership is now enforced in `sync_service.handle_sync_page`: a page is in the index
+only while it carries at least one recognized knowledge-scope label (from
+`knowledge_scopes.json`). Removing the last recognized label purges the page (rule 2); a first-seen
+page with no recognized label is never ingested (never-bend rule 5). This resolves the "fix the code
+to match rule 5" arm of the `live-0.5.3-cm-docs` decision-needed in `docs/plan/decisions.md`.
+
+| panel / substep | mark | reason (what changed vs the design page as written) |
+|---|---|---|
+| `tg-remove` | build → **built** | Removing the last recognized label (or leaving only unrelated labels) now **purges** every row — corrected from the panel's original "deactivate" wording, the same `deactivate → purge` correction already applied to `i2-gone`/`tg-purge` in step 1 (D-decisions retire soft-deactivate for tag loss). Proven by `test_sync_rules_membership.py`. |
+| `ks-index` | built (today-line updated) | Adds the **negative** half of membership: not just "a tagged page goes in", but "an untagged page never goes in". The gate is unconditional — **no feature flag**. The action-plan 2.2.4 body mentions "a cut-over flag with default on"; this was built **without** any flag, matching 2.2.4's own "Must be true" line ("A page with no tag from the map leaves the index, always, with no feature flag") and never-bend rule 5. Flip recorded as a deliberate simplification. |
+| `i2-gone` | changed (today-line updated) | Its "unlabeled" trigger is now live (last-recognized-label-removed → purge), completing the three triggers the panel names (delete, classified, unlabeled). Status stays `change` pending the step-4 RLS fail-closed defense-in-depth and the deferred live proof. |
+
+**Gate discriminator (design clarification):** membership keys on `scope_result.matched_labels`
+(recognized labels *present*), **not** the resolved `scope_result.tags`. A page with two conflicting
+provider labels resolves to zero tags this sync (the conflict branch, retired in step 3) yet still
+carries recognized labels, so it **stays indexed** rather than being purged and immediately
+re-indexed when step 3 makes it visible in both scopes. The still-green `test_ingestion_pipeline.py`
+conflict tests pin this.
+
+**Source_scope roots coexist with the gate (not retired):** a `source_scope`-root-covered page is
+still swept and tagged by reconciliation, but the root no longer *grants membership* — the covered
+page must also carry a recognized label to be indexed; the root's tags union on top. This matches
+step 1's recorded stance that `deactivate_page`/reconciliation source-scope-loss survives unchanged.
+`test_reconciliation.py`'s two root tests were updated to give covered pages a recognized label.
+
+**Test-fixture consequence (disclosed):** the generic DB fixtures (1001/1002/2002/3005/3007/3010)
+carry only unrelated labels, so the gate makes them un-indexable. The shared `index_page` helper now
+injects the base `obi-general-test` scope **only when a page has no recognized label** (preserving
+scope-tagging tests that set their own recognized label), so the ~two dozen versioning/chunk/gc/
+worker tests that don't care about tags keep seeding a page. 14 tests across 12 files were adjusted:
+either given an explicit recognized label (direct `handle_sync_page`/enqueue paths that bypass
+`index_page`), or — for three RLS **source-axis** tests that relied on the empty-tags floor to see
+chunks — opened on the orthogonal knowledge-scope axis with the `'*'` wildcard, or — for
+`test_scope_tagging_add`/`test_reindex`/`test_verify_isolation_script` whose premise *was* an
+"indexed-but-untagged page" — rewritten to the post-gate reality (that state no longer exists;
+`test_verify_isolation_script` forces empty tags directly via SQL to still exercise the script's
+legacy-untagged branch until the step-4 backfill).
+
+## Sync-rules corrections — substep 2.2.4 series (§13 step 3: drop conflict + retire scope_state), 2026-09-24
+
+Decision D4 is implemented: two or more recognized provider labels on one page is **legitimate
+sharing**, not a conflict. `resolve_knowledge_scope_tags` now returns *all* matched recognized tags
+(the `conflict` flag and the `provider_tags` branch are gone), and `sync_service.handle_sync_page`
+no longer emits the `knowledge_scope_conflict` warning. A shared page (`[mews,toast]`) resolves to
+both tags and is visible in each of those scopes by plain overlap (`chunk.tags && allowed_scopes`),
+never public; the explicit `general` tag — in every user's scope set — is the only "everywhere".
+
+**`scope_state` is retired.** It never existed in code (no enum, no `chunk`/`page_source` column, no
+consumer) — confirmed by grep across `backend/` and `knowledge-base/`; every prior `scope_state`
+mention was a test docstring/comment stating "state is the tag set on `tags`", or design/plan prose.
+So retirement is a plan/design-level act, not a schema migration: the design targets an unbuilt
+`scope_state` enum, and D4 removes the only non-`ok` value that mattered (conflict). State remains
+materialized as `tags` (ADR-0016).
+
+Mirroring steps 1–2, the design-page **status** flips are batched to §13 step 6; this pass records
+the corrections and updates the affected panels' `today` lines only.
+
+| panel / substep | mark | reason (what changed vs the design page as written) |
+|---|---|---|
+| `tg-two` | changed → built (flip batched to step 6) | Target "two provider labels → hidden from everyone" is **retired**: the page is now visible in each tagged scope (sharing), never public. Proven by `test_sync_rules_visibility.py::test_tags_shared_page_visible_in_both_scopes`. `today` line updated; status flip deferred because the *target text* itself changes under D4 (never edited in place per CLAUDE.md — reconciled on the page in step 6). |
+| `tg-conflict` | retired | There is no conflict/hide outcome. Two provider labels share both scopes; no `knowledge_scope_conflict` log line is emitted. The retired `test_s_audit_knowledge_scope_conflict_log_line_emitted_on_conflicting_labels` proved that per-sync log line — the `s-audit` panel's audit trail keeps its `webhook_event` and `reconciliation_run` coverage via their own dedicated tests. |
+| `tg-state` / `scope_state` | retired | Never built in code; the conflict state it would have carried is gone (D4). State stays materialized as `tags`. No column, enum, or RLS state-predicate is introduced. |
+| `i2-labels` | changed | Resolution is now "every recognized label becomes a tag" (no conflict zeroing), visibility by overlap. The panel's remaining delta — empty-tags = **private** (fail-closed), not the current empty-tags = public RLS floor — is decision D3 and lands in §13 step 4 (migration 0014); `i2-labels` stays `change` until then. |
+| `2.2.3` (Labels to scope state) | retired/absorbed | This substep specified the `scope_state` enum + a conflict state written on the page/chunks. Both are retired (D4 + scope_state never built). Its surviving intent — recognized labels → tags on `page_source`/`chunk`, `classified` handled, unlabeled → out — is delivered by 2.2.4 (§13 steps 1–3). No enum work remains. |
+| `2.5.1` (Backfill + readiness gate) | changed | The gate's premise ("zero rows outside `ok`") assumed the `scope_state` enum. With scope_state retired, the readiness concern becomes the D3 empty-tags backfill (Q-B): audit active chunks with `tags=[]` before the RLS floor flips fail-closed. Re-scoped into §13 step 4; the enum-state gate is dropped. |
+
+**Membership discriminator unchanged (step-2 note now fully cohered):** the gate still keys on
+`scope_result.matched_labels`. After step 3 a shared page's `matched_labels` equals its resolved
+`tags` (both providers), so the gate and the visibility are consistent; a shared page is never
+purged-and-re-indexed.
+
+**Rule 11 (eval before/after):** the gold-set baseline (`make eval`) is **byte-identical** before
+and after the change (only the run label differs). Honest caveat: the bundled baseline ranker is a
+trivial fixture ranker that does not route through knowledge-scope resolution, so it cannot move on
+this change; the real visibility proof is the db+retrieval tests in `test_sync_rules_visibility.py`.
+The number confirms no gold-set regression.
+
+## §13 step 4 — RLS floor fail-closed (D3) + read-path overlap (2026-09-24)
+
+| panel / substep | mark | reason (what changed vs the design page as written) |
+|---|---|---|
+| `3.4.1` / `r3-scope` | changed → built (DB level; flip batched to step 6) | Migration `0014_chunk_scope_fail_closed.py` drops `OR cardinality(tags) = 0` from `chunk_scope_read` (mirrored in `schema.py::apply_chunk_scope_rls`). An empty-tags active chunk is now visible to **no** scope — "public" is the explicit `general` tag, never empty tags (D3). Proven by `test_sec_empty_tags_visible_to_no_scope` (red today → green) and the reversible migration test `test_0014_*`. The panel's **target predicate** still reads `scope_state = 'ok' AND (…)`; the `scope_state = 'ok'` conjunct is **retired** (D4/§7 — `scope_state` never built) and is *not* added — the target-text reconciliation and status flip are batched to step 6 (never edited in place per CLAUDE.md). |
+| `i2-labels` | changed → complete (flip batched to step 6) | The empty-tags = **private** half (the delta left open after step 3) is now delivered by 0014. `i2-labels` no longer has an outstanding code delta; its status flip joins the step-6 batch. |
+| `r3-classified` | unchanged | The `scope_state` enum this panel describes stays retired (D4). Not built; not part of step 4. |
+
+**`'*'` opt-out retained (deliberate):** the fail-closed policy keeps `current_setting(_scope_guc) = '*'` as an unrestricted opt-out for the internal/eval path and the already-authorized parent expansion (`retriever.py::fetch_parent_texts`). The public `/chat` path always resolves a real scope list, never `'*'`. Asserted by `test_scope_rls_wildcard_is_an_explicit_opt_out` and the wildcard leg of `test_sec_empty_tags_visible_to_no_scope`.
+
+**Curated policy untouched (D3):** `apply_curated_scope_rls` keeps its `cardinality(tags) = 0` floor — operator-authored curated entries are intentionally global. Confirmed by `test_0014_drops_the_empty_tags_floor` (asserts the curated floor survives) and `test_curated_scope_rls_isolates_tagged_entries_but_keeps_global`.
+
+**Replaced test:** `test_scope_rls_untagged_chunk_is_global_visible_under_any_scope` (which asserted the now-removed floor — "untagged is global") was **rewritten in place** into `test_sec_empty_tags_visible_to_no_scope` (fail-closed). No behaviour is left unasserted; the old assertion contradicted D3.
+
+**Q-A resolved (correcting the step-1 §0 note).** The step-1 discovery claimed "the test env already runs `enable_knowledge_scope_filtering` **True**". That was a **misread**: the code default *and* the test-env default are **False** (`settings.py:281`; `test_settings.py:56-57` asserts the default is False; `backend/conftest.py` never sets it). What is actually True is that individual retrieval tests pass `enable_knowledge_scope_filtering=True` **directly to the `HybridRetriever` constructor** (per-test wiring of the app-layer predicate), not via env/Settings. Decision: **keep the code default False for step 4.** RLS fail-closed (D3) is the security boundary and is **flag-independent** (the policy never reads the flag). The app-layer predicate is redundant defence-in-depth; flipping the default to True is already deferred to PLAN 10.7's operator `.env` (per the note at `test_settings.py:49-51`), not changed here. The `make eval` before/after is byte-identical, so there is no eval basis to accelerate the flip. Q-A closed: no default change.
+
+**Q-B still outstanding (deploy-time, owner-blocked):** before applying 0014 to Supabase, run a one-off audit listing active chunks with `tags = []` and re-tag any legitimately-global page with `general`. Steps 1–3 already guarantee active chunks carry ≥1 recognised tag, so the code change is safe; the backfill is a pre-deploy safety check, reported in the PR, never auto-mutated.
+
+## §13 step 5 — rule 6: no reuse + title rebuild + retain 0 (2026-09-24)
+
+Substep 2.3.1. Design-page **status** flips are batched to §13 step 6 (mirroring steps 1–4); this
+pass records the corrections and updates the panels' today-lines.
+
+| panel / substep | mark | reason (what changed vs the design page / action plan as written) |
+|---|---|---|
+| `i3-embed` | changed → built (flip batched to step 6) | `_resolve_children` no longer consults `diff_chunks`: every child is contextualised and embedded afresh on every rebuild (no `stable_key` reuse). The panel's `Note`/`Reuse` target text ("only changed children are embedded (stable_key reuse)") is now stale and reconciled in step 6. Proven by `test_in3_body_edit_reembeds_every_chunk_no_reuse` + `test_in3_title_change_reembeds_every_chunk`. |
+| `i2-rebuild` | changed → built (flip batched to step 6) | A rename now triggers a rebuild — `ChangeClass.title_changed` added to `_REBUILD_CLASSES`. Safe on `uq_document_version_idem` (a title edit bumps `cf_version`). The panel's `Reuse: … target: no reuse` line is now satisfied. |
+| `i4-gc` | changed → built (flip batched to step 6) | Retain changed **2 → 0** (`DEFAULT_RETAIN_SUPERSEDED = 0`, D1): the just-superseded version and its chunks are deleted in the swap transaction. The panel's `Keep: the two most recent superseded versions` target is superseded by retain-0 and reconciled in step 6. |
+| `vd-swap` | changed → built (flip batched to step 6) | Step 3 of the panel ("Rows are deleted after two more versions") becomes "rows are deleted in the same swap" under retain 0. Target-text reconciliation batched to step 6. |
+| `2.4.3` (Gate, GC and **rollback** keep working) | retired (rollback arm) | D1 kills rollback. `rollback_to` and `test_versioning_rollback.py` are removed. The gate arm (i4-failed: a gate-failed version is never GC'd, leaves no version row) is **unchanged and still green** — retain 0 touches only `superseded` rows, never `failed`. |
+| `2.4.3` refs `i4-rollback` | retired | `i4-rollback` no longer has code behind it (rollback removed). Its status flip / retirement on the design page is batched to step 6. |
+
+**Deviation — cut-depth (recorded unprompted).** The plan (§5.3) scopes the no-reuse change to
+`_resolve_children`. I went one step further and removed the now-dead reuse **wiring** for a clean
+end state: `old_children` threading, and the `reusable_active_children` + `_pipeline_config_matches`
+helpers (both retired from the ingestion public surface in `__init__.py` and `FEATURES.md`). The
+pure `chunk_diff` domain leaf (`domain/chunk_diff.py` + `test_chunk_diff.py`) is **retained** — it is
+independently unit-tested and documented as internal (FEATURES.md), so it is left as a now-unused
+utility rather than deleting a domain module on my own judgment; its removal is deferred. `rollback_to`
+**is** removed (not merely orphaned): retain 0 leaves it no reachable superseded target, and
+never-bend rule 11 forbids an exported function with no test once `test_versioning_rollback.py` is
+retired. All of this lands uncommitted for owner review per the branch convention.
+
+**Attachment rebuild (D2).** `attachment_changed` stays **out** of `_REBUILD_CLASSES` (a Confluence
+attachment edit doesn't bump `cf_version`, so a new version would collide on
+`uq_document_version_idem`). The behaviour is captured as a **strict xfail**,
+`test_in3_attachment_edit_reembeds_page` (`reason="needs 2.4.1"`), added to the CI xfail allow-list
+(`.github/workflows/ci.yml`, test-db step). It flips to a real pass — and, being strict, XPASSes to
+force marker removal — when substep 2.4.1 gives version identity a fingerprint dimension.
+
+**Ripple tests (rewritten, not weakened).** `test_versioning_gc.py` (both tests → retain 0),
+`test_versioning_swap.py::test_i4_swap_old_version_and_its_chunks_removed` (old rows gone, not
+superseded-inactive), `test_worker_sync.py` (the vd-swap test + two `count_versions == 1`
+assertions), `test_reindex.py` (`count_versions == 1`), `test_attachment_wiring.py` (docstring/name:
+carried-forward-by-content, not vector reuse). Retired: `test_pipeline_reuse.py`,
+`test_versioning_rollback.py`, `test_ingestion_pipeline.py::test_reuse_guard_disables_on_config_change`.
+
+**Whole-repo pyright net-decreased** (47 → 44) — removing `rollback_to`/`reusable_active_children`
+dropped their Optional-access errors; ADR-0003 D1 holds. `make check` green (backend 935 passed +
+1 xfailed, kb 43, boundaries 0).
+
+## §13 step 6 — rule 5 positive guard + rule 8 invariant + finalise (2026-09-24)
+
+The last step of the series: the two remaining guard tests, then the batched design-page **status**
+flips and the finalisation of the sync-rules docs. No production code changed — the behaviour these
+guards protect was delivered by steps 1–5.
+
+**New tests (green-today guards, proven real by the revert step — `test-proof.md`):**
+`test_in2_first_relevant_tag_full_build` (panel ks-index, rule 5 positive half — first recognized
+label on an untagged page → full build, `counter.texts == child count`) and
+`test_in2_change_never_touches_other_pages_rows` (panel vd-swap, rule 8 — editing then deleting page
+A leaves neighbour B byte-identical). With these, the eight sync rules each carry ≥1 green database
+test.
+
+**Design-page status flips performed this step** (`obi-rag-system-flow.html`, via `panel.py
+--status`, batched here per steps 1–5):
+
+| panel | flip | reason |
+|---|---|---|
+| `i2-gone` | change → **built** | All three triggers live and purge (delete/classified/unlabeled), proven by `test_sync_rules_delete.py` + `test_sync_rules_membership.py`. |
+| `tg-purge` | build → **built** | `purge_page` built + tested (`test_sync_rules_delete.py`). |
+| `i2-labels` | change → **built** | Overlap visibility + empty-tags-private code delta fully closed (step 3 sharing + step 4 migration 0014). |
+| `i3-embed` | change → **built** | No vector reuse; every child re-embedded (`test_sync_rules_rebuild.py`). |
+| `i2-rebuild` | change → **built** | A rename rebuilds + re-embeds (body+title). Attachment-only rebuild stays deferred (D2, strict xfail) — noted in the today-line. |
+| `tg-two` | change → **built** | Two recognized provider labels = legitimate sharing (`test_sync_rules_visibility.py`). Its original "hidden from everyone" **target** is retired and now stale on the page (see the TARGET-lines note below); the status reflects the new built behaviour, the target reconciliation is tracked here. |
+
+**Panels whose status is deliberately NOT flipped this step (with reason):**
+
+| panel | left at | reason |
+|---|---|---|
+| `r3-scope` | `unverified` | RLS fail-closed code + migration 0014 are done and DB-tested, but the panel's **live** leg (0014 applied to Supabase after the Q-B empty-tags backfill audit) is owner-blocked. `unverified` (coded, not proven live) is the honest status; do not flip to `built` until the live leg runs. |
+| `tg-conflict`, `tg-state` | unchanged | Both are **retired** concepts (D4 dropped conflict; `scope_state` was never built). `panel.py` has no `retired` status word (`STATUS_WORDS = built/change/build/unverified/discuss`), so no status flip represents "retired" faithfully; the retirement is recorded in this doc (step-3 section) and their today-lines note it. Inventing a status would misrepresent. |
+| `tg-deactivate` | unchanged | **Not** retired: `deactivate_page` still runs for the reconciliation source-scope-loss sweep (`reconciliation.py:206-216`). Its role narrowed (no longer the delete/classified path) — recorded in the step-1 section; no status flip earned. |
+
+**Design-page TARGET lines NOT edited (workflow constraint).** — ⚠️ **SUPERSEDED 2026-09-25 by
+"Design-page TARGET lines RECONCILED" below**: the owner gave explicit go-ahead once D1–D4 were
+final, so these target lines have now been edited. The note is kept for history. Several panels'
+*target* text is now
+stale under D1–D4 — `tg-two` ("hidden from everyone"), `i4-gc` ("keep the two most recent
+superseded"), `vd-swap` ("deleted after two more versions"), `i3-embed` ("stable_key reuse"),
+`i2-rebuild` (reuse line), `r3-scope`/`3.4.1` (the `scope_state = 'ok'` conjunct). The `/obi-change`
+workflow forbids changing a target line on the design page ("Never: … change a target line on the
+design page"), and §0 of the sync-rules plan defines step 6 as flipping **statuses**, not targets.
+So the stale targets are left in place and their correction is tracked here (this doc is the
+standing record of every moved target); reconciling the target text itself needs an explicit owner
+go-ahead. This is the honest state, not an omission.
+
+**Action-plan checkboxes (`obi-action-plan.html`) NOT ticked (with reason).** Substeps 2.2.4 and
+2.3.1 have their unit+database work complete and green, but each names a **live** proof in its own
+Proof line — 2.2.4 "the live label script passes on staging", 2.5.x freshness — that is owner-blocked
+(the `verify_sync_rules.py`/`page_state.py` scripts are unwritten, needing staging +
+`CONFLUENCE_WEBHOOK_SECRET` + Confluence site-admin). Ticking a substep whose live leg has not run
+would overstate completion, so the checkboxes are left unticked and the outstanding live legs stay in
+the ledger under "need from you". The database-level completion is fully recorded in `coverage-map.md`
+and this doc.
+
+---
+
+## Design-page TARGET lines RECONCILED to D1–D4 (owner go-ahead, 2026-09-25)
+
+**Supersedes the "Design-page TARGET lines NOT edited" note above.** With D1–D4 confirmed final, the
+owner gave explicit go-ahead to reconcile the stale *target* text on `obi-rag-system-flow.html` (not
+just the `today`/status lines). Edited via a formatting-preserving script on the `nodedata` JSON block
+(byte-identical to `panel.py`'s writer); every edit asserted the old value first. 17 field edits across
+7 panels:
+
+| panel | field(s) | from (stale target) | to (D1–D4 behaviour) |
+|---|---|---|---|
+| `tg-two` | simple, steps (×4), tests (×2), today | "a mistake… hidden from everyone"; `scope_state = conflict` flow; "zero results" tests | D4 legitimate sharing: resolves to both tags, retrievable in each scope; steps rewritten (no conflict/no warning); tests = found in mews & toast, not operacloud; today notes the reconciliation |
+| `i4-gc` | simple, Keep, Delete | "keeps the last two old versions for rollback"; Keep = "two most recent superseded" | D1 retain 0: deletes the just-superseded version in the swap txn, no rollback window; Keep = "nothing — retain 0" |
+| `vd-swap` | step 3 | "Rows are deleted after two more versions" | D1: "deleted in the same swap transaction (retain 0)" |
+| `i3-embed` | note | "Today only changed children are embedded (stable_key reuse). Target: all children…" | "Every child… embedded afresh on every rebuild — no stable_key vector reuse (D1 / 2.3.1)" |
+| `i2-rebuild` | Reuse row, note | Reuse = "today: keeps its vector when stable_key matches; target: no reuse"; note prefixed "Target:" | Reuse = "none — every child embedded on every rebuild"; note de-"Target"-ed to present tense |
+| `r3-scope` | status, simple, Target predicate, today | status `unverified`; "and whose state is ok"; predicate "`scope_state = 'ok' AND …`"; today "not yet applied to Supabase" | status **built** (0014 applied + verified live 2026-09-25); scope_state dropped from simple + predicate (D4); today records the live proof (empty tags → no scope; 2/2/2/2/8) |
+| `tg-filter` | today, Target policy, code DDL | today "not yet applied to Supabase"; policy + DDL carry "`scope_state = 'ok' AND`" | floor-less `'*' OR tags && allowed_scopes` (scope_state retired, D4); today notes 0014 live; app-predicate flag stays off (PLAN 10.7). Status left `change` (the app-predicate cutover is still pending). |
+
+**Deliberately still not touched:** `tg-conflict` / `tg-state` panel *bodies* — they document
+concepts D4 retired; their `today` lines already record the retirement and `panel.py` has no `retired`
+status word, so their bodies are left as the historical record (unchanged decision from step 6).
+`r3-scope`/`tg-filter` code-location file paths (e.g. the `0010`/`alembic/versions/` refs) are
+pre-existing path drift, out of D1–D4 scope. The brief (`obi-system-brief.md`) was regenerated from the
+edited page.

@@ -1,6 +1,6 @@
 # Obi, part by part — the complete brief, A to Z
 
-Generated on 2026-09-23 from `docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
+Generated on 2026-09-25 from `docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
 
 ## 0 · How to read this brief
 
@@ -1704,10 +1704,10 @@ _Workflow label shown in the drawer: Ingestion, stage 2 \u00b7 Decide what chang
   - `platform/clients/confluence_client.py` — get_page_meta, get_labels, get_restrictions, get_attachments
 - Target and notes: The Confluence API returns the published version of a page. Draft edits are invisible to Obi until the editor clicks Publish.
 
-##### Panel `i2-labels` · Labels to scope state · [Implemented, needs changing]
+##### Panel `i2-labels` · Labels to scope state · [Implemented]
 - Kind: Gate
 - In plain words: Matches the page's labels against the tag list. One good tag: continue. No tag or a forbidden tag: the page goes out.
-- Today: Labels intersected with the scope list. One provider label plus general is fine. Two provider labels give zero label tags and a warning. Result unioned with source_scope tags.
+- Today: Every recognized label becomes a tag (no conflict zeroing); visibility is tags && allowed_scopes overlap, and empty tags are private (fail-closed, migration 0014). No app-code delta remains. Proven by test_sync_rules_visibility.py + test_customer_isolation_backstop.py.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -1769,10 +1769,10 @@ def resolve(labels, recognized):
   - Attachment replaced, body unchanged: rebuild.
   - Same fingerprint twice: no_change.
 
-##### Panel `i2-gone` · Gone, classified, or unlabeled: deactivate · [Implemented, needs changing]
+##### Panel `i2-gone` · Gone, classified, or unlabeled: deactivate · [Implemented]
 - Kind: Outcome
 - In plain words: The page was deleted, lost its tag, or got the classified tag. It leaves search now.
-- Today: Only status trashed/archived/deleted and missing metadata trigger deactivation today; the classified-label and last-recognized-label-removed triggers do not exist yet.
+- Today: Delete/trash/archive, an unreachable source, the classified label, and removal of the last recognized knowledge-scope label all PURGE every row of the page (purge_page in versioning.py), not soft-deactivate; a restore/re-tag re-indexes as a first build. Proven by test_sync_rules_delete.py and test_sync_rules_membership.py.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -1785,19 +1785,20 @@ def resolve(labels, recognized):
   - Trash a page: its chunks stop appearing in every scope within the freshness target.
   - Add classified: chunks gone from the table, not only inactive.
 
-##### Panel `i2-rebuild` · Rebuild a new version · [Implemented, needs changing]
+##### Panel `i2-rebuild` · Rebuild a new version · [Implemented]
 - Kind: Outcome
 - In plain words: Something in the page changed, so the whole page is built again from scratch.
+- Today: A body edit AND a rename both trigger a full rebuild that re-embeds every child (title_changed in _REBUILD_CLASSES). Attachment-only rebuild is deferred to substep 2.4.1 (D2, strict xfail). Proven by test_sync_rules_rebuild.py.
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | When | body, structure, attachments, title, or pipeline config changed; or first index |
-  | Reuse | today: a child keeps its vector when its stable_key (position plus body text) matches; target: no reuse |
+  | Reuse | none — every child is embedded on every rebuild (D1 / 2.3.1); no stable_key vector reuse |
   | Next | ingestion stage 3 and ingestion stage 4 |
 - Where in the code:
   - `confluence_sync/application/sync_service.py:150-165` — the rebuild branch
   - `ingestion/application/versioning.py:187-255` — stage_and_activate
-- Target and notes: Target: a rebuild means the whole page. Every parent and every child is created new and every child is embedded. Nothing from the old version is reused.
+- Target and notes: A rebuild means the whole page: every parent and every child is created new and every child is embedded. Nothing from the old version is reused.
 
 ##### Panel `i2-meta` · Metadata only: update in place · [Implemented]
 - Kind: Outcome
@@ -1976,10 +1977,10 @@ _Workflow label shown in the drawer: Ingestion, stage 3 \u00b7 Build the chunks_
 retrieval_content = f"{title} > {heading_path}\n\n{llm_note}\n\n{child_text}"
 ```
 
-##### Panel `i3-embed` · Embed every child · [Implemented, needs changing]
+##### Panel `i3-embed` · Embed every child · [Implemented]
 - Kind: Outside tool
 - In plain words: Sends every small piece of the page to the embedding model and stores the 3072 numbers that come back. All pieces, every rebuild.
-- Today: OpenAI text-embedding-3-large at 3072 dims (from .env). Code default is Voyage voyage-3-large at 1024. VOYAGE_API_KEY is set and verified; the bake-off is not run.
+- Today: OpenAI text-embedding-3-large at 3072 dims (from .env); code default is Voyage voyage-3-large at 1024. VOYAGE_API_KEY is set and verified; the bake-off is not run. Every child is contextualised and embedded afresh on each rebuild — no stable_key vector reuse (versioning.py::_resolve_children; §13 step 5). Proven by test_sync_rules_rebuild.py::test_in3_body_edit_reembeds_every_chunk_no_reuse.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -1990,7 +1991,7 @@ retrieval_content = f"{title} > {heading_path}\n\n{llm_note}\n\n{child_text}"
 - Where in the code:
   - `platform/clients/embeddings_client.py:94-131` — _HttpEmbeddingProvider.embed
   - `platform/config/settings.py:61-63` — provider, model, dim
-- Target and notes: Today only changed children are embedded (stable_key reuse). Target: all children of the page, every rebuild. Simpler, and no stale title vectors.
+- Target and notes: Every child of the page is contextualised and embedded afresh on every rebuild — no stable_key vector reuse (D1 / substep 2.3.1). Simpler, and no stale title vectors.
 
 ##### Panel `i3-attach` · Attachments · [Implemented, needs changing]
 - Kind: Outside input
@@ -2166,12 +2167,13 @@ CREATE UNIQUE INDEX ux_document_version_one_active
 
 ##### Panel `i4-gc` · Garbage collect old versions · [Implemented]
 - Kind: Housekeeping
-- In plain words: Keeps the last two old versions for rollback and deletes older ones.
+- In plain words: Deletes the just-superseded version and its chunks in the swap transaction. Retain 0 — no rollback window (D1).
+- Today: Retain 0 (D1): the just-superseded version and its chunks are deleted in the swap transaction — no rollback window (versioning.py::_gc_superseded); test_in3_rebuild_deletes_old_version_rows_immediately + test_i4_gc_keeps_zero_superseded_versions.
 - Settings and rules:
   | Setting | Value |
   |---|---|
-  | Keep | the two most recent superseded versions |
-  | Delete | older ones; chunk rows cascade via FK |
+  | Keep | nothing — retain 0 (D1); there is no rollback window |
+  | Delete | the just-superseded version in the swap transaction; chunk rows cascade via FK |
 - Where in the code:
   - `ingestion/application/versioning.py:378-399` — _gc_superseded
 
@@ -2349,6 +2351,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `ks-index` · Pages go in · [Implemented]
 - Kind: Knowledge scopes
 - In plain words: The queued pages run through ingestion and become searchable in that scope.
+- Today: Membership is now label-gated (never-bend rule 5): a first-seen page with no recognized knowledge-scope label is never ingested (no version, chunk, or page_source row); a page carrying at least one recognized label is indexed in that scope. Enforced in sync_service.handle_sync_page. Proven by test_sync_rules_membership.py::test_in2_untagged_page_never_indexed.
 - Steps:
   1. The queued job runs ingestion stages 2 to 4 on the page.
   2. Tags on the chunks are the recognized labels.
@@ -2404,10 +2407,10 @@ _Workflow label shown in the drawer: Knowledge scopes_
 - How to test it:
   - No stale double tag after mews to toast.
 
-##### Panel `tg-remove` · Remove the last recognized label · [Planned]
+##### Panel `tg-remove` · Remove the last recognized label · [Implemented]
 - Kind: Editor action
 - In plain words: An editor removes the last tag. The page leaves search.
-- Today: Today the page keeps its source_scope tags and stays in the index. A page with no recognized tag is invisible to scoped queries but still stored.
+- Today: Removing the last recognized knowledge-scope label (or leaving only unrelated labels) purges every row of the page — not soft-deactivate — via the label-gated membership check in confluence_sync/application/sync_service.py (handle_sync_page). Folder roots (source_scope) no longer keep it in. Proven by test_sync_rules_membership.py::test_tags_remove_last_recognized_label_removes_rows and ::test_tags_unrelated_labels_alone_do_not_keep_page.
 - Where in the code:
   - `confluence_sync/application/sync_service.py` — deactivate-on-unlabeled branch (target)
   - `platform/config/settings.py` — cut-over flag only: default on, deleted after verify_knowledge_scope_backfill.py reports zero untagged chunks
@@ -2417,9 +2420,10 @@ _Workflow label shown in the drawer: Knowledge scopes_
   3. The page is deactivated. Chunks is_active = false. Label-gated ingestion is unconditional in the target.
 - Target and notes: Target: removing the last recognized tag deactivates the page. Folder roots (source_scope) no longer keep it in.
 
-##### Panel `tg-classified` · Add the classified label · [Planned]
+##### Panel `tg-classified` · Add the classified label · [Implemented]
 - Kind: Editor action
 - In plain words: An editor adds classified. The page leaves search and its pieces are deleted, whatever other tags it has.
+- Today: The reserved 'classified' label is detected on the raw labels in handle_sync_page and routes to purge_page: every row of the page is deleted (chunk, document_version, document, page_source, restrictions), not just deactivated; removing it later re-indexes as a first index. Proven by test_in2_classified_label_removes_rows (backend/app/features/confluence_sync/tests/test_sync_rules_delete.py).
 - Steps:
   1. Confluence sends label_added.
   2. Ingestion stage 2 sees classified: state = classified, regardless of other labels.
@@ -2431,18 +2435,18 @@ _Workflow label shown in the drawer: Knowledge scopes_
   - A classified page never appears in any scope, with any token, in any test.
 - Target and notes: Deleting rather than deactivating means a database dump or a bug that ignores is_active still cannot leak the content.
 
-##### Panel `tg-two` · Two provider labels on one page · [Implemented, needs changing]
+##### Panel `tg-two` · Two provider labels on one page · [Implemented]
 - Kind: Editor mistake
-- In plain words: A page carries two platform tags at once. That is a mistake, so the page is hidden from everyone until fixed.
-- Today: Zero label tags, a knowledge_scope_conflict warning, the page keeps its source_scope tags. Combined with the empty-tags-means-global rule this can make the page visible everywhere.
+- In plain words: A page carries two platform tags at once. That is legitimate sharing (D4): the page resolves to both tags and is retrievable in each of those scopes — never public.
+- Today: Built (§13 step 3, D4): two recognized provider labels are legitimate sharing — the page resolves to both tags and is retrievable in each of those scopes, never public. Proven by test_sync_rules_visibility.py. The panel body (simple / steps / tests) was reconciled to D4 on 2026-09-25; the retired 'conflict / hidden from everyone' framing is recorded in 0.4-design-review/plan-corrections.md.
 - Steps:
-  1. Ingestion stage 2 sets scope_state = conflict.
-  2. The scope policy hides every row whose state is not ok.
-  3. The warning names the page and the labels.
-  4. An editor removes one label; the next sync sets state = ok.
+  1. Ingestion stage 2 resolves every recognized label into the page's tags — no conflict state.
+  2. The scope policy shows the page in each matching scope: tags && allowed_scopes.
+  3. No warning is raised: two provider tags is normal sharing, not a mistake.
+  4. Removing one label leaves the other; the next sync keeps the page visible in that scope.
 - How to test it:
-  - mews + toast: zero results for a Mews user, zero for a Toast user, zero for general.
-  - Fix the labels: results return without a rebuild.
+  - mews + toast: found by a Mews user and a Toast user, not by an operacloud user.
+  - Remove one label: the page is still found in the remaining scope, with no rebuild.
 
 ##### Panel `tg-edit` · Edit the body of a labeled page · [Implemented, needs changing]
 - Kind: Editor action
@@ -2475,15 +2479,17 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `tg-deactivate` · Deactivate · [Planned]
 - Kind: Outcome
 - In plain words: The page's pieces are switched off and search cannot see them.
+- Today: Narrowed (§13 step 1): deactivate_page is no longer the delete/classified path (those PURGE now) — it survives only for the reconciliation source-scope-loss sweep (reconciliation.py:206-216). Recorded in 0.4-design-review/plan-corrections.md.
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | Does | page_status updated, active version superseded, chunks inactive |
   | Undo | add a recognized label again; the next sync re-indexes |
 
-##### Panel `tg-purge` · Deactivate and purge · [Planned]
+##### Panel `tg-purge` · Deactivate and purge · [Implemented]
 - Kind: Outcome
 - In plain words: The page's pieces are switched off and deleted.
+- Today: purge_page deletes every row a page owns — version, document, chunks, page_source, restrictions — in one FK-safe transaction (page_source is deleted too; D4 retired the 'keep with state classified' wording). Proven by test_sync_rules_delete.py.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2493,6 +2499,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `tg-conflict` · Excluded as a conflict · [Implemented, needs changing]
 - Kind: Outcome
 - In plain words: The page is marked as a conflict and hidden. Fix the tags in Confluence and the next sync brings it back.
+- Today: Retired (§13 step 3, D4): there is no conflict/hide state — two provider labels share both scopes and no knowledge_scope_conflict log line is emitted. panel.py has no 'retired' status word, so the status is left unchanged; the retirement is recorded in 0.4-design-review/plan-corrections.md.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2511,7 +2518,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `tg-state` · scope_state · [Planned]
 - Kind: Data
 - In plain words: One word per page: ok, conflict, classified, or unlabeled. Only ok pages are ever shown.
-- Today: Does not exist yet: no scope_state enum, no chunk/page_source columns, and no consumer reads it.
+- Today: Retired (§13 step 3, D4/§7): scope_state was never built (no enum, no column); state is materialized as the tag set on chunk.tags/page_source.tags, and the only non-ok value (conflict) is gone. No 'retired' status word exists; retirement recorded in 0.4-design-review/plan-corrections.md.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2530,11 +2537,11 @@ ALTER TABLE page_source ADD COLUMN scope_state scope_state NOT NULL DEFAULT 'unl
 ##### Panel `tg-filter` · The filter that uses tags · [Implemented, needs changing]
 - Kind: Step
 - In plain words: The database rule that shows a piece only when its tag matches the widget's scope and its state is ok.
-- Today: App predicate tags && :scopes behind a flag, default off, plus the 0010 RESTRICTIVE policy — coded and tested, not yet applied to Supabase.
+- Today: The 0010 RESTRICTIVE policy is live on Supabase and, after migration 0014 (2026-09-25), floor-less: '*' OR tags && allowed_scopes (scope_state retired, D4). The app predicate tags && :scopes stays behind a flag, default off (PLAN 10.7).
 - Settings and rules:
   | Setting | Value |
   |---|---|
-  | Target policy | scope_state = 'ok' AND tags && allowed_scopes |
+  | Target policy | wildcard OR tags && allowed_scopes (scope_state retired, D4) |
   | Wildcard | '*' allowed only for the eval role; the public path never sets it |
   | App predicate | kept as a planner hint on ix_chunk_tags_gin |
 - Where in the code:
@@ -2544,10 +2551,8 @@ ALTER TABLE page_source ADD COLUMN scope_state scope_state NOT NULL DEFAULT 'unl
 ```
 CREATE POLICY chunk_scope_read ON chunk AS RESTRICTIVE FOR SELECT
   USING (
-    scope_state = 'ok' AND (
-      current_setting('app.allowed_knowledge_scopes', true) = '*'
-      OR tags && string_to_array(current_setting('app.allowed_knowledge_scopes', true), ',')
-    )
+    current_setting('app.allowed_knowledge_scopes', true) = '*'
+    OR tags && string_to_array(current_setting('app.allowed_knowledge_scopes', true), ',')
   );
 ```
 
@@ -3107,14 +3112,14 @@ Diagram (The rag_reader role runs the search. Lock one is source row security. L
 
 _Workflow label shown in the drawer: Retrieval, stage 3 \u00b7 Filter_
 
-##### Panel `r3-scope` · Scope row security · [Unverified]
+##### Panel `r3-scope` · Scope row security · [Implemented]
 - Kind: Lock 2
-- In plain words: Lock 2: the database shows only pieces whose tag matches this person's integration (or general) and whose state is ok.
-- Today: Migration 0010 adds chunk_scope_read and curated_knowledge_entry_scope_read as RESTRICTIVE policies: wildcard OR cardinality(tags) = 0 OR overlap. Coded and tested (502 tests), not applied to Supabase yet. The app predicate is flag-gated and off by default in code.
+- In plain words: Lock 2: the database shows only pieces whose tag matches this person's integration (or general). Empty tags match nobody.
+- Today: Migration 0014 (D3) applied to Supabase on 2026-09-25: chunk_scope_read is now pure '*' OR tags && allowed_scopes, mirrored in schema.py. Verified live as rag_reader — empty tags visible to no scope; mews/toast/operacloud/general each return 2, '*' returns 8. RESTRICTIVE, ANDed with the source policy. App predicate stays flag-gated, off by default (PLAN 10.7).
 - Settings and rules:
   | Setting | Value |
   |---|---|
-  | Target predicate | scope_state = 'ok' AND (wildcard OR tags && allowed_scopes) |
+  | Target predicate | wildcard OR tags && allowed_scopes (scope_state retired, D4; empty tags match nobody, D3) |
   | Removed | cardinality(tags) = 0 as a public floor |
   | RESTRICTIVE | Postgres ANDs it with the source policy; a permissive one would OR and weaken isolation |
   | Independent of the flag | the policy never reads enable_knowledge_scope_filtering |
@@ -4264,10 +4269,11 @@ _Workflow label shown in the drawer: The vector database_
 ##### Panel `vd-swap` · Vectors swap with the page · [Implemented]
 - Kind: Vector database
 - In plain words: When a page is rebuilt, all its old numbers go off and all its new numbers go on in one switch.
+- Today: Old vectors leave the live set and are deleted in the same swap (retain 0); test_vd_swap_old_vectors_leave_the_live_set_and_are_deleted_at_once. §13 step 5.
 - Steps:
   1. New chunks and their vectors are inserted inactive.
   2. One transaction flips the version pointer.
-  3. Old vectors go inactive and leave the HNSW result set at once. Rows are deleted after two more versions.
+  3. Old vectors go inactive and leave the HNSW result set at once. Their rows are deleted in the same swap transaction (retain 0, D1).
 
 ---
 
@@ -4665,7 +4671,7 @@ _Section id: `open`_
 | `sc-user` | concerns | A Mews user | Planned |
 | `em-token` | embed | The signed note (JWT) | Implemented |
 | `r1-ctx` | rt1 | Build the authorization context: company, integration, person | Planned |
-| `r3-scope` | rt3 | Scope row security | Unverified |
+| `r3-scope` | rt3 | Scope row security | Implemented |
 | `r3-acl` | rt3 | Page-level access list | Implemented |
 | `r5-evidence` | rt5 | The evidence block | Implemented |
 | `cm-root` | code | app/main.py: the wiring | Implemented |
@@ -4701,11 +4707,11 @@ _Section id: `open`_
 | `i1-fail` | in1 | Retry with backoff, then dead letter | Implemented |
 | `i1-handle` | in1 | Handle and complete in one transaction | Implemented |
 | `i2-fetch` | in2 | Fetch the page facts | Implemented |
-| `i2-labels` | in2 | Labels to scope state | Implemented, needs changing |
+| `i2-labels` | in2 | Labels to scope state | Implemented |
 | `i2-hash` | in2 | One index fingerprint | Implemented, needs changing |
 | `i2-classify` | in2 | Classify the change | Implemented, needs changing |
-| `i2-gone` | in2 | Gone, classified, or unlabeled: deactivate | Implemented, needs changing |
-| `i2-rebuild` | in2 | Rebuild a new version | Implemented, needs changing |
+| `i2-gone` | in2 | Gone, classified, or unlabeled: deactivate | Implemented |
+| `i2-rebuild` | in2 | Rebuild a new version | Implemented |
 | `i2-meta` | in2 | Metadata only: update in place | Implemented |
 | `i2-nochange` | in2 | No change | Implemented |
 | `i2-tobuild` | in2 | On to ingestion stage 3 | Implemented |
@@ -4714,7 +4720,7 @@ _Section id: `open`_
 | `i3-parents` | in3 | Parent chunks | Implemented |
 | `i3-children` | in3 | Child chunks | Implemented |
 | `i3-context` | in3 | Contextualize each child | Implemented |
-| `i3-embed` | in3 | Embed every child | Implemented, needs changing |
+| `i3-embed` | in3 | Embed every child | Implemented |
 | `i4-staging` | in4 | Create the version in staging | Implemented, needs changing |
 | `i3-attach` | in3 | Attachments | Implemented, needs changing |
 | `i3-tsv` | in3 | The keyword index | Implemented |
@@ -4736,14 +4742,14 @@ _Section id: `open`_
 | `ks-orphan` | tags | Pages with only that tag go out | Planned |
 | `tg-add` | tags | Add a label | Implemented |
 | `tg-change` | tags | Change a label | Implemented |
-| `tg-remove` | tags | Remove the last recognized label | Planned |
-| `tg-classified` | tags | Add the classified label | Planned |
-| `tg-two` | tags | Two provider labels on one page | Implemented, needs changing |
+| `tg-remove` | tags | Remove the last recognized label | Implemented |
+| `tg-classified` | tags | Add the classified label | Implemented |
+| `tg-two` | tags | Two provider labels on one page | Implemented |
 | `tg-edit` | tags | Edit the body of a labeled page | Implemented, needs changing |
 | `tg-first` | tags | The page is in the index | Implemented |
 | `tg-retag` | tags | Tags updated without a re-embed | Implemented |
 | `tg-deactivate` | tags | Deactivate | Planned |
-| `tg-purge` | tags | Deactivate and purge | Planned |
+| `tg-purge` | tags | Deactivate and purge | Implemented |
 | `tg-conflict` | tags | Excluded as a conflict | Implemented, needs changing |
 | `tg-rebuild` | tags | Rebuild with tags carried | Implemented, needs changing |
 | `tg-state` | tags | scope_state | Planned |

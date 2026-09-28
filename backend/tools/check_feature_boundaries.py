@@ -13,6 +13,9 @@ function-local and other nested imports are caught too):
       ImportError at init time).
   (d) `platform/**` and `shared/**` must not import features at all; `shared/**`
       must additionally not import `platform/**` (shared is the bottom layer).
+  (e) production-only forbidden cross-feature edges (see FORBIDDEN_FEATURE_EDGES):
+      even a root import is rejected — the trigger layer never imports ingestion.
+      Test files are exempt (they drive both layers in contract/integration tests).
 
 Run from backend:  uv run python tools/check_feature_boundaries.py
 Exits 0 when clean, 1 with a report of violations otherwise.
@@ -27,6 +30,14 @@ from pathlib import Path
 
 AUTOMATION_ROOT = Path(__file__).resolve().parent.parent  # backend
 EXCLUDED_DIRS = {".venv", "__pycache__", "alembic", "tools", ".git", "node_modules"}
+
+# Production-only forbidden cross-feature edges: (importing feature, imported feature), rejected
+# even at the public root (rules a-d otherwise allow root-to-root cross-feature imports). The
+# trigger layer (confluence_sync) must never import the ingestion layer — it depends on ingestion
+# only through the IngestionSink port, wired at startup (app/main.py). Test files are EXEMPT: the
+# contract/integration tests legitimately drive both layers end to end (see the sync-command
+# component doc). The guarantee is about production dependency direction, not test wiring.
+FORBIDDEN_FEATURE_EDGES: frozenset[tuple[str, str]] = frozenset({("confluence_sync", "ingestion")})
 
 # ---------------------------------------------------------------------------
 # Phase-1 one-way rule (substep 1.1.2). The three top folders may only depend in
@@ -160,6 +171,7 @@ def targets(node: ast.AST, importer: str, is_init: bool) -> list[str]:
 def check_file(path: Path) -> list[tuple[int, str, str]]:
     rel_parts = path.relative_to(AUTOMATION_ROOT).with_suffix("").parts
     kind, feat = importer_context(rel_parts)
+    is_test = "tests" in rel_parts or path.name == "conftest.py"
     importer = dotted_module(path)
     is_init = path.name == "__init__.py"
     tree = ast.parse(path.read_text(), filename=str(path))
@@ -190,6 +202,19 @@ def check_file(path: Path) -> list[tuple[int, str, str]]:
                     if depth == 0:
                         violations.append(
                             (node.lineno, "c", f"imports own root `{mod}` (self-facade trap)")
+                        )
+                elif (feat, tgt_feat) in FORBIDDEN_FEATURE_EDGES:
+                    # The deliberately-inverted edge: forbidden in production at any depth (e);
+                    # test files may cross it freely (contract/integration tests drive both layers
+                    # and patch internal seams), so they bypass both (e) and (b) for this pair.
+                    if not is_test:
+                        violations.append(
+                            (
+                                node.lineno,
+                                "e",
+                                f"forbidden edge: `{feat}` must not import `{tgt_feat}` "
+                                f"(`{mod}`) — depend on it through the IngestionSink port",
+                            )
                         )
                 elif depth > 0:
                     violations.append(

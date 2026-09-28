@@ -777,3 +777,112 @@ failing test was repaired (nothing was red).
   should not sit in a "one row per built panel" table. Rather than delete a row whose test is real
   and green, it is now annotated inline as `change`-status / not one of the 108 built panels, which
   reconciles the table's row count with its stated 108.
+
+---
+
+## Sync-rules additions — substep 2.2.4 (§13 step 1), 2026-09-24
+
+Panels newly covered by the sync-rules delete/classified purge work (they were not among the 108
+built panels above; added here as they become built). Test file path relative to `backend/`.
+
+| panel | title | test file | test name | level | green |
+|---|---|---|---|---|---|
+| `i2-gone` | Gone, classified, or unlabeled: purge | app/features/confluence_sync/tests/test_sync_rules_delete.py | test_in2_delete_page_removes_rows (+1 more: test_in2_delete_then_restore_full_rebuilds) | database | yes |
+| `tg-classified` | Add the classified label | app/features/confluence_sync/tests/test_sync_rules_delete.py | test_in2_classified_label_removes_rows | database | yes |
+| `tg-purge` | Deactivate and purge | app/features/confluence_sync/tests/test_sync_rules_delete.py | test_in2_delete_page_removes_rows | database | yes |
+
+Note (honest scope): the last-recognized-label-removed purge (`tg-remove`) is built by §13 step 2,
+not here; its row lands then. The live label/freshness proof for these panels is deferred (needs
+staging — owner blocker), so the "live" leg of `i2-gone` is not yet green.
+
+## Sync-rules additions — substep 2.2.4 (§13 step 2: rule 2 + membership gate), 2026-09-24
+
+Label-gated membership (sync rule 2 + never-bend rule 5): removing the last recognized
+knowledge-scope label purges the page; a first-seen page with no recognized label is never
+ingested. Enforced in `confluence_sync/application/sync_service.py::handle_sync_page`. Test file
+path relative to `backend/`.
+
+| panel | title | test file | test name | level | green |
+|---|---|---|---|---|---|
+| `tg-remove` | Remove the last recognized label | app/features/confluence_sync/tests/test_sync_rules_membership.py | test_tags_remove_last_recognized_label_removes_rows (+1 more: test_tags_unrelated_labels_alone_do_not_keep_page) | database | yes |
+| `ks-index` | Pages go in (membership gate) | app/features/confluence_sync/tests/test_sync_rules_membership.py | test_in2_untagged_page_never_indexed (+1 guard: test_tags_recognized_label_present_keeps_page) | database | yes |
+
+Note (honest scope): the live label script (`verify_sync_rules.py`, MT-1..MT-7) that would prove
+these on staging is not written (owner blocker: staging + Confluence site-admin), so the "live" leg
+of `tg-remove`/`ks-index` is not yet green — the database level is. `ks-index` already had a
+first-index-searchable row above (`test_scope_tagging_ks_index.py`); this row adds the negative
+membership half (untagged → never indexed).
+
+## Sync-rules additions — substep 2.2.4 (§13 step 3: drop conflict + rule 4/3 visibility), 2026-09-24
+
+The conflict concept is retired (decision D4): two or more recognized provider labels is legitimate
+sharing — the page resolves to all matched tags and is visible in each of those scopes by overlap
+(`chunk.tags && allowed_scopes`), never public. New tests in `test_sync_rules_visibility.py`; the
+resolver unit tests (`test_knowledge_scope.py`) and one ingestion-pipeline test were inverted to the
+sharing outcome. Test file paths relative to `backend/`.
+
+| panel | title | test file | test name | level | green |
+|---|---|---|---|---|---|
+| `tg-two` | Two provider labels share both scopes | app/features/confluence_sync/tests/test_sync_rules_visibility.py | test_tags_shared_page_visible_in_both_scopes (+1 more: test_tags_remove_shared_tag_keeps_other_scope) | database | yes |
+| `i2-labels` | Add a tag, no re-embed (rule 4) | app/features/confluence_sync/tests/test_sync_rules_visibility.py | test_tags_add_second_tag_updates_tags_no_reembed | database | yes |
+| `i2-labels` | General visible everywhere (rule 4 guard) | app/features/confluence_sync/tests/test_sync_rules_visibility.py | test_tags_general_tag_visible_everywhere | database | yes |
+| `i2-labels` | Remove one tag, another stays (rule 3 guard) | app/features/confluence_sync/tests/test_sync_rules_visibility.py | test_tags_remove_one_tag_keeps_page_updates_tags_no_reembed | database | yes |
+
+Note (honest scope): `tg-conflict` and `tg-state` are **retired** by D4 (no conflict/hide state;
+`scope_state` was never built in code) — recorded in `plan-corrections.md`; their design-page status
+flips are batched to §13 step 6. The empty-tags=private (RLS fail-closed, D3) half of `i2-labels`
+lands in step 4, so `i2-labels` stays `change` until then. The resolver-level sharing is also pinned
+by the inverted unit tests `test_knowledge_scope.py::test_two_provider_labels_share_both_scopes_*`.
+
+### sync-rules §13 step 4 — RLS floor fail-closed (D3) + read-path overlap (2026-09-24)
+
+Migration 0014 drops the `OR cardinality(tags) = 0` floor from `chunk_scope_read` (mirrored in
+`schema.py`), so an empty-tags active chunk is visible to no scope. Panel `r3-scope` today-line
+updated; `i2-labels` completed (empty=private half); design-page status flips batched to §13 step 6.
+
+| panel | title | test file | test name | level | green |
+|---|---|---|---|---|---|
+| `r3-scope` | Empty tags visible to no scope (fail-closed floor, D3) | app/features/confluence_sync/tests/test_customer_isolation_backstop.py | test_sec_empty_tags_visible_to_no_scope | database | yes |
+| `r3-scope` | Read paths use tags-overlap, not equality (D4) | app/features/confluence_sync/tests/test_customer_isolation_backstop.py | test_sec_read_paths_use_overlap_not_equality | database | yes |
+| `r3-scope` | Migration 0014 drops the floor and round-trips | tests/test_migration_0014_chunk_scope_fail_closed.py | test_0014_drops_the_empty_tags_floor (+1 more: test_0014_downgrade_restores_floor_then_upgrade_drops_it) | database | yes |
+
+Note (honest scope): the migration test file path is relative to `knowledge-base/` (the KB suite),
+not `backend/`. The replaced test `test_scope_rls_untagged_chunk_is_global_visible_under_any_scope`
+(which asserted the now-removed floor) was rewritten in place into `test_sec_empty_tags_visible_to_no_scope`.
+App-layer overlap on the dense/keyword/curated read paths is additionally covered by
+`test_sync_rules_visibility.py` (retrieval) and `test_curated_scope_rls_isolates_tagged_entries_but_keeps_global`
+(curated keeps its own floor, untouched). The **live** leg of `r3-scope` (apply 0014 to Supabase
+after the Q-B empty-tags backfill audit) stays outstanding — owner-blocked.
+
+## §13 step 5 — rule 6: no reuse + title rebuild + retain 0 (2026-09-24)
+
+| panel | title | test file | test name | level | green |
+|---|---|---|---|---|---|
+| `i3-embed` | Embed every child afresh, no vector reuse (rule 6) | app/features/confluence_sync/tests/test_sync_rules_rebuild.py | test_in3_body_edit_reembeds_every_chunk_no_reuse | database | yes |
+| `i2-rebuild` | A rename triggers a full rebuild + re-embed (rule 6) | app/features/confluence_sync/tests/test_sync_rules_rebuild.py | test_in3_title_change_reembeds_every_chunk | database | yes |
+| `i4-gc` | Rebuild deletes the old version + chunks at once (retain 0, D1) | app/features/confluence_sync/tests/test_sync_rules_rebuild.py; app/features/confluence_sync/tests/test_versioning_gc.py | test_in3_rebuild_deletes_old_version_rows_immediately (+2 more: test_i4_gc_keeps_zero_superseded_versions, test_i4_gc_deletes_the_superseded_version_and_cascades_chunks) | database | yes |
+| `vd-swap` | Old vectors leave the live set and are deleted in the same swap (retain 0) | app/features/confluence_sync/tests/test_worker_sync.py | test_vd_swap_old_vectors_leave_the_live_set_and_are_deleted_at_once | database | yes |
+| `i2-rebuild` | Attachment-only edit rebuilds + re-embeds (D2, deferred to 2.4.1) | app/features/confluence_sync/tests/test_sync_rules_rebuild.py | test_in3_attachment_edit_reembeds_page | database | no (strict xfail, needs 2.4.1) |
+
+Note (honest scope): the design-page **status** flips for `i2-rebuild`/`i3-embed`/`i4-gc` are
+batched to §13 step 6 (their today-lines are updated now). The attachment row is a **strict xfail**
+by design (D2) — CI allowlists `test_in3_attachment_edit_reembeds_page` and it flips green when
+substep 2.4.1 lands. Retired with this step (reuse/rollback removed, rule 6 / D1):
+`test_pipeline_reuse.py`, `test_versioning_rollback.py`, and
+`test_ingestion_pipeline.py::test_reuse_guard_disables_on_config_change`.
+
+## §13 step 6 — rule 5 positive guard + rule 8 isolation invariant (2026-09-24)
+
+| panel | title | test file | test name | level | green |
+|---|---|---|---|---|---|
+| `ks-index` | First recognized tag on an untagged page → full build (rule 5) | app/features/confluence_sync/tests/test_sync_rules_membership.py | test_in2_first_relevant_tag_full_build | database | yes |
+| `vd-swap` | A change to one page never touches another page's rows (rule 8) | app/features/confluence_sync/tests/test_sync_rules_isolation.py | test_in2_change_never_touches_other_pages_rows | database | yes |
+
+Both are **green-today guards** (the behaviour was delivered by steps 2 and 5); each is proven real
+by reverting the one line it protects (see `test-proof.md` rule-5 and rule-8 blocks): the membership
+gate `if not scope_result.matched_labels:` for rule 5, and the `WHERE page_id == page_id` scope of
+the version delete in `purge_page` for rule 8. `ks-index` gains its positive half here — its negative
+half (untagged → never indexed, `test_in2_untagged_page_never_indexed`) landed in step 2 and is
+unchanged. With this step the eight sync rules each carry at least one green database test. Live legs
+(`verify_sync_rules.py`, MT-1..MT-7) remain owner-blocked (staging + `CONFLUENCE_WEBHOOK_SECRET` +
+Confluence site-admin).

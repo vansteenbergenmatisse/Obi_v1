@@ -42,6 +42,11 @@ def test_verify_isolation_passes_and_runs_reader_readpath_checks(
 ) -> None:
     """A loaded corpus with a healthy reader passes; every 13.2 check runs with a pass detail."""
     index_page(gateway, settings, _PAGE, 1)  # commits chunk + page_source rows via the real sync
+    # The 2.2.4 membership gate stamps a recognized tag on every indexed page, but this test
+    # exercises the script's UNTAGGED-corpus branch (the "no tagged chunks -> scope check
+    # skip-as-pass" path, still reachable for pre-2.2.4 empty-tags rows until the step-4 backfill).
+    # Force the corpus back to empty tags directly, bypassing the ingestion gate.
+    _set_chunk_tags(_PAGE, [])
 
     rc = setup_supabase.verify_isolation()
     out = capsys.readouterr().out

@@ -360,6 +360,10 @@ def test_rls_default_deny_on_reader_role(gateway, settings: Settings) -> None:
 
         def count_with_scope(scope: str) -> int:
             s.execute(text("SELECT set_config('app.allowed_sources', :v, true)"), {"v": scope})
+            # Source-axis probe: open the orthogonal knowledge-scope axis with '*' so post-2.2.4
+            # always-tagged chunks are visible once their source matches (the empty-tags floor no
+            # longer applies). The `never_set` probe above deliberately leaves BOTH GUCs unset.
+            s.execute(text("SELECT set_config('app.allowed_knowledge_scopes', '*', true)"))
             return int(s.execute(text("SELECT count(*) FROM chunk")).scalar_one())
 
         assert count_with_scope("") == 0  # explicit empty -> default-deny

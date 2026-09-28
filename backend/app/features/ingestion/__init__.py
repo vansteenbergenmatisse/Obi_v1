@@ -15,12 +15,12 @@ They import each other by full submodule path.
 
 from __future__ import annotations
 
+from .application.command_handler import apply_sync_command, target_versions
 from .application.services import build_ingestion_services
 from .application.versioning import (
     PageHashes,
     deactivate_page,
-    reusable_active_children,
-    rollback_to,
+    purge_page,
     stage_and_activate,
 )
 from .domain import normalization
@@ -39,6 +39,7 @@ __all__ = [
     "ExtractionResult",
     "PageHashes",
     "TargetVersions",
+    "apply_sync_command",
     "attachment_to_blocks",
     "build_ingestion_services",
     "classify",
@@ -48,7 +49,7 @@ __all__ = [
     "get_local_state",
     "map_page_status",
     "normalization",
-    "reusable_active_children",
-    "rollback_to",
+    "purge_page",
     "stage_and_activate",
+    "target_versions",
 ]

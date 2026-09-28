@@ -119,11 +119,10 @@ def test_platforms_real_file_loads(tmp_path):
     """panel cm-config · substep 1.2.3
     The real knowledge-base/config/platforms.json loads under the real scopes in strict mode.
 
-    Updated for gap CFG-02: this now passes offline=True. The committed file's only active
-    platform (datahub) still carries TODO placeholder issuer/jwks, which the CFG-02 trust guard
-    refuses outside offline (proven by test_platforms_active_placeholder_issuer_refused_outside_
-    offline). Loading the real file therefore only succeeds in an offline/local env until datahub
-    gets a real https issuer — which is exactly the guard doing its job, not a weakening."""
+    Passes offline=True. The committed file's active platform is now obi-test (a temporary real
+    https Supabase issuer that passes the CFG-02 trust guard); datahub is inactive and still carries
+    a TODO placeholder issuer/jwks, tolerated because it is inactive. The assertion below is about
+    the (unchanged) mews integration mapping, so it is independent of which platform is active."""
     reg = load_platform_registry(
         DEFAULT_PLATFORMS_PATH,
         load_recognized_knowledge_scopes(),
@@ -581,8 +580,10 @@ def test_platforms_allowed_integrations_defaults_empty(tmp_path):
 
 
 def test_platforms_real_file_datahub_vends_product_integrations():
-    """CIP-A1 · the committed registry's active hub (datahub) is allowed to assert every product
-    integration (OWNER TRUST DECISION — see platforms.json _readme)."""
+    """CIP-A1 · the committed registry's hub entry (datahub, currently inactive) is configured to
+    assert every product integration (OWNER TRUST DECISION — see platforms.json _readme). Read via
+    by_issuer, which returns inactive entries too, so the vend set stays pinned for when datahub
+    goes live and obi-test is removed."""
     reg = load_platform_registry(
         DEFAULT_PLATFORMS_PATH,
         load_recognized_knowledge_scopes(),

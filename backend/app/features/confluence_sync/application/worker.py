@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 from app.features.confluence_sync.application.event_service import (
     JOB_DELETE_PAGE,
     JOB_RECONCILE_SPACE,
+    JOB_REINDEX,
     JOB_SYNC_PAGE,
 )
 from app.features.confluence_sync.application.sync_service import (
@@ -54,15 +55,17 @@ class RunResult:
 
 
 def _handle_sync_page(session, job, gateway, settings) -> SyncOutcome:
-    tags = (job.payload or {}).get("tags") or []
+    reason = (job.payload or {}).get("reason") or "edited"
     return handle_sync_page(
-        session, page_id=job.page_id, gateway=gateway, settings=settings, tags=tags
+        session, page_id=job.page_id, gateway=gateway, settings=settings, reason=reason
     )
 
 
 def _handle_delete_page(session, job, gateway, settings) -> SyncOutcome:
-    status = (job.payload or {}).get("status", "trashed")
-    return handle_delete_page(session, page_id=job.page_id, status=status)
+    reason = (job.payload or {}).get("reason") or "page_gone"
+    return handle_delete_page(
+        session, page_id=job.page_id, gateway=gateway, settings=settings, reason=reason
+    )
 
 
 def _handle_reconcile_space(session, job, gateway, settings):
@@ -75,10 +78,18 @@ def _handle_reconcile_space(session, job, gateway, settings):
     return reconcile_space(session, space_id=int(space_id), gateway=gateway, settings=settings)
 
 
+def _handle_reindex(session, job, gateway, settings):
+    # lazy import avoids a module import cycle (reindex enqueues jobs via the job consts)
+    from app.features.confluence_sync.application.reindex import run_reindex
+
+    return run_reindex(session, settings=settings)
+
+
 HANDLERS: dict[str, JobHandler] = {
     JOB_SYNC_PAGE: _handle_sync_page,
     JOB_DELETE_PAGE: _handle_delete_page,
     JOB_RECONCILE_SPACE: _handle_reconcile_space,
+    JOB_REINDEX: _handle_reindex,
 }
 
 

@@ -19,13 +19,11 @@ pytestmark = (
 )  # substep 0.5.2: real local Postgres via this dir's session-scoped conftest
 
 
-def test_i4_swap_old_version_superseded_and_its_chunks_inactive(
-    gateway, settings: Settings
-) -> None:
-    """panel i4-swap · substep 0.5.2
-    Old version: the swap flips the previously active DocumentVersion row to state=superseded
-    (with superseded_at stamped) and flips every one of its chunks to is_active=false — the
-    now-stale build is fully retired, not merely unlinked."""
+def test_i4_swap_old_version_and_its_chunks_removed(gateway, settings: Settings) -> None:
+    """panel i4-swap · substep 2.3.1 (D1)
+    Old version: the swap retires the previously active build entirely — retain 0 deletes its
+    DocumentVersion row and cascades away every one of its chunks in the same transaction (no
+    rollback window), so nothing stale survives once the rebuild lands."""
     index_page(gateway, settings, 1001, version=1)
     v1 = active_version(1001)
     assert v1 is not None
@@ -34,14 +32,9 @@ def test_i4_swap_old_version_superseded_and_its_chunks_inactive(
     index_page(gateway, settings, 1001, version=3)  # v3 adds a Troubleshooting section
 
     with read() as s:
-        old = s.get(DocumentVersion, v1.id)
-        assert old is not None
-        assert old.state == DocState.superseded
-        assert old.superseded_at is not None
-
+        assert s.get(DocumentVersion, v1.id) is None  # the old version row is gone, not retained
         old_chunks = s.execute(select(Chunk).where(Chunk.doc_version_id == v1.id)).scalars().all()
-    assert old_chunks  # the old version's chunk rows still exist, just retired
-    assert all(c.is_active is False for c in old_chunks)
+    assert old_chunks == []  # its chunk rows cascaded away with it
 
 
 def test_i4_swap_new_version_active_and_its_chunks_active(gateway, settings: Settings) -> None:
@@ -71,10 +64,11 @@ def test_i4_swap_pointer_moves_identity_hashes_stamps_and_tags_to_the_new_versio
     field the design panel names moves with it in the same swap — title, url, hashes, the
     pipeline stamps, tags and current_cf_version — not left stale from the superseded build."""
     gateway.set_version(1001, 1)
+    gateway.set_labels(1001, ["obi-general-test"])  # recognized scope on v1; post-split the
+    # stamped scopes are authoritative (recognized_labels ∩ authorized), so with no source_scope
+    # row the label itself is the scope.
     with session_scope() as s:
-        outcome_v1 = handle_sync_page(
-            s, page_id=1001, gateway=gateway, settings=settings, tags=["base"]
-        )
+        outcome_v1 = handle_sync_page(s, page_id=1001, gateway=gateway, settings=settings)
     assert outcome_v1.action == "indexed"
     v1 = active_version(1001)
     assert v1 is not None
@@ -84,17 +78,18 @@ def test_i4_swap_pointer_moves_identity_hashes_stamps_and_tags_to_the_new_versio
         assert ps_before is not None
         assert ps_before.active_doc_version_id == v1.id
         assert ps_before.current_cf_version == 1
-        assert set(ps_before.tags) == {"base"}
+        assert set(ps_before.tags) == {"obi-general-test"}
         content_hash_before = ps_before.content_hash
         title_before, url_before = ps_before.title, ps_before.source_url
         last_indexed_before = ps_before.last_indexed_at
         assert last_indexed_before is not None
 
     gateway.set_version(1001, 3)  # v3 adds a Troubleshooting section: a different body hash
+    gateway.set_labels(1001, ["obi-toast-test"])  # a DIFFERENT recognized scope on this build
+    # proves the new version's tags are exactly this build's authoritative scopes, not a stale
+    # union carried over from the v1 swap ("obi-general-test" is gone, "obi-toast-test" is present)
     with session_scope() as s:
-        outcome_v3 = handle_sync_page(
-            s, page_id=1001, gateway=gateway, settings=settings, tags=["base", "obi-general-test"]
-        )
+        outcome_v3 = handle_sync_page(s, page_id=1001, gateway=gateway, settings=settings)
     assert outcome_v3.action == "indexed"
     v3 = active_version(1001)
     assert v3 is not None
@@ -125,8 +120,9 @@ def test_i4_swap_pointer_moves_identity_hashes_stamps_and_tags_to_the_new_versio
         assert ps_after.last_indexed_at is not None
         assert ps_after.last_indexed_at >= last_indexed_before
 
-        # tags: exactly what this build passed, not a stale union from the previous swap
-        assert set(ps_after.tags) == {"base", "obi-general-test"}
+        # tags: exactly this build's authoritative scopes, not a stale union from the previous
+        # swap ("obi-general-test" is gone, "obi-toast-test" is present)
+        assert set(ps_after.tags) == {"obi-toast-test"}
 
         # current_cf_version: the new Confluence revision number, not the old one
         assert ps_after.current_cf_version == 3

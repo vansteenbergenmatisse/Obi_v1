@@ -23,8 +23,10 @@ from app.features.confluence_sync import (
     drain,
     reap,
     run_reconciliation,
+    set_ingestion_sink,
 )
 from app.features.confluence_sync import router as confluence_router
+from app.features.ingestion import apply_sync_command
 from app.features.rag_agent import (
     AnswerService,
     AnthropicAmbiguityClassifier,
@@ -181,6 +183,10 @@ def _build_scheduler(gateway: ConfluenceGateway, settings: Settings) -> Backgrou
 def create_app(*, settings: Settings | None = None, start_scheduler: bool | None = None) -> FastAPI:
     settings = settings or get_settings()
     configure_logging(settings.log_level, settings.env)
+    # Dependency inversion (D6): bind the ingestion layer as the trigger worker's sink. The
+    # trigger layer never imports ingestion; it calls this concrete function through the
+    # IngestionSink port. Bound before any job can drain.
+    set_ingestion_sink(apply_sync_command)
     gateway = build_gateway(settings)
     should_start = settings.enable_background_jobs if start_scheduler is None else start_scheduler
 

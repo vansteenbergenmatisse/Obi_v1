@@ -20,10 +20,16 @@ from .application.knowledge_scope_backfill import (
     KnowledgeScopeCoverage,
     verify_knowledge_scope_coverage,
 )
+from .application.ports import IngestionSink, set_ingestion_sink
 from .application.reconciliation import (
     KIND_COMPLETE,
     KIND_LIGHTWEIGHT,
     run_reconciliation,
+)
+from .application.reindex import (
+    KIND_REINDEX,
+    enqueue_reindex_job,
+    run_reindex,
 )
 from .application.worker import drain, reap
 from .domain.knowledge_scope import KnowledgeScopeResult, resolve_knowledge_scope_tags
@@ -40,14 +46,17 @@ from .server import router
 __all__ = [
     "EventEnvelope",
     "IngestResult",
+    "IngestionSink",
     "KIND_COMPLETE",
     "KIND_LIGHTWEIGHT",
+    "KIND_REINDEX",
     "KnowledgeScopeCoverage",
     "KnowledgeScopeResult",
     "ROOT_TYPE_PAGE",
     "ROOT_TYPE_SPACE",
     "ScopeResolution",
     "drain",
+    "enqueue_reindex_job",
     "ingest_event",
     "reap",
     "resolve_knowledge_scope_tags",
@@ -55,5 +64,7 @@ __all__ = [
     "resolve_space_scope",
     "router",
     "run_reconciliation",
+    "run_reindex",
+    "set_ingestion_sink",
     "verify_knowledge_scope_coverage",
 ]

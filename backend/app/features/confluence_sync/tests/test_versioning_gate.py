@@ -38,6 +38,8 @@ def test_i4_gate_zero_children_marks_version_failed(gateway, settings: Settings)
     sync job is marked failed with the gate's reason in job.last_error, and no DocumentVersion row
     for the page survives — the staged version and its (zero) chunks roll back together with it."""
     gateway.set_version(3010, 1)  # page-3010-empty.json: storage body is ""
+    gateway.set_labels(3010, ["obi-general-test"])  # recognized label so it passes the membership
+    # gate (2.2.4) and actually reaches the zero-children build gate under test
     with session_scope() as s:
         enqueue_job(
             s,

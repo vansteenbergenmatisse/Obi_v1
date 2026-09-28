@@ -137,6 +137,32 @@ def _valid_prod_platforms_json(tmp_path: Path) -> str:
     return str(p)
 
 
+def _placeholder_active_platforms_json(tmp_path: Path) -> str:
+    """A registry whose only ACTIVE platform carries a TODO placeholder issuer — it trips the CFG-02
+    trust guard outside an offline env. Lets the guard tests prove fail-closed behaviour WITHOUT
+    coupling to the committed platforms.json, which now ships a real active platform (obi-test, the
+    temporary Supabase issuer) and therefore loads cleanly in production."""
+    p = tmp_path / "platforms.json"
+    p.write_text(
+        json.dumps(
+            {
+                "platforms": {
+                    "placeholder": {
+                        "issuer": "TODO until 4.x",
+                        "jwks_url": "TODO until 4.x",
+                        "domains": [],
+                        "lifetime_minutes": 60,
+                        "algs": ["RS256"],
+                        "active": True,
+                    }
+                },
+                "integrations": {},
+            }
+        )
+    )
+    return str(p)
+
+
 @pytest.fixture
 def _clean_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Strip the env vars the test-suite conftest pins (ENV=test, ALLOW_EMPTY_PLATFORMS=true,
@@ -157,13 +183,17 @@ def test_env_default_is_empty_string_so_unset_is_not_offline() -> None:
     assert Settings.model_fields["env"].default == ""
 
 
-def test_unset_env_fires_the_trust_guard_fail_closed(_clean_env: None) -> None:
-    """gap CFG-A · with NO ENV set, constructing Settings against the committed platforms.json
-    (whose only active platform, datahub, still carries a TODO placeholder issuer) RAISES — the
-    fail-closed path. Before the fix the "local" default made this silently pass with the guard
-    off."""
+def test_unset_env_fires_the_trust_guard_fail_closed(_clean_env: None, tmp_path: Path) -> None:
+    """gap CFG-A · with NO ENV set, the deployment is treated as production, so the trust guard
+    fires: constructing Settings against a registry whose only active platform carries a TODO
+    placeholder issuer RAISES — the fail-closed path. Before the fix the "local" default made this
+    silently pass with the guard off.
+
+    Uses a purpose-built placeholder registry rather than the committed platforms.json: the
+    committed file now has a real active platform (obi-test, a Supabase issuer) so it loads cleanly
+    in production — the guard is proven here with a registry that still trips it."""
     with pytest.raises(ValidationError):
-        Settings()
+        Settings(platforms_path=_placeholder_active_platforms_json(tmp_path))
 
 
 def test_unset_env_is_not_offline(_clean_env: None, tmp_path: Path) -> None:
@@ -197,13 +227,19 @@ def test_explicit_offline_env_relaxes_the_registry(_clean_env: None) -> None:
 
 
 def test_allow_empty_platforms_does_not_relax_trust_guard_outside_offline(
-    _clean_env: None,
+    _clean_env: None, tmp_path: Path
 ) -> None:
     """gap CFG-C · the test-only escape hatch must NOT disable the trust guard in production.
-    A non-offline Settings with allow_empty_platforms=True still RAISES against the committed
-    placeholder registry — allow_empty may only relax things inside an offline env."""
+    A non-offline Settings with allow_empty_platforms=True still RAISES against a placeholder-issuer
+    active registry — allow_empty may only relax things inside an offline env. Uses a purpose-built
+    placeholder registry (the committed platforms.json now ships a real active platform,
+    obi-test)."""
     with pytest.raises(ValidationError):
-        Settings(env="production", allow_empty_platforms=True)
+        Settings(
+            env="production",
+            allow_empty_platforms=True,
+            platforms_path=_placeholder_active_platforms_json(tmp_path),
+        )
 
 
 def test_allow_empty_platforms_does_not_permit_zero_active_outside_offline(

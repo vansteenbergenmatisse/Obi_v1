@@ -43,7 +43,7 @@ def _deactivate_scope_root(root_id: int) -> None:
         row.is_active = False
 
 
-def test_complete_reconcile_deactivates_orphan_and_enqueues_new(gateway, settings):
+def test_complete_reconcile_purges_orphan_and_enqueues_new(gateway, settings):
     index_page(gateway, settings, 1001, version=3)  # now tracked in space 100
     assert active_child_chunks(1001)
 
@@ -56,8 +56,12 @@ def test_complete_reconcile_deactivates_orphan_and_enqueues_new(gateway, setting
         orphans_deleted = run.orphans_deleted
         jobs_enqueued = run.jobs_enqueued
 
-    assert orphans_deleted == 1  # 1001 deactivated
-    assert jobs_enqueued >= 1  # 1002 (live, unindexed) enqueued for sync
+    # Post-split the sweep is pure trigger: it ENQUEUES the orphan for re-check (counted here) and
+    # the worker performs the hard purge. orphans_deleted counts orphans queued for purge.
+    assert orphans_deleted == 1  # 1001 queued for purge
+    assert jobs_enqueued >= 1  # 1002 (live, unindexed) enqueued for sync too
+
+    run_worker(gateway, settings)  # drain: worker confirms 1001 is gone and purges it
     assert active_child_chunks(1001) == []
 
 
@@ -83,8 +87,11 @@ def test_page_root_scopes_reconciliation_to_its_subtree_and_tags_it(gateway, set
     and — since nothing was ever indexed for space 100 before this — proves a brand-new space
     gets its first sweep from scope-implied discovery alone (no explicit space_ids, no prior
     page_source rows)."""
-    _add_scope_root("page", "1002", tags=["eng"])  # 1002's only live child is itself (no
-    # current descendants in the fixture); 1001 is its parent, in the same space, out of scope.
+    _add_scope_root("page", "1002", tags=["obi-toast-test"])  # 1002's only live child is itself
+    # (no current descendants in the fixture); 1001 is its parent, in the same space, out of scope.
+    gateway.set_labels(1002, ["obi-toast-test"])  # membership label (2.2.4): the page must carry a
+    # recognized label to be indexed; post-split source_scope.tags are the recognized-scope
+    # allow-list, so the stamped scope is the intersection (recognized_labels ∩ authorized).
 
     with session_scope() as s:
         run = run_reconciliation(s, gateway=gateway, settings=settings, kind=KIND_COMPLETE)
@@ -99,17 +106,22 @@ def test_page_root_scopes_reconciliation_to_its_subtree_and_tags_it(gateway, set
     assert active_child_chunks(1001) == []
     chunks = active_child_chunks(1002)
     assert chunks
-    assert all(c.tags == ["eng"] for c in chunks)
+    assert all(c.tags == ["obi-toast-test"] for c in chunks)
     with session_scope() as s:
         ps = s.get(PageSource, 1002)
         assert ps is not None
-        assert ps.tags == ["eng"]
+        assert ps.tags == ["obi-toast-test"]
 
 
 def test_deactivating_root_purges_previously_synced_now_uncovered_pages(gateway, settings):
-    """PLAN 3.5.6: removing coverage purges via the same deactivate_page path as an
-    upstream deletion — regardless of whether the page still exists on Confluence."""
-    root_id = _add_scope_root("page", "1001", tags=["eng"])  # covers {1001, 1002}
+    """PLAN 3.5.6: removing coverage purges the previously-synced pages — regardless of whether
+    they still exist on Confluence. Post-split the sweep enqueues; the worker decides (a scoped
+    space with no active root authorizes nothing) and hard-purges."""
+    root_id = _add_scope_root("page", "1001", tags=["obi-general-test"])  # covers {1001, 1002}
+    # Both covered pages carry a recognized label so the membership gate (2.2.4) admits them; the
+    # root's tags are the recognized-scope allow-list they intersect with.
+    gateway.set_labels(1001, ["obi-general-test"])
+    gateway.set_labels(1002, ["obi-general-test"])
 
     with session_scope() as s:
         run_reconciliation(s, gateway=gateway, settings=settings, kind=KIND_COMPLETE)
@@ -122,8 +134,11 @@ def test_deactivating_root_purges_previously_synced_now_uncovered_pages(gateway,
         run = run_reconciliation(
             s, gateway=gateway, settings=settings, kind=KIND_COMPLETE, space_ids=[100]
         )
-        assert run.orphans_deleted == 2  # both 1001 and 1002 purged; root covers nothing now
+        # both pages re-enqueued (still labelled → CQL-discovered); the worker purges them because
+        # the space is now scoped with no active root covering anything.
+        assert run.jobs_enqueued >= 2
 
+    run_worker(gateway, settings)
     assert active_child_chunks(1001) == []
     assert active_child_chunks(1002) == []
 

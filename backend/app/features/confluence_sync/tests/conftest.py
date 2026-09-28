@@ -18,6 +18,19 @@ from app.platform.config import Settings, get_settings
 
 
 @pytest.fixture(autouse=True)
+def _bind_ingestion_sink() -> None:
+    """Wire the ingestion layer as the trigger worker's sink (what app/main.py does at startup).
+
+    Tests are exempt from the forbidden ``confluence_sync -> ingestion`` edge, so they may import
+    ``apply_sync_command`` directly to drive both layers end to end.
+    """
+    from app.features.confluence_sync.application.ports import set_ingestion_sink
+    from app.features.ingestion import apply_sync_command
+
+    set_ingestion_sink(apply_sync_command)
+
+
+@pytest.fixture(autouse=True)
 def _db_isolation(request: pytest.FixtureRequest) -> Iterator[None]:
     """Truncate every table before each ``db``-marked test; a no-op for DB-free tests."""
     if request.node.get_closest_marker("db") is None:

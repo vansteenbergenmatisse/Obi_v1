@@ -152,12 +152,16 @@ def test_apply_reader_rls_leaves_chunk_source_isolation_intact(gateway, settings
             schema.apply_reader_rls(conn)
             conn.commit()
 
+        # Source-axis assertion only: opt out of the knowledge-scope axis with '*' so the
+        # now-always-tagged chunks (2.2.4 membership gate) are judged on source alone.
         reader = engine_mod.get_reader_sessionmaker()
         with reader() as s:
             s.execute(text("SET LOCAL app.allowed_sources = 'confluence:other'"))
+            s.execute(text("SET LOCAL app.allowed_knowledge_scopes = '*'"))
             mismatched = s.execute(text("SELECT count(*) FROM chunk")).scalar_one()
         with reader() as s:
             s.execute(text("SET LOCAL app.allowed_sources = 'confluence:default'"))
+            s.execute(text("SET LOCAL app.allowed_knowledge_scopes = '*'"))
             matched = s.execute(text("SELECT count(*) FROM chunk")).scalar_one()
 
         assert mismatched == 0, "reconcile weakened chunk source isolation -> cross-source leak"

@@ -1,13 +1,14 @@
-"""Immutable versioning with atomic activation and rollback.
+"""Immutable versioning with atomic activation.
 
 A page's indexed content is built into a *staging* ``document_version`` (with its chunks
 ``is_active=False``), validated, then activated in the caller's single transaction via a pointer
-swap. Obsolete chunks are deleted only after activation; N superseded versions are retained for
-instant rollback (ADR-0002).
+swap. The just-superseded version and its chunks are deleted in that same transaction — nothing is
+retained (sync rule 6 / D1: retain 0, no rollback window).
 
 Phase 3 builds real token-aware parent/child chunks with contextual ``retrieval_content`` and
-embeddings, reusing embeddings for unchanged chunks (incremental diff) and populating the dense
-(``embedding``) and keyword (``tsv``) columns the retrieval layer searches.
+embeddings; every child is contextualised and embedded afresh on every rebuild (sync rule 6 — no
+vector is reused from an old version), populating the dense (``embedding``) and keyword (``tsv``)
+columns the retrieval layer searches.
 """
 
 from __future__ import annotations
@@ -15,21 +16,30 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import func, literal_column, select, update
+from sqlalchemy import delete, func, literal_column, select, update
 from sqlalchemy.orm import Session
 
 from app.features.ingestion.application.contextualizer import ContextItem
 from app.features.ingestion.application.services import IngestionServices
 from app.features.ingestion.domain import normalization as norm
 from app.features.ingestion.domain.change_detection import TargetVersions
-from app.features.ingestion.domain.chunk_diff import diff_chunks
 from app.features.ingestion.domain.chunking import PlannedChunk, plan_chunks
 from app.features.ingestion.infrastructure.page_source_repo import ensure_document
 from app.platform.clients import ConfluencePageMeta
 from schema.enums import DocState, PageStatus
-from schema.models import KIND_CHILD, KIND_PARENT, Chunk, DocumentVersion, PageSource
+from schema.models import (
+    KIND_CHILD,
+    KIND_PARENT,
+    Chunk,
+    Document,
+    DocumentVersion,
+    PageSource,
+)
 
-DEFAULT_RETAIN_SUPERSEDED = 2
+# Sync rule 6 / D1: retain 0 superseded versions — the just-superseded version and its chunks are
+# deleted in the same transaction as the swap. No rollback window (rollback is retired); recovery is
+# a fresh re-index from Confluence, the source of truth.
+DEFAULT_RETAIN_SUPERSEDED = 0
 
 # Source-tag activation seam (ADR-0004). Confluence is the only source today, so these are
 # constants; a second source turns them into a parameter threaded from the sync caller.
@@ -65,19 +75,18 @@ def build_chunks(
     access_scope_hash: bytes,
     target: TargetVersions,
     services: IngestionServices,
-    old_children: list[Chunk],
     tags: list[str] | None = None,
 ) -> list[Chunk]:
     """Token-aware parent/child chunks with contextual retrieval_content, embeddings and tsv.
 
-    Children whose content is unchanged (diff vs ``old_children``) reuse their prior embedding and
-    retrieval_content; only new/edited children are contextualized and embedded.
+    Every child is contextualized and embedded afresh (sync rule 6 — no vector is reused from an
+    old version).
     """
     plan = plan_chunks(
         page_id=meta.page_id, blocks=blocks, config=services.config, counter=services.counter
     )
     child_plans: list[PlannedChunk] = [c for pp in plan for c in pp.children]
-    retrieval, embeddings = _resolve_children(meta, blocks, child_plans, old_children, services)
+    retrieval, embeddings = _resolve_children(meta, blocks, child_plans, services)
 
     common = dict(
         doc_version_id=doc_version_id,
@@ -150,37 +159,23 @@ def _resolve_children(
     meta: ConfluencePageMeta,
     blocks: list[norm.Block],
     child_plans: list[PlannedChunk],
-    old_children: list[Chunk],
     services: IngestionServices,
 ) -> tuple[list[str], list[list[float] | None]]:
-    """Reuse embeddings for unchanged children; contextualize + embed only new/edited ones."""
-    n = len(child_plans)
-    retrieval: list[str] = [""] * n
-    embeddings: list[list[float] | None] = [None] * n
-
-    # Chunk exposes the key attrs as SQLAlchemy Mapped[bytes]; structurally a HasKeys at runtime.
-    diff = diff_chunks(old_children, child_plans)  # pyright: ignore[reportArgumentType]
-    for match in diff.reuse:
-        old = old_children[match.old_index]
-        retrieval[match.new_index] = old.retrieval_content
-        embeddings[match.new_index] = old.embedding
-
-    reembed = diff.reembed_indexes
-    if reembed:
-        items = [
-            ContextItem(
-                title=meta.title,
-                heading_path=child_plans[i].heading_path,
-                text=child_plans[i].text,
-            )
-            for i in reembed
-        ]
-        doc_text = "\n".join(b.text for b in blocks if b.text)
-        rcontents = services.contextualizer.contextualize(document_text=doc_text, items=items)
-        vectors = services.embedder.embed(rcontents)
-        for j, i in enumerate(reembed):
-            retrieval[i] = rcontents[j]
-            embeddings[i] = vectors[j]
+    """Contextualize and embed every child afresh (sync rule 6 — no vector reused from an old
+    version; a rebuild embeds the whole page, so no stale title can hide in a reused vector)."""
+    if not child_plans:
+        return [], []
+    items = [
+        ContextItem(
+            title=meta.title,
+            heading_path=c.heading_path,
+            text=c.text,
+        )
+        for c in child_plans
+    ]
+    doc_text = "\n".join(b.text for b in blocks if b.text)
+    retrieval = services.contextualizer.contextualize(document_text=doc_text, items=items)
+    embeddings: list[list[float] | None] = list(services.embedder.embed(retrieval))
     return retrieval, embeddings
 
 
@@ -198,11 +193,6 @@ def stage_and_activate(
 ) -> DocumentVersion:
     """Stage a new version, validate, and atomically activate it. Single transaction."""
     doc = ensure_document(session, meta.page_id)
-    # Reuse prior embeddings only when the embedding pipeline is unchanged; a model/dim/schema
-    # change routes through the full re-embed release gate (all children rebuilt under the new
-    # config, then swapped atomically — the prior version stays retained for rollback).
-    old_children = reusable_active_children(session, meta.page_id, target=target, services=services)
-
     new_version = DocumentVersion(
         document_id=doc.id,
         page_id=meta.page_id,
@@ -228,7 +218,6 @@ def stage_and_activate(
         access_scope_hash=hashes.access_scope_hash,
         target=target,
         services=services,
-        old_children=old_children,
         tags=tags,
     )
     # link parent<-child and prev/next among children in reading order
@@ -253,42 +242,6 @@ def stage_and_activate(
     )
     _gc_superseded(session, document_id=doc.id, retain=retain_superseded)
     return new_version
-
-
-def reusable_active_children(
-    session: Session, page_id: int, *, target: TargetVersions, services: IngestionServices
-) -> list[Chunk]:
-    """Active child chunks eligible for embedding reuse — empty when the pipeline config changed.
-
-    An embedding-model, embedding-dim, contextualization-version or retrieval-schema change makes
-    prior vectors incomparable (or the wrong width), so reuse is disabled and every child is
-    re-embedded under the new configuration (the full re-embed release gate).
-    """
-    ps = session.get(PageSource, page_id)
-    if ps is None or ps.active_doc_version_id is None:
-        return []
-    active = session.get(DocumentVersion, ps.active_doc_version_id)
-    if active is None or not _pipeline_config_matches(active, target, services):
-        return []
-    return list(
-        session.execute(
-            select(Chunk).where(
-                Chunk.doc_version_id == ps.active_doc_version_id,
-                Chunk.kind == KIND_CHILD,
-            )
-        ).scalars()
-    )
-
-
-def _pipeline_config_matches(
-    active: DocumentVersion, target: TargetVersions, services: IngestionServices
-) -> bool:
-    return (
-        active.embedding_model == services.embedding_model
-        and active.embedding_dim == services.embedding_dim
-        and active.contextualization_version == target.contextualization_version
-        and active.retrieval_schema_version == target.retrieval_schema_version
-    )
 
 
 def _link_chunks(session: Session, chunks: list[Chunk]) -> None:
@@ -416,45 +369,27 @@ def deactivate_page(session: Session, *, page_id: int, status: PageStatus) -> bo
     return True
 
 
-def rollback_to(session: Session, *, page_id: int, target_version_id: int) -> bool:
-    """Roll back to a retained superseded version (atomic pointer swap)."""
+def purge_page(session: Session, *, page_id: int) -> bool:
+    """Remove a page from the store entirely (sync rules 1/2/7): every version, its document,
+    every chunk, the page_source and its restriction rows. Unlike ``deactivate_page`` (which only
+    flips ``is_active``), nothing survives on disk — so a database dump or a bug that ignores
+    ``is_active`` cannot leak the content. A later restore/re-tag re-indexes from Confluence as a
+    first index (``get_local_state`` returns ``None``), the source of truth.
+
+    Ordered inside the caller's single transaction to respect the RESTRICT foreign keys
+    (``document.page_id`` and ``document_version.document_id`` carry no cascade): release the
+    deferred active-version pointer, delete the versions (chunks cascade), delete the document,
+    then delete the page_source (page_restriction cascades). Returns whether a page row existed.
+    """
     ps = session.get(PageSource, page_id)
-    target = session.get(DocumentVersion, target_version_id)
-    if ps is None or target is None or target.page_id != page_id:
+    if ps is None:
         return False
-    now = _now()
-    current_id = ps.active_doc_version_id
-    if current_id is not None and current_id != target_version_id:
-        session.execute(
-            update(DocumentVersion)
-            .where(DocumentVersion.id == current_id)
-            .values(state=DocState.superseded, superseded_at=now)
-        )
-        session.execute(
-            update(Chunk).where(Chunk.doc_version_id == current_id).values(is_active=False)
-        )
-    target.state = DocState.active
-    target.activated_at = now
-    target.superseded_at = None
-    session.execute(
-        update(Chunk).where(Chunk.doc_version_id == target_version_id).values(is_active=True)
-    )
-    ps.active_doc_version_id = target_version_id
-    ps.current_cf_version = target.cf_version
-    # restore the change-detection hashes and pipeline stamps the target version actually carries —
-    # otherwise the next sync's freshly computed values wrongly agree with the stale (pre-rollback)
-    # cached ones and classify() reports no_change, silently pinning the corpus to a stale version.
-    # Fields with no DocumentVersion counterpart (title, labels_hash, access_scope_hash,
-    # attachment_manifest_hash, etc.) are left as-is — they self-heal on the next reconciliation
-    # sweep, which re-fetches metadata regardless of this rollback.
-    ps.content_hash = target.content_hash
-    ps.structure_hash = target.structure_hash
-    ps.parser_version = target.parser_version
-    ps.chunker_version = target.chunker_version
-    ps.contextualization_version = target.contextualization_version
-    ps.embedding_model = target.embedding_model
-    ps.embedding_dim = target.embedding_dim
-    ps.retrieval_schema_version = target.retrieval_schema_version
-    ps.updated_at = now
+    # Release the deferred FK pointer first so the version rows it references can be deleted.
+    ps.active_doc_version_id = None
+    session.flush()
+    # Chunks cascade from document_version; page_restriction cascades from page_source.
+    session.execute(delete(DocumentVersion).where(DocumentVersion.page_id == page_id))
+    session.execute(delete(Document).where(Document.page_id == page_id))
+    session.execute(delete(PageSource).where(PageSource.page_id == page_id))
     session.flush()
     return True

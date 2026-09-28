@@ -109,12 +109,17 @@ def test_non_owner_reader_still_isolated(gateway, settings: Settings) -> None:
     """Dropping FORCE must not open the non-owner reader: it stays bound by app.allowed_sources."""
     index_page(gateway, settings, _PAGE, 3)  # chunks land under source_id 'confluence:default'
 
+    # This test asserts the SOURCE axis only; opt out of the orthogonal knowledge-scope axis with
+    # the '*' wildcard so the (now always-tagged, post-2.2.4 membership gate) chunks are judged on
+    # source alone — an empty-tags floor no longer makes indexed chunks scope-visible.
     reader = engine_mod.get_reader_sessionmaker()
     with reader() as s:
         s.execute(text("SET LOCAL app.allowed_sources = 'confluence:other'"))
+        s.execute(text("SET LOCAL app.allowed_knowledge_scopes = '*'"))
         mismatched = s.execute(text("SELECT count(*) FROM chunk")).scalar_one()
     with reader() as s:
         s.execute(text("SET LOCAL app.allowed_sources = 'confluence:default'"))
+        s.execute(text("SET LOCAL app.allowed_knowledge_scopes = '*'"))
         matched = s.execute(text("SELECT count(*) FROM chunk")).scalar_one()
 
     assert mismatched == 0, "reader saw rows for a source it was not scoped to -> isolation leak"

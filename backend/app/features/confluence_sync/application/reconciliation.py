@@ -1,17 +1,27 @@
 """Reconciliation: the safety net that repairs drift missed by the webhook stream.
 
-Two sweeps, both idempotent and both driven through the same queue the webhook uses, so a
-reconciled page follows the identical version-guarded path as a live event (never a blind
-re-embed):
+The sweep is pure *trigger*: it discovers candidate pages and enqueues minimal
+``(page_id, reason)`` sync jobs — it never chunks, embeds, deactivates, or otherwise touches
+ingestion. Every enqueued job flows through the same worker as a webhook event, so the worker's
+``decide_command`` (on the page's current state) is the single authority on upsert-vs-delete;
+the sweep only decides *which pages to look at*.
 
-* **lightweight** (scheduled daily): cheap signals only. For each live source page, enqueue a
-  ``sync_page`` when version / status / parent / title drift from the registry. Registry pages
-  that have vanished from the source listing are enqueued for re-check (the handler deactivates
-  them if truly gone).
-* **complete** (scheduled every ``complete_recon_interval_days``): full re-verification.
-  Enqueue a ``sync_page`` for *every* live source page so the handler re-checks
-  labels / permissions / attachments even when the version did not move, and orphaned registry
-  pages are deactivated directly.
+Candidates for a space are the union of:
+
+* pages covered by the space's ``source_scope`` roots (``resolve_space_scope``), and
+* pages carrying a recognized label found by CQL label discovery
+  (``gateway.list_pages_by_label``) — the safety net that surfaces a freshly-tagged page even
+  when no root covers it (the original "Mews Page 2 was never ingested" bug).
+
+Two cadences:
+
+* **lightweight** (scheduled daily): enqueue a candidate only on a cheap drift signal
+  (version / status / parent / title) or when it is newly discovered.
+* **complete** (scheduled every ``complete_recon_interval_days``): enqueue *every* candidate so
+  the worker re-checks labels / permissions / attachments even when the version did not move.
+
+Registry pages that are no longer candidates (vanished upstream, or no longer covered by any
+active root) are enqueued for re-check; the worker confirms and hard-purges them.
 
 Every sweep is recorded as a :class:`ReconciliationRun` row with counts and a per-bucket report.
 """
@@ -25,11 +35,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.features.confluence_sync.application.event_service import JOB_SYNC_PAGE
-from app.features.confluence_sync.domain.scope_resolver import (
-    ROOT_TYPE_SPACE,
-    resolve_space_scope,
+from app.features.confluence_sync.application.scope_state import (
+    all_scope_roots,
+    map_page_status,
+    root_space_ids,
+    roots_for_space,
 )
-from app.features.ingestion import deactivate_page, map_page_status
+from app.features.confluence_sync.domain.scope_resolver import resolve_space_scope
 from app.platform.clients import ConfluenceGateway, ConfluencePageMeta
 from app.platform.config import Settings
 from app.platform.jobs import enqueue_job
@@ -78,68 +90,24 @@ def _enqueue_sync(
     settings: Settings,
     *,
     key_suffix: str,
-    tags: tuple[str, ...] | list[str] = (),
+    reason: str,
 ) -> bool:
-    """Idempotently enqueue a sync_page job. Returns True if a new job was created.
+    """Idempotently enqueue a minimal ``(page_id, reason)`` sync job. Returns True if newly created.
 
-    ``tags`` (from the covering ``source_scope`` root, if any) ride in the job payload so the
-    worker can stamp them on ``page_source``/``chunk`` at activation — see
-    ``sync_service.handle_sync_page``.
+    No tags ride along: the worker re-derives the authoritative scopes from the page's current
+    state (``decide_command``), so the sweep carries only the page id and a ``reason`` trace hint.
     """
     schema = settings.retrieval_schema_version
     key = f"{JOB_SYNC_PAGE}:recon:{meta.page_id}:{key_suffix}:{schema}"
-    payload: dict = {"event_type": "reconcile"}
-    if tags:
-        payload["tags"] = list(tags)
     job_id = enqueue_job(
         session,
         job_type=JOB_SYNC_PAGE,
         idempotency_key=key,
-        payload=payload,
+        payload={"event_type": "reconcile", "reason": reason},
         page_id=meta.page_id,
         cf_version=meta.version_number,
     )
     return job_id is not None
-
-
-def _all_scope_roots(session: Session) -> list[SourceScope]:
-    """Every ``source_scope`` row, active or not.
-
-    Inactive rows still matter to ``resolve_space_scope``: their *presence* is what tells a
-    space it has been deliberately scoped, so deactivating the last active root purges the
-    space instead of silently reverting to unrestricted (see that function's docstring).
-    """
-    return list(session.execute(select(SourceScope)).scalars().all())
-
-
-def _root_space_ids(gateway: ConfluenceGateway, roots: list[SourceScope]) -> dict[int, int]:
-    """Map each root's id (active or not) -> the space it belongs to.
-
-    ``space`` roots carry their space id directly; a ``page`` root needs one
-    ``get_page_meta`` lookup to discover its space (its root page may not even be in scope of
-    any space we already know about — this is exactly how a brand-new space gets its first
-    sweep, fixing the old ``CONFLUENCE_SPACES`` dead-code gap where nothing could seed a space
-    reconciliation had never seen before). Inactive roots are included too — a sweep still needs
-    to know which space to visit in order to purge a space whose only root was deactivated. A
-    root whose page is gone is skipped, not an error.
-    """
-    out: dict[int, int] = {}
-    for root in roots:
-        if root.root_type == ROOT_TYPE_SPACE:
-            out[root.id] = int(root.root_id)
-            continue
-        meta = gateway.get_page_meta(int(root.root_id))
-        if meta is not None:
-            out[root.id] = meta.space_id
-        else:
-            log.warning("scope_root_page_missing", root_id=root.id, page_id=root.root_id)
-    return out
-
-
-def _roots_for_space(
-    roots: list[SourceScope], root_space_ids: dict[int, int], space_id: int
-) -> list[SourceScope]:
-    return [r for r in roots if root_space_ids.get(r.id) == space_id]
 
 
 def _sweep_space(
@@ -154,7 +122,6 @@ def _sweep_space(
     roots: list[SourceScope] | None = None,
 ) -> None:
     live = gateway.list_space_pages(space_id)
-    live_ids = {m.page_id for m in live}
     registry = _registry_for_space(session, space_id)
 
     # PLAN 3.5.6: zero source_scope rows ever recorded for this space -> unrestricted
@@ -163,13 +130,20 @@ def _sweep_space(
     # includes the "last root deactivated -> fully purge" case.
     scope = resolve_space_scope(live, roots or [])
     allowed_page_ids = scope.allowed_page_ids
-    page_tags = scope.tags_by_page
-
     scoped_live = (
         live if allowed_page_ids is None else [m for m in live if m.page_id in allowed_page_ids]
     )
 
-    for meta in scoped_live:
+    # CQL safety net: union in every recognized-label page, even one no root covers. It surfaces
+    # a freshly-tagged page for the worker to authorize (or reject) — the "Mews Page 2" fix. Only
+    # tagged pages come back, so this adds a small, bounded set, not the whole space.
+    discovered = gateway.list_pages_by_label(space_id, sorted(settings.knowledge_scope_set))
+
+    candidates: dict[int, ConfluencePageMeta] = {}
+    for meta in [*scoped_live, *discovered]:
+        candidates.setdefault(meta.page_id, meta)
+
+    for meta in candidates.values():
         counters.pages_scanned += 1
         reg = registry.get(meta.page_id)
         is_new = reg is None
@@ -178,47 +152,44 @@ def _sweep_space(
             counters.drift += 1
             (counters.new_pages if is_new else counters.drifted_pages).append(meta.page_id)
 
-        tags = page_tags.get(meta.page_id, [])
+        reason = "sweep_discovery" if is_new else "sweep_drift"
         if kind == KIND_COMPLETE:
-            # re-verify every live page; run_id in the key forces one sync per page per run
+            # re-verify every candidate; run_id in the key forces one sync per page per run
             suffix = f"complete:{run_id}"
             enqueue = True
         else:
-            # lightweight: only enqueue on a cheap drift signal
+            # lightweight: only enqueue on a cheap drift signal (or first discovery)
             suffix = f"v{meta.version_number}:s{meta.status}:p{meta.parent_id}"
             enqueue = drifted
 
-        if enqueue and _enqueue_sync(session, meta, settings, key_suffix=suffix, tags=tags):
+        if enqueue and _enqueue_sync(session, meta, settings, key_suffix=suffix, reason=reason):
             counters.jobs_enqueued += 1
 
-    # orphans: registry rows that are either (a) no longer covered by any active root — a
-    # source_scope root was removed/narrowed, purged regardless of whether Confluence still has
-    # the page — or (b) covered but vanished from the live listing (deleted/trashed upstream,
-    # today's original check).
+    # Orphans: registry rows that are no longer candidates — vanished upstream, or no longer
+    # covered by any active root (a root was removed/narrowed). Enqueue a re-check; the worker's
+    # decide_command confirms the current state and hard-purges (get_page_meta None, non-current
+    # status, or no covering authorization). No direct deactivation here — the sweep is pure
+    # trigger, the worker owns every delete.
     for page_id, reg in registry.items():
-        in_scope = allowed_page_ids is None or page_id in allowed_page_ids
-        if in_scope and page_id in live_ids:
+        if page_id in candidates:
             continue
         if reg.page_status != PageStatus.current:
             continue
         counters.orphan_pages.append(page_id)
-        if not in_scope:
-            if deactivate_page(session, page_id=page_id, status=PageStatus.deleted):
-                counters.orphans_deleted += 1
-            continue
-        if kind == KIND_COMPLETE:
-            if deactivate_page(session, page_id=page_id, status=PageStatus.deleted):
-                counters.orphans_deleted += 1
-        else:
-            # lightweight: let the handler confirm-and-deactivate via the normal path
-            meta_stub = gateway.get_page_meta(page_id)
-            if meta_stub is None:
-                if deactivate_page(session, page_id=page_id, status=PageStatus.deleted):
-                    counters.orphans_deleted += 1
-            elif _enqueue_sync(
-                session, meta_stub, settings, key_suffix="orphan", tags=page_tags.get(page_id, [])
-            ):
-                counters.jobs_enqueued += 1
+        suffix = f"orphan:{run_id}" if kind == KIND_COMPLETE else "orphan"
+        meta_stub = gateway.get_page_meta(page_id) or ConfluencePageMeta(
+            page_id=page_id,
+            space_id=space_id,
+            parent_id=reg.parent_id,
+            title=reg.title,
+            status="deleted",
+            version_number=reg.current_cf_version,
+            version_created_at=datetime.now(UTC),
+            source_url=reg.source_url or "",
+        )
+        if _enqueue_sync(session, meta_stub, settings, key_suffix=suffix, reason="page_gone"):
+            counters.jobs_enqueued += 1
+            counters.orphans_deleted += 1
 
 
 def _run(
@@ -230,16 +201,16 @@ def _run(
     settings: Settings,
     kind: str,
     roots: list[SourceScope] | None = None,
-    root_space_ids: dict[int, int] | None = None,
+    root_space_map: dict[int, int] | None = None,
 ) -> ReconciliationRun:
     run = ReconciliationRun(scope=scope, kind=kind, status=ReconStatus.running)
     session.add(run)
     session.flush()  # assign run.id
 
     if roots is None:
-        roots = _all_scope_roots(session)
-    if root_space_ids is None:
-        root_space_ids = _root_space_ids(gateway, roots)
+        roots = all_scope_roots(session)
+    if root_space_map is None:
+        root_space_map = root_space_ids(gateway, roots)
 
     counters = _Counters()
     for space_id in space_ids:
@@ -252,7 +223,7 @@ def _run(
                 kind=kind,
                 run_id=run.id,
                 counters=counters,
-                roots=_roots_for_space(roots, root_space_ids, space_id),
+                roots=roots_for_space(roots, root_space_map, space_id),
             )
         except Exception as exc:  # noqa: BLE001 — one bad space must not abort the sweep
             counters.errors += 1
@@ -326,12 +297,12 @@ def run_reconciliation(
     a space with zero existing registry rows was never reconciled no matter what was configured
     (the old ``CONFLUENCE_SPACES`` gap this replaces).
     """
-    roots = _all_scope_roots(session)
-    root_space_ids = _root_space_ids(gateway, roots)
+    roots = all_scope_roots(session)
+    root_space_map = root_space_ids(gateway, roots)
     ids = (
         space_ids
         if space_ids is not None
-        else sorted(set(_known_space_ids(session)) | set(root_space_ids.values()))
+        else sorted(set(_known_space_ids(session)) | set(root_space_map.values()))
     )
     return _run(
         session,
@@ -341,5 +312,5 @@ def run_reconciliation(
         settings=settings,
         kind=kind,
         roots=roots,
-        root_space_ids=root_space_ids,
+        root_space_map=root_space_map,
     )

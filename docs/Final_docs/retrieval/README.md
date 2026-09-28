@@ -1,0 +1,37 @@
+# Retrieval · component docs
+
+One Markdown per retrieval component, written **before** that component is next touched. The doc
+says three things and nothing else: **what it does**, **why it does it**, and **how we know it
+works**. Read the component's doc (and `../ledger.md`) before any add, edit or removal; update the
+doc in the same change; append the ledger entry after.
+
+Retrieval is the workflow that turns a question into a cited answer or a refusal with a reason. It
+is owned by two backend features:
+
+- `backend/app/features/retrieval/` — stages 2–4: hybrid search, fusion, page permissions, rerank
+  wiring, trace writes.
+- `backend/app/features/rag_agent/` — stages 1 and 5: the chat endpoint, token and key checks,
+  limits, small talk, rewrite, refusal, generation, citations, the support check, prompts,
+  curated knowledge.
+
+## Files here
+
+| file | what it holds |
+|---|---|
+| `_template.md` | the shape every component doc copies. Not a component; never edited to describe one. |
+| `<component>.md` | one component of the retrieval workflow — what / why / how we know. Named after the component (e.g. `hybrid-search.md`, `rerank.md`, `citations.md`, `refusal.md`). |
+
+## The rule
+
+- **Read before you touch.** Before changing a component, read its doc and `../ledger.md`. If the
+  component has no doc yet, write it first from the current code — that is how "before we ever
+  touch something" is honoured.
+- **What / why / how we know.** Every doc answers exactly those three. "How we know it works"
+  names the tests (by name) and the design panel the component protects — not a claim, a pointer.
+  A retrieval change also carries a before-and-after number on the held-out gold set (project
+  rule #11).
+- **The design page still wins.** These docs describe what the code does today;
+  `../obi-rag-system-flow.html` is the source of truth for what it must do. When they disagree,
+  the design page wins and the doc gets fixed.
+- **Names.** Lowercase, one component per file, named for the component. No bare `today`/`latest`
+  in a filename.

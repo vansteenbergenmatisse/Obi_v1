@@ -5,8 +5,6 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import func, literal_column, select, text
 
-from app.features.confluence_sync.application.sync_service import target_versions
-from app.features.ingestion import build_ingestion_services, reusable_active_children
 from app.platform.config import Settings, get_settings
 from schema.enums import DocState
 from schema.models import KIND_PARENT, Chunk, DocumentVersion
@@ -182,22 +180,6 @@ def test_only_one_document_version_active_after_reindex(gateway, settings: Setti
     assert len(active_dv_ids) == 1
 
 
-def test_reuse_guard_disables_on_config_change(gateway, settings: Settings) -> None:
-    index_page(gateway, settings, 1001, 1)
-    with read() as s:
-        svc = build_ingestion_services(settings)
-        tgt = target_versions(settings, svc.embedding_model)
-        # unchanged pipeline config -> prior children are reuse-eligible
-        assert reusable_active_children(s, 1001, target=tgt, services=svc)
-        # bump the retrieval schema version -> reuse disabled (full re-embed)
-        bumped = settings.model_copy(
-            update={"retrieval_schema_version": settings.retrieval_schema_version + 1}
-        )
-        svc_b = build_ingestion_services(bumped)
-        tgt_b = target_versions(bumped, svc_b.embedding_model)
-        assert reusable_active_children(s, 1001, target=tgt_b, services=svc_b) == []
-
-
 def test_schema_bump_triggers_full_reembed_release(gateway, settings: Settings) -> None:
     from app.features.confluence_sync.application.sync_service import handle_sync_page
     from schema.engine import session_scope
@@ -224,41 +206,43 @@ def test_schema_bump_triggers_full_reembed_release(gateway, settings: Settings) 
     assert children and all(c.embedding is not None for c in children)
 
 
-def test_label_driven_knowledge_scope_tag_unions_with_source_scope(
+def test_label_driven_knowledge_scope_stamped_on_page_and_chunks(
     gateway, settings: Settings
 ) -> None:
-    """PLAN 10.2: a page labeled `toast` (a recognized POS-provider knowledge scope — asserted as
-    the platform, not this repo's own `Muse` codename, per ADR-0011's disclosed collision) is
-    stamped with that tag on both page_source and every active chunk, unioned with the page's
-    existing source_scope tag (`base`), not replacing it."""
+    """PLAN 10.2 / trigger split: a page labeled `obi-toast-test` (a recognized POS-provider
+    knowledge scope — the platform, not this repo's `Muse` codename, per ADR-0011's disclosed
+    collision) is stamped with exactly that scope on page_source and every active chunk.
+
+    Post trigger/ingestion split the stamped scopes are authoritative — `recognized_labels ∩
+    authorized`. With no source_scope row the space is unrestricted, so the label itself is the
+    scope. The pre-split additive `base` source_scope tag is retired: source_scope.tags are a
+    recognized-scope allow-list (intersected), not arbitrary additive stamps."""
     from app.features.confluence_sync.application.sync_service import handle_sync_page
     from schema.engine import session_scope
     from schema.models import PageSource
 
-    # `toast` is recognized via the committed config/knowledge_scopes.json, not an env override —
-    # deterministic regardless of the developer's local .env.
+    # `obi-toast-test` is recognized via the committed config/knowledge_scopes.json, not an env
+    # override — deterministic regardless of the developer's local .env.
     gateway.set_labels(1001, ["obi-toast-test"])
     gateway.set_version(1001, 1)
     with session_scope() as s:
-        outcome = handle_sync_page(
-            s, page_id=1001, gateway=gateway, settings=settings, tags=["base"]
-        )
+        outcome = handle_sync_page(s, page_id=1001, gateway=gateway, settings=settings)
     assert outcome.action == "indexed"
 
     with read() as s:
         ps = s.get(PageSource, 1001)
         assert ps is not None
-        assert set(ps.tags) == {"base", "obi-toast-test"}
+        assert set(ps.tags) == {"obi-toast-test"}
     children = active_child_chunks(1001)
-    assert children and all(set(c.tags) == {"base", "obi-toast-test"} for c in children)
+    assert children and all(set(c.tags) == {"obi-toast-test"} for c in children)
 
 
-def test_conflicting_provider_labels_contribute_no_tag_and_log_conflict(
+def test_two_provider_labels_share_all_scopes_no_conflict_log(
     gateway, settings: Settings, monkeypatch
 ) -> None:
-    """Two provider labels on the same page (`mews` + `toast`) is a conflict: zero label-derived
-    tags land on the page (the existing `base` source_scope tag is untouched), and a
-    `knowledge_scope_conflict` event is logged so an operator can fix the Confluence labels."""
+    """Two provider labels on the same page (`mews` + `toast`) is legitimate sharing (D4, §13 step
+    3), not a conflict: both label-derived scopes land on the page and no
+    `knowledge_scope_conflict` event is logged. (Unrestricted space → scopes are the labels.)"""
     from app.features.confluence_sync.application import sync_service
     from schema.engine import session_scope
     from schema.models import PageSource
@@ -272,40 +256,12 @@ def test_conflicting_provider_labels_contribute_no_tag_and_log_conflict(
     gateway.set_version(1001, 1)
     with session_scope() as s:
         outcome = sync_service.handle_sync_page(
-            s, page_id=1001, gateway=gateway, settings=settings, tags=["base"]
+            s, page_id=1001, gateway=gateway, settings=settings
         )
     assert outcome.action == "indexed"
-    assert captured.get("event") == "knowledge_scope_conflict"
-    assert set(captured.get("matched_labels", [])) == {"obi-mews-test", "obi-toast-test"}
+    assert captured.get("event") != "knowledge_scope_conflict"  # conflict concept retired (D4)
 
     with read() as s:
         ps = s.get(PageSource, 1001)
         assert ps is not None
-        assert set(ps.tags) == {"base"}
-
-
-def test_s_audit_knowledge_scope_conflict_log_line_emitted_on_conflicting_labels(
-    gateway, settings: Settings, monkeypatch
-) -> None:
-    """panel s-audit · substep p0-s0_5-reg-security (Protect)
-    Duplicates the sibling test's `knowledge_scope_conflict` proof under this panel's own name:
-    per sync, a structured `knowledge_scope_conflict` log line is emitted when a page's labels
-    resolve to conflicting knowledge scopes (the audit trail's per-sync half of its check,
-    alongside the `webhook_event` log line and the `reconciliation_run` row proven by their own
-    dedicated `s-audit`-named tests)."""
-    from app.features.confluence_sync.application import sync_service
-    from schema.engine import session_scope
-
-    captured: dict = {}
-    monkeypatch.setattr(
-        sync_service.log, "warning", lambda event, **kw: captured.update(event=event, **kw)
-    )
-
-    gateway.set_labels(1001, ["obi-mews-test", "obi-toast-test"])
-    gateway.set_version(1001, 1)
-    with session_scope() as s:
-        sync_service.handle_sync_page(
-            s, page_id=1001, gateway=gateway, settings=settings, tags=["base"]
-        )
-
-    assert captured.get("event") == "knowledge_scope_conflict"
+        assert set(ps.tags) == {"obi-mews-test", "obi-toast-test"}

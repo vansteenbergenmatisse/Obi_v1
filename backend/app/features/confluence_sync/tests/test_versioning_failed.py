@@ -5,12 +5,12 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
-from app.features.confluence_sync.application.sync_service import target_versions
 from app.features.ingestion import (
     PageHashes,
     build_ingestion_services,
     map_page_status,
     stage_and_activate,
+    target_versions,
 )
 from schema.engine import get_sessionmaker
 from schema.enums import DocState
