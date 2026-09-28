@@ -98,18 +98,19 @@ _CURATED_SCOPE_POLICY = "curated_knowledge_entry_scope_read"
 
 
 def apply_chunk_scope_rls(conn: Connection) -> None:
-    """Add the RESTRICTIVE knowledge-scope policy to ``chunk`` (ADR-0014). Idempotent.
+    """Add the RESTRICTIVE knowledge-scope policy to ``chunk`` (ADR-0014, mig 0014). Idempotent.
 
     Composes with ``apply_chunk_rls``'s source policy via AND. Requires that policy to already exist
     (``chunk`` RLS ``ENABLE``d); this only adds the second, restrictive predicate.
 
-    ``cardinality(tags) = 0`` -> an **untagged** chunk is global (visible under any scope), so a
-    corpus that does not tag by knowledge scope keeps working and the always-on ``general`` base is
-    never hidden. Only a chunk carrying a customer tag is isolated to that customer — the boundary
-    the backstop exists to enforce. (The app-layer ADR-0011 Decision-1 predicate is *stricter* — it
-    drops untagged chunks when scope-filtering is ON — and ANDs on top when enabled; this RLS floor
-    only guarantees no *tagged* customer content crosses.) ``'*'`` -> unrestricted opt-out; unset ->
-    untagged still visible, tagged denied (fail closed for the isolated content).
+    Fail-closed (D3, migration 0014): the policy is pure ``tags``-overlap, with **no**
+    ``cardinality(tags) = 0`` floor. An empty-tags chunk overlaps nothing and is therefore visible
+    to **no** scope — "public" is the explicit ``general`` tag, never empty tags. (The old floor
+    made an untagged chunk global; dropping the last tag then leaked a page cross-scope. Rules
+    1/2/5/7 guarantee every active chunk carries >=1 recognised tag, so the floor was unreachable in
+    the intended state; this makes it fail-closed if that ever regresses.) ``'*'`` -> unrestricted
+    opt-out (internal/eval + already-authorized parent expansion); unset -> ``string_to_array(NULL,
+    ',')`` is NULL -> overlap denies (fail closed).
     """
     conn.execute(text("ALTER TABLE chunk ENABLE ROW LEVEL SECURITY"))
     conn.execute(text(f"DROP POLICY IF EXISTS {_CHUNK_SCOPE_POLICY} ON chunk"))
@@ -117,7 +118,6 @@ def apply_chunk_scope_rls(conn: Connection) -> None:
         text(
             f"CREATE POLICY {_CHUNK_SCOPE_POLICY} ON chunk AS RESTRICTIVE FOR SELECT "
             f"USING (current_setting('{_SCOPE_GUC}', true) = '*' "
-            f"OR cardinality(tags) = 0 "
             f"OR tags && string_to_array(current_setting('{_SCOPE_GUC}', true), ','))"
         )
     )

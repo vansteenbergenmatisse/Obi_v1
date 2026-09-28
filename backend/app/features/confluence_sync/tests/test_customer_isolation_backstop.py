@@ -106,16 +106,19 @@ def test_scope_rls_wildcard_is_an_explicit_opt_out(gateway, settings: Settings) 
     assert rows > 0, "'*' wildcard did not restore unrestricted reads for the opt-out path"
 
 
-def test_scope_rls_untagged_chunk_is_global_visible_under_any_scope(
-    gateway, settings: Settings
-) -> None:
-    """An UNTAGGED chunk is global (``cardinality(tags) = 0``): it stays visible under any real
-    scope list, so a corpus not using knowledge-scope tagging keeps working and the always-on base
-    is never hidden. Only a *tagged* chunk is isolated (proven by the cross-customer test above).
-    This is the security floor; the stricter ADR-0011 Decision-1 app predicate may drop it when the
-    scope-filtering flag is on — a product choice layered ON TOP, not the RLS boundary."""
+def test_sec_empty_tags_visible_to_no_scope(gateway, settings: Settings) -> None:
+    """panel 3.4.1 · D3/D4
+    An active chunk with ``tags = []`` returns for no real scope value (fail-closed floor).
+
+    The old ``chunk_scope_read`` policy carried an ``OR cardinality(tags) = 0`` floor that made an
+    untagged chunk global — a cross-scope leak the moment a page's last tag was dropped. Step 4
+    (migration 0014, D3) drops that clause: empty tags overlap nothing, so an active empty-tags
+    chunk is visible to *no* scope. "Public" is now the explicit ``general`` tag, never empty tags.
+    The ``'*'`` opt-out (internal/eval + already-authorized parent expansion) is deliberately
+    retained, so an empty-tags chunk is still returned under the wildcard — asserted here so a
+    future removal of that opt-out is caught."""
     index_page(gateway, settings, _MEWS_PAGE, 3)
-    _set_chunk_tags(_MEWS_PAGE, [])  # no scope tag at all -> global
+    _set_chunk_tags(_MEWS_PAGE, [])  # no scope tag at all
 
     reader = get_reader_sessionmaker()
     with reader() as s:
@@ -123,9 +126,46 @@ def test_scope_rls_untagged_chunk_is_global_visible_under_any_scope(
         s.execute(
             text("SELECT set_config('app.allowed_knowledge_scopes', 'obi-operacloud-test', true)")
         )
-        under_foreign_scope = _count_chunks(s, _MEWS_PAGE)
+        under_opera = _count_chunks(s, _MEWS_PAGE)
+        s.execute(text("SELECT set_config('app.allowed_knowledge_scopes', 'obi-mews-test', true)"))
+        under_mews = _count_chunks(s, _MEWS_PAGE)
+        s.execute(text("SELECT set_config('app.allowed_knowledge_scopes', '*', true)"))
+        under_wildcard = _count_chunks(s, _MEWS_PAGE)
 
-    assert under_foreign_scope > 0, "untagged (global) chunk hidden -> untagged corpus would break"
+    assert under_opera == 0, "empty-tags chunk visible under a real scope -> empty=public leak (D3)"
+    assert under_mews == 0, "empty-tags chunk visible under a real scope -> empty=public leak (D3)"
+    assert under_wildcard > 0, "'*' opt-out no longer returns empty-tags chunk -> eval/parent broke"
+
+
+def test_sec_read_paths_use_overlap_not_equality(gateway, settings: Settings) -> None:
+    """panel 3.4.1 · D3/D4
+    A chunk carrying two tags is visible to a scope that overlaps one of them, not only to an exact
+    match — the scope gate filters by ``tags && allowed_scopes`` overlap, never set equality.
+
+    A ``[mews, toast]`` page is legitimate sharing (D4): a mews-only reader must see it (overlap
+    true), a disjoint operacloud reader must not. Set equality (``tags = allowed_scopes``) would
+    hide it from the single-scope mews reader, breaking sharing. This locks the overlap semantics at
+    the RLS boundary; the app-layer read paths (dense/keyword via ``search_repo``, curated, parent)
+    use the identical ``&&`` operator and are exercised behaviourally by
+    ``test_sync_rules_visibility.py`` (retrieval) and ``test_curated_scope_rls_*`` (curated)."""
+    index_page(gateway, settings, _MEWS_PAGE, 3)
+    _set_chunk_tags(_MEWS_PAGE, ["obi-mews-test", "obi-toast-test"])  # shared across two scopes
+
+    reader = get_reader_sessionmaker()
+    with reader() as s:
+        s.execute(text("SET LOCAL app.allowed_sources = 'confluence:default'"))
+        s.execute(text("SELECT set_config('app.allowed_knowledge_scopes', 'obi-mews-test', true)"))
+        under_mews = _count_chunks(s, _MEWS_PAGE)
+        s.execute(text("SELECT set_config('app.allowed_knowledge_scopes', 'obi-toast-test', true)"))
+        under_toast = _count_chunks(s, _MEWS_PAGE)
+        s.execute(
+            text("SELECT set_config('app.allowed_knowledge_scopes', 'obi-operacloud-test', true)")
+        )
+        under_opera = _count_chunks(s, _MEWS_PAGE)
+
+    assert under_mews > 0, "shared [mews,toast] chunk hidden from mews -> equality, not overlap"
+    assert under_toast > 0, "shared [mews,toast] chunk hidden from toast -> equality, not overlap"
+    assert under_opera == 0, "shared [mews,toast] chunk visible to operacloud -> overlap too loose"
 
 
 def _seed_curated(tags_by_title: dict[str, list[str]]) -> None:
