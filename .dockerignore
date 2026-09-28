@@ -1,0 +1,36 @@
+# Build context is the repo root. Keep the image to backend/ + knowledge-base/ + config/,
+# and NEVER let secrets or local venvs into the image.
+
+# Secrets — must never be baked into an image.
+.env
+.env.*
+!.env.example
+
+# Not part of the backend deploy unit.
+frontend/
+packages/
+docs/
+node_modules/
+.next/
+pnpm-lock.yaml
+package.json
+turbo.json
+pnpm-workspace.yaml
+
+# Local Python venvs and build/test caches (rebuilt inside the image).
+**/.venv/
+**/__pycache__/
+**/*.pyc
+**/.pytest_cache/
+**/.ruff_cache/
+backend/eval-reports/
+
+# VCS / editor / OS cruft.
+.git/
+.gitignore
+**/.DS_Store
+.claude/
+.obi/
+
+# Local-only DB compose (Postgres runs on Supabase in prod, not in this image).
+knowledge-base/local/
