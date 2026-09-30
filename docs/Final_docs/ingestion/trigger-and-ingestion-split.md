@@ -53,7 +53,10 @@ before the tag logic ran. CQL label discovery plus a space-level allow row now s
 authorize it.
 
 Design decisions built to their recommended defaults (named in the PR): D1 the contract shape,
-D2 decide-in-worker on current state (jobs carry only `page_id`+`reason`), D4 the minimal
+D2 decide-in-worker on current state (jobs carry only `page_id`+`reason` — and since the
+idempotency-key fix of 2026-09-29 the job key is event-ledger-id-scoped,
+`sync_page:{page_id}:{event_id}`, so every real delivery gets its own job and the worker's
+version guard collapses redundant same-version jobs to `no_change`), D4 the minimal
 contract (ingestion re-fetches meta/body — a disclosed double meta/labels fetch per sync), D5 the
 closed `reason` vocabulary, D6 the job queue stays the mediation. Two owner calls on 2026-09-25:
 **delete = hard purge everywhere** (the 2-action contract; a delete on an unindexed page reports

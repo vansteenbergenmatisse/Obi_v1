@@ -23,6 +23,19 @@ the stale design-page target-lines~~ **DONE 2026-09-25** (owner go-ahead; 7 pane
 D1–D4). The **▶ Remaining work checklist** at the top of §0 has the exact commands and gotchas. **The
 only tail left is (2) the two manual live rules, then (3) the checkboxes.**
 
+**Update 2026-09-30 — the live webhook is now the delivery path.** The Forge bridge
+(`services/obi-confluence-sync/`) was registered, deployed to Forge production and installed on
+`omniboost.atlassian.net`; secret parity Forge↔Railway proven by signed curl (200 valid / 401
+tampered); worker drain confirmed on Railway (`ENABLE_BACKGROUND_JOBS=true`, job succeeded); and a
+real Confluence `label_added` event (unrecognized smoke label on Toast-testpage 2 `1713176590`)
+travelled Confluence → Forge → Railway → event ledger → job → correct no-index decision, with the
+indexed Toast page byte-identical to baseline. That satisfies `i1-webhook`'s live-proof condition
+(see `docs/Final_docs/ingestion/webhook.md`) and means the two manual rules below can — and should —
+be driven through the **real webhook** (plain Confluence UI actions, verified with `page_state.py` +
+the event ledger) instead of the in-process `verify_sync_rules.py` runner. Each manual leg must also
+re-assert **rule 8**: the Mews page `1670971395` stays byte-identical throughout. Full detail in §0's
+2026-09-30 block.
+
 **§14 (Execution appendix)** inlines the exact test harness, the current + target RLS DDL, the
 counting embedder, the naming/docstring/coverage/proof formats, and the CI xfail mechanics — so a
 fresh-context agent can execute from this file alone, without re-deriving them from the tree.
@@ -53,6 +66,42 @@ action. Do them in order:
 > Output saved to `backend/sync-rules-run.txt`; the page came back healthier than baseline (retain-0
 > clean: 0 inactive chunks, 1 version row). Rules **1 (trash/restore)** and **6 (body/title edit)** are
 > interactive Confluence-UI steps the owner will run later; only then are 2.2.4/2.3.1 fully ticked.
+
+### ✅ Done 2026-09-30 — Forge webhook bridge deployed, installed and proven live (delivery leg of 2.0.2)
+
+Everything below ran on 2026-09-30; working tree still uncommitted per the branch convention
+(`services/obi-confluence-sync/manifest.yml` now carries the real app id, plus the generated
+`package-lock.json` — commit both). Runbook followed: `docs/runbooks/obi-confluence-sync-deploy.md`.
+
+- **Registered** the Forge app once (manifest placeholder → real id
+  `ari:cloud:ecosystem::app/b36e7d9d-5117-4f7e-a49e-fcdb6ca19118`). En route: the account had no
+  Developer Space, so one named **Omniboost** was created, and the Atlassian Developer Terms
+  (incl. the beyond-free-allowance billing clause) were accepted.
+- **Secret** `CONFLUENCE_WEBHOOK_SECRET` set as an **encrypted Forge production variable** before
+  deploy (same value as the Railway service variable; never printed).
+- **`forge lint`** clean after `--fix` migrated the deprecated egress entry to the `- address:` form;
+  **`forge deploy -e production`** succeeded (app version 2.0.0); **installed** on
+  `omniboost.atlassian.net` Confluence (owner, via the install dialog; `forge install list` shows
+  production / Up-to-date).
+- **Proof 1 — secret parity (signed curl at Railway):** valid HMAC → `200 {"accepted":true,
+  event_id:1, job_id:28}`; tampered body, same signature → `401 invalid signature`.
+- **Proof 2 — worker drain:** job 28 `succeeded` on Railway (`ENABLE_BACKGROUND_JOBS=true` confirmed
+  in effect).
+- **Proof 3 — real event end-to-end (label smoke):** owner added the unrecognized label
+  `obi-smoke-test-delete-later` to **Toast-testpage 2 (`1713176590`)** in the Confluence UI →
+  Forge delivered it (deterministic-hash `delivery_id`) → event_ledger row 2 (`label_added`,
+  `origin=0`) → job 29 `succeeded` → worker correctly indexed **nothing** (no recognized label; 0
+  `page_source` rows) — the rule-5 negative half observed live through the real webhook. The indexed
+  Toast Testpage `1670873122` stayed byte-identical to its pre-test baseline (tags
+  `['obi-toast-test']`, 2 active chunks, 1 version row). This is `i1-webhook`'s live proof
+  (webhook.md: a real Confluence event → one ledger row + one job within seconds); the panel flip to
+  verified is pending with the step-3 checkbox batch. Note: `forge logs` showed nothing despite the
+  proven delivery (Atlassian log-ingestion lag) — the ledger is the evidence of record.
+- **Consequence for the remaining manual legs:** run rules 1 and 6 as plain Confluence-UI actions and
+  let the **live webhook** deliver (stronger evidence than the in-process `verify_sync_rules.py`
+  path, which predates the bridge). Verify each with `scripts/page_state.py 1670873122` + the event
+  ledger, and re-assert **rule 8** each time: `page_state.py 1670971395` (Mews) byte-identical
+  before/after every leg.
 
 **1 · Bring Supabase to migration head (applies 0013 + 0014) — ✅ DONE 2026-09-25.** Was behind by
 0013 (`reconciliation_run.cursor`) + 0014 (RLS fail-closed floor). `alembic current` read `0012`

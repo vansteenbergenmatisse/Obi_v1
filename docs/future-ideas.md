@@ -371,3 +371,21 @@ as W9-A1-OBS (explicitly "NOT a defect") by the Phase-4 embed security loop, Wav
 Where it would go: a new `.github/workflows/ci.yml` step (or a `backend/tools/` differential script invoked
 there); the corpus generator + both-runtime harness the Wave-8/9 auditors already prototyped.
 Added: 2026-09-22
+
+---
+
+## Provider spend caps — OpenAI, Cohere, Anthropic monthly limits
+**DONE 2026-09-30 (owner-reported):** caps set in all three provider dashboards; kept here for the record.
+What: Set a hard monthly spend cap plus a usage alert on each of the three paid AI providers the
+backend calls — OpenAI (embeddings, text-embedding-3-large @ 3072), Cohere (reranker), and Anthropic
+(routing + answer generation). The cap is the provider-side backstop against a bug or abuse running up
+an unbounded bill; re-embedding fires on every page rebuild (rule 6, no vector reuse), so ingestion is
+the main cost lever.
+Why not now: This is an owner dashboard action, not code — each cap is set in the provider's own
+billing console (OpenAI usage limits, Anthropic workspace spend limits, Cohere billing), outside this
+repo. Nothing in the pipeline blocks on it, and the in-process rate limiter already bounds request
+volume; the spend cap is the money-side safety net only the account owner can configure.
+Where it would go: operational hardening for the live Railway backend (roadmap Step 2 deploy); pairs
+with the "DEPLOYMENT — OPERATIONAL NOTES" block in the root .env and
+docs/runbooks/railway-backend-deploy.md.
+Added: 2026-09-28

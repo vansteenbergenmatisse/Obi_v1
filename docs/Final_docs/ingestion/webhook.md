@@ -29,10 +29,16 @@ up; the daily sweep ([[reindex-job]] is the corpus-wide cousin) is only the catc
 the webhook misses. The gate exists because this is an unauthenticated public endpoint mutating
 state: the signature (HMAC-SHA256 over the raw body, constant-time compare) proves the caller is
 Confluence and no one else; it **fails closed** (503) when the secret is unset, so a
-misconfigured deploy refuses traffic rather than trusting it. Dedup (on payload hash +
-`delivery_id`) and idempotent enqueue (`ON CONFLICT`) mean Confluence's at-least-once redelivery
-never double-indexes. The request body never decides access — origin is stamped server-side
-(`origin=0`), consistent with project rule #2.
+misconfigured deploy refuses traffic rather than trusting it. The **event ledger is the sole
+redelivery stop**: a byte-identical redelivery dedups on payload hash + `delivery_id` and never
+reaches the job layer. Each delivery that *survives* ledger dedup is a real distinct event, and
+its job idempotency key carries the event-ledger id (`sync_page:{page_id}:{event_id}` /
+`delete_page:{page_id}:{event_id}`), so a second real label event or a re-trash after a restore
+always enqueues its own job — completed jobs are never pruned, so a key built only from page
+state would collide forever (label events carry no page version). Redundant jobs are cheap: the
+worker re-decides on current state and its version guard turns a same-version resync into
+`no_change` (no body fetch, no embed). The request body never decides access — origin is stamped
+server-side (`origin=0`), consistent with project rule #2.
 
 ## How we know it works
 
@@ -41,6 +47,12 @@ protecting `i1-webhook` / `i1-checks`:
 
 - `test_valid_signed_event_is_accepted_and_enqueued` — valid delivery → accepted + one job (`i1-webhook`).
 - `test_duplicate_delivery_is_deduped` — redelivery → no second job (`i1-webhook`).
+- `test_i1_two_distinct_label_deliveries_on_one_page_each_enqueue_a_job` /
+  `test_i1_two_distinct_trash_deliveries_on_one_page_each_enqueue_a_job` — two REAL events on one
+  page each enqueue their own job (`i1-ledger`; the idempotency-key-swallow regression: the old
+  version-less keys collapsed every later label event / re-trash into the first-ever job).
+- `test_i1_true_duplicate_label_delivery_still_enqueues_one_job` — the companion bound: a true
+  duplicate still makes exactly one job, stopped at the event ledger (`i1-ledger`).
 - `test_self_generated_event_enqueues_no_job` / `test_i1_self_ledger_row_marked_done_and_self_generated` — Obi's own edit records but enqueues nothing.
 - `test_missing_signature_is_rejected` (401), `test_bad_signature_is_rejected` (401), `test_unset_secret_fails_closed` (503) — the auth gate (`i1-checks`).
 - `test_oversized_body_is_rejected` (413), `test_rate_limit_returns_429` (429) — the size + rate gate.
