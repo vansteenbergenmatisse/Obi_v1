@@ -9,7 +9,7 @@ steps name two equivalent delivery shapes -- coalesced (both events land in one 
 covered below by `test_tg_change_label_swap_leaves_no_stale_double_tag`) and uncoalesced (two
 distinct jobs, one per event, run in order, covered below by
 `test_tg_change_sequential_label_jobs_converge_without_double_tag`) -- because the idempotency
-key for a sync_page job includes the event_type (`event_service._enqueue_for_event`), so
+key for a sync_page job carries the event-ledger id (`event_service._enqueue_for_event`), so
 label_deleted and label_added always get distinct keys and never dedupe into one job at enqueue
 time; both paths are exercised here since they run different code (one job vs. two through the
 queue) even though both are expected to converge on the same result.

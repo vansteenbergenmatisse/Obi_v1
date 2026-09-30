@@ -118,6 +118,72 @@ def test_i1_self_ledger_row_marked_done_and_self_generated(webhook_settings):
         assert row.self_generated is True
 
 
+def _label_event_raw(delivery_id: str) -> bytes:
+    """A label_added delivery: like real Confluence label events, it carries NO page version."""
+    return json.dumps(
+        event_body(
+            eventType="label_added",
+            page={"id": "1001", "spaceId": "100", "status": "current"},
+            deliveryId=delivery_id,
+        )
+    ).encode()
+
+
+def test_i1_two_distinct_label_deliveries_on_one_page_each_enqueue_a_job(webhook_settings):
+    """panel i1-ledger · regression for the idempotency-key swallow (2.0.2 webhook wiring).
+
+    Label events carry no page version, so the old sync key
+    (`sync_page:{page_id}:{event_type}:na:{schema}`) collapsed every later label_added on a
+    page into the first-ever job — completed jobs are never pruned, so the second and all
+    subsequent real label events silently enqueued nothing (breaking sync rules 2/5/7 live).
+    The key now carries the event-ledger id, so each delivery that survives ledger dedup gets
+    its own job."""
+    client = make_client(webhook_settings)
+    raw1, raw2 = _label_event_raw("d-1"), _label_event_raw("d-2")
+    first = client.post("/confluence/events", content=raw1, headers=sign(raw1))
+    second = client.post("/confluence/events", content=raw2, headers=sign(raw2))
+    assert first.json()["job_id"] is not None
+    assert second.json()["duplicate"] is False
+    assert second.json()["job_id"] is not None
+    assert _job_count() == 2
+
+
+def test_i1_true_duplicate_label_delivery_still_enqueues_one_job(webhook_settings):
+    """panel i1-ledger · the companion guarantee: a byte-identical redelivery still makes ONE
+    job — the event ledger (payload_hash + delivery_id) stops it before enqueue, so putting the
+    event id in the job key did not reopen double-enqueue on true duplicates."""
+    client = make_client(webhook_settings)
+    raw = _label_event_raw("d-dup")
+    client.post("/confluence/events", content=raw, headers=sign(raw))
+    second = client.post("/confluence/events", content=raw, headers=sign(raw))
+    assert second.json()["duplicate"] is True
+    assert _job_count() == 1
+
+
+def test_i1_two_distinct_trash_deliveries_on_one_page_each_enqueue_a_job(webhook_settings):
+    """panel i1-ledger · the delete-class half of the same regression: the old delete key
+    (`delete_page:{page_id}:{event_type}`) had no per-event component at all, so a page could
+    only ever be trashed ONCE — a trash → restore → trash-again cycle never enqueued the second
+    delete job. The event-ledger id in the key fixes it."""
+    client = make_client(webhook_settings)
+
+    def trash_raw(delivery_id: str) -> bytes:
+        return json.dumps(
+            event_body(
+                eventType="page_trashed",
+                page={"id": "1001", "spaceId": "100", "status": "trashed"},
+                deliveryId=delivery_id,
+            )
+        ).encode()
+
+    raw1, raw2 = trash_raw("t-1"), trash_raw("t-2")
+    first = client.post("/confluence/events", content=raw1, headers=sign(raw1))
+    second = client.post("/confluence/events", content=raw2, headers=sign(raw2))
+    assert first.json()["job_id"] is not None
+    assert second.json()["job_id"] is not None
+    assert _job_count() == 2
+
+
 def test_oversized_body_is_rejected(webhook_settings):
     client = make_client(webhook_settings.model_copy(update={"webhook_max_body_bytes": 256}))
     raw = json.dumps(event_body(padding="x" * 1024)).encode()

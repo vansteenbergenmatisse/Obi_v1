@@ -79,7 +79,13 @@ def ingest_event(
 def _enqueue_for_event(
     session: Session, envelope: EventEnvelope, settings: Settings, event_id: int
 ) -> int | None:
-    schema = settings.retrieval_schema_version
+    # Every key carries the event-ledger id: each delivery that survives ledger dedup is a REAL
+    # distinct event and must get its own job (completed jobs are never pruned, so any key built
+    # only from page state collides forever — label events carry no version, so a second
+    # label_added on a page, or a second trash after a restore, would otherwise never enqueue).
+    # True duplicate deliveries never reach this function: record_event returns None first, on
+    # payload_hash + delivery_id. Redundant jobs are cheap — the worker re-decides on current
+    # state and its version guard turns a same-version resync into no_change (no body, no embed).
     if envelope.event_type in SPACE_EVENTS:
         key = f"{JOB_RECONCILE_SPACE}:{envelope.space_id}:{event_id}"
         return enqueue_job(
@@ -90,7 +96,7 @@ def _enqueue_for_event(
             source_event_id=event_id,
         )
     if envelope.event_type in DELETE_EVENTS:
-        key = f"{JOB_DELETE_PAGE}:{envelope.page_id}:{envelope.event_type}"
+        key = f"{JOB_DELETE_PAGE}:{envelope.page_id}:{event_id}"
         return enqueue_job(
             session,
             job_type=JOB_DELETE_PAGE,
@@ -102,8 +108,7 @@ def _enqueue_for_event(
             source_event_id=event_id,
         )
     # everything else -> sync_page (the worker re-decides + version-guards on current state)
-    ver = envelope.cf_version if envelope.cf_version is not None else "na"
-    key = f"{JOB_SYNC_PAGE}:{envelope.page_id}:{envelope.event_type}:{ver}:{schema}"
+    key = f"{JOB_SYNC_PAGE}:{envelope.page_id}:{event_id}"
     return enqueue_job(
         session,
         job_type=JOB_SYNC_PAGE,
