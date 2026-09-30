@@ -30,6 +30,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from alembic import op
+from sqlalchemy.engine import Connection
+
 from schema import schema
 
 revision: str = "0009_reconcile_non_chunk_rls"
@@ -44,8 +46,30 @@ def upgrade() -> None:
     schema.apply_reader_rls(bind)  # let rag_reader back into its read set (skipped if role absent)
 
 
+_DOWNGRADE_ON_SUPABASE_BLOCKED = (
+    "Blocked: never downgrade 0009 on Supabase. It exposes the corpus to anon. "
+    "Drop the three *_reader_read policies instead."
+)
+
+
+def _refuse_supabase_downgrade(bind: Connection) -> None:
+    """Hard stop: refuse to downgrade 0009 against a Supabase host (root CLAUDE.md rule #1).
+
+    0009's downgrade disables ROW LEVEL SECURITY on the non-chunk tables; on Supabase that hands
+    every row to the public ``anon``/``authenticated`` PostgREST roles (they hold blanket
+    ``GRANT SELECT``). The pre-existing WARNING comment was advisory only — this turns it into an
+    enforced guard. It reads the host off the live bind, so it protects any caller pointed at
+    Supabase (the alembic CLI, an ops script, a stray test), not just one entrypoint. Local
+    downgrades (localhost/docker/RDS) are unaffected and still work.
+    """
+    host = (bind.engine.url.host or "").lower()
+    if "supabase" in host:
+        raise RuntimeError(_DOWNGRADE_ON_SUPABASE_BLOCKED)
+
+
 def downgrade() -> None:
     bind = op.get_bind()
+    _refuse_supabase_downgrade(bind)  # never loosen RLS on Supabase (root CLAUDE.md rule #1)
     schema.drop_reader_rls(bind)
     # WARNING: disabling RLS re-exposes the non-chunk tables to the public anon REST role on
     # Supabase. Only downgrade a store with no PostgREST/anon exposure (local docker, RDS fallback).
