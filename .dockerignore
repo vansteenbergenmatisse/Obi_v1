@@ -9,6 +9,7 @@
 # Not part of the backend deploy unit.
 frontend/
 packages/
+services/
 docs/
 node_modules/
 .next/

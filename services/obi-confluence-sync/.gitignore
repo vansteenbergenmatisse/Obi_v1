@@ -1,0 +1,3 @@
+# npm-managed app (the Forge CLI expects npm here; the repo's pnpm workspace excludes this dir).
+node_modules/
+# package-lock.json IS committed once generated — pins @forge/* exactly.

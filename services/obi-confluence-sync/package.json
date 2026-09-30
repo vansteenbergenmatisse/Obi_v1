@@ -1,0 +1,10 @@
+{
+  "name": "obi-confluence-sync",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Forge app forwarding Confluence page/label events as signed POSTs to the Obi backend webhook.",
+  "dependencies": {
+    "@forge/api": "latest",
+    "@forge/events": "^2.1.3"
+  }
+}
