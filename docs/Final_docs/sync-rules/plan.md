@@ -1001,3 +1001,76 @@ unexpected="$(grep -E '^XFAIL ' "$log" \
 ```
 Mark that test `@pytest.mark.xfail(reason="needs 2.4.1", strict=True)`. When substep 2.2.4 lands and
 retires the tg-deactivate xfail, remove **its** `grep -vF` line (it will XPASS → CI red otherwise).
+
+## 15 · Open follow-up: meerdere scopes per vraag (POS + PMS tegelijk) — eerst beslissen, dan bouwen
+
+Jasper's veldvraag (2026-10-01): een property draait vaak een POS én een PMS tegelijk (bijv. Toast +
+Opera Cloud), maar een vraag draait vandaag onder precies één platform-scope — het token en de
+`/chat`-request dragen één `knowledge_scope`-string, die `resolve_allowed_scopes` aanvult met
+`obi-general-test`. De datalaag kan het al (pagina's dragen meerdere tags, de zoeklaag filtert op een
+scopes-*set*), dus de uitbreiding zit in de token-claim en de gate, niet in de opslag.
+
+**Eerst kort beslissen hoe we dit exact willen** voordat er iets gebouwd wordt — de open keuzes:
+1. Lijst in de token-claim (`knowledge_scopes: [toast, operacloud]`) vs. één scope met voorrangsregel.
+2. Zoekgedrag bij een lijst: één gefuseerde zoekronde over de unie van scopes, of per scope en fuseren.
+3. Wat de citations/trace tonen als bronnen uit verschillende scopes komen.
+4. Backwards-compat: blijft de enkelvoudige claim geldig (lijst van één) zodat bestaande platforms niet breken.
+
+Daarna pas implementeren: claim + gate + `resolve_allowed_scopes` een set laten accepteren, met test
+per keuze. Status: **Decision needed** (owner) — nog niet gepland in de actieplan-substeps.
+
+### 15.1 · Harde voorwaarde vóór de multi-scope bouw: eerst een rotsvast testfundament
+
+Dit is géén kleine wijziging: meerdere scopes per vraag (bijv. Toast + Mews/Opera tegelijk) raakt
+meer dan de token-claim alleen. Bekende implicaties, elk met eigen testbehoefte:
+- **Autorisatie/RLS** — de scopes-set in de authorization context stuurt élke databaseread (search,
+  rerank-tekst, parent-expansie, curated lookup); een lijst mag nooit breder resolven dan het token.
+- **Isolatie** — een Toast+Opera-gebruiker mag nóóit een Mews-only pagina zien; de adversariële
+  kant (gemanipuleerde body-scope, onbekende scope in de lijst, lege lijst) moet fail-closed blijven.
+- **Retrieval-gedrag** — fusie/ranking over de unie van scopes, deduplicatie als een pagina in twee
+  scopes leeft, citations en trace bij bronnen uit verschillende scopes.
+- **Caching & limits** — antwoordcache-keys en rate-limits zijn vandaag per (principal, scope);
+  een lijst verandert de key-ruimte.
+- **Eval** — rule 11 geldt: geen retrieval-wijziging zonder voor/na-cijfer op de gold set.
+
+**Afspraak (owner, 2026-10-02): vóór er ook maar één regel multi-scope-code geschreven wordt, komt
+er een rock-solid testsuite** — eerst de huidige single-scope contracten als regressievloer
+vastklikken, daarna red-first tests voor het besliste multi-scope-gedrag (§15-keuzes 1–4). De
+testscope zelf wordt met de owner afgestemd (vragenronde) en als testplan hier vastgelegd.
+
+### 15.2 · Het testplan (owner-afgestemd 2026-10-02): de regressievloer vóór multi-scope
+
+Owner-keuzes uit de vragenronde: (1) eerst de **regressievloer** — het huidige single-scope gedrag
+vastklikken; multi-scope red-first tests wachten op de §15-beslissing; (2) contract **nog niet
+beslist** — er komt eerst een kort beslismemo; (3) alle vier de niveaus: unit+database (CI-gate),
+een permanent live-webhook-script, browser (Playwright) én eval/gold-set; (4) diepste dekking op
+**security & isolatie + sync-correctheid + "werkt het écht"** (end-to-end realiteit boven mocks).
+
+De golven, in volgorde:
+
+- **Golf 0 — baselines bevriezen (vóór élke codewijziging).** `make eval` per stage draaien en de
+  cijfers vastleggen (rule 11 heeft een "voor" nodig); `make check`-tellingen noteren
+  (nu: boundaries 0 · backend 1015+1xfail · kb 45).
+- **Golf 1 — dekkingaudit + gaten dichten (unit + database, de CI-vloer).** Stap 1: audit die élk
+  contract mapt op een bestaande test (obi-auditor, lezen-alleen): de 8 sync-regels, event-dedup
+  (payload_hash + delivery_id), idempotency-keys-per-event (f8098d0), de autorisatiecontext
+  (onbekende scope → 400 vóór search; body/token-conflict → genegeerd + gelogd; elke read onder
+  dezelfde context — search, rerank-tekst, parent-expansie, curated), RLS onder béíde rollen,
+  antwoordcache-keys per (principal, history, scope), rate-limits. Output: een gatenlijst.
+  Stap 2: elk gat red-first dichten met /obi-test-writer. Adversariële diepte verplicht:
+  vervalste/afwijkende body-scope, onbekende scope, lege scope, cross-tenant-leespoging onder
+  rag_reader, RLS-settings gemanipuleerd binnen een sessie.
+- **Golf 2 — het live-webhook-script permanent maken.** De sessie-runner (webhook_rules_live.py,
+  alle 8 regels via échte Confluence-mutaties → Forge → Railway → worker, met de Mews-pagina als
+  byte-identieke getuige) promoveren naar `backend/scripts/` met dezelfde waarborgen als
+  verify_sync_rules.py: STAGING-ONLY-stempel, --yes, labels hersteld in een finally, één commando,
+  plakbare output. Dit is de "werkt het écht"-knop die de owner zelf kan indrukken.
+- **Golf 3 — browser (Playwright).** Tegen de stub-hostpagina's (bestaande conventie, deterministisch):
+  toast-host ziet toast-content; mews-host kan een toast-only pagina níét zien; none-host → nette
+  weigering; multi-host = het besliste gedrag (wacht dus deels op §15).
+- **Golf 4 — eval.** De gold set per stage als voor/na-poort bij elke retrieval-aanraking; bij
+  multi-scope komen er gemengde-scope goldvragen bij (Toast-vraag met Opera-token enz.).
+- **Golf 5 — multi-scope red-first.** Geblokkeerd tot de §15-keuzes beslist zijn; start met het
+  beslismemo, daarna de falende tests die het besliste contract vastleggen, pas dan implementatie.
+
+Werkwijze per golf: één golf per keer, /obi-change-procedure, ledger-entry bij afronding.
