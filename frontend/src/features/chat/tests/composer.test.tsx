@@ -5,7 +5,12 @@ import userEvent from "@testing-library/user-event";
 import { Composer, type ComposerHandle, type ComposerProps } from "../ui/composer";
 import { ChatSessionProvider } from "../ui/chat-session-provider";
 
-afterEach(() => cleanup());
+afterEach(() => {
+  cleanup();
+  // The composer now persists its draft to sessionStorage; clear it so an unsent draft from one
+  // test can't restore into the next (each test is an independent session).
+  sessionStorage.clear();
+});
 
 function renderComposer(props: ComposerProps) {
   return render(
@@ -274,6 +279,48 @@ describe("Composer", () => {
       const [, secondTurnImages] = onSend.mock.calls[1];
       expect(secondTurnImages).toHaveLength(1);
       expect(secondTurnImages[0]).toMatchObject({ alt: "second-turn.png" });
+    });
+  });
+
+  describe("draft persistence across remounts", () => {
+    afterEach(() => sessionStorage.clear());
+
+    it("DP-1: restores an unsent draft after the composer unmounts and remounts", async () => {
+      // A remount (dev Fast Refresh, a reload, or the embed iframe reloading) throws away local
+      // React state. The draft must survive it: persisted on change, restored on mount.
+      const first = renderComposer({ onSend: vi.fn() });
+      await userEvent.type(
+        screen.getByRole("textbox", { name: /message/i }),
+        "half-written question",
+      );
+      first.unmount();
+
+      renderComposer({ onSend: vi.fn() });
+      expect(screen.getByRole("textbox", { name: /message/i })).toHaveValue("half-written question");
+    });
+
+    it("DP-2: a sent message clears the persisted draft (no resurrection on remount)", async () => {
+      const first = renderComposer({ onSend: vi.fn() });
+      await userEvent.type(
+        screen.getByRole("textbox", { name: /message/i }),
+        "about to send{Enter}",
+      );
+      expect(screen.getByRole("textbox", { name: /message/i })).toHaveValue("");
+      first.unmount();
+
+      renderComposer({ onSend: vi.fn() });
+      expect(screen.getByRole("textbox", { name: /message/i })).toHaveValue("");
+    });
+
+    it("DP-3: clearing the box to empty does not leave a stale draft behind on remount", async () => {
+      const first = renderComposer({ onSend: vi.fn() });
+      const box = screen.getByRole("textbox", { name: /message/i });
+      await userEvent.type(box, "typed then deleted");
+      await userEvent.clear(box);
+      first.unmount();
+
+      renderComposer({ onSend: vi.fn() });
+      expect(screen.getByRole("textbox", { name: /message/i })).toHaveValue("");
     });
   });
 });

@@ -35,6 +35,30 @@ const ATTACH_ICON_PATH =
   "M21 12.5l-8.5 8.5a6 6 0 0 1-8.5-8.5L12.5 4a4 4 0 0 1 5.7 5.7L9.7 18.2a2 2 0 0 1-2.9-2.9l8-8";
 const SEND_ICON_PATH = "M12 19V5M6 11l6-6 6 6";
 
+// The unsent message text is persisted here so a remount never loses it — a dev-server Fast
+// Refresh, a page reload, or the embed iframe reloading all throw away the composer's local React
+// state, which otherwise reads to the user as "my text vanished a second after typing". sessionStorage
+// (not localStorage): per-tab, cleared when the tab closes, so a draft never lingers across sessions
+// on a shared machine. Only the plain text is stored — never attachments, never anything secret.
+const DRAFT_STORAGE_KEY = "obi:composer-draft";
+
+function readDraft(): string {
+  try {
+    return globalThis.sessionStorage?.getItem(DRAFT_STORAGE_KEY) ?? "";
+  } catch {
+    return ""; // storage can throw (private mode, disabled) — a lost draft must never crash the input
+  }
+}
+
+function writeDraft(value: string): void {
+  try {
+    if (value) globalThis.sessionStorage?.setItem(DRAFT_STORAGE_KEY, value);
+    else globalThis.sessionStorage?.removeItem(DRAFT_STORAGE_KEY);
+  } catch {
+    // ignore — persistence is best-effort, never load-bearing
+  }
+}
+
 const MAX_ATTACHMENTS = 3;
 /** Per-image byte cap, mirroring the backend `chat_max_image_bytes` (decision w-composer-images:
  * ≤ 3 MB, decimal). An image over this is refused here so it never reaches the proxy or the
@@ -67,7 +91,9 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
 ) {
   const { locale } = useChatSession();
   const copy = getCopy(locale);
-  const [value, setValue] = useState("");
+  // Lazy initializer: restore a draft left by a previous mount (Fast Refresh / reload / iframe
+  // reload) so typed-but-unsent text survives a remount.
+  const [value, setValue] = useState(readDraft);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -80,6 +106,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(function Compo
     if (!textarea) return;
     textarea.style.height = "auto";
     textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [value]);
+
+  // Persist the unsent draft on every change so a remount can restore it. Fires for programmatic
+  // resets too (e.g. `send()`'s `setValue("")`), so a sent or cleared box also clears the stored
+  // draft — no stale text resurfaces on the next mount.
+  useEffect(() => {
+    writeDraft(value);
   }, [value]);
 
   // Revoke every outstanding preview URL on unmount — nothing else releases them. A sent
