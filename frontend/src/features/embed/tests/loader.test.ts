@@ -423,4 +423,92 @@ describe("Obi loader", () => {
       spy.mockRestore();
     }
   });
+
+  it("RL-1: a frame load while the panel is open re-posts obi:open and re-sends the token (reload recovery)", async () => {
+    // A reloaded /embed frame starts from nothing (open state + token live only in its memory), so
+    // without a resend the user faces a blank open panel and a desynced launcher. The loader must
+    // treat the iframe's load event as "frame forgot everything" and re-drive the handshake.
+    // Fresh Response per call: this path fetches twice (click, then reload), and a Response body can
+    // only be read once — a shared instance would throw on the second .json() (test artifact, not
+    // the loader; real fetch always yields a fresh response).
+    fetchMock.mockImplementation(() =>
+      Promise.resolve(new Response(JSON.stringify({ token: fakeJwt(3600) }), { status: 200 })),
+    );
+    const Obi = await loadObi();
+    Obi.init({ tokenUrl: TOKEN_URL });
+    const iframe = document.querySelector("iframe") as HTMLIFrameElement;
+    const postMessageSpy = vi.fn();
+    Object.defineProperty(iframe, "contentWindow", { value: { postMessage: postMessageSpy } });
+
+    (document.querySelector("button") as HTMLButtonElement).click();
+    await vi.waitFor(() => {
+      expect(postMessageSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "obi:token" }),
+        window.location.origin,
+      );
+    });
+    postMessageSpy.mockClear();
+    fetchMock.mockClear();
+
+    iframe.dispatchEvent(new Event("load")); // the dev-server (or crash) reload
+
+    await vi.waitFor(() => {
+      expect(postMessageSpy).toHaveBeenCalledWith({ type: "obi:open" }, window.location.origin);
+      expect(postMessageSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "obi:token" }),
+        window.location.origin,
+      );
+    });
+    expect(fetchMock).toHaveBeenCalledWith(TOKEN_URL, { credentials: "same-origin" });
+    for (const call of postMessageSpy.mock.calls) {
+      expect(call[1]).not.toBe("*");
+    }
+    // One reload = one token fetch, not one per retry (don't hammer the platform endpoint).
+    await new Promise((resolve) => setTimeout(resolve, 3200)); // outlast the full retry window
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("RL-2: a frame load while the panel is closed posts nothing (initial load stays silent)", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ token: fakeJwt(3600) }), { status: 200 }),
+    );
+    const Obi = await loadObi();
+    Obi.init({ tokenUrl: TOKEN_URL });
+    const iframe = document.querySelector("iframe") as HTMLIFrameElement;
+    const postMessageSpy = vi.fn();
+    Object.defineProperty(iframe, "contentWindow", { value: { postMessage: postMessageSpy } });
+
+    iframe.dispatchEvent(new Event("load")); // the iframe's ordinary initial load
+
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(postMessageSpy).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("RL-3 (LC-5): pending reload-recovery resends die on Obi.clear() instead of resurrecting the session", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ token: fakeJwt(3600) }), { status: 200 }),
+    );
+    const Obi = await loadObi();
+    Obi.init({ tokenUrl: TOKEN_URL });
+    const iframe = document.querySelector("iframe") as HTMLIFrameElement;
+    const postMessageSpy = vi.fn();
+    Object.defineProperty(iframe, "contentWindow", { value: { postMessage: postMessageSpy } });
+
+    (document.querySelector("button") as HTMLButtonElement).click();
+    await vi.waitFor(() => {
+      expect(postMessageSpy).toHaveBeenCalledWith(
+        expect.objectContaining({ type: "obi:token" }),
+        window.location.origin,
+      );
+    });
+
+    iframe.dispatchEvent(new Event("load"));
+    Obi.clear(); // logout while recovery resends are still pending
+    postMessageSpy.mockClear();
+    fetchMock.mockClear();
+
+    await new Promise((resolve) => setTimeout(resolve, 500)); // spans the early resend retries
+    expect(postMessageSpy).not.toHaveBeenCalled();
+  });
 });

@@ -41,6 +41,13 @@ const MSG_CLEAR = "obi:clear";
 const RENEW_BEFORE_EXPIRY_MS = 60_000;
 const MIN_RENEW_DELAY_MS = 1_000;
 
+// A frame (re)load wipes everything the frame holds in memory — open state, token, conversation —
+// so a reload while the panel is open must re-drive the handshake or the user faces a blank open
+// panel and a desynced launcher (first click hides, second restores). The frame's React bridge
+// attaches its message listener only after hydration, which lags the iframe's load event, hence a
+// short bounded retry schedule; both resent messages are idempotent frame-side.
+const RELOAD_RESEND_DELAYS_MS = [0, 400, 1200, 3000];
+
 let iframeEl: HTMLIFrameElement | null = null;
 let launcherEl: HTMLButtonElement | null = null;
 let renewTimer: ReturnType<typeof setTimeout> | null = null;
@@ -132,10 +139,45 @@ async function fetchAndSendToken(tokenUrl: string, isRetry = false): Promise<voi
   scheduleRenewal(tokenUrl, token);
 }
 
-function injectIframe(): HTMLIFrameElement {
+/** Re-drives the handshake after the frame (re)loads while open. Fetches a fresh token exactly ONCE
+ * (not per retry — that would hammer the platform's token endpoint), then re-posts `obi:open` + that
+ * token across the retry window so one of them lands after the frame's React bridge has hydrated and
+ * started listening. Epoch-guarded like every other delayed path (LC-5): a `clear()`/`destroy()`/
+ * re-`init()` between the load event and a pending resend must win — a cleared session is never
+ * resurrected by a late retry. The renewal timer is re-armed off this one fresh token. */
+async function resendOpenState(tokenUrl: string): Promise<void> {
+  const capturedEpoch = epoch;
+  let token: string | null = null;
+  try {
+    const response = await fetch(tokenUrl, { credentials: "same-origin" });
+    if (response.ok) {
+      const body = (await response.json().catch(() => null)) as { token?: string } | null;
+      token = body?.token ?? null;
+    }
+  } catch {
+    token = null;
+  }
+  // The session was cleared/re-pointed while the token was in flight — drop it (LC-5).
+  if (epoch !== capturedEpoch || !isOpen) return;
+  if (token !== null) scheduleRenewal(tokenUrl, token);
+  for (const delay of RELOAD_RESEND_DELAYS_MS) {
+    setTimeout(() => {
+      if (epoch !== capturedEpoch || !isOpen) return;
+      postToFrame({ type: MSG_OPEN });
+      if (token !== null) postToFrame({ type: MSG_TOKEN, token });
+    }, delay);
+  }
+}
+
+function injectIframe(tokenUrl: string): HTMLIFrameElement {
   const iframe = document.createElement("iframe");
   iframe.src = `${OBI_ORIGIN}/embed`;
   iframe.title = "Obi chat";
+  // The initial load is silent (isOpen is false until the launcher is clicked); only a reload of
+  // an OPEN panel re-drives the handshake.
+  iframe.addEventListener("load", () => {
+    if (isOpen) void resendOpenState(tokenUrl);
+  });
   // Bottom offset clears the 52px launcher (24px offset + 52px + 12px gap = 88px) so the open
   // panel floats ABOVE the launcher instead of covering its composer — the launcher stays put as
   // the single open/close toggle (the Intercom/Drift pattern), never overlapping.
@@ -211,7 +253,7 @@ function init(options: ObiInitOptions): void {
   if (iframeEl || launcherEl) destroy();
   // New lifecycle: any token fetch still in flight from a prior init/session is now stale (LC-5).
   epoch += 1;
-  iframeEl = injectIframe();
+  iframeEl = injectIframe(options.tokenUrl);
   launcherEl = injectLauncherButton(() => toggleWidget(options.tokenUrl));
 }
 
