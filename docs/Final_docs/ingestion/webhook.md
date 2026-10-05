@@ -3,7 +3,7 @@
 - **Workflow:** ingestion (stage 1 — a published change enters the system)
 - **Owning code:** `backend/app/features/confluence_sync/server/webhook.py` (`POST /confluence/events`), calling `application/event_service.py::ingest_event`
 - **Design panel:** `i1-webhook` (valid delivery → 200 + one job; redelivery → 200 + no job) and `i1-checks` (the gate)
-- **Status:** Implemented (handler) · **Unverified live** — not yet reachable from Confluence (see 2.0.2 below)
+- **Status:** Implemented (handler) · **Proven live 2026-09-30** — the Forge bridge (`services/obi-confluence-sync/`) delivers real Confluence events to the Railway deployment; the 8-rule end-to-end run is recorded in the ledger ("Step 3 · Confluence webhook go-live"). The `i1-webhook` panel flip is batched with roadmap substep 4.7.
 
 ## What it does
 
@@ -60,7 +60,25 @@ protecting `i1-webhook` / `i1-checks`:
 
 The handler also carries an inline `security_baseline` block (C1–C10) at the top of `webhook.py`.
 
-**Not yet proven live.** `i1-webhook` is `unverified` for one reason only: the handler is not
+**Live, repeatably (roadmap substep 4.3):** `backend/scripts/webhook_rules_live.py` is the
+permanent form of the 2026-09-30 session runner — it drives ONLY real Confluence REST mutations
+(labels, a body edit, a trash/restore) and then polls the database until the deployed path
+(Confluence → Forge → Railway `POST /confluence/events` → event ledger → job → worker) has done the
+work, reporting the new `origin=0` event-ledger rows per leg as the delivery evidence. It refuses
+the offline fixture env, requires `--yes`, restores the original labels AND body in a `finally`,
+and fingerprints a witness page before/after (rule 8). Its two safeguards are hermetically proven
+in `test_webhook_rules_live_script.py` (`test_webhook_rules_live_refuses_without_yes`,
+`test_webhook_rules_live_refuses_an_unconfigured_confluence`). One command:
+
+```bash
+cd backend && uv run python -u scripts/webhook_rules_live.py \
+  --page-id 1670873122 --other-page-id 1670971395 \
+  --scope-a obi-toast-test --scope-b obi-mews-test --yes
+```
+
+**The section below is superseded (kept as the record of the pre-Forge state).** The "not
+reachable from Confluence" blocker was closed on 2026-09-30 by the Forge app deployment
+(runbook `docs/runbooks/obi-confluence-sync-deploy.md`); the tunnel plan was never needed. `i1-webhook` is `unverified` for one reason only: the handler is not
 reachable from Confluence until the backend has a public HTTPS URL. Closing that is substep
 **2.0.2**, which is **blocked on owner-only resources** — see the ledger's `2.0.2 · need from you`
 entry (2026-09-24). Required to complete 2.0.2 and flip `i1-webhook` to verified:

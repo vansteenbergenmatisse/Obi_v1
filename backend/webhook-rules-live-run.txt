@@ -1,0 +1,68 @@
+page 1670873122: original labels=['obi-toast-test'] tags=['obi-toast-test']
+witness 1670971395: fingerprint 40b88703462815a96b24aec9e568cfe7|38a8d031ac5cb3a19d2ea3a12c30aaa5|708da10a229f55c71f41d25bb9776319
+leg timeout 420s — every leg rides the real webhook; nothing enqueued here
+
+[rule 2] remove the last recognized label 'obi-toast-test' → purge (webhook path)
+  ... purged to zero rows after 5.5s
+  [PASS] zero rows for the page (total_rows=0)
+  [PASS] rule 2: webhook delivered (new origin=0 ledger rows: #128 label_deleted)
+
+[rule 5] re-add the first recognized label 'obi-toast-test' → full build (webhook path)
+  ... page re-indexed with active chunks after 11.0s
+  [PASS] page_source row present again
+  [PASS] active chunks embedded (2)
+  [PASS] active chunk.tags include 'obi-toast-test'
+  [PASS] rule 5: webhook delivered (new origin=0 ledger rows: #129 label_added)
+
+[rule 4] add second recognized label 'obi-mews-test' → union, no re-embed (webhook path)
+  ... page_source.tags include 'obi-mews-test' after 10.8s
+  [PASS] tags share both: ['obi-mews-test', 'obi-toast-test']
+  [PASS] active chunk.tags include 'obi-mews-test'
+  [PASS] SAME active_doc_version_id (metadata-only, no re-embed)
+  [PASS] SAME active chunk-id set (no re-embed)
+  [PASS] rule 4: webhook delivered (new origin=0 ledger rows: #130 label_added)
+
+[rule 3] remove one of two ('obi-mews-test') → 'obi-toast-test' stays, no re-embed
+  ... 'obi-mews-test' gone from page_source.tags after 10.9s
+  [PASS] tags now ['obi-toast-test']
+  [PASS] page still indexed (a recognized tag remains)
+  [PASS] SAME active_doc_version_id (metadata-only, no re-embed)
+  [PASS] SAME active chunk-id set
+  [PASS] rule 3: webhook delivered (new origin=0 ledger rows: #131 label_deleted)
+
+[rule 6] edit the body (append marker 'webhookmarker7f18c6156a') → full rebuild, no vector reuse
+  ... a fresh document_version is active after 10.9s
+  [PASS] body edit minted a new document_version (rebuild)
+  [PASS] active chunk-id set fully replaced (no vector reuse)
+  [PASS] marker 'webhookmarker7f18c6156a' present in 1 re-embedded active child chunk(s)
+  [PASS] rule 6: webhook delivered (new origin=0 ledger rows: #132 page_updated)
+
+[rule 7] add 'classified' → purge despite 'obi-toast-test'; remove → re-index
+  ... purged to zero rows after 10.7s
+  [PASS] classified purge (total_rows=0)
+  [PASS] rule 7 (add): webhook delivered (new origin=0 ledger rows: #133 label_added)
+  ... page re-indexed after declassify after 10.9s
+  [PASS] re-indexed once classified is removed (recognized tag remains)
+  [PASS] a FRESH document_version was minted (full rebuild, not resurrection)
+  [PASS] rule 7 (remove): webhook delivered (new origin=0 ledger rows: #134 label_deleted)
+
+[rule 1] trash the page → purge; restore it → full rebuild (webhook path)
+  ... purged to zero rows after 10.8s
+  [PASS] trashed page purged (total_rows=0)
+  [PASS] rule 1 (trash): webhook delivered (new origin=0 ledger rows: #135 page_trashed)
+  ... restored page re-indexed after 10.8s
+  [PASS] restored page re-indexed (page_source row present)
+  [PASS] restored page has active chunks (full rebuild)
+  [PASS] a fresh document_version was minted on restore
+  [PASS] rule 1 (restore): webhook delivered (new origin=0 ledger rows: #136 page_restored)
+
+[cleanup] restore page status, body and labels (no residue)
+  ... body restored and re-indexed after 10.7s
+  [PASS] marker gone from active chunks (body restored)
+  [PASS] labels restored to ['obi-toast-test']
+  ... page re-indexed with its original tags after 0.2s
+
+[rule 8] witness page 1670971395 untouched throughout
+  [PASS] witness fingerprint (page_source + document_version + chunk rows) identical
+
+OK — every sync rule that ran was proven through the LIVE webhook path and the page was left exactly as found.
