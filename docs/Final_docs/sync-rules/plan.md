@@ -1017,7 +1017,9 @@ scopes-*set*), dus de uitbreiding zit in de token-claim en de gate, niet in de o
 4. Backwards-compat: blijft de enkelvoudige claim geldig (lijst van één) zodat bestaande platforms niet breken.
 
 Daarna pas implementeren: claim + gate + `resolve_allowed_scopes` een set laten accepteren, met test
-per keuze. Status: **Decision needed** (owner) — nog niet gepland in de actieplan-substeps.
+per keuze. Status: **BESLIST (owner, 2026-10-05)** — alle vier de keuzes vastgelegd in
+`docs/Final_docs/plan.md` §D.13 (drie-slots-token, één gefilterde zoekronde, slot-attributie in de
+bronnen, oude tokens = één gevuld slot); de bouw is roadmap-stap 5.
 
 ### 15.1 · Harde voorwaarde vóór de multi-scope bouw: eerst een rotsvast testfundament
 
@@ -1072,9 +1074,17 @@ testscope zelf wordt met de owner afgestemd (vragenronde) en als testplan hier v
 > 2026-10-03) is AF** (commit `41fc248`, ledger "D.0"): de handler vergelijkt `cmd.scopes` met de
 > gestempelde tags en herstempelt metadata-only; het B-lek is op RLS-niveau dicht bewezen onder
 > `rag_reader`; beide sentinel-tests bewust red-first omgeklapt; `make check` + eval groen. X2 is
-> ook af en gecommit (`f480b32`). Open owner-call: het archive-fires-no-webhook-gat (aanbeveling
-> in de D.0-ledger-entry). Volgende substap: §D.1 — het beslismemo dat de §15-keuzes 1–4 beslist,
-> eerst de owner/Jasper-feiten (Base ≤3 vs Data Hub ≤2 aansluitingen; customer-id als company_id).
+> ook af en gecommit (`f480b32`).
+>
+> **Status 2026-10-05 (slot): de §15-keuzes 1–4 zijn BESLIST** in de owner-beslisronde van
+> `docs/Final_docs/plan.md` §D.13: (1) token = company-ID + drie slots (POS/PMS uit Data Hub,
+> Accounting uit Base; elk slot één systeem of leeg; oude tokens blijven geldig als één gevuld
+> slot); (2) één gefilterde zoekronde over general + gevulde slots + de paren die het bedrijf
+> écht heeft; (3) elk resultaat toont welk slot het binnenliet; (4) backwards-compat = het
+> één-gevuld-slot-pad. Ook beslist: launch-allowlist Toast(POS)/Mews(PMS) — een gevuld slot
+> buiten de allowlist verbergt Obi, een leeg slot nooit; archived/draft blijft eruit met purge
+> bij statusverlies (rule bevestigd, as-built voldoet); never-bend rule 8 blijft (max 2 extra
+> reads). Het beslismemo-deel van §D.1 is daarmee gesloten; de bouw volgt de roadmap.
 
 Owner-keuzes uit de vragenronde: (1) eerst de **regressievloer** — het huidige single-scope gedrag
 vastklikken; multi-scope red-first tests wachten op de §15-beslissing; (2) contract **nog niet
