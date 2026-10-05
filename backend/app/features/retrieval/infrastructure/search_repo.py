@@ -68,8 +68,23 @@ def apply_knowledge_scope(session: Session, allowed_scopes: Sequence[str] | None
       empty list yields ``''`` -> the policy matches nothing -> default-deny (fail closed).
 
     Bound param, never interpolated (same injection-safety discipline as ``apply_source_scope``).
+    Binding alone is not enough, though: the policy splits the GUC with ``string_to_array(.., ',')``
+    and compares the whole value against ``'*'``, so a single *element* carrying an embedded comma
+    would semantically widen to every scope it names, and a list joining to the literal ``'*'``
+    would unlock the wildcard opt-out. Every production scope-GUC write funnels through here
+    (search txn, parent expansion, curated), so this is the choke point: such an element is
+    rejected before the join (fail closed — coverage gap G14).
     """
-    value = KNOWLEDGE_SCOPE_WILDCARD if allowed_scopes is None else ",".join(allowed_scopes)
+    if allowed_scopes is None:
+        value = KNOWLEDGE_SCOPE_WILDCARD  # the intentional internal opt-out sentinel
+    else:
+        for scope in allowed_scopes:
+            if "," in scope or KNOWLEDGE_SCOPE_WILDCARD in scope:
+                raise ValueError(
+                    f"invalid knowledge scope value {scope!r}: ',' and '*' would alter the "
+                    "RLS scope predicate"
+                )
+        value = ",".join(allowed_scopes)
     session.execute(
         text("SELECT set_config('app.allowed_knowledge_scopes', :s, true)"),
         {"s": value},

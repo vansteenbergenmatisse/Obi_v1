@@ -183,6 +183,83 @@ def test_cip3_distinct_token_subjects_never_share_a_cache_key_or_entry() -> None
     assert first != second  # distinct Answers (distinct trace ids), no cross-subject replay
 
 
+class _FixedAnswerProvider:
+    """Counts calls and returns one fixed `Answer` — lets a test push a small-talk or refusal
+    shape through the cache (gap G17: the single `answer()` entrypoint has no bypass)."""
+
+    def __init__(self, fixed: Answer) -> None:
+        self.fixed = fixed
+        self.calls = 0
+
+    def answer(self, history, auth: AuthContext) -> Answer:
+        self.calls += 1
+        return self.fixed
+
+
+def test_g17_small_talk_answer_is_served_from_cache() -> None:
+    """gap G17 (4.2 coverage audit) · PLAN 5 cache. A small-talk Answer (`trace_id=None` — no
+    retrieval ran, no trace row) still flows through the one cached `answer()` entrypoint: an
+    identical repeat replays it and the inner provider runs exactly once."""
+    inner = _FixedAnswerProvider(
+        Answer(text="Hi! Ask me about Omniboost.", refused=False, trace_id=None)
+    )
+    cache = CachingAnswerService(inner, ttl_seconds=60.0)
+
+    first = cache.answer(_history("hello"), _auth(principal="alice"))
+    second = cache.answer(_history("hello"), _auth(principal="alice"))
+
+    assert inner.calls == 1
+    assert second == first
+    assert second.trace_id is None and second.refused is False
+
+
+def test_g17_refused_answer_is_served_from_cache() -> None:
+    """gap G17 (4.2 coverage audit) · PLAN 5 cache. A refusal (`refused=True`) is cached like any
+    other Answer: the identical repeat (same identity, same history) is a hit, so a refusal never
+    re-runs retrieval + generation just to refuse again."""
+    inner = _FixedAnswerProvider(
+        Answer(text="I can't answer that from the documentation.", refused=True, trace_id="42")
+    )
+    cache = CachingAnswerService(inner, ttl_seconds=60.0)
+
+    first = cache.answer(_history("what is the launch code"), _auth(principal="alice"))
+    second = cache.answer(_history("what is the launch code"), _auth(principal="alice"))
+
+    assert inner.calls == 1
+    assert second == first
+    assert second.refused is True
+
+
+def test_g19_cache_key_and_cached_value_carry_no_raw_token_material() -> None:
+    """gap G19 (4.2 coverage audit) · regression lock on `_cache_key` + the stored entry.
+    The key binds identity through the DERIVED `token_subject` (issuer-NUL-subject, never the raw
+    bearer token) and is a pure sha256 hex digest: neither the raw token string nor any plaintext
+    key input (subject, principal, history) is readable in it, and the stored Answer carries no
+    token material either — a change that made the key a readable concatenation, or stored the
+    token on the Answer, goes red here."""
+    raw_token = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImsxIn0.c2VjcmV0LWJvZHk.raw-bearer-signature-material"
+    # What actually reaches the cache: the derived identity (auth_context._identity_key shape),
+    # never `raw_token` itself — AuthContext has no field that could carry it.
+    token_subject = "https://app.mews.com\x00user-7"
+    history = _history("what is the vpn policy")
+    auth = _auth(principal="alice", token_subject=token_subject)
+
+    key = _cache_key(history, auth)
+
+    assert len(key) == 64 and set(key) <= set("0123456789abcdef")  # a bare sha256 hex digest
+    assert raw_token not in key
+    assert token_subject not in key and "user-7" not in key  # hashed, never concatenated
+    assert "alice" not in key and "vpn" not in key
+
+    inner = _CountingProvider()
+    cache = CachingAnswerService(inner, ttl_seconds=60.0)
+    cache.answer(history, auth)
+    replayed = cache.answer(history, auth)  # the stored entry, replayed verbatim
+    assert len(inner.calls) == 1
+    stored = replayed.model_dump_json()
+    assert raw_token not in stored and token_subject not in stored and "user-7" not in stored
+
+
 def test_max_entries_bounds_the_cache() -> None:
     inner = _CountingProvider()
     cache = CachingAnswerService(inner, ttl_seconds=60.0, max_entries=1)

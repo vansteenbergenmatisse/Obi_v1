@@ -21,11 +21,17 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from app.features.rag_agent import Answer, AuthContext, TokenError, VerifiedClaims
+from app.features.rag_agent import (
+    Answer,
+    AuthContext,
+    TokenError,
+    VerifiedClaims,
+    chat_router_module,
+)
 from app.main import create_app
 from app.platform.config import Settings
 
-from .test_chat_endpoint import _auth, _chat_settings, _StubTokenVerifier
+from .test_chat_endpoint import _auth, _chat_settings, _LogRecorder, _StubTokenVerifier
 
 pytestmark = (
     pytest.mark.db
@@ -100,6 +106,8 @@ def client_and_recorder(settings: Settings, tmp_path):
             "CROSS": _claims(_MEWS_ISS, "toast"),  # CIP-A1: mews may not assert toast -> 401
             "INACTIVE": _claims(_TOAST_ISS, "toast"),  # CIP-A2: inactive platform -> 401
             "WORDPRESS": _claims(_MEWS_ISS, "wordpress"),  # unknown integration -> 401
+            # G9 (substep 4.2): an issuer absent from the registry entirely -> 401
+            "UNKNOWN_ISS": _claims("https://unknown.example.com", "mews"),
             "GARBAGE": TokenError("bad"),
         }
     )
@@ -190,3 +198,54 @@ def test_bad_token_is_401_before_search(client_and_recorder) -> None:
     resp = _post(client, token="GARBAGE")
     assert resp.status_code == 401
     assert recorder.last_auth is None
+
+
+# --- substep 4.2 (coverage audit) gap closures: G4, G9 -----------------------------------------
+
+
+def test_rt1_body_scope_disagreement_fires_the_ignored_log_and_token_scopes_serve(
+    client_and_recorder, monkeypatch
+) -> None:
+    """panel r1-auth · substep 4.2 (coverage gap G4)
+    'Valid token, body scope for another integration: the token wins and the mismatch is logged'
+    — `test_body_scope_disagreeing_with_token_is_ignored` proves the token wins; this proves the
+    `body_knowledge_scope_ignored` log line itself actually fires, exactly once, carrying the
+    requested slug and the winning token scopes, while the served scopes stay the token's.
+    Captured via a recorder wrapping the module logger — see `_LogRecorder`'s docstring for why
+    structlog's `capture_logs()` cannot work this late in the test run."""
+    client, recorder = client_and_recorder
+    log_recorder = _LogRecorder(chat_router_module.log)
+    monkeypatch.setattr(chat_router_module, "log", log_recorder)
+
+    resp = _post(client, token="MEWS", knowledge_scope="obi-toast-test")
+
+    assert resp.status_code == 200
+    ignored = [e for e in log_recorder.entries if e["event"] == "body_knowledge_scope_ignored"]
+    assert len(ignored) == 1  # the disagreement is logged, once
+    assert ignored[0]["requested"] == "obi-toast-test"
+    assert ignored[0]["token_scopes"] == ["obi-general-test", "obi-mews-test"]
+    assert recorder.last_auth is not None
+    # and the served scopes stay exactly the token's — the logged value never leaks into them
+    assert recorder.last_auth.allowed_scopes == ("obi-general-test", "obi-mews-test")
+
+
+def test_sec_chat_401_body_is_byte_identical_across_all_auth_failure_modes(
+    client_and_recorder,
+) -> None:
+    """panel r1-auth · substep 4.2 (coverage gap G9)
+    'Fail closed: ... 401 on any mismatch' with no detail on the wire: a garbage token, an issuer
+    absent from the registry, an inactive platform, a cross-issuer integration claim, and an
+    unknown integration all yield a 401 whose body BYTES are identical — a caller can never tell
+    which gate refused it (every mode raises the same bare `HTTPException(401, "invalid token")`
+    in `_resolve_auth_context`), and none of them ever reaches the answer service."""
+    client, recorder = client_and_recorder
+
+    bodies: dict[str, bytes] = {}
+    for token in ("GARBAGE", "UNKNOWN_ISS", "INACTIVE", "CROSS", "WORDPRESS"):
+        resp = _post(client, token=token)
+        assert resp.status_code == 401
+        bodies[token] = resp.content
+
+    assert len(set(bodies.values())) == 1  # byte-identical across every failure mode
+    assert bodies["GARBAGE"] == b'{"detail":"invalid token"}'  # and it is the bare generic body
+    assert recorder.last_auth is None  # no failure mode ever reached the service

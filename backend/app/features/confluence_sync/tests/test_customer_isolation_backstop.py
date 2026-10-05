@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.orm import Session
 
+from app.features.retrieval import apply_knowledge_scope
 from app.platform.config import Settings
 from schema import engine as engine_mod
 from schema import schema
@@ -166,6 +168,102 @@ def test_sec_read_paths_use_overlap_not_equality(gateway, settings: Settings) ->
     assert under_mews > 0, "shared [mews,toast] chunk hidden from mews -> equality, not overlap"
     assert under_toast > 0, "shared [mews,toast] chunk hidden from toast -> equality, not overlap"
     assert under_opera == 0, "shared [mews,toast] chunk visible to operacloud -> overlap too loose"
+
+
+def test_sec_scope_guc_is_local_does_not_leak_into_next_transaction_on_same_connection(
+    gateway, settings: Settings
+) -> None:
+    """panel 3.4.1 · substep 4.2 (coverage gap G13)
+    ``apply_knowledge_scope`` sets the scope GUC with ``set_config(..., is_local=true)`` — that
+    transaction-locality is what keeps a pooled connection safe: transaction 1 resolves mews and
+    reads mews rows; transaction 2 on the SAME DBAPI connection, which sets nothing, must read
+    ZERO rows (fail-closed unset GUC), never inherit mews's visibility. The source GUC is pinned
+    session-level here ON PURPOSE, so the zero-rows outcome in transaction 2 is attributable to
+    the scope GUC reverting, not to the source axis masking a leak."""
+    index_page(gateway, settings, _MEWS_PAGE, 3)
+    _set_chunk_tags(_MEWS_PAGE, ["obi-mews-test"])
+
+    eng = engine_mod.get_reader_engine()
+    with eng.connect() as conn:  # one checked-out connection, reused across both transactions
+        s = Session(bind=conn)
+        try:
+            # transaction 1: source axis session-level (deliberate, see docstring), scope via the
+            # production helper (is_local=true).
+            s.execute(text("SELECT set_config('app.allowed_sources', 'confluence:default', false)"))
+            apply_knowledge_scope(s, ["obi-mews-test"])
+            rows_txn1 = _count_chunks(s, _MEWS_PAGE)
+            s.commit()  # transaction 1 ends; the connection stays checked out
+
+            # transaction 2: same connection, NOTHING set.
+            rows_txn2 = _count_chunks(s, _MEWS_PAGE)
+            scope_guc_txn2 = s.execute(
+                text("SELECT current_setting('app.allowed_knowledge_scopes', true)")
+            ).scalar()
+
+            assert rows_txn1 > 0, "precondition: txn 1 should see its own scope's rows"
+            assert rows_txn2 == 0, (
+                "scope GUC visibility leaked into the next transaction on the same pooled "
+                "connection -> is_local not honored (fail-open)"
+            )
+            assert scope_guc_txn2 in (None, ""), (
+                f"scope GUC survived the transaction boundary: {scope_guc_txn2!r}"
+            )
+        finally:
+            # Drop the deliberate session-level source GUC before the connection goes back to
+            # the pool, so no later test inherits it.
+            s.rollback()
+            s.execute(text("RESET app.allowed_sources"))
+            s.commit()
+            s.close()
+
+
+def test_sec_scope_element_with_embedded_comma_cannot_widen_access(
+    gateway, settings: Settings
+) -> None:
+    """panel 3.4.1 · substep 4.2 (coverage gap G14a)
+    Semantic injection on a scope VALUE: one allowed-scopes ELEMENT containing an embedded comma
+    (``'obi-mews-test,obi-toast-test'`` as a single value) must not widen access to both scopes.
+    The real policy splits its GUC with ``string_to_array(.., ',')``, so the DB cannot tell one
+    comma'd value from two scopes — ``apply_knowledge_scope`` (the one choke point every
+    production scope-GUC write funnels through: search txn, parent expansion, curated) rejects
+    the element before joining, and the transaction stays fail-closed: zero rows from either
+    scope, never mews+toast."""
+    index_page(gateway, settings, _MEWS_PAGE, 3)
+    index_page(gateway, settings, _OPERA_PAGE, 3)
+    _set_chunk_tags(_MEWS_PAGE, ["obi-mews-test"])
+    _set_chunk_tags(_OPERA_PAGE, ["obi-toast-test"])
+
+    reader = get_reader_sessionmaker()
+    with reader() as s:
+        s.execute(text("SET LOCAL app.allowed_sources = 'confluence:default'"))
+        with pytest.raises(ValueError, match="scope"):
+            apply_knowledge_scope(s, ["obi-mews-test,obi-toast-test"])
+        # the GUC was never set -> the RESTRICTIVE policy fails closed on both scopes.
+        assert _count_chunks(s, _MEWS_PAGE) == 0, "comma'd scope value granted mews visibility"
+        assert _count_chunks(s, _OPERA_PAGE) == 0, "comma'd scope value WIDENED to a second scope"
+
+
+def test_sec_literal_wildcard_scope_list_cannot_unlock_opt_out(gateway, settings: Settings) -> None:
+    """panel 3.4.1 · substep 4.2 (coverage gap G14b)
+    A scopes list whose joined value equals the literal ``'*'`` (``["*"]`` arriving as caller
+    DATA, not the intentional internal ``None`` sentinel) must not unlock the wildcard RLS
+    opt-out: ``apply_knowledge_scope`` rejects the element and the transaction stays fail-closed
+    (zero rows). The internal ``None`` -> ``'*'`` path (eval / already-authorized parent
+    expansion) keeps working — asserted in the same session so the two can never be conflated."""
+    index_page(gateway, settings, _MEWS_PAGE, 3)
+    _set_chunk_tags(_MEWS_PAGE, ["obi-mews-test"])
+
+    reader = get_reader_sessionmaker()
+    with reader() as s:
+        s.execute(text("SET LOCAL app.allowed_sources = 'confluence:default'"))
+        with pytest.raises(ValueError, match="scope"):
+            apply_knowledge_scope(s, ["*"])
+        assert _count_chunks(s, _MEWS_PAGE) == 0, (
+            "caller-supplied ['*'] unlocked the wildcard opt-out -> cross-customer read"
+        )
+        # The intentional internal sentinel is untouched: None -> '*' still opts out.
+        apply_knowledge_scope(s, None)
+        assert _count_chunks(s, _MEWS_PAGE) > 0, "the internal None sentinel opt-out broke"
 
 
 def _seed_curated(tags_by_title: dict[str, list[str]]) -> None:

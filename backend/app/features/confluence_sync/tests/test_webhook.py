@@ -17,6 +17,8 @@ from schema.engine import session_scope
 from schema.enums import EventProcStatus
 from schema.models import EventLedger, Job
 
+from ._helpers import index_page, page_row_counts, run_worker
+
 pytestmark = (
     pytest.mark.db
 )  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
@@ -182,6 +184,35 @@ def test_i1_two_distinct_trash_deliveries_on_one_page_each_enqueue_a_job(webhook
     assert first.json()["job_id"] is not None
     assert second.json()["job_id"] is not None
     assert _job_count() == 2
+
+
+def test_tags_classified_label_added_delivery_purges_end_to_end(gateway, webhook_settings):
+    """panel tg-classified · substep 4.2 (coverage gap G2)
+    Rule 7 via the real event path: a signed `label_added` delivery on an already-indexed page
+    whose live label set now includes `classified` travels webhook -> ledger -> job -> worker
+    and removes every row the page owns (all counts zero), not just when a sync job is enqueued
+    by hand (`test_sync_rules_delete.py::test_in2_classified_label_removes_rows`)."""
+    index_page(gateway, webhook_settings, 1001, version=3)
+    assert page_row_counts(1001)["chunk"] > 0  # indexed with live chunks first
+
+    # The page now carries classified alongside a recognized scope (classified wins, rule 7).
+    gateway.set_labels(1001, ["obi-general-test", "classified"])
+
+    client = make_client(webhook_settings)
+    raw = _label_event_raw("cls-1")  # label_added on page 1001, signed
+    resp = client.post("/confluence/events", content=raw, headers=sign(raw))
+    assert resp.status_code == 200
+    assert resp.json()["job_id"] is not None  # ledger row -> job enqueued
+
+    results = run_worker(gateway, webhook_settings, owner="test")
+    assert any(r.status == "succeeded" for r in results)
+    assert page_row_counts(1001) == {
+        "chunk": 0,
+        "document_version": 0,
+        "document": 0,
+        "page_source": 0,
+        "page_restriction": 0,
+    }
 
 
 def test_oversized_body_is_rejected(webhook_settings):

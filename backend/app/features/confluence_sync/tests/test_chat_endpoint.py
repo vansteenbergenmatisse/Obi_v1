@@ -21,6 +21,7 @@ from app.features.rag_agent import (
     AuthContext,
     CachingAnswerService,
     ClarificationReply,
+    TokenError,
     VerifiedClaims,
     chat_router_module,
 )
@@ -1403,6 +1404,237 @@ def test_cip1_forwarded_body_principal_is_inert_scope_and_principal_unchanged(
     assert served.principal is None  # body principal never became the read-path principal
     # scope is exactly the verified mews token's scopes (general + mews), unmoved by the body value
     assert served.allowed_scopes == ("obi-general-test", "obi-mews-test")
+
+
+# --- substep 4.2 (coverage audit) gap closures: G5/G6/G7, G15, G16, G18 ----------------------
+
+
+def test_rt1_empty_string_knowledge_scope_is_422_before_the_service(
+    gateway, settings: Settings
+) -> None:
+    """panel r1-limits · substep 4.2 (coverage gap G5)
+    `knowledge_scope: ""` fails the scope-slug shape (`_KNOWLEDGE_SCOPE_PATTERN` requires at
+    least one character) -> 422 at body validation, and the answer service is never invoked.
+    Distinct from `test_malformed_knowledge_scope_is_rejected`: the empty string is the min-length
+    boundary of the pattern, not a punctuation/space violation."""
+    chat_settings = _chat_settings(settings)
+    spy = _SpyAnswerService()
+    client = _client_with_service(chat_settings, spy)
+
+    resp = client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": "hi"}], "knowledge_scope": ""},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 422
+    assert spy.calls == []  # rejected at the shape validator, before any service call
+
+
+def test_rt1_wildcard_knowledge_scope_sentinel_is_422(gateway, settings: Settings) -> None:
+    """panel r1-limits · substep 4.2 (coverage gap G6)
+    The literal `"*"` is the internal RLS wildcard sentinel — the scope GUC's explicit opt-out
+    that unlocks EVERY knowledge scope (see `apply_knowledge_scope` and
+    `test_customer_isolation_backstop.py::test_scope_rls_wildcard_is_an_explicit_opt_out`). It
+    must never be smuggleable in from the request body: the slug shape rejects it with a 422
+    before the service (and therefore any scope resolution) is ever reached."""
+    chat_settings = _chat_settings(settings)
+    spy = _SpyAnswerService()
+    client = _client_with_service(chat_settings, spy)
+
+    resp = client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": "hi"}], "knowledge_scope": "*"},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 422
+    assert spy.calls == []  # the sentinel never travels past body validation
+
+
+def test_rt1_unknown_extra_body_field_is_422(gateway, settings: Settings) -> None:
+    """panel r1-limits · substep 4.2 (coverage gap G7)
+    `ChatRequestBody` is `extra="forbid"`: an unknown top-level body field (here `scope`, a
+    plausible misspelling of `knowledge_scope`) is a 422, never silently dropped — so an
+    injected or misspelled control field can never be quietly ignored into a different meaning."""
+    chat_settings = _chat_settings(settings)
+    spy = _SpyAnswerService()
+    client = _client_with_service(chat_settings, spy)
+
+    resp = client.post(
+        "/chat",
+        json={"history": [{"role": "user", "content": "hi"}], "scope": "obi-mews-test"},
+        headers=_auth(),
+    )
+
+    assert resp.status_code == 422
+    assert spy.calls == []
+
+
+def test_sec_auth_failures_never_consume_rate_limit_budget_on_chat(
+    gateway, settings: Settings
+) -> None:
+    """panel r1-limits · substep 4.2 (coverage gap G15)
+    The deliberate order in `router.post_chat` — host key, then token, then limiter — means a 401
+    rejected at either auth gate never consumes rate-limit budget (an attacker hammering with bad
+    credentials cannot starve a legitimate caller's bucket). With a 1/min limit: three wrong-host-
+    key requests and three invalid-X-Obi-Token requests all 401, a valid request afterwards still
+    succeeds, and only then does the control request 429 (proving the budget really is 1)."""
+    chat_settings = _chat_settings(settings, chat_rate_limit_per_minute=1)
+    app = create_app(settings=chat_settings, start_scheduler=False)
+    app.state.answer_service = _SpyAnswerService()
+    app.state.token_verifier = _StubTokenVerifier({"BAD": TokenError("bad")})
+    client = TestClient(app)
+    body = {"history": [{"role": "user", "content": "hi"}]}
+
+    for _ in range(3):  # rejected at the host-key gate, before the limiter
+        resp = client.post("/chat", json=body, headers={"authorization": "Bearer wrong-key"})
+        assert resp.status_code == 401
+    for _ in range(3):  # rejected at the token gate, before the limiter
+        resp = client.post("/chat", json=body, headers={**_auth(), "x-obi-token": "BAD"})
+        assert resp.status_code == 401
+
+    valid = client.post("/chat", json=body, headers=_auth())
+    assert valid.status_code == 200  # the six 401s consumed no budget
+    control = client.post("/chat", json=body, headers=_auth())
+    assert control.status_code == 429  # only the valid pass consumed the 1/min budget
+
+
+def test_sec_auth_failures_never_consume_rate_limit_budget_on_feedback(
+    gateway, settings: Settings
+) -> None:
+    """panel r1-limits · substep 4.2 (coverage gap G15, feedback half)
+    `PATCH /chat/{trace_id}/feedback` shares the same host-key-then-limiter order: wrong-host-key
+    401s never consume budget, so under a 1/min limit the first valid request still succeeds and
+    only the control request after it is limited. (The feedback endpoint has no X-Obi-Token gate,
+    so the wrong-key mode is the only drivable auth failure; a missing trace row is a documented
+    silent no-op in `update_query_trace_feedback`, so no corpus setup is needed.)"""
+    chat_settings = _chat_settings(settings, chat_rate_limit_per_minute=1)
+    client = _client_with_service(chat_settings, _SpyAnswerService())
+
+    for _ in range(3):  # rejected at the host-key gate, before the limiter
+        resp = client.patch(
+            "/chat/1/feedback",
+            json={"feedback": 1},
+            headers={"authorization": "Bearer wrong-key"},
+        )
+        assert resp.status_code == 401
+
+    valid = client.patch("/chat/1/feedback", json={"feedback": 1}, headers=_auth())
+    assert valid.status_code == 200  # the three 401s consumed no budget
+    control = client.patch("/chat/1/feedback", json={"feedback": 1}, headers=_auth())
+    assert control.status_code == 429  # only the valid pass consumed the 1/min budget
+
+
+def _hub_platforms_file(tmp_path) -> str:
+    """G16 registry: one ACTIVE hub issuer allowed to assert BOTH mews and toast, so two tokens
+    can share issuer AND subject (identical issuer-namespaced `token_subject`) while differing
+    only in integration -> `allowed_scopes`. That isolates the knowledge-scope axis of the
+    answer-cache key: a cross-scope cache hit could not be masked by a differing subject
+    component (the committed per-product issuers would force different `token_subject`s)."""
+    p = tmp_path / "platforms.json"
+    p.write_text(
+        json.dumps(
+            {
+                "platforms": {
+                    "hub": {
+                        "issuer": "https://hub.example.com",
+                        "jwks_url": "https://hub.example.com/jwks",
+                        "domains": [],
+                        "lifetime_minutes": 60,
+                        "algs": ["RS256"],
+                        "active": True,
+                        "allowed_integrations": ["mews", "toast"],
+                    }
+                },
+                "integrations": {
+                    "mews": ["obi-mews-test"],
+                    "toast": ["obi-toast-test"],
+                },
+            }
+        )
+    )
+    return str(p)
+
+
+def test_sec_answer_cache_never_crosses_the_knowledge_scope_boundary_end_to_end(
+    gateway, settings: Settings, tmp_path
+) -> None:
+    """panel r3-deny · substep 4.2 (coverage gap G16)
+    Cross-KNOWLEDGE-SCOPE answer-cache isolation through the real HTTP path (the audit found only
+    the cross-subject axis proven end-to-end): `CachingAnswerService` wraps the real grounded
+    service over a scope-tagged corpus (the AUTH-6 corpus); a mews-token answer is cached — the
+    same-token replay IS a hit — and a toast token with the IDENTICAL history (same issuer, same
+    subject, so the cache key differs ONLY in `allowed_scopes`) is never served the mews entry
+    and never sees mews content."""
+    index_page(gateway, settings, 3002, 1)  # "Mews PMS Sync Setup"
+    index_page(gateway, settings, 3004, 1)  # "Toast POS Menu Sync"
+    _set_chunk_tags(3002, ["obi-mews-test"])
+    _set_chunk_tags(3004, ["obi-toast-test"])
+
+    chat_settings = _chat_settings(settings, platforms_path=_hub_platforms_file(tmp_path))
+    cached_service = CachingAnswerService(
+        _grounded_service(gateway, chat_settings), ttl_seconds=60.0
+    )
+    app = create_app(settings=chat_settings, start_scheduler=False)
+    app.state.answer_service = cached_service
+    hub = "https://hub.example.com"
+    app.state.token_verifier = _StubTokenVerifier(
+        {
+            "mews-note": VerifiedClaims(hub, "u-shared", "c1", "Hotel", "mews"),
+            "toast-note": VerifiedClaims(hub, "u-shared", "c1", "Hotel", "toast"),
+        }
+    )
+    client = TestClient(app)
+    body = {
+        "history": [
+            {"role": "user", "content": "How does the sync work and what happens when it fails?"}
+        ]
+    }
+
+    mews_done = _parse_sse(
+        client.post("/chat", json=body, headers={**_auth(), "x-obi-token": "mews-note"}).text
+    )[-1]
+    assert any(str(c["pageId"]) == "3002" for c in mews_done["citations"])  # mews content, cached
+
+    # Control: the cache IS engaged — an identical mews replay returns the cached trace id.
+    mews_replay = _parse_sse(
+        client.post("/chat", json=body, headers={**_auth(), "x-obi-token": "mews-note"}).text
+    )[-1]
+    assert mews_replay["traceId"] == mews_done["traceId"]
+
+    toast_done = _parse_sse(
+        client.post("/chat", json=body, headers={**_auth(), "x-obi-token": "toast-note"}).text
+    )[-1]
+    assert toast_done["traceId"] != mews_done["traceId"]  # never the mews cached entry
+    assert all(str(c["pageId"]) != "3002" for c in toast_done["citations"])  # no mews content
+    assert any(str(c["pageId"]) == "3004" for c in toast_done["citations"])  # a real toast answer
+
+
+def test_rt5_cache_hit_leaves_the_query_trace_row_count_unchanged(
+    gateway, settings: Settings
+) -> None:
+    """panel s-audit · substep 4.2 (coverage gap G18)
+    A cache hit replays the stored Answer without re-running retrieval, so it writes NO new
+    `query_trace` row — proven by an explicit `SELECT count(*)` before and after the hit
+    (mirroring `test_r1_short_small_talk_writes_no_query_trace_row`'s pattern; the equal traceId
+    alone would also pass if every hit wrote a fresh row carrying a copied id)."""
+    _index_corpus(gateway, settings)
+    chat_settings = _chat_settings(settings)
+    cached_service = CachingAnswerService(
+        _grounded_service(gateway, chat_settings), ttl_seconds=60.0
+    )
+    client = _client_with_service(chat_settings, cached_service)
+    body = {"history": [{"role": "user", "content": "How do I request access?"}]}
+
+    before = _query_trace_row_count()
+    first = _parse_sse(client.post("/chat", json=body, headers=_auth()).text)
+    after_miss = _query_trace_row_count()
+    assert after_miss == before + 1  # the miss really wrote its one trace row
+
+    second = _parse_sse(client.post("/chat", json=body, headers=_auth()).text)
+    assert second[-1]["traceId"] == first[-1]["traceId"]  # a genuine cache hit
+    assert _query_trace_row_count() == after_miss  # the hit wrote no new row
 
 
 def test_authrt4_body_principal_cannot_split_the_token_subject_rate_limit_bucket(

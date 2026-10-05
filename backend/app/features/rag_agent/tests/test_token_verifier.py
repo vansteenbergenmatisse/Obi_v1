@@ -10,6 +10,7 @@ import json
 import math
 import time
 from types import SimpleNamespace
+from typing import Any, cast
 
 import jwt
 import pytest
@@ -55,14 +56,9 @@ def registry(tmp_path):
 def _verifier(registry, key):
     class _StubJWK:
         def get_signing_key_from_jwt(self, token):
-            class _K:
-                pass
+            return SimpleNamespace(key=key.public_key())
 
-            k = _K()
-            k.key = key.public_key()
-            return k
-
-    return TokenVerifier(registry, jwks_client_factory=lambda url: _StubJWK())
+    return TokenVerifier(registry, jwks_client_factory=lambda url: cast(Any, _StubJWK()))
 
 
 def _sign(key, alg="RS256", **claims):
@@ -185,6 +181,24 @@ def test_missing_exp_rejected(registry, keypair):
     )
     with pytest.raises(TokenError):
         _verifier(registry, keypair).verify(tok)
+
+
+def test_g8_forged_signature_rejected_at_signature_step(registry, keypair):
+    """gap G8 (4.2 coverage audit) · PLAN 11.1c verification order, step 4.
+    A token whose iss/alg/kid and every claim are VALID but which is signed by a different private
+    key than the JWKS-resolved public key must be rejected — and rejected at the signature step
+    itself (the cause chain is `InvalidSignatureError`, proving no earlier gate masked the check),
+    collapsing to the same bare TokenError as every other failure (no detail on the wire)."""
+    forger = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    # All claims valid (incl. the all-three business claims), so steps 1-3 and 5-6 would pass:
+    # the ONLY defect is the signature. The stub JWKS still resolves `keypair`'s public key.
+    tok = _sign(forger, company_id="c1", company_name="Hotel", integration="mews")
+
+    with pytest.raises(TokenError) as excinfo:
+        _verifier(registry, keypair).verify(tok)
+
+    assert isinstance(excinfo.value.__cause__, jwt.InvalidSignatureError)
+    assert str(excinfo.value) == "invalid token"  # the uniform catch-all message, nothing extra
 
 
 def _fake_pyjwk_client_class(keypair, *, constructions: list[dict[str, object]]):

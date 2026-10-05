@@ -68,6 +68,29 @@ def test_in2_delete_then_restore_full_rebuilds(gateway, settings, monkeypatch):
     assert counter.texts == len(restored)  # every child re-embedded, none reused
 
 
+def test_in2_delete_page_never_indexed_is_clean_noop(gateway, settings):
+    """panel i2-gone · substep 4.2 (coverage gap G1)
+    A delete_page job for a page that was NEVER indexed (no page_source row) completes as a
+    clean no-op — the job succeeds with a skipped outcome, no error, and no rows appear in any
+    page-owned table."""
+    never_indexed = 4242  # no fixture, no seed — this page id has never touched the index
+    assert page_row_counts(never_indexed)["page_source"] == 0  # precondition: truly never indexed
+
+    enqueue_delete(never_indexed, "trashed", key="del:4242:never-indexed")
+    result = run_once(gateway, settings, owner="test")
+
+    assert result is not None and result.status == "succeeded"  # no error path taken
+    assert isinstance(result.outcome, SyncOutcome)
+    assert result.outcome.action == "skipped"  # a no-op purge, distinct from a real removal
+    assert page_row_counts(never_indexed) == {
+        "chunk": 0,
+        "document_version": 0,
+        "document": 0,
+        "page_source": 0,
+        "page_restriction": 0,
+    }
+
+
 def test_in2_classified_label_removes_rows(gateway, settings):
     """panel tg-classified · rule 7
     Adding the reserved classified label removes every row of the page on the next sync, whatever

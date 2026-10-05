@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import ProgrammingError
 
 from app.platform.config import Settings
 from schema import engine as engine_mod
@@ -172,6 +173,107 @@ def test_apply_reader_rls_leaves_chunk_source_isolation_intact(gateway, settings
             for table in _READ_TABLES:
                 conn.execute(text(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY"))
             conn.commit()
+
+
+def _seed_one_row_per_reader_table(gateway, settings: Settings) -> None:
+    """One committed row in every ``_READER_READ_TABLES`` member, so each visibility assertion
+    below counts a real row rather than passing vacuously on an empty table."""
+    index_page(gateway, settings, _PAGE, 3)  # page_source row (+ chunk rows)
+    with engine_mod.get_sessionmaker()() as s:
+        s.execute(
+            text("INSERT INTO page_restriction (page_id, principal) VALUES (:p, 'group:eng')"),
+            {"p": _PAGE},
+        )
+        s.execute(
+            text(
+                "INSERT INTO curated_knowledge_entry (tags, title, body, is_active) "
+                "VALUES (:tags, 'g11 entry', 'g11 body', true)"
+            ),
+            {"tags": []},
+        )
+        s.commit()
+
+
+def test_sec_reader_read_table_list_cannot_silently_shrink() -> None:
+    """panel s-anon · substep 4.2 (coverage gap G11)
+    The production reader-read set must keep covering every table retrieval reads via the reader
+    session (the page ACL pair + the curated layer). The parameterized test below derives its
+    cases from the production list at collection time, so WITHOUT this pin a table dropped from
+    ``_READER_READ_TABLES`` would silently drop its proof instead of failing."""
+    assert {"page_source", "page_restriction", "curated_knowledge_entry"} <= set(
+        schema._READER_READ_TABLES
+    )
+
+
+@pytest.mark.parametrize("table", schema._READER_READ_TABLES)
+def test_sec_every_reader_read_table_readable_by_reader_denied_to_anon(
+    gateway, settings: Settings, table: str
+) -> None:
+    """panel s-anon · substep 4.2 (coverage gap G11)
+    EVERY production ``_READER_READ_TABLES`` member (page_source, page_restriction,
+    curated_knowledge_entry) — not just the page_source the earlier tests hardcode — is readable
+    by rag_reader once ``apply_reader_rls`` runs, while the anon-like role (GRANT SELECT, no
+    BYPASSRLS, mirroring Supabase's public REST role) reads zero rows before AND after.
+    Parameterized over the production list itself so a newly added reader table is covered
+    automatically; each table carries a seeded row so visibility is a real assertion."""
+    _seed_one_row_per_reader_table(gateway, settings)
+
+    eng = engine_mod.get_engine()
+    with eng.connect() as conn:  # owner bypasses RLS: proves the row is really there
+        seeded = conn.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()
+    assert seeded > 0, f"vacuous test: no seeded row in {table}"
+
+    reader = engine_mod.get_reader_sessionmaker()
+    try:
+        # The live Supabase posture: RLS enabled (no policy yet) + anon holds SELECT.
+        with eng.connect() as conn:
+            conn.execute(text(_ENSURE_ANON))
+            conn.execute(text(f"GRANT SELECT ON {table} TO {_ANON}"))
+            conn.execute(text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
+            conn.commit()
+
+        with reader() as s:
+            reader_before = s.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()
+        with eng.connect() as conn:
+            anon_before = _count_as_anon(conn, table)
+        assert reader_before == 0, f"precondition: RLS/no-policy should deny the reader {table}"
+        assert anon_before == 0, f"precondition: RLS/no-policy should lock anon out of {table}"
+
+        with eng.connect() as conn:
+            schema.apply_reader_rls(conn)
+            conn.commit()
+
+        with reader() as s:
+            reader_after = s.execute(text(f"SELECT count(*) FROM {table}")).scalar_one()
+        with eng.connect() as conn:
+            anon_after = _count_as_anon(conn, table)
+        assert reader_after == seeded, f"rag_reader cannot read {table} after apply_reader_rls"
+        assert anon_after == 0, f"anon-like role can read {table} -> PUBLIC REST DATA LEAK"
+    finally:
+        with eng.connect() as conn:
+            schema.drop_reader_rls(conn)
+            for t in _READ_TABLES:
+                conn.execute(text(f"ALTER TABLE {t} DISABLE ROW LEVEL SECURITY"))
+            conn.execute(text(f"REVOKE SELECT ON {table} FROM {_ANON}"))
+            conn.commit()
+
+
+def test_sec_reader_set_role_to_owner_is_denied(gateway, settings: Settings) -> None:
+    """panel s-reader · substep 4.2 (coverage gap G12)
+    Privilege escalation via ``SET ROLE``: as rag_reader (NOSUPERUSER, no membership in the
+    owner role), ``SET ROLE <owner>`` is denied by Postgres with a permission error — the reader
+    can never become the RLS-exempt writer. Afterwards the same session still works as
+    rag_reader, so the denial is a clean error, not a broken connection."""
+    owner_role = engine_mod.get_engine().url.username  # the writer role the harness provisions
+    assert owner_role and owner_role != "rag_reader"
+
+    reader = engine_mod.get_reader_sessionmaker()
+    with reader() as s:
+        with pytest.raises(ProgrammingError, match="permission denied"):
+            s.execute(text(f"SET ROLE {owner_role}"))
+        s.rollback()  # the failed SET ROLE aborted the transaction; the session survives
+
+        assert s.execute(text("SELECT current_user")).scalar_one() == "rag_reader"
 
 
 def test_apply_reader_rls_skips_policy_when_role_absent(gateway, settings: Settings) -> None:

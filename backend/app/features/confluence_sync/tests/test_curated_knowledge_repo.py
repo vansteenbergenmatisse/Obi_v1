@@ -5,6 +5,10 @@ module docstring) to reuse this package's DB test harness — the same placement
 made for `test_retrieval_knowledge_scope.py`. Rows are seeded directly via the ORM, not through any
 ingestion path, since this table has no ingestion path of its own (PLAN 10.6's seed script is a
 separate, one-off CLI).
+
+These tests run under the OWNER session (RLS does not bind the table owner), so they prove the
+app-level ``tags &&`` predicate only; the RLS-policy-level proof is
+``knowledge-base/tests/test_migration_0010_scope_rls.py`` (4.2 coverage audit, D2).
 """
 
 from __future__ import annotations

@@ -1,9 +1,12 @@
 """Fixture gateway ``list_pages_by_label`` — CQL label discovery, mirrored offline.
 
-The live client issues a CQL ``space.id = <id> AND label in (...)`` query (live-tested); the
-fixture reproduces it in memory. These assert the fixture contract the sweep's discovery relies
-on: filter by space + label, honor ``set_labels`` overrides and hidden/non-current exclusion,
-and return nothing for an empty label list (no query).
+The live client issues a label-only CQL query — ``type = page AND label in (...)`` with
+``cqlcontext`` pinning current-only content — and filters by space id client-side against each
+result's expanded ``space.id`` (f143caa: Confluence Cloud CQL has no ``space.id``/``status``
+fields, and a bare ``space = <number>`` is read as a space *key*). The fixture reproduces that
+net contract in memory. These assert the fixture contract the sweep's discovery relies on:
+filter by space + label, honor ``set_labels`` overrides and hidden/non-current exclusion, and
+return nothing for an empty label list (no query).
 """
 
 from __future__ import annotations
