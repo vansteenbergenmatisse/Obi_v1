@@ -8,6 +8,12 @@ live runner `verify_sync_rules.py` covers it.
 **Never run these against production.** Run against staging with the owner's dedicated test pages,
 and save the output where substep 2.2.4's Proof line says (the pull request).
 
+**Label hygiene (owner rule, 2026-10-02).** Any Confluence label added *only to drive a test* — a
+scope label on a scratch page, a poke/resync label, anything not approved as a page's real tag — is
+removed again before the test is called done. A test is not finished while a test-only label is
+still live on any page. Scratch pages end in the trash; surviving real pages end with exactly the
+labels the owner approved, nothing else.
+
 ## Tooling (both **written**; running the live one stays owner-blocked)
 
 - `backend/scripts/page_state.py <page_id> [marker]` — read-only page dump: active/inactive chunk
