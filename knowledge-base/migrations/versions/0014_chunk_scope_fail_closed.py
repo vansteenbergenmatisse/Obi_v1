@@ -30,6 +30,7 @@ from collections.abc import Sequence
 
 from alembic import op
 from sqlalchemy import text
+from sqlalchemy.engine import Connection
 
 revision: str = "0014_chunk_scope_fail_closed"
 down_revision: str | None = "0013_reindex_progress"
@@ -62,8 +63,29 @@ def upgrade() -> None:
     bind.execute(text(_POLICY_FAIL_CLOSED))
 
 
+_DOWNGRADE_ON_SUPABASE_BLOCKED = (
+    "Blocked: never downgrade 0014 on Supabase. It restores the empty-tags-means-public floor, "
+    "reopening the cross-scope leak the fail-closed policy exists to prevent. Fix forward instead."
+)
+
+
+def _refuse_supabase_downgrade(bind: Connection) -> None:
+    """Hard stop: refuse to downgrade 0014 against a Supabase host (root CLAUDE.md rule #1).
+
+    0014's downgrade re-creates the pre-0014 policy with ``OR cardinality(tags) = 0`` — the
+    empty-tags-means-public floor — so any active chunk that regresses to empty tags becomes
+    readable by every scope. Mirrors 0009's tested guard (open decision X1 from the 4.2 coverage
+    audit, accepted 2026-10-05): it reads the host off the live bind, so it protects any caller
+    pointed at Supabase. Local downgrades (localhost/docker/RDS) still work.
+    """
+    host = (bind.engine.url.host or "").lower()
+    if "supabase" in host:
+        raise RuntimeError(_DOWNGRADE_ON_SUPABASE_BLOCKED)
+
+
 def downgrade() -> None:
     bind = op.get_bind()
+    _refuse_supabase_downgrade(bind)  # never loosen RLS on Supabase (root CLAUDE.md rule #1)
     bind.execute(text("ALTER TABLE chunk ENABLE ROW LEVEL SECURITY"))
     bind.execute(text(f"DROP POLICY IF EXISTS {_CHUNK_SCOPE_POLICY} ON chunk"))
     bind.execute(text(_POLICY_WITH_FLOOR))

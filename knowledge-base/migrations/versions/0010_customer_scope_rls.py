@@ -31,6 +31,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from alembic import op
+from sqlalchemy.engine import Connection
+
 from schema import schema
 
 revision: str = "0010_customer_scope_rls"
@@ -45,7 +47,29 @@ def upgrade() -> None:
     schema.apply_curated_scope_rls(bind)  # same axis on the curated layer
 
 
+_DOWNGRADE_ON_SUPABASE_BLOCKED = (
+    "Blocked: never downgrade 0010 on Supabase. Dropping the scope policies lets any scope read "
+    "every tenant's chunks (cross-tenant leak). Fix forward instead."
+)
+
+
+def _refuse_supabase_downgrade(bind: Connection) -> None:
+    """Hard stop: refuse to downgrade 0010 against a Supabase host (root CLAUDE.md rule #1).
+
+    0010's downgrade drops the RESTRICTIVE knowledge-scope policies on chunk and
+    curated_knowledge_entry; on the live store that removes the scope axis of customer isolation
+    entirely — any authorized reader sees every tenant's rows. Mirrors 0009's tested guard
+    (open decision X1 from the 4.2 coverage audit, accepted 2026-10-05): it reads the host off
+    the live bind, so it protects any caller pointed at Supabase. Local downgrades
+    (localhost/docker/RDS) still work.
+    """
+    host = (bind.engine.url.host or "").lower()
+    if "supabase" in host:
+        raise RuntimeError(_DOWNGRADE_ON_SUPABASE_BLOCKED)
+
+
 def downgrade() -> None:
     bind = op.get_bind()
+    _refuse_supabase_downgrade(bind)  # never loosen RLS on Supabase (root CLAUDE.md rule #1)
     schema.drop_chunk_scope_rls(bind)  # leaves chunk_source_read + RLS enable state intact
     schema.drop_curated_scope_rls(bind)
