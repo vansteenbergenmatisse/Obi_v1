@@ -1067,6 +1067,14 @@ testscope zelf wordt met de owner afgestemd (vragenronde) en als testplan hier v
 > de screenshot-bewijzen staan in `docs/Final_docs/4-test-foundation/browser-checks-4.4/`.
 > Bonus: X1 (Supabase-guards op de 0010/0014-downgrades) is besloten en gebouwd (4 hermetische
 > tests; kb-suite 49). Volgende: roadmap-stap 5 — het multi-integratie-ontwerp (§D), op go-ahead.
+>
+> **Status 2026-10-05 (avond): stap 5 is gestart — §D.0 (de scope-restamp-fix, findings A+B van
+> 2026-10-03) is AF** (commit `41fc248`, ledger "D.0"): de handler vergelijkt `cmd.scopes` met de
+> gestempelde tags en herstempelt metadata-only; het B-lek is op RLS-niveau dicht bewezen onder
+> `rag_reader`; beide sentinel-tests bewust red-first omgeklapt; `make check` + eval groen. X2 is
+> ook af en gecommit (`f480b32`). Open owner-call: het archive-fires-no-webhook-gat (aanbeveling
+> in de D.0-ledger-entry). Volgende substap: §D.1 — het beslismemo dat de §15-keuzes 1–4 beslist,
+> eerst de owner/Jasper-feiten (Base ≤3 vs Data Hub ≤2 aansluitingen; customer-id als company_id).
 
 Owner-keuzes uit de vragenronde: (1) eerst de **regressievloer** — het huidige single-scope gedrag
 vastklikken; multi-scope red-first tests wachten op de §15-beslissing; (2) contract **nog niet
