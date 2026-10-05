@@ -168,3 +168,12 @@ fail-closed validation. Proofs: `test-proof.md` in this folder.
 > guard, proven by 4 hermetic fake-bind tests in
 > `knowledge-base/tests/test_migration_scope_downgrade_guards.py` (blocks a `*.supabase.co` host,
 > allows localhost — the local round-trip tests stay green; kb suite 45 → 49). X2 stays deferred.
+
+> **Update 2026-10-05 (evening): X2 ALSO accepted and built.** The owner ordered X2 after X1:
+> `check_deploy_readiness` (setup_supabase.py) now runs an untagged-ACTIVE-chunk census and
+> refuses the deploy (rc 11) naming each dark page, instead of `verify_isolation`'s skip-as-pass
+> posture (that skip itself is unchanged — the *gate* is where loudness belongs). Red-first proven:
+> `test_deploy_readiness_fails_loudly_on_untagged_active_chunks` failed on the old gate (rc 0, no
+> census line) and passes after; the guard `test_deploy_readiness_ignores_untagged_inactive_chunks`
+> pins that GC remnants don't block. Live read-only run against Supabase: census 0, gate OK.
+> X3–X6 remain the open deferred set.

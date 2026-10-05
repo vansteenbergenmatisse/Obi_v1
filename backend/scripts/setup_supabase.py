@@ -383,6 +383,12 @@ def check_deploy_readiness(conn: Connection | None = None) -> int:
     ENABLEd there. Any gap -> the deploy is refused (non-zero, naming what is missing). Read-only;
     the local pgvector store (0010 applied) passes. Pass an open ``conn`` to check inside a caller's
     transaction (tests); otherwise a connection is opened on the settings/env DSN, like every phase.
+
+    X2 (4.2 audit, owner-accepted 2026-10-05): the gate ALSO fails loudly on any ACTIVE chunk with
+    an empty tag set. Post-0014 such a chunk is not a leak (fail-closed: visible to no scope) but
+    it is content silently dark to every customer — post-membership-gate it indicates a regression.
+    The old posture (``verify_isolation`` skip-as-pass) hid exactly that; now the deploy is refused
+    (rc 11) naming each dark page. Inactive untagged rows are ignored (never retrievable anyway).
     """
     if conn is None:
         with engine_mod.get_engine().connect() as owned:
@@ -424,6 +430,22 @@ def check_deploy_readiness(conn: Connection | None = None) -> int:
             f"restrictive_select={restrictive_select} rls_enabled={bool(enabled)}"
         )
 
+    # X2: census of ACTIVE chunks with empty tags — fail-closed makes them invisible to every
+    # scope, so each one is content silently dark to all customers (a regression signal).
+    untagged: list[tuple[int, int]] = []
+    if conn.execute(text("SELECT to_regclass('chunk')")).scalar() is not None:
+        untagged = [
+            (int(pid), int(n))
+            for pid, n in conn.execute(
+                text(
+                    "SELECT page_id, count(*) FROM chunk "
+                    "WHERE is_active AND cardinality(tags) = 0 "
+                    "GROUP BY page_id ORDER BY page_id"
+                )
+            ).all()
+        ]
+    print(f"  untagged ACTIVE chunks: {sum(n for _, n in untagged)}")
+
     if missing:
         print(
             "FAIL: the customer-scope RLS backstop (migration 0010 / ADR-0014) is NOT in place:",
@@ -437,9 +459,23 @@ def check_deploy_readiness(conn: Connection | None = None) -> int:
             file=sys.stderr,
         )
         return 10
+    if untagged:
+        print(
+            "FAIL (X2): active chunks with an EMPTY tag set exist — fail-closed RLS makes them "
+            "visible to NO scope, so this content is silently dark to every customer:",
+            file=sys.stderr,
+        )
+        for pid, n in untagged:
+            print(f"  - page {pid}: {n} untagged ACTIVE chunk(s)", file=sys.stderr)
+        print(
+            "Re-tag the pages in Confluence (a recognized scope label, or 'general' for "
+            "everyone) and re-sync, or purge them, before deploying.",
+            file=sys.stderr,
+        )
+        return 11
     print(
-        "OK: both customer-scope RLS policies present (RESTRICTIVE/SELECT, RLS enabled) — "
-        "reader path safe to expose."
+        "OK: both customer-scope RLS policies present (RESTRICTIVE/SELECT, RLS enabled) and no "
+        "untagged active chunks — reader path safe to expose."
     )
     return 0
 

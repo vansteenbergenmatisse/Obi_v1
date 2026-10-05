@@ -918,3 +918,10 @@ reports `origin=0` event-ledger rows per leg as delivery evidence, rule-8 witnes
 labels + body restored in a `finally`. The runner's happy path is live-level by nature (real
 network + credentials + it mutates Confluence — same stance as `verify_sync_rules.py`); the two
 rows above pin its refusal safeguards hermetically.
+
+## X2 additions (2026-10-05) — the readiness gate fails loudly on dark content
+
+| panel | title | test file | test name | level | green |
+|---|---|---|---|---|---|
+| `s-scope` | Untagged ACTIVE chunks block the deploy (X2 — dark-content census) | app/features/confluence_sync/tests/test_deploy_readiness_check.py | test_deploy_readiness_fails_loudly_on_untagged_active_chunks | database | yes |
+| `s-scope` | Untagged INACTIVE chunks (GC remnants) do not block the deploy | app/features/confluence_sync/tests/test_deploy_readiness_check.py | test_deploy_readiness_ignores_untagged_inactive_chunks | database | yes |

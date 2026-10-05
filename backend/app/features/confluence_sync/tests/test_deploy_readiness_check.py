@@ -18,10 +18,15 @@ whole set-up + assertion + rollback stays in one transaction (the db-test rollba
 from __future__ import annotations
 
 import pytest
+from sqlalchemy import text
 
 import scripts.setup_supabase as setup_supabase
+from app.platform.config import Settings
 from schema import engine as engine_mod
 from schema import schema
+from schema.engine import session_scope
+
+from ._helpers import index_page
 
 pytestmark = (
     pytest.mark.db
@@ -81,4 +86,59 @@ def test_deploy_readiness_fails_closed_when_scope_rls_absent(capsys) -> None:
         assert "Do NOT expose the reader path" in captured.err
     finally:
         conn.rollback()  # restores chunk_scope_read (the DROP was never committed) — harness intact
+        conn.close()
+
+
+def test_deploy_readiness_fails_loudly_on_untagged_active_chunks(
+    gateway, settings: Settings, capsys
+) -> None:
+    """X2 (4.2 audit, owner-accepted 2026-10-05) — an untagged ACTIVE chunk must BLOCK the deploy.
+
+    Post-0014 an active chunk with ``tags = {}`` is not a leak (fail-closed: visible to no scope)
+    but it IS content silently dark to every customer — post-membership-gate it indicates a
+    regression. The gate must fail non-zero and name the page instead of the old skip-as-pass.
+    Data is committed via the real sync path then mutated by SQL; the dir's autouse truncation
+    cleans it up.
+    """
+    index_page(gateway, settings, 1001, 1)  # commits real chunk rows for page 1001
+    with session_scope() as s:
+        s.execute(text("UPDATE chunk SET tags = '{}' WHERE page_id = 1001"))
+
+    conn = engine_mod.get_engine().connect()
+    try:
+        schema.apply_curated_scope_rls(conn)  # policy half of the gate passes; only X2 can fail
+
+        rc = setup_supabase.check_deploy_readiness(conn=conn)
+        captured = capsys.readouterr()
+
+        assert rc != 0, captured.out
+        assert "untagged ACTIVE chunk" in captured.err
+        assert "1001" in captured.err  # the failure names the dark page
+    finally:
+        conn.rollback()
+        conn.close()
+
+
+def test_deploy_readiness_ignores_untagged_inactive_chunks(
+    gateway, settings: Settings, capsys
+) -> None:
+    """X2 guard — untagged INACTIVE chunks (GC remnants) do not block the deploy.
+
+    Only ACTIVE rows can be silently dark content; inactive rows never reach retrieval at all.
+    """
+    index_page(gateway, settings, 1001, 1)
+    with session_scope() as s:
+        s.execute(text("UPDATE chunk SET tags = '{}', is_active = false WHERE page_id = 1001"))
+
+    conn = engine_mod.get_engine().connect()
+    try:
+        schema.apply_curated_scope_rls(conn)
+
+        rc = setup_supabase.check_deploy_readiness(conn=conn)
+        out = capsys.readouterr().out
+
+        assert rc == 0, out
+        assert "untagged ACTIVE chunks: 0" in out
+    finally:
+        conn.rollback()
         conn.close()
