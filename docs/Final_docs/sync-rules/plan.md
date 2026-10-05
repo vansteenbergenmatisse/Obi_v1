@@ -36,6 +36,23 @@ the event ledger) instead of the in-process `verify_sync_rules.py` runner. Each 
 re-assert **rule 8**: the Mews page `1670971395` stays byte-identical throughout. Full detail in §0's
 2026-09-30 block.
 
+**Update 2026-10-05 — the tail above is CLOSED; this plan is fully done.** The "only tail left"
+line in the Status paragraph is superseded: on 2026-10-05 the permanent webhook-path runner
+(`backend/scripts/webhook_rules_live.py`, built as roadmap substep 4.3) drove **all 8 rules —
+including the formerly-manual rules 1 (trash/restore) and 6 (body/title edit) — through the real
+Confluence → Forge → Railway → worker path, all PASS** (~11 s/leg, zero residue, rule-8 witness
+fingerprint identical; output in `backend/webhook-rules-live-run.txt`; a real restore-API bug was
+caught and fixed on the first run — ledger "4.3-addendum"). The **2.2.4 / 2.3.1 action-plan
+checkboxes are ticked** (substep 4.8, citing the 2026-09-30/10-05 webhook proofs). Roadmap **Step 4
+(test foundation, absorbing §15.2 golven 0–4) is complete end to end** (substeps 4.1–4.8, see
+`docs/Final_docs/plan.md`). **Step 5 has started:** §D.0 — the scope-restamp fix closing the
+2026-10-03 findings A+B — is done (commit `41fc248`, ledger "D.0"), the owner decided the **§15
+keuzes 1–4** plus the archive rule and rule-8 cap in decision round 1 (`plan.md` §D.13), and the
+deferred checks X3–X6 were run and recorded (`plan.md` §D.14). Still open, owner-side: the
+DB-password rotation window (runbook `plan.md` §D.15) and the obi-resync label cleanup. Nothing in
+THIS file remains to execute — it stays as the record of the eight-rule work and the home of the
+§15 decision pointers; the forward plan is `docs/Final_docs/plan.md` §D.
+
 **§14 (Execution appendix)** inlines the exact test harness, the current + target RLS DDL, the
 counting embedder, the naming/docstring/coverage/proof formats, and the CI xfail mechanics — so a
 fresh-context agent can execute from this file alone, without re-deriving them from the tree.
