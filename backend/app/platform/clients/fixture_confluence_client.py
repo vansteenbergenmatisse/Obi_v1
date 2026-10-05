@@ -183,7 +183,9 @@ class FixtureConfluenceGateway:
         return out
 
     def list_pages_by_label(self, space_id: int, labels: list[str]) -> list[ConfluencePageMeta]:
-        """Current pages in a space carrying any of ``labels`` (mirrors the live CQL query).
+        """Current pages in a space carrying any of ``labels`` (mirrors the HTTP client's CQL
+        label discovery — label-only CQL plus a client-side space-id filter, the form
+        live-confirmed 2026-10-02; the original ``space.id``/``status`` CQL 400'd live).
 
         Uses the same override-aware ``get_labels`` a sync would see (so a test's ``set_labels``
         wins), and applies the same ``_hidden`` / ``_NON_CURRENT`` exclusion as

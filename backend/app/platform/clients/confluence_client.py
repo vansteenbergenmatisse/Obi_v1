@@ -240,8 +240,14 @@ class HttpConfluenceClient:
 
         The sweep unions these with the ``source_scope``-covered pages so a freshly-tagged page
         outside any configured root still becomes a candidate; the worker's ``decide_command``
-        then authorizes it (or not). The CQL MUST filter on ``space.id = <id>`` — a bare
-        ``space = <number>`` is read by Confluence as a space *key*, not an id.
+        then authorizes it (or not).
+
+        Request shape confirmed live 2026-10-02 (the first live run 400'd on the original CQL):
+        Confluence Cloud CQL has **no** ``space.id`` field ("No field exists with the name:
+        'space.id'") and **no** ``status`` field, and a bare ``space = <number>`` is read as a
+        space *key*, matching nothing. So the CQL filters on ``type`` and ``label`` only,
+        ``cqlcontext`` pins current-only content (the endpoint's default, made explicit), and
+        the space-id filter runs client-side against each result's expanded ``space.id``.
 
         ``labels`` come from the recognized-scope config (trusted, lowercase kebab); they are
         quoted for the ``label in (...)`` clause. No request-body input reaches this query. Runs
@@ -251,19 +257,24 @@ class HttpConfluenceClient:
         if not wanted:
             return []
         in_list = ", ".join('"' + lbl.replace('"', "") + '"' for lbl in wanted)
-        cql = (
-            f"space.id = {int(space_id)} AND type = page AND status = current "
-            f"AND label in ({in_list})"
-        )
+        cql = f"type = page AND label in ({in_list})"
         pages: list[ConfluencePageMeta] = []
-        params: dict | None = {"cql": cql, "limit": 100, "expand": "space,version,ancestors"}
+        params: dict | None = {
+            "cql": cql,
+            "cqlcontext": '{"contentStatuses": ["current"]}',
+            "limit": 100,
+            "expand": "space,version,ancestors",
+        }
         url = f"{self._base}/rest/api/content/search"
         while True:
             resp = self._get(url, params=params)
             resp.raise_for_status()
             data = resp.json()
             for item in data.get("results", []):
-                pages.append(self._meta_from_cql(item))
+                meta = self._meta_from_cql(item)
+                if meta.space_id != int(space_id):
+                    continue  # the label query spans spaces; CQL cannot filter on a space id
+                pages.append(meta)
             next_link = (data.get("_links", {}) or {}).get("next")
             if not next_link:
                 break

@@ -303,6 +303,118 @@ def test_http_client_group_member_lookup_paginates_without_doubling_wiki_prefix(
     ]
 
 
+# -- HttpConfluenceClient.list_pages_by_label (CQL label discovery) -----------------------
+#
+# Pins the exact request shape confirmed live 2026-10-02 against Confluence Cloud. The first
+# live reconciliation run 400'd on the original CQL: `space.id` is NOT a CQL field ("No field
+# exists with the name: 'space.id'"), and neither is `status` — and a bare `space = <number>`
+# is read as a space *key*, matching nothing. The working form: CQL filters on `type` and
+# `label` only, `cqlcontext` pins current-only content, and the space-id filter happens
+# client-side on each result's expanded `space.id`.
+
+
+def test_list_pages_by_label_sends_the_live_confirmed_cql_request() -> None:
+    seen: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["path"] = request.url.path
+        seen["cql"] = request.url.params.get("cql")
+        seen["cqlcontext"] = request.url.params.get("cqlcontext")
+        seen["limit"] = request.url.params.get("limit")
+        seen["expand"] = request.url.params.get("expand")
+        return httpx.Response(200, json={"results": [], "_links": {}})
+
+    client = HttpConfluenceClient(
+        _settings(), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    client.list_pages_by_label(701857803, ["obi-general-test", "obi-operacloud-test"])
+
+    assert seen["path"] == "/wiki/rest/api/content/search"
+    # No `space.id` and no `status` clause — both are 400s on Confluence Cloud CQL.
+    assert seen["cql"] == 'type = page AND label in ("obi-general-test", "obi-operacloud-test")'
+    assert seen["cqlcontext"] == '{"contentStatuses": ["current"]}'
+    assert seen["limit"] == "100"
+    assert seen["expand"] == "space,version,ancestors"
+
+
+def test_list_pages_by_label_filters_to_the_requested_space_client_side() -> None:
+    # CQL cannot filter on a space *id* (`space` matches the key only), so the label query spans
+    # spaces and the client must drop results whose expanded `space.id` differs.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "id": "1671069719",
+                        "title": "General Obi information",
+                        "status": "current",
+                        "space": {"id": 701857803, "key": "SupOnb"},
+                        "version": {"number": 2, "when": "2026-09-09T12:23:47.006Z"},
+                        "ancestors": [{"id": "1671168029"}],
+                        "_links": {"webui": "/spaces/SupOnb/pages/1671069719"},
+                    },
+                    {
+                        "id": "555",
+                        "title": "Same label, wrong space",
+                        "status": "current",
+                        "space": {"id": 999, "key": "OTHER"},
+                        "version": {"number": 1, "when": "2026-09-01T00:00:00.000Z"},
+                        "ancestors": [],
+                        "_links": {"webui": "/spaces/OTHER/pages/555"},
+                    },
+                ],
+                "_links": {},
+            },
+        )
+
+    client = HttpConfluenceClient(
+        _settings(), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    pages = client.list_pages_by_label(701857803, ["obi-general-test"])
+    assert [p.page_id for p in pages] == [1671069719]
+    meta = pages[0]
+    assert meta.space_id == 701857803
+    assert meta.parent_id == 1671168029
+    assert meta.title == "General Obi information"
+    assert meta.status == "current"
+    assert meta.version_number == 2
+    assert meta.version_created_at.isoformat().startswith("2026-09-09T12:23:47")
+    assert meta.source_url == "https://example.atlassian.net/wiki/spaces/SupOnb/pages/1671069719"
+
+
+def test_list_pages_by_label_paginates_via_next_link_without_doubling_wiki_prefix() -> None:
+    seen_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_paths.append(request.url.path)
+        item = {
+            "id": str(len(seen_paths)),
+            "title": f"Page {len(seen_paths)}",
+            "status": "current",
+            "space": {"id": 701857803},
+            "version": {"number": 1, "when": "2026-09-01T00:00:00.000Z"},
+            "ancestors": [],
+            "_links": {},
+        }
+        if len(seen_paths) == 1:
+            return httpx.Response(
+                200,
+                json={
+                    "results": [item],
+                    "_links": {"next": "/wiki/rest/api/content/search?cursor=abc"},
+                },
+            )
+        return httpx.Response(200, json={"results": [item], "_links": {}})
+
+    client = HttpConfluenceClient(
+        _settings(), client=httpx.Client(transport=httpx.MockTransport(handler))
+    )
+    pages = client.list_pages_by_label(701857803, ["obi-general-test"])
+    assert [p.page_id for p in pages] == [1, 2]
+    assert seen_paths == ["/wiki/rest/api/content/search", "/wiki/rest/api/content/search"]
+
+
 # -- HttpConfluenceClient retry/breaker/logging (PLAN 4.6.7) -----------------------------
 
 
