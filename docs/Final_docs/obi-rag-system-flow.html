@@ -2655,8 +2655,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "ov-filter": {
 "n": "Retrieval stage 3",
 "h": "Filter: three locks",
-"st": "unverified",
-"today": "Source RLS live. Scope RLS coded (migration 0010), not applied live. Page ACL runs before rerank. Empty tags read as public.",
+"st": "built",
+"today": "All three locks live: source RLS live; scope RLS fail-closed on Supabase (0014, verified live 2026-09-25 — empty tags read as private, not public); page ACL runs before rerank.",
 "s": [
 "Lock 1: source row policy.",
 "Lock 2: scope row policy, RESTRICTIVE.",
@@ -2953,8 +2953,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "cm-alembic": {
 "n": "Folder",
 "h": "knowledge-base/migrations/versions: the migrations",
-"st": "unverified",
-"today": "0001 core schema, 0002 provider tags and RLS, 0003 query_trace, 0004 source_scope, 0005 page_restriction, 0006 dedupe check constraints, 0007 knowledge scope, 0008 drop FORCE RLS, 0009 reader policies, 0010 scope RLS. Live head on Supabase: 0012.",
+"st": "built",
+"today": "0001..0014 all written, each with a tested downgrade; Supabase live head is 0014_chunk_scope_fail_closed since 2026-09-25 (only ever upgraded, never downgraded). The 0009 downgrade carries a tested Supabase hard-block; guarding 0010/0014 the same way is open owner decision X1 (4.2 audit).",
 "s": [
 "Every migration has a downgrade.",
 "0010 must be applied live before any public deploy.",
@@ -3175,8 +3175,8 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "i1-webhook": {
 "n": "HTTP endpoint",
 "h": "POST /confluence/events",
-"st": "unverified",
-"today": "Handler built and tested. Not reachable from Confluence until the backend has a public HTTPS URL.",
+"st": "built",
+"today": "Proven live 2026-09-30: the Forge bridge delivers real Confluence events to the Railway deployment (signed-curl parity, worker drain, a real label event end-to-end, then the full 8-rule run); repeatable via scripts/webhook_rules_live.py (4.3).",
 "f": [
 [
 "Kind",
@@ -6792,7 +6792,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "s-scope": {
 "n": "Lock 2",
 "h": "Scope row security",
-"st": "unverified",
+"st": "built",
 "f": [
 [
 "ADR",
@@ -6812,7 +6812,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ]
 ],
 "simple": "Lock 2: the database shows only pieces whose tag matches this person's integration.",
-"today": "Migration 0010 is coded and tested but not applied to Supabase; the app predicate defaults to off in code."
+"today": "Migration 0014 applied to Supabase 2026-09-25 and verified live as rag_reader: empty tags visible to no scope, per-scope counts correct, '*' opt-out kept for the trusted parent/eval path; app predicate still default-off (RLS is the boundary); scope-value injection closed by the 4.2 fail-closed validator."
 },
 "s-acl": {
 "n": "Lock 3",

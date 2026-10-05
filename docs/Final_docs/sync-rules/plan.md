@@ -1040,6 +1040,34 @@ testscope zelf wordt met de owner afgestemd (vragenronde) en als testplan hier v
 
 ### 15.2 · Het testplan (owner-afgestemd 2026-10-02): de regressievloer vóór multi-scope
 
+> **2026-10-05 — waar dit nu leeft:** de golven 0–4 hieronder zijn als substappen 4.1–4.5 in de
+> roadmap opgenomen (`docs/Final_docs/plan.md` §A, stap 4); golf 5 is vervangen door roadmap-stap 5
+> (het volledige multi-integratie-ontwerp, §D aldaar) + stap 6 (de agent-gebouwde testuitbreiding).
+> De §15-keuzes 1–4 worden beslist in het beslismemo van §D.1. Dit blok blijft staan als record van
+> de owner-afspraak; de roadmap is leidend voor de volgorde.
+>
+> **Status 2026-10-05:** golf 0 (= substap 4.1, baselines in `docs/plan/baseline.md`) en golf 1
+> (= substap 4.2, audit + 25 gap-dichtende tests + de G14 scope-waarde-fix in
+> `docs/Final_docs/4-test-foundation/`) zijn **afgerond**.
+>
+> **Status 2026-10-05 (later die dag):** golf 2 (= substap 4.3) is **gebouwd** —
+> `backend/scripts/webhook_rules_live.py`, de permanente webhook-pad-runner (alleen echte
+> Confluence-REST-mutaties, pollt de DB tot de gedeployde keten het werk deed, event-ledger-bewijs
+> per leg, rule-8-getuige, labels + body hersteld in een `finally`); de **live run zelf is
+> owner-only** (zie de ledger-entry 4.3 "need from you"). Golf 4 (= 4.5) is als before-gate
+> bevestigd (byte-identiek aan de 4.1-baseline). Golf 3 (= 4.4) is de owner's browsercheck
+> (ledger "4.4 · need from you"); de Playwright-automatisering ervan blijft roadmap-stap 6.
+> Ook 4.6–4.8 (verify-state-staart) zijn klaar: live proofs read-only herbevestigd, de laatste
+> vier `unverified`-panelen geflipt, en de 2.2.4/2.3.1-checkboxes getickt op het 2026-09-30-bewijs.
+>
+> **Status 2026-10-05 (slot): STAP 4 VOLLEDIG AFGEROND.** De live run van `webhook_rules_live.py`
+> is owner-ordered uitgevoerd en **alle 8 regels PASS** door het echte webhookpad (output
+> `backend/webhook-rules-live-run.txt`; de eerste run ving een echte restore-API-bug, gefixt —
+> ledger "4.3-addendum"). De owner's browserchecks (golf 3 / 4.4) zijn **gedaan en geslaagd**;
+> de screenshot-bewijzen staan in `docs/Final_docs/4-test-foundation/browser-checks-4.4/`.
+> Bonus: X1 (Supabase-guards op de 0010/0014-downgrades) is besloten en gebouwd (4 hermetische
+> tests; kb-suite 49). Volgende: roadmap-stap 5 — het multi-integratie-ontwerp (§D), op go-ahead.
+
 Owner-keuzes uit de vragenronde: (1) eerst de **regressievloer** — het huidige single-scope gedrag
 vastklikken; multi-scope red-first tests wachten op de §15-beslissing; (2) contract **nog niet
 beslist** — er komt eerst een kort beslismemo; (3) alle vier de niveaus: unit+database (CI-gate),

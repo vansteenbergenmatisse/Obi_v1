@@ -1,6 +1,6 @@
 # Obi, part by part — the complete brief, A to Z
 
-Generated on 2026-09-25 from `docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
+Generated on 2026-10-05 from `docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
 
 ## 0 · How to read this brief
 
@@ -250,10 +250,10 @@ _Workflow label shown in the drawer: System overview_
   3. Dense and keyword search over active children.
   4. Fuse by chunk id; keep provenance. Curated entries are in the pool.
 
-##### Panel `ov-filter` · Filter: three locks · [Unverified]
+##### Panel `ov-filter` · Filter: three locks · [Implemented]
 - Kind: Retrieval stage 3
 - In plain words: Removes anything this person may not see. Two rules run inside the database before rows come out; a third checks Confluence page permissions.
-- Today: Source RLS live. Scope RLS coded (migration 0010), not applied live. Page ACL runs before rerank. Empty tags read as public.
+- Today: All three locks live: source RLS live; scope RLS fail-closed on Supabase (0014, verified live 2026-09-25 — empty tags read as private, not public); page ACL runs before rerank.
 - Steps:
   1. Lock 1: source row policy.
   2. Lock 2: scope row policy, RESTRICTIVE.
@@ -784,10 +784,10 @@ _Workflow label shown in the drawer: Code map_
   - `shared/ttl_cache.py` — TTLCache, used by idempotency (and the answer cache, to remove)
   - `shared/hashing.py` — hash_json, sha256_text
 
-##### Panel `cm-alembic` · knowledge-base/migrations/versions: the migrations · [Unverified]
+##### Panel `cm-alembic` · knowledge-base/migrations/versions: the migrations · [Implemented]
 - Kind: Folder
 - In plain words: The numbered history of every database change.
-- Today: 0001 core schema, 0002 provider tags and RLS, 0003 query_trace, 0004 source_scope, 0005 page_restriction, 0006 dedupe check constraints, 0007 knowledge scope, 0008 drop FORCE RLS, 0009 reader policies, 0010 scope RLS. Live head on Supabase: 0012.
+- Today: 0001..0014 all written, each with a tested downgrade; Supabase live head is 0014_chunk_scope_fail_closed since 2026-09-25 (only ever upgraded, never downgraded). The 0009 downgrade carries a tested Supabase hard-block; guarding 0010/0014 the same way is open owner decision X1 (4.2 audit).
 - Steps:
   1. Every migration has a downgrade.
   2. 0010 must be applied live before any public deploy.
@@ -1442,10 +1442,10 @@ _Workflow label shown in the drawer: Ingestion, stage 1 \u00b7 Receive and queue
   - A page whose last recognized label was removed is deactivated by the next sweep.
 - Target and notes: Target: a daily label sweep (Confluence label search over the names in knowledge_scopes.json) replaces the folder-root sweep. Any tagged page the webhook missed is found within a day.
 
-##### Panel `i1-webhook` · POST /confluence/events · [Unverified]
+##### Panel `i1-webhook` · POST /confluence/events · [Implemented]
 - Kind: HTTP endpoint
 - In plain words: The doorbell Confluence rings when a published page changes. We answer fast and do the work later.
-- Today: Handler built and tested. Not reachable from Confluence until the backend has a public HTTPS URL.
+- Today: Proven live 2026-09-30: the Forge bridge delivers real Confluence events to the Railway deployment (signed-curl parity, worker drain, a real label event end-to-end, then the full 8-rule run); repeatable via scripts/webhook_rules_live.py (4.3).
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4394,10 +4394,10 @@ _Workflow label shown in the drawer: Security_
   | Separates | whole source systems by source_id |
 - Target and notes: See retrieval stage 3 for the DDL and the default-deny proof.
 
-##### Panel `s-scope` · Scope row security · [Unverified]
+##### Panel `s-scope` · Scope row security · [Implemented]
 - Kind: Lock 2
 - In plain words: Lock 2: the database shows only pieces whose tag matches this person's integration.
-- Today: Migration 0010 is coded and tested but not applied to Supabase; the app predicate defaults to off in code.
+- Today: Migration 0014 applied to Supabase 2026-09-25 and verified live as rag_reader: empty tags visible to no scope, per-scope counts correct, '*' opt-out kept for the trusted parent/eval path; app predicate still default-off (RLS is the boundary); scope-value injection closed by the 4.2 fail-closed validator.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4662,7 +4662,7 @@ _Section id: `open`_
 | `ov-widget` | fit | The Obi widget | Implemented |
 | `ov-gate` | fit | The gate: who are we talking to? | Implemented, needs changing |
 | `ov-search` | fit | Search | Implemented, needs changing |
-| `ov-filter` | fit | Filter: three locks | Unverified |
+| `ov-filter` | fit | Filter: three locks | Implemented |
 | `ov-judge` | fit | Rerank and judge | Implemented, needs changing |
 | `ov-answer` | fit | Answer | Implemented, needs changing |
 | `sc-frontend` | concerns | One frontend | Implemented |
@@ -4682,7 +4682,7 @@ _Section id: `open`_
 | `cm-eval` | code | features/evaluation | Planned |
 | `cm-platform` | code | platform/: shared technical capabilities | Implemented |
 | `cm-shared` | code | shared/: small generic helpers | Implemented |
-| `cm-alembic` | code | knowledge-base/migrations/versions: the migrations | Unverified |
+| `cm-alembic` | code | knowledge-base/migrations/versions: the migrations | Implemented |
 | `cm-scripts` | code | scripts/: operator tools | Implemented |
 | `cm-config` | code | config/knowledge_scopes.json: the scope list | Implemented |
 | `cm-docs` | code | docs/adr: the decisions of record | Implemented |
@@ -4697,7 +4697,7 @@ _Section id: `open`_
 | `tg-config` | tags | The scope list file | Implemented |
 | `i1-sweep` | in1 | Sweeps: the safety net | Implemented, needs changing |
 | `s-writer` | security | The writer (table owner) | Implemented |
-| `i1-webhook` | in1 | POST /confluence/events | Unverified |
+| `i1-webhook` | in1 | POST /confluence/events | Implemented |
 | `i1-checks` | in1 | Rate limit, size cap, HMAC, parse | Implemented |
 | `i1-ledger` | in1 | The event ledger | Implemented |
 | `i1-self` | in1 | Was this our own write? | Implemented |
@@ -4827,7 +4827,7 @@ _Section id: `open`_
 | `vd-swap` | vector | Vectors swap with the page | Implemented |
 | `s-edge` | security | The edge | Implemented |
 | `s-source` | security | Source row security | Implemented |
-| `s-scope` | security | Scope row security | Unverified |
+| `s-scope` | security | Scope row security | Implemented |
 | `s-acl` | security | Page access list | Implemented |
 | `s-permitted` | security | The permitted rows | Implemented |
 | `s-anon` | security | Supabase's public roles | Implemented |

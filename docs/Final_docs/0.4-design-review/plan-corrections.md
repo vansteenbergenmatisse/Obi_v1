@@ -588,3 +588,18 @@ status word, so their bodies are left as the historical record (unchanged decisi
 `r3-scope`/`tg-filter` code-location file paths (e.g. the `0010`/`alembic/versions/` refs) are
 pre-existing path drift, out of D1–D4 scope. The brief (`obi-system-brief.md`) was regenerated from the
 edited page.
+
+---
+
+## Action-plan checkboxes 2.2.4 / 2.3.1 TICKED (roadmap substep 4.8, 2026-10-05)
+
+**Supersedes the "Action-plan checkboxes NOT ticked" note above.** The live proof both Proof lines
+were waiting on exists since 2026-09-30: the full 8-rule run through the REAL webhook path
+(Confluence → Forge → Railway → event ledger → job → worker) against the prod test pages, owner-
+accepted and recorded in the ledger ("Step 3 · Confluence webhook go-live") — including rule 2's
+last-label purge (2.2.4's live label check) and rule 6's body-edit full re-embed with no vector
+reuse (2.3.1's live leg). The roadmap (Step 4, substep 4.8) explicitly orders the tick citing that
+proof. Implementation note: the plan page stores ticks in browser localStorage only, so the tick is
+baked as a `checked` attribute on the two inputs, and the loader line was adjusted
+(`||b.defaultChecked`) so a baked tick renders instead of being wiped by an empty localStorage —
+a user's own browser ticks are unaffected.

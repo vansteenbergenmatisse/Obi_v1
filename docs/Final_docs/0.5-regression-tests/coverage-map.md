@@ -886,3 +886,35 @@ half (untagged → never indexed, `test_in2_untagged_page_never_indexed`) landed
 unchanged. With this step the eight sync rules each carry at least one green database test. Live legs
 (`verify_sync_rules.py`, MT-1..MT-7) remain owner-blocked (staging + `CONFLUENCE_WEBHOOK_SECRET` +
 Confluence site-admin).
+
+## 4.2 additions (2026-10-05) — the coverage-audit gap closers
+
+Substep 4.2 (roadmap Step 4 / sync-rules §15.2 golf 1) audited every contract against this map's
+suite and closed 19 narrow gaps with 25 new test functions; the audit, gap list and proofs live in
+`docs/Final_docs/4-test-foundation/`. New citing tests per panel: `i2-gone` gains the never-indexed
+delete no-op (`test_in2_delete_page_never_indexed_is_clean_noop`); `tg-classified` gains the real
+webhook-path purge (`test_tags_classified_label_added_delivery_purges_end_to_end`); `i1-webhook`
+gains the three literal idempotency-key pins (`test_event_idempotency_keys.py`); `r1-auth` gains the
+ignored-body-scope log assertion and the uniform-401 wire check; `r1-limits` gains the empty-string /
+`"*"` / extra-field 422 pins and the auth-never-burns-rate-budget pair; `em-token` gains the
+forged-signature rejection; `r3-scope` gains the reader-session sibling binding, the three
+reader-read-table parameterizations, the SET ROLE denial, the GUC transaction-locality proof, and
+the two scope-value semantic-injection guards (the one production fix of the substep — see
+`docs/Final_docs/retrieval/scope-enforcement-read-path.md`); `r3-deny` gains the cross-scope cache
+isolation end-to-end; `s-audit` gains the cache-hit trace-row-count pin; small-talk/refusal caching
+is pinned in `test_answer_cache.py`.
+
+## 4.3 additions (2026-10-05) — the permanent webhook-path live runner
+
+| panel | title | test file | test name | level | green |
+|---|---|---|---|---|---|
+| `i1-webhook` | The live 8-rule runner refuses to run unarmed (no `--yes`) | app/features/confluence_sync/tests/test_webhook_rules_live_script.py | test_webhook_rules_live_refuses_without_yes | unit | yes |
+| `i1-webhook` | The live 8-rule runner refuses the offline fixture env | app/features/confluence_sync/tests/test_webhook_rules_live_script.py | test_webhook_rules_live_refuses_an_unconfigured_confluence | unit | yes |
+
+Substep 4.3 (roadmap Step 4 / sync-rules §15.2 golf 2) promoted the 2026-09-30 session runner to
+the permanent `backend/scripts/webhook_rules_live.py`: real Confluence REST mutations only, polls
+the DB fed by the live Confluence → Forge → Railway → worker path (never enqueues in-process),
+reports `origin=0` event-ledger rows per leg as delivery evidence, rule-8 witness fingerprint,
+labels + body restored in a `finally`. The runner's happy path is live-level by nature (real
+network + credentials + it mutates Confluence — same stance as `verify_sync_rules.py`); the two
+rows above pin its refusal safeguards hermetically.
