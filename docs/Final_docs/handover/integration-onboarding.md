@@ -67,4 +67,8 @@ per `tagging-guide.md`.
   note. The owner-chosen direction (list-in-token-claim vs precedence) lands with its own
   regression-floor test waves (`docs/Final_docs/sync-rules/plan.md` §15–15.2) — step 4 of "Adding"
   above gets rewritten then.
-- **⚠ Step 5 restamp fix:** shrinks the finding-A/B caveats referenced in steps 1 and 5.
+- **§D.0 restamp fix — LANDED 2026-10-05:** findings A and B are fixed at the complete-sweep
+  cadence (the handler restamps when the authoritative scopes disagree with the stamped tags);
+  the remaining caveat is only the sweep cadence itself — run
+  `cd backend && uv run python scripts/run_reconciliation_once.py` for immediate effect. Details in
+  `tag-administration.md` ("Adding a scope" / "source_scope rows").

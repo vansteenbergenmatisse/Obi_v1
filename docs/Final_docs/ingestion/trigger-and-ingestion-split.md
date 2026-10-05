@@ -33,6 +33,13 @@ transaction.
 ingestion stamps exactly those. Authorization comes from covering `source_scope` rows — a row's
 `tags` are a recognized-scope allow-list (empty tags authorize *all* recognized scopes, Decision
 D3); with no row for a space the space is unrestricted and the labels themselves are the scopes.
+Since the §D.0 scope-restamp fix (2026-10-05) the handler also **compares `cmd.scopes` against the
+page's stamped tags** on an otherwise-unchanged page: a mismatch (a scope added to the tag map, or
+a `source_scope` allow-list narrowed — neither moves the page's `labels_hash`) routes to the
+metadata-only restamp path instead of `no_change`, so config and allow-list edits reach
+already-indexed pages at the complete-sweep cadence with no rebuild and no re-embed (`SyncOutcome`
+reports `classes=["scopes_restamped"]`). The lightweight sweep still fires no drift signal on a
+config-only edit — that window is pinned deliberately by the lifecycle tests.
 The reconciliation sweep additionally discovers tagged pages by CQL
 (`gateway.list_pages_by_label`) so a freshly-tagged page under no configured root still becomes a
 candidate the worker can authorize.
@@ -80,6 +87,13 @@ gold corpus uses single labels and no narrow allow-lists.
   purges, delete-on-unindexed is `skipped`); and the contract test (a trigger-produced command is
   applied by ingestion, scopes stamped == scopes decided).
 - `test_list_pages_by_label.py` (unit): the fixture CQL-discovery contract the sweep relies on.
+- `test_scope_config_lifecycle.py` + `test_source_scope_lifecycle.py` (database): the §D.0
+  restamp — a scope added to the tag map reaches a pre-labeled indexed page on the complete sweep
+  (`..._restamped_by_complete_sweep`), and narrowing a root's allow-list revokes the scope at the
+  RLS level under the real `rag_reader` role (`..._restamps_and_closes_the_leak`); both assert
+  metadata-only (same `document_version`, zero embed calls) and sweep idempotence (the second
+  complete sweep is `no_change`). The lightweight-sweep blind spot stays pinned by their sibling
+  tests.
 - `test_worker_sync.py`, `test_reconciliation.py`, `test_sync_rules_*.py`, `test_versioning_*.py`,
   `test_ingestion_pipeline.py` (database): the full worker/sweep/versioning behaviour end to end
   through the bound real sink. `test_i2_fetch...` documents the D4 double-fetch (meta/labels ×2).

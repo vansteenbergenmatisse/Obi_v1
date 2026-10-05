@@ -41,6 +41,11 @@ class LocalState:
     contextualization_version: int
     contextualization_and_schema: int  # retrieval_schema_version
     embedding_model: str
+    # The stamped knowledge-scope tags. Not compared by classify() (they are not page-side
+    # state); the command handler compares them against the authoritative cmd.scopes and routes
+    # a mismatch to the metadata-only restamp path (§D.0 — a recognized-set or source_scope
+    # allow-list edit must reach already-indexed pages at the complete-sweep cadence).
+    tags: tuple[str, ...]
 
 
 @dataclass(frozen=True)

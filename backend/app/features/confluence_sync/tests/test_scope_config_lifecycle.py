@@ -163,17 +163,17 @@ def test_tags_scope_removed_lightweight_sweep_does_not_catch_it(
     assert page_row_counts(_MEWS_PAGE) == rows_before  # stale rows remain (the pinned window)
 
 
-def test_tags_scope_added_already_indexed_page_not_restamped_by_either_sweep(
+def test_tags_scope_added_already_indexed_page_restamped_by_complete_sweep(
     gateway, settings, monkeypatch, tmp_path
 ):
-    """panel tg-config / tg-add · pins the under-share on a config-only scope addition
-    A page indexed under scope A while also carrying label B (B not yet in the tag map) is NOT
-    retroactively stamped with B when B is added to the tag map: the page's Confluence labels
-    never changed, so ``labels_hash`` matches and even the COMPLETE sweep's re-sync lands in the
-    ``no_change`` path — tags stay {A}, same document_version, zero embed calls. This is the
-    conservative direction (the page is under-shared into B, never over-shared), and this test
-    pins it deliberately: a future fix that restamps on a recognized-set change (e.g. by folding
-    the recognized set into the change signal) MUST consciously update this test."""
+    """panel tg-config / tg-add · substep D.0 (roadmap step 5, gap A)
+    A page indexed under scope A while also carrying label B (B not yet in the tag map) IS
+    retroactively stamped with B when B is added to the tag map: the COMPLETE sweep re-enqueues
+    the page, the trigger re-derives scopes = {A, B}, and the handler sees the stamped tags
+    disagree with ``cmd.scopes`` — a metadata-only restamp (same document_version, zero embed
+    calls), never a rebuild. The LIGHTWEIGHT sweep still enqueues nothing (no cheap drift signal
+    fires on a config-only edit — that window remains and is pinned by the scope-removed test
+    above). A second complete sweep after the restamp is ``no_change`` (no churn)."""
     _isolate_space_to(gateway, _MEWS_PAGE)
     # Phase 1: only obi-mews-test is recognized; the page carries mews + toast labels.
     _set_recognized(monkeypatch, tmp_path, ["obi-general-test", "obi-mews-test"])
@@ -192,7 +192,7 @@ def test_tags_scope_added_already_indexed_page_not_restamped_by_either_sweep(
     assert "obi-toast-test" in settings.knowledge_scope_set
     counter = install_counting_embedder(monkeypatch, settings)
 
-    # Lightweight sweep: no drift signal -> page untouched.
+    # Lightweight sweep: no drift signal -> page untouched (this window stays).
     with session_scope() as s:
         run = run_reconciliation(
             s, gateway=gateway, settings=settings, kind=KIND_LIGHTWEIGHT, space_ids=[_SPACE]
@@ -204,7 +204,26 @@ def test_tags_scope_added_already_indexed_page_not_restamped_by_either_sweep(
         assert ps is not None
         assert ps.tags == ["obi-mews-test"]
 
-    # Complete sweep: the page IS re-enqueued, but its labels_hash is unchanged -> no_change.
+    # Complete sweep: labels_hash is unchanged but cmd.scopes now includes toast -> restamp.
+    with session_scope() as s:
+        run = run_reconciliation(
+            s, gateway=gateway, settings=settings, kind=KIND_COMPLETE, space_ids=[_SPACE]
+        )
+        assert run.jobs_enqueued >= 1
+    results = run_worker(gateway, settings)
+    assert _outcome_for(results, _MEWS_PAGE).action == "metadata_only"
+
+    with read() as s:
+        ps = s.get(PageSource, _MEWS_PAGE)
+        assert ps is not None
+        assert ps.tags == ["obi-mews-test", "obi-toast-test"]  # restamped to both scopes
+        assert ps.active_doc_version_id == doc_version_before  # same version, no rebuild
+    chunks = active_child_chunks(_MEWS_PAGE)
+    assert chunks
+    assert all(c.tags == ["obi-mews-test", "obi-toast-test"] for c in chunks)
+    assert counter.calls == 0  # a restamp is metadata-only: no re-embed by either sweep
+
+    # Idempotence: a second complete sweep finds tags already matching -> no_change, no churn.
     with session_scope() as s:
         run = run_reconciliation(
             s, gateway=gateway, settings=settings, kind=KIND_COMPLETE, space_ids=[_SPACE]
@@ -212,13 +231,7 @@ def test_tags_scope_added_already_indexed_page_not_restamped_by_either_sweep(
         assert run.jobs_enqueued >= 1
     results = run_worker(gateway, settings)
     assert _outcome_for(results, _MEWS_PAGE).action == "no_change"
-
-    with read() as s:
-        ps = s.get(PageSource, _MEWS_PAGE)
-        assert ps is not None
-        assert ps.tags == ["obi-mews-test"]  # NOT restamped to {mews, toast} — the pinned gap
-        assert ps.active_doc_version_id == doc_version_before  # same version, no rebuild
-    assert counter.calls == 0  # no re-embed by either sweep
+    assert counter.calls == 0
 
 
 def test_tags_classified_removed_reindexes_as_first_build(gateway, settings, monkeypatch):

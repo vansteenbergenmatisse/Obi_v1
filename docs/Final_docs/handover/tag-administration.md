@@ -36,13 +36,15 @@ by test — editing it without a restart does nothing, by design loudly document
 3. Commit, redeploy backend, rebuild widget.
 4. Label the Confluence pages with the new scope name.
 
-**⚠ changes with Step 5 — the restamp gap (finding A):** pages whose label existed **before** the
-scope was recognized do **not** gain the new scope automatically — not from the webhook (no event
-fired) and not from the complete sweep (the change detector keys on the page's raw labels, which
-didn't change; pinned by `test_tags_scope_added_already_indexed_page_not_restamped_by_either_sweep`).
-NEW pages and newly-labeled pages work immediately. **Workaround for pre-labeled pages:** force a
-real event per page — remove + re-add the label, or make a trivial edit. Step 5's metadata-restamp
-fix removes this workaround.
+**Restamp (finding A — FIXED by §D.0, 2026-10-05):** pages whose label existed **before** the
+scope was recognized gain the new scope on the next **complete reconciliation sweep** (default
+every 14 days; run one now with `cd backend && uv run python scripts/run_reconciliation_once.py`):
+the handler compares the authoritative `cmd.scopes` against the stamped tags and restamps
+metadata-only — same document version, no re-embed (pinned by
+`test_tags_scope_added_already_indexed_page_restamped_by_complete_sweep`). NEW pages and
+newly-labeled pages work immediately. The **lightweight** (daily) sweep still skips it — a
+config-only edit fires no drift signal — so for immediate effect either run a complete sweep or
+force a real event per page (label toggle / trivial edit).
 
 ## Removing a scope
 
@@ -70,13 +72,15 @@ migration, not a config tweak.
 - Space root with empty tags = authorize all recognized scopes in that space (Decision D3) —
   today's production setup. Page roots cover their subtree only.
 - Deactivating the last covering root → the sweep purges everything it covered.
-- **⚠ changes with Step 5 — the narrowing leak (finding B):** narrowing a row's `tags` does NOT
-  take effect on already-stamped chunks — no event fires, the lightweight sweep sees no drift, and
-  even the complete sweep lands in `no_change`, so the revoked scope **keeps reading the content
-  indefinitely** (proven at RLS level under the real reader role; pinned by
-  `test_tags_narrowed_root_*` in `test_source_scope_lifecycle.py`). Until Step 5: after narrowing a
-  row, force a real event on every affected page (label toggle / trivial edit). If the narrowing is
-  security-motivated, do that **immediately**.
+- **Narrowing (finding B — FIXED by §D.0, 2026-10-05):** narrowing a row's `tags` reaches
+  already-stamped chunks on the next **complete sweep**: the handler restamps the page to the
+  narrowed scope set and the revoked scope loses RLS visibility (proven at RLS level under the
+  real reader role; pinned by `test_tags_narrowed_root_complete_sweep_restamps_and_closes_the_leak`).
+  The **lightweight** (daily) sweep still sees no drift, so the revoked scope keeps reading the
+  content **until the next complete sweep runs** (default every 14 days). If the narrowing is
+  security-motivated, do not wait: run a complete sweep immediately
+  (`cd backend && uv run python scripts/run_reconciliation_once.py`) or force a real event on every
+  affected page.
 
 ## Verifying any of the above
 

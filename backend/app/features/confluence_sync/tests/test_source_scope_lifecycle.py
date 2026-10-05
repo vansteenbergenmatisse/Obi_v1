@@ -7,10 +7,10 @@ pages when an operator edits a row after the fact:
 * narrowing a root's tags fires **no** lightweight drift signal (``reconciliation._needs_sync``
   checks version/status/parent/title only), so stale tags — and the RLS visibility they grant —
   survive the lightweight sweep: a real, documented eventual-consistency window;
-* the complete sweep re-enqueues everything, but the worker's ``classify()`` sees no page-side
-  change (same version, same ``labels_hash``) and takes the ``no_change`` path — ``cmd.scopes``
-  is never compared to the stamped tags, so the stale tags survive the complete sweep too (a
-  wider window than designed; pinned as a known gap, not endorsed);
+* the complete sweep re-enqueues everything, and since the §D.0 scope-restamp fix the handler
+  compares ``cmd.scopes`` against the stamped tags: a mismatch takes the metadata-only restamp
+  path (tags corrected on page_source + chunks, same version, zero embeds), closing the revoked
+  scope's RLS visibility at the complete-sweep cadence;
 * a space whose only active root is a page-root for a *different* subtree authorizes nothing for
   an uncovered page (``authorized_tags`` → ``set()``), so the sweep + worker purge it.
 
@@ -131,23 +131,17 @@ def test_tags_narrowed_root_lightweight_sweep_leaves_stale_tags(gateway, setting
     assert _reader_chunk_count_under_scope(_TAG_A) > 0  # the kept scope, of course, still does
 
 
-def test_tags_narrowed_root_complete_sweep_takes_no_change_path_and_keeps_stale_tags(
+def test_tags_narrowed_root_complete_sweep_restamps_and_closes_the_leak(
     gateway, settings, monkeypatch
 ) -> None:
-    """KNOWN GAP (pinned, not endorsed): even the COMPLETE sweep does not re-stamp a narrowed
-    root's tags today.
-
-    The complete sweep does re-enqueue the page (no drift signal needed), and the worker's
-    ``decide_command`` correctly re-derives scopes = recognized_labels ∩ authorized = {A} — but
-    ingestion's ``classify()`` compares only page-side state (version, status, title, parent,
-    ``labels_hash``, restrictions, attachments), never ``cmd.scopes`` against the stamped tags,
-    so an otherwise-unchanged page lands on the ``no_change`` path (``_touch_reconciled`` only)
-    and the revoked scope B stays stamped and RLS-visible until the page itself changes or a
-    pipeline-config bump forces a rebuild. The designed intent (metadata-only re-stamp on the
-    complete sweep) does NOT hold; a fix that closes this — e.g. classify comparing
-    ``cmd.scopes`` to ``local`` tags — must consciously flip this test to assert tags == {A},
-    action == "metadata_only". What IS safe and asserted: no rebuild, no re-embed, same
-    ``document_version`` (never-bend rule 4's cost guarantee is not violated by the sweep)."""
+    """panel tg-config / ks-sweep · substep D.0 (roadmap step 5, gap B)
+    Narrowing a root's allow-list reaches already-stamped pages at the complete-sweep cadence:
+    the sweep re-enqueues the unchanged page, ``decide_command`` re-derives scopes =
+    recognized_labels ∩ authorized = {A}, and the handler — comparing ``cmd.scopes`` to the
+    stamped tags — takes the metadata-only restamp path: tags become {A} on page_source AND
+    every active chunk, the revoked scope B loses RLS visibility (rag_reader under B reads 0
+    rows), with no rebuild and no re-embed (same ``document_version``, zero embed calls —
+    never-bend rule 4's cost guarantee holds). A second complete sweep is ``no_change``."""
     root_id = _index_page_with_both_tags_under_covering_root(gateway, settings)
     version_before = active_version(_PAGE)
     assert version_before is not None
@@ -162,28 +156,46 @@ def test_tags_narrowed_root_complete_sweep_takes_no_change_path_and_keeps_stale_
         assert run.jobs_enqueued >= 1  # the complete sweep re-enqueues the unchanged page too
     results = run_worker(gateway, settings)
 
-    # The page WAS re-synced — and the sync reported no_change (the gap's exact mechanism).
+    # The page WAS re-synced — and the sync restamped the narrowed scopes, metadata-only.
     page_outcomes = [r.outcome for r in results if getattr(r.outcome, "page_id", None) == _PAGE]
     assert page_outcomes, "the complete sweep must enqueue the page for a re-check"
-    assert all(getattr(o, "action", None) == "no_change" for o in page_outcomes), (
-        "sync no longer reports no_change -> the gap may be fixed; flip this test to assert "
-        "the re-stamp (tags == [A], action == metadata_only)"
+    assert all(getattr(o, "action", None) == "metadata_only" for o in page_outcomes), (
+        "the complete sweep must restamp a narrowed root's tags (the §D.0 fix)"
     )
 
     chunks = active_child_chunks(_PAGE)
     assert chunks
-    assert all(c.tags == sorted([_TAG_A, _TAG_B]) for c in chunks), (
-        "stale tags expected today: the complete sweep does not re-stamp a root-tags-only change"
+    assert all(c.tags == [_TAG_A] for c in chunks), (
+        "the revoked scope must be removed from every active chunk's tags"
     )
     with session_scope() as s:
         ps = s.get(PageSource, _PAGE)
         assert ps is not None
-        assert ps.tags == sorted([_TAG_A, _TAG_B])
+        assert ps.tags == [_TAG_A]
+
+    # The leak window is closed at the RLS level: rag_reader under the revoked scope B reads
+    # nothing, while the kept scope A still reads the page.
+    assert _reader_chunk_count_under_scope(_TAG_B) == 0, (
+        "revoked scope B must no longer satisfy the RLS overlap after the restamp"
+    )
+    assert _reader_chunk_count_under_scope(_TAG_A) > 0
 
     version_after = active_version(_PAGE)
     assert version_after is not None
     assert version_after.id == version_before.id, "no rebuild: same document_version stays active"
     assert counter.calls == 0, "no re-embed: the sweep must never spend embedding cost on this"
+
+    # Idempotence: with tags now matching, the next complete sweep is a pure no_change.
+    with session_scope() as s:
+        run = run_reconciliation(
+            s, gateway=gateway, settings=settings, kind=KIND_COMPLETE, space_ids=[_SPACE]
+        )
+        assert run.jobs_enqueued >= 1
+    results = run_worker(gateway, settings)
+    page_outcomes = [r.outcome for r in results if getattr(r.outcome, "page_id", None) == _PAGE]
+    assert page_outcomes
+    assert all(getattr(o, "action", None) == "no_change" for o in page_outcomes)
+    assert counter.calls == 0
 
 
 def test_tags_space_root_active_but_not_covering_page_purges(gateway, settings) -> None:

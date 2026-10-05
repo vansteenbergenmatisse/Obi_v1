@@ -32,6 +32,7 @@ def get_local_state(session: Session, page_id: int) -> LocalState | None:
         contextualization_version=ps.contextualization_version,
         contextualization_and_schema=ps.retrieval_schema_version,
         embedding_model=ps.embedding_model,
+        tags=tuple(ps.tags),
     )
 
 

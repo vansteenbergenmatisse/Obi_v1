@@ -186,15 +186,23 @@ def _apply_upsert(
             action="indexed", classes=sorted(c.value for c in decision.classes), page_id=page_id
         )
 
-    if decision.meaningful:
+    # §D.0 scope restamp: cmd.scopes is authoritative (recognized_labels ∩ authorized), but
+    # classify() compares only page-side state — a recognized-set or source_scope allow-list
+    # edit changes neither the page nor its labels_hash. Comparing the stamped tags here is
+    # what lets the complete sweep restamp (gap A: a scope added to the tag map; gap B: a
+    # narrowed allow-list whose stale tags would keep satisfying the RLS overlap forever).
+    scopes_drifted = local is not None and set(local.tags) != set(final_tags)
+
+    if decision.meaningful or scopes_drifted:
         _apply_metadata_only(session, meta, decision, page_status, tags=final_tags)
         if restrictions_changed:
             _replace_restrictions(session, page_id=page_id, principals=restrictions)
-        return SyncOutcome(
-            action="metadata_only",
-            classes=sorted(c.value for c in decision.classes),
-            page_id=page_id,
+        classes = (
+            sorted(c.value for c in decision.classes)
+            if decision.meaningful
+            else ["scopes_restamped"]
         )
+        return SyncOutcome(action="metadata_only", classes=classes, page_id=page_id)
 
     _touch_reconciled(session, page_id)
     return SyncOutcome(action="no_change", classes=["no_change"], page_id=page_id)

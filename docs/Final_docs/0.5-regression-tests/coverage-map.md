@@ -925,3 +925,20 @@ rows above pin its refusal safeguards hermetically.
 |---|---|---|---|---|---|
 | `s-scope` | Untagged ACTIVE chunks block the deploy (X2 — dark-content census) | app/features/confluence_sync/tests/test_deploy_readiness_check.py | test_deploy_readiness_fails_loudly_on_untagged_active_chunks | database | yes |
 | `s-scope` | Untagged INACTIVE chunks (GC remnants) do not block the deploy | app/features/confluence_sync/tests/test_deploy_readiness_check.py | test_deploy_readiness_ignores_untagged_inactive_chunks | database | yes |
+
+## §D.0 additions (2026-10-05) — the scope-restamp fix (roadmap Step 5 part 0, gaps A+B)
+
+| panel | title | test file | test name | level | green |
+|---|---|---|---|---|---|
+| `tg-config` / `tg-add` | A scope added to the tag map restamps pre-labeled indexed pages on the complete sweep (gap A) | app/features/confluence_sync/tests/test_scope_config_lifecycle.py | test_tags_scope_added_already_indexed_page_restamped_by_complete_sweep | database | yes |
+| `tg-config` / `ks-sweep` | Narrowing a source_scope allow-list revokes the scope at RLS level on the complete sweep (gap B) | app/features/confluence_sync/tests/test_source_scope_lifecycle.py | test_tags_narrowed_root_complete_sweep_restamps_and_closes_the_leak | database | yes |
+
+Both are the 2026-10-03 hardening-batch sentinels consciously flipped: they used to PIN the gap
+(complete sweep lands `no_change`, stale tags survive, the revoked scope stays RLS-visible); after
+the §D.0 fix (`command_handler._apply_upsert` compares `cmd.scopes` to the stamped tags and routes
+a mismatch to the metadata-only restamp) they assert the restamp outcome — `metadata_only`,
+corrected tags on page_source + every active chunk, same `document_version`, zero embed calls,
+revoked scope reads 0 rows as `rag_reader`, and a second complete sweep is `no_change`
+(idempotence). The lightweight-sweep blind spot remains pinned by their untouched siblings
+(`test_tags_scope_removed_lightweight_sweep_does_not_catch_it`,
+`test_tags_narrowed_root_lightweight_sweep_leaves_stale_tags`).
