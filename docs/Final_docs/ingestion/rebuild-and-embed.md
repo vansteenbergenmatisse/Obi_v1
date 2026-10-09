@@ -21,6 +21,13 @@ chunks flipped inactive, the new version and its chunks go active, and `page_sou
 contextualises all children and calls the embedder once with the full set. No vector, and no
 `retrieval_content`, is ever carried over from an old version.
 
+Since 8.2.2 (panel `mi-applies`) the build also stamps the page's validated "Applies to"
+payload onto `page_source.applicability` and every staged chunk (`build_chunks` /
+`_activate`, threaded from the command handler; NULL = no record = label-only). The
+Applies-to table itself never reaches the blocks — it is lifted out of the body before
+normalization — so it is metadata, not chunk content, and a table-only edit is a restamp,
+not a rebuild (see `applicability-schema.md`).
+
 Immediately after the swap, `_gc_superseded` runs with **retain 0**: the just-superseded version
 and its chunks are deleted in that same transaction. Nothing is retained; there is no rollback
 window. A gate-failed build (zero child chunks) still rolls back whole and leaves no version row

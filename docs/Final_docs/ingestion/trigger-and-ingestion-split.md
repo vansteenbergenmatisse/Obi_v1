@@ -40,6 +40,12 @@ metadata-only restamp path instead of `no_change`, so config and allow-list edit
 already-indexed pages at the complete-sweep cadence with no rebuild and no re-embed (`SyncOutcome`
 reports `classes=["scopes_restamped"]`). The lightweight sweep still fires no drift signal on a
 config-only edit — that window is pinned deliberately by the lifecycle tests.
+Since 8.2.2 (panel `mi-applies`) the same restamp route carries a second comparison: when the
+body was fetched, the freshly parsed "Applies to" payload is compared against the stamped
+`page_source.applicability` — a mismatch (changed or removed record) is a metadata-only restamp
+(`classes=["applicability_restamped"]`, same `document_version`, zero embeds), and the consumed
+revision advances `current_cf_version` so sweeps stop re-flagging it. An invalid table fails the
+sync job loudly by named reason instead of restamping (see `applicability-schema.md`).
 The reconciliation sweep additionally discovers tagged pages by CQL
 (`gateway.list_pages_by_label`) so a freshly-tagged page under no configured root still becomes a
 candidate the worker can authorize.

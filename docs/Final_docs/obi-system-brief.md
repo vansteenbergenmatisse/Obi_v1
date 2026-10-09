@@ -1,6 +1,6 @@
 # Obi, part by part — the complete brief, A to Z
 
-Generated on 2026-10-05 from `docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
+Generated on 2026-10-09 from `docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
 
 ## 0 · How to read this brief
 
@@ -1207,7 +1207,7 @@ _Workflow label shown in the drawer: Embedding Obi in another application_
 ##### Panel `em-loader` · obi.js: one script tag · [Implemented]
 - Kind: Frontend
 - In plain words: One line on the platform's page loads our script. The script draws the round button, opens the chat window in a frame from our domain, fetches the note, renews it and talks to the frame. The platform writes none of that.
-- Today: Built and unit-tested: draws the round button, opens the chat window in a frame from our domain, fetches the note and renews it. Obi.clear() forgets the note and closes the panel, degrading to general-only rather than blocking sending, until a new note arrives. Replaces the earlier straight-embed pilot flow that read a shared token from the URL.
+- Today: Deployed and live on Railway (service obi-web, eu-west, https://obi-web-production.up.railway.app): /obi.js is served with the deployed origin baked in and the frame opens from /embed, whose frame-ancestors is computed from the active platforms.json domains — all 7 live embed checks pass (frontend/scripts/embed-check-live.mjs, 8.4.3). The Railway hostname is the canonical embed origin for now; obi.omniboost.com stays the eventual target.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2558,6 +2558,254 @@ CREATE POLICY chunk_scope_read ON chunk AS RESTRICTIVE FOR SELECT
 
 ---
 
+## 05.2 · Multi-integration context: three slots, applicability, and relevance that follows the customer's real connections
+
+_Section id: `integration`_
+
+**In plain words (the lede):** Today Obi answers for one integration at a time: the note names one system and the tags decide everything. Base and Data Hub customers run two or three systems with real connections between them — Toast feeding Mews, Mews feeding QuickBooks. This section is the designed road to that: the note carries a company and three slots, one central catalog defines every product, pages say which setup they are for, and search, rerank, the prompt and the citations all respect the customer's actual connections. Accuracy first, speed second; twenty or more products without per-pair retrieval code.
+
+> **Status.** [Planned] Nothing in this section is built. The design of record is `docs/Final_docs/5-integration-context/` (the context contract, the product catalog, the decision memo, the rerank and Jasper research) plus the owner's decision rounds 1 and 2 of 2026-10-05. The product catalog JSON exists as data; no code reads it yet. The action plan's phase 8 holds the substeps, in execution order.
+
+> **What never weakens.** Labels keep deciding membership and sharing — multiple provider labels stay legitimate sharing (D4). Row security and page permissions keep deciding access. Applicability only narrows relevance inside the already-authorized set; untagged or `classified` content gains nothing from any applicability record. The body never decides access; the note does. The never-bend rules 1–12 bind every part.
+
+#### The pipeline, box by box
+
+Diagram (Four rows. The context: the note carries a company and three slots, the central product catalog defines every product, and the gate validates slots against the catalog and the launch allowlist. What a page is for: an Applies-to record on the page, deterministic matching against real connections, and eligibility filtering inside the database. The answer: context-aware reranking, a prompt that knows the setup with at most two extra reads, and per-slot source attribution. Proving it: standalone presets and Phase A human validation.)
+  - labels: THE CONTEXT · from the verified note; WHAT A PAGE IS FOR; THE ANSWER; PROVING IT
+  - 1 · The note: three slots — company id · POS · PMS · Accounting / any slot may be empty → panel `mi-contract` (changes from today)
+  - 2 · The product catalog — one file defines every product / roles · aliases · connection types → panel `mi-catalog` (changes from today)
+  - 3 · The gate checks the slots — catalog + launch allowlist / unsupported filled slot: hidden → panel `mi-gate` (changes from today)
+  - 4 · "Applies to" on the page — a structured record next to labels / five levels · any is explicit → panel `mi-applies` (changes from today)
+  - 5 · Matching — AND within a rule, OR between / real connections only → panel `mi-match` (changes from today)
+  - 6 · Filtered search — eligibility inside the database / up to 75 eligible chunks → panel `mi-filter` (changes from today)
+  - 7 · Context-aware rerank — query + metadata enrichment / reorders eligible evidence only → panel `mi-rerank` (changes from today)
+  - 8 · The prompt knows the setup — names each fact's system / at most two extra reads → panel `mi-prompt` (changes from today)
+  - 9 · Attribution — each source says which slot / or pair let it in → panel `mi-attrib` (changes from today)
+  - 10 · Standalone presets — four flow types + one workflow / backend-validated → panel `mi-presets` (changes from today)
+  - 11 · Phase A · humans — worked examples, exact lists / evidence before any tick → panel `mi-validate` (changes from today)
+
+_Every box is dashed: nothing here is built. The four flow directions modeled are POS→PMS, PMS→POS (two directions of one connection), PMS→Accounting and POS→Accounting. After Phase A: the agent-built test expansion, then — deliberately last — the Base/Data Hub platform entries and the Jasper reply._
+
+#### Panels that belong to this section (11)
+
+_Workflow label shown in the drawer: Multi-integration context_
+
+##### Panel `mi-contract` · The integration context: a company and three slots · [Implemented]
+- Kind: Contract
+- In plain words: The note now names the customer's three systems — point of sale, hotel system, accounting — instead of one integration. Any slot may be empty.
+- Today: The widget now carries both token forms end to end (substep 8.4.2): the iframe bridge reads context.slots as a display-only, order-independent scope signature so a slot-only renewal resets the conversation (T6 is an opaque-JWT no-op — legacy single-integration notes stay byte-compatible and behave as one filled slot), and the standalone preset selector threads a NON-authoritative simulatedContext onto the chat request (memory-only, never persisted/logged; the backend logs-and-ignores it in favour of the verified token). The verifier + gate stay the sole authority (8.1.2/8.1.3; never-bend rules 2-3).
+- Settings and rules:
+  | Setting | Value |
+  |---|---|
+  | Target shape | company_id + three slots — POS (from Data Hub), PMS (from Data Hub), Accounting (from Base); each slot one catalog product or empty (owner, decision round 1) |
+  | Company | the id alone is enough; no company name in the new form |
+  | Trust | slots come only from the verified note; the body never decides access (never-bend rules 2-3) |
+  | Old notes | stay valid, read as one filled slot (keuze 4); values resolve via the catalog's aliases |
+  | Not at launch | property/instance bindings, connection records, selected_connection, a known/absent/unknown wire marker (O1-O3) |
+- Where in the code:
+  - `packages/contracts/src/token-claims.json` — the claim shape to extend (T1/T2)
+  - `docs/Final_docs/5-integration-context/context-contract.md` — the contract of record
+  - `rag_agent/server/token_verifier.py` — VerifiedClaims
+- How to test it:
+  - An old single-integration note verifies and behaves exactly as a note with one filled slot.
+  - A note with an unknown product in a slot is a 400 before any search.
+  - The contract drift test keeps token-claims.json and the backend in lockstep.
+
+##### Panel `mi-catalog` · The central product catalog · [Implemented]
+- Kind: Config
+- In plain words: One small file lists every software product we know — its id, its role, its other spellings, which connections it can join. Everything else points here, so product number 20 is one entry, not new code.
+- Today: The loader backend/app/platform/config/product_catalog.py reads product_catalog.json at startup, fails fast on the 8 catalog.md §3 rules (incl. the platforms.json cross-check), and exposes product lookups, alias resolution (operacloud → opera-cloud, unknown fails closed) and the launch allowlist via Settings.product_catalog and the platform config root; 17 unit tests green (substep 8.1.1).
+- Settings and rules:
+  | Setting | Value |
+  |---|---|
+  | Owner rule | nothing else in the repo may define a product id, role, alias or connection type |
+  | Products | toast (pos) · mews (pms) · opera-cloud (pms) · quickbooks-online (accounting) · xero (accounting) |
+  | Connection types | pos-pms (two directions of one connection) · pms-accounting · pos-accounting |
+  | Loader | fail-fast at startup on the 8 validation rules in catalog.md §3, incl. the platforms.json cross-check |
+  | Aliases | evidence-based only, resolved at the gate before validation; legacy_aliases is empty by owner decision (O8) |
+- Where in the code:
+  - `knowledge-base/config/product_catalog.json` — the registry
+  - `docs/Final_docs/5-integration-context/catalog.md` — the schema and the 8 rules
+  - `platform/config/knowledge_scopes.py` — the loader pattern to copy
+- How to test it:
+  - The loader rejects a duplicate alias, a role outside pos/pms/accounting, an unknown connection type, and a reserved name (classified, obi-*).
+  - Every platforms.json integration key resolves to a catalog id or alias.
+  - operacloud resolves to opera-cloud; an unmatched value fails closed.
+
+##### Panel `mi-gate` · Slot validation and the launch allowlist · [Implemented]
+- Kind: Gate
+- In plain words: At the door Obi checks each named system against the catalog and the launch list. A supported setup gets in, an unsupported filled system keeps Obi hidden, and an empty slot is always fine.
+- Today: build_auth_context runs the five §4 checks in order — shape, catalog membership, role agreement, vend rights, allowlist (POS/PMS only, O4) — a legacy note reads as one filled slot, empty slots never refuse, an unknown value is a 400 before any search, and the out-of-allowlist refusal is a bare 401 (substep 8.1.3).
+- Settings and rules:
+  | Setting | Value |
+  |---|---|
+  | Checks in order | shape → membership (catalog) → role agreement → vend rights (Data Hub vends POS/PMS, Base vends Accounting) → allowlist |
+  | Allowlist at launch | Toast as POS, Mews as PMS; a filled POS/PMS slot outside it hides Obi and the backend refuses the session |
+  | POS/PMS only | a filled Accounting slot outside support never hides Obi — it is inert for eligibility (O4 closed) |
+  | Empty slots | never hide Obi; only an out-of-allowlist filled slot does (owner, decision round 1) |
+  | Unknown value | 400 before any search; body hints are shape-checked only, never authoritative |
+- Where in the code:
+  - `rag_agent/application/auth_context.py` — build_auth_context — where the checks extend
+  - `docs/Final_docs/5-integration-context/decision-memo.md` — §4 · the five checks
+- How to test it:
+  - PMS=opera-cloud (filled, outside the allowlist) is refused; empty POS with Mews PMS serves.
+  - An unknown slot value is a 400 before any search touches the database.
+  - A body hint disagreeing with the note is ignored and logged.
+
+##### Panel `mi-applies` · "Applies to": applicability on the page · [Implemented]
+- Kind: Metadata
+- In plain words: A page can say exactly which setup it is for — 'Mews connected to QuickBooks', not just 'Mews'. A page that says nothing keeps behaving as it does today.
+- Today: Sync parses the Applies-to table out of the body (applies_to_parsing.py), validates it against the 8.2.1 schema and stamps the payload on page_source and every chunk (migration 0015, nullable JSONB); a table-only edit rides the D.0 restamp route — same document_version, zero embeds, classes applicability_restamped — removal restamps to NULL, an invalid table fails the job by named reason, and an untagged or classified page gains nothing (substep 8.2.2; matching is 8.2.3).
+- Settings and rules:
+  | Setting | Value |
+  |---|---|
+  | Five levels | general · software · platform interface · connection (products + roles + type + directions) · workflow (linked connections with bindings), plus variant requirements |
+  | Explicit any | 'any' is authored explicitly; a missing field never silently becomes a wildcard — it fails validation loudly |
+  | No record | the page keeps today's label-only behavior; that is the documented compatibility default |
+  | Storage | validated applicability stamped on every relevant chunk by reversible migration; metadata edits ride the restamp route (D.0), no re-embed |
+  | Never a widening | applicability restricts relevance on top of labels, RLS and page permissions; untagged or classified content gains nothing |
+- Where in the code:
+  - `knowledge-base/migrations/` — the reversible chunk column(s)
+  - `confluence_sync + ingestion features` — where the record is read, validated and stamped
+- How to test it:
+  - A metadata edit restamps existing chunks without re-embedding and invalidates stale eligibility.
+  - A record with missing required fields fails validation loudly at sync.
+  - An applicability record on a classified or untagged page grants no access.
+
+##### Panel `mi-match` · Deterministic matching against real connections · [Implemented]
+- Kind: Rules
+- In plain words: A guide for 'Toast connected to Mews' only shows when the customer actually has that connection — not when both products merely exist somewhere in the account.
+- Today: The cross-matching guard is now proven end to end (8.5.1): §D.9 example 5 (Toast/OperaCloud + Mews/QuickBooks via two real connection records) never returns a Toast/Mews pair guide through the live retriever, and the direct Toast→QuickBooks guide never derives from three filled slots — both fail loudly if cross-matching regresses (test_worked_examples_db.py).
+- Settings and rules:
+  | Setting | Value |
+  |---|---|
+  | Within one rule | AND — all conditions on the same actual connection, never 'both products exist somewhere' |
+  | Between rules | OR — separate complete rules |
+  | Launch pairs | derived from filled slots: POS+PMS and PMS+Accounting; a direct POS-Accounting pair is NOT derived from three filled slots — it needs a real connection record (O1) |
+  | Incomplete context | serve the applicable general guidance and ask for the missing configuration; never broaden to every page naming the product |
+- Where in the code:
+  - `retrieval feature` — where the eligibility predicate is built
+  - `docs/Final_docs/5-integration-context/context-contract.md` — §5 · eligibility
+- How to test it:
+  - A page for Mews/QuickBooks OR OperaCloud/Xero never matches Mews/Xero.
+  - Toast/OperaCloud plus Mews/QuickBooks at one property never qualifies for Toast/Mews guidance.
+  - Three filled slots alone never produce a Toast-QuickBooks pair.
+
+##### Panel `mi-filter` · Eligibility filtering inside the database · [Implemented]
+- Kind: Search
+- In plain words: The database itself only hands back pieces this customer's setup may use. We never fetch everything and hope the model ignores the wrong ones.
+- Today: The in-SQL eligibility filter is now proven end to end against the five §D.9 worked examples (8.5.1, test_worked_examples_db.py): each example's exact include and exclude page lists reproduce through the real HybridRetriever; eval unchanged vs the 4.5 floor and a new mixed_connection gold stage recorded its own first baseline.
+- Settings and rules:
+  | Setting | Value |
+  |---|---|
+  | One filtered search | eligible = general guides + guides for each filled slot + guides for the pairs the company actually has (keuze 2) |
+  | Inside the database | access AND applicability apply before the final limit; never an unrestricted shortlist cleaned up by the prompt |
+  | Candidates | up to 75 eligible chunks, configurable in settings; fewer is fine, never padded |
+  | Recall proof | compare against an exact filtered baseline; rule-11 before/after numbers on every retrieval touch |
+- Where in the code:
+  - `retrieval/infrastructure/search_repo.py` — the SQL search functions
+  - `retrieval/infrastructure/retriever.py` — HybridRetriever._search
+  - `platform/config/settings.py` — the candidate limit
+- How to test it:
+  - An excluded page never appears among the candidates regardless of vector similarity.
+  - Fewer than 75 eligible candidates is served as-is, never padded.
+  - Gold-set recall against the exact filtered baseline records no loss.
+
+##### Panel `mi-rerank` · Context-aware reranking · [Implemented]
+- Kind: Rerank
+- In plain words: The reranker is told who is asking — which systems, which connection — so guidance for the right setup rises above look-alike pages for the wrong one.
+- Today: The Cohere rerank-v3.5 v2 call now receives the verified context prepended to the query (≤2,048 tokens, the question never truncated) and a short YAML applicability block metadata-first inside the 4,000-char document cap; eligibility still gates the candidate set (never widened by rerank), refusal thresholds unchanged because the context-free gold set is unmoved.
+- Settings and rules:
+  | Setting | Value |
+  |---|---|
+  | Chosen path | prepend the verified context to the query string AND put a short YAML applicability block ahead of each document's text (research options a+b) |
+  | Caps | query 2,048 tokens; document truncation 4000 chars — metadata goes first so it survives |
+  | Only reorders | eligibility is enforced before rerank; it never reintroduces an excluded document |
+  | Re-tune | refusal thresholds (refusal_min_rerank_score 0.05, offtopic_max 0.035) and the CRAG retry re-tune on the gold set after enrichment |
+- Where in the code:
+  - `platform/clients/reranker_client.py` — the v2 /rerank call
+  - `retrieval/infrastructure/search_repo.py` — fetch_rerank_texts
+  - `docs/Final_docs/5-integration-context/research-rerank-api.md` — the decision of record
+- How to test it:
+  - The request-shape contract test is updated intentionally to the enriched body.
+  - The to_rerank handoff stays locked: the exact eligible chunks are what rerank scores.
+  - The fake reranker keeps zero lift; gold-set before/after recorded.
+
+##### Panel `mi-prompt` · The answer model knows the setup; extra reads stay capped · [Implemented]
+- Kind: Prompt
+- In plain words: The answering model knows the customer's real setup, says which system each fact comes from, and asks instead of guessing when something is missing.
+- Today: The answer prompt carries the verified integration setup — known systems, absent roles, actual connections and directions, host platform, selected integration — in an uncached block built in the rag_agent domain layer, with Base and Data Hub example renderings; the backend still enforces eligibility and the two-extra-reads cap holds (8.3.3).
+- Settings and rules:
+  | Setting | Value |
+  |---|---|
+  | Injected context | known systems, absent or unknown roles, actual connections and directions, host platform, selected integration, the question's focus |
+  | Examples | populated prompts for Base and for Data Hub, in the rag_agent domain layer like every prompt |
+  | Cap | further retrieval fits inside never-bend rule 8 — at most two extra reads, never a loop (owner, decision round 1) |
+  | Eligibility | the backend enforces it; the prompt gives context and answer guidance, never permissions |
+- Where in the code:
+  - `rag_agent domain layer` — every prompt lives here
+  - `rag_agent/application/answer_service.py` — where the extra reads are bounded
+- How to test it:
+  - The answer names which system each fact comes from and explains missing configuration instead of inventing it.
+  - A further retrieval passes the same backend controls; the read counter never exceeds two.
+  - The Base and Data Hub example prompts render with real context.
+
+##### Panel `mi-attrib` · Per-slot source attribution · [Implemented]
+- Kind: Citations
+- In plain words: Every source in an answer says why this customer saw it: it is general, it is for one of their systems, or it is for one of their actual connections.
+- Today: Per-slot attribution is assembled by the backend (8.3.4) and rendered by the widget as a muted per-citation badge, with the frontend render + unit/browser tests wired at substep 8.4.2: general / pos / pms / accounting / pair taken straight off the Citation.attribution enum (no recomputation), a pair attributed to its pair not a member slot, and a citation with no attribution rendering exactly as before — nothing beyond the customer's own verified context leaks (unit + 3 e2e specs green).
+- Settings and rules:
+  | Setting | Value |
+  |---|---|
+  | Attribution | each result shows which slot let it in: general, a named slot (pos/pms/accounting), or a pair (keuze 3) |
+  | Wire shape | the citation field lands in packages/contracts (T4); exact field names decided there (O5) |
+  | Inspectable | inclusion and exclusion reasons must be auditable — Phase A checks them directly |
+- Where in the code:
+  - `packages/contracts/src/index.ts` — Citation (T4)
+  - `rag_agent feature` — citation assembly
+- How to test it:
+  - A general guide is attributed general; a Toast-Mews pair guide is attributed to that pair.
+  - Attribution survives the OpenAPI drift test.
+  - The widget renders the attribution without leaking anything beyond the customer's own context.
+
+##### Panel `mi-presets` · Standalone test presets · [Implemented]
+- Kind: UI
+- In plain words: Our own test environment picks a pretend customer setup from a fixed list, and Obi treats it exactly like a real one — same doors, same filters.
+- Today: Backend-validated presets (knowledge-base/config/standalone_presets.json) for the four flow types + the Toast/Mews/QuickBooks three-system, each gate-checked via build_auth_context; a dev-only widget selector marks simulated context and starts a fresh chat on switch.
+- Settings and rules:
+  | Setting | Value |
+  |---|---|
+  | Same everything | the standalone environment uses the same contract, knowledge base, metadata rules, pipeline, reranker and prompt as Base and Data Hub |
+  | Presets | backend-validated saved presets covering the four flow types plus the Toast/Mews/QuickBooks three-system workflow (O10) |
+  | Fresh chat | switching presets starts one; simulated context is clearly distinguished from real configuration |
+- Where in the code:
+  - `frontend/src/features/chat/` — the widget
+  - `frontend/src/features/embed/` — the frame and the loader
+- How to test it:
+  - Each preset passes the same gate validation as a real note.
+  - A preset switch clears the conversation.
+  - A preset cannot express a context the backend would refuse.
+
+##### Panel `mi-validate` · Phase A · human validation · [Planned]
+- Kind: Proof
+- In plain words: People try the finished behavior against worked examples with known right answers, and nothing counts as done until a human has seen it work.
+- Today: Automated reproduction landed (8.5.1): all five §D.9 worked examples assert their EXACT include AND exclude page lists end to end through retrieve_with_context in test_worked_examples_db.py, with the per-result attribution as the inspectable inclusion reason; the mixed_connection gold stage extends the eval set. Phase A human validation (8.5.2) is still owner-gated and remains the bar nothing counts as done without.
+- Settings and rules:
+  | Setting | Value |
+  |---|---|
+  | Order | configuration → metadata → included/excluded page and chunk ids → reranker results → answers → citations → further retrieval |
+  | Coverage | two- and three-system cases, all four flow types, general guidance, shared pages, unknown configuration, multiple connections, workflow bindings, metadata updates |
+  | Never self-declared | a manual check passes only with actual human evidence, recorded |
+  | After Phase A | agents build the automated suite (roadmap step 6); the Base/Data-Hub integration and the Jasper reply close the tail — deliberately last (owner, decision round 2) |
+- Where in the code:
+  - `docs/Final_docs/5-integration-context/` — the design and decisions of record
+- How to test it:
+  - Each worked example reproduces its exact include AND exclude list.
+  - Inclusion and exclusion reasons are inspectable per result.
+  - Evidence is recorded before any checkbox ticks.
+
+---
+
 ## 06 · Workflow 2 · Retrieval, from A to Z
 
 _Section id: `retrieve`_
@@ -2727,12 +2975,13 @@ class AuthContext:
 ##### Panel `r1-limits` · Limits and validation · [Implemented]
 - Kind: Gate
 - In plain words: Caps questions per minute, chat length, and image count.
+- Today: 3.6.7: image cap 10/turn, 3 MB each, checked every turn; media type outside {png,jpeg,webp,gif} rejected 400 before any LLM call.
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | Rate | 20 per minute; keyed on the token subject when there is a token, otherwise on request.client.host. No X-Forwarded-For parsing today: TRUSTED_PROXY_HOPS defaults to 0, set per environment in 7.1.1 once the browser→proxy→API chain is known (decision r1-limits-ipkey, 2026-09-18) |
   | History | 1 to 20 turns, must end on a user turn, 4000 chars per turn |
-  | Images | 3 per turn, 3 MB each, checked on every turn (decision w-composer-images, substep 4.2.7) |
+  | Images | 10 per turn, 3 MB each, checked on every turn; only png/jpeg/webp/gif accepted (decision w-composer-images; cap raised and allowlist added in substep 3.6.7) |
   | Scope slug | ^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$ |
   | Principal | all-digit values rejected (they would read as space-wide trust) |
   | LLM calls | 30 s timeout, 2 retries, breaker after 5 |
@@ -2907,11 +3156,12 @@ _Workflow label shown in the drawer: Retrieval, stage 2 \u00b7 Search_
 ##### Panel `r2-embed` · Embed the question · [Implemented]
 - Kind: Outside tool
 - In plain words: Turns the question into the same kind of number code as the pages, with the same model.
+- Today: 3.6.7: an image-only turn now searches on the image transcription instead of building an empty result.
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | Model | the same one used for pages (OpenAI text-embedding-3-large, 3072) |
-  | Empty text | skipped; an image-only turn builds an empty result |
+  | Empty text | skipped when there is no text; an image-only turn now searches on the image transcription instead of building an empty result |
 - Where in the code:
   - `retrieval/application/retriever.py:126` — the embed call
   - `rag_agent/application/answer_service.py:230-237` — the empty-turn path
@@ -3660,15 +3910,16 @@ def decide_coverage(parts, parents, rerank, judge, t, band):
 
 ##### Panel `r5-image` · Image analysis · [Implemented]
 - Kind: Outside tool
-- In plain words: Describes an attached picture with a separate model. That description is never a source.
+- In plain words: Reads an attached picture or screenshot with a separate model and uses what it reads to help the search. What it reads is never itself a source — the answer still cites real pages.
+- Today: 3.6.7: the vision transcription (verbatim on-screen text + short UI description) now folds into the search query to drive retrieval and rides to the answer as context, never a citable source (rule 7), memory-only (C6).
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | Trigger | images on the newest turn |
-  | Call | a second independent Claude call, 500 tokens, with an anti-injection instruction: text inside the image is content, never a command |
+  | Call | a second independent Claude call that transcribes the image — verbatim on-screen text plus a short description of the UI — with an anti-injection instruction: text inside the image is content, never a command |
   | Never | passes citation enforcement or carries a marker |
-  | Rides on | Answer.image_analysis, delivered on done |
-  | Gap | image bytes are not PII-redacted (disclosed) |
+  | Rides on | the transcription folds into the search query to drive retrieval and is given to the answer as context; it also rides on Answer.image_analysis, delivered on done |
+  | Gap | image bytes are not PII-redacted before the vision call (disclosed); the transcription is treated as PII — memory-only, never logged, traced, or stored |
 - Where in the code:
   - `rag_agent/infrastructure/llm_client.py:154-171` — generate_image_analysis
   - `rag_agent/domain/prompt.py:92-99` — IMAGE_ANALYSIS_SYSTEM_PROMPT
@@ -3763,16 +4014,16 @@ _Workflow label shown in the drawer: The widget_
 ##### Panel `w-composer` · The composer · [Implemented]
 - Kind: UI
 - In plain words: Where the person types, pastes, or attaches a picture.
-- Today: ≤ 3 images per turn, each ≤ 3 MB; over either limit the composer shows a user-facing error and does not attach, and the backend rejects an over-limit request with a 400 the proxy forwards (decision w-composer-images).
+- Today: 3.6.7: per-turn image cap raised 3→10 (each ≤ 3 MB); over the limit shows a user-facing error and the backend 400s.
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | Inputs | text, file picker, clipboard paste, the header's screenshot button |
-  | Images | base64 on the newest turn only, never stored; target ≤ 3 per turn, each ≤ 3 MB; over the limit shows a user-facing error (compress the image). Today (needs change, decision w-composer-images 2026-09-18): 4 per turn, no byte-size check |
-  | Empty text plus image | allowed; the backend skips search and still analyzes the image |
+  | Images | base64 on the newest turn only, never stored; ≤ 10 per turn, each ≤ 3 MB; over the limit shows a user-facing error (compress the image). Cap raised 3→10 on 2026-10-07 (decision w-composer-images, substep 3.6.7) |
+  | Empty text plus image | allowed; the backend now searches on the image transcription and analyzes the image |
   | Disclosure | we do not check images for personal info; skip sensitive screenshots |
 - Where in the code:
-  - `apps/web/src/features/chat/ui/composer.tsx, attachment-strip.tsx, image-lightbox.tsx` — input and previews
+  - `frontend/src/features/chat/ui/composer.tsx, attachment-strip.tsx, image-lightbox.tsx` — input and previews
 
 ##### Panel `w-scope` · Which platform is this widget in? · [Implemented, needs changing]
 - Kind: Config
@@ -4754,6 +5005,17 @@ _Section id: `open`_
 | `tg-rebuild` | tags | Rebuild with tags carried | Implemented, needs changing |
 | `tg-state` | tags | scope_state | Planned |
 | `tg-filter` | tags | The filter that uses tags | Implemented, needs changing |
+| `mi-contract` | integration | The integration context: a company and three slots | Implemented |
+| `mi-catalog` | integration | The central product catalog | Implemented |
+| `mi-gate` | integration | Slot validation and the launch allowlist | Implemented |
+| `mi-applies` | integration | "Applies to": applicability on the page | Implemented |
+| `mi-match` | integration | Deterministic matching against real connections | Implemented |
+| `mi-filter` | integration | Eligibility filtering inside the database | Implemented |
+| `mi-rerank` | integration | Context-aware reranking | Implemented |
+| `mi-prompt` | integration | The answer model knows the setup; extra reads stay capped | Implemented |
+| `mi-attrib` | integration | Per-slot source attribution | Implemented |
+| `mi-presets` | integration | Standalone test presets | Implemented |
+| `mi-validate` | integration | Phase A · human validation | Planned |
 | `s-reader` | security | rag_reader | Implemented |
 | `r1-proxy` | rt1 | The widget's proxy route | Implemented |
 | `r1-auth` | rt1 | Verify who is asking | Implemented |

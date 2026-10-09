@@ -389,3 +389,60 @@ Where it would go: operational hardening for the live Railway backend (roadmap S
 with the "DEPLOYMENT — OPERATIONAL NOTES" block in the root .env and
 docs/runbooks/railway-backend-deploy.md.
 Added: 2026-09-28
+
+---
+
+# CHAT_API_KEY rotation — deferred, not needed now (owner call 2026-10-09)
+
+**What it is.** During the 8.4.3 frontend deploy (2026-10-09), `CHAT_API_KEY` was printed to a
+session transcript via `railway variable list --kv`. On `obi-web` it is stored as a Railway
+reference (`${{obi-backend.CHAT_API_KEY}}`), not a copied value, so the wiring is safe; a rotation
+would simply retire the value that appeared in the transcript.
+
+**Why deferred.** The owner judged rotation **not necessary now** — the key is a reference, not
+exposed to the browser, and the transcript is not shared. It stays on the list so it is not lost if
+the posture changes (e.g. the transcript leaves a trusted boundary).
+
+**Where it would land.** An operational tail alongside §D.15; procedure in
+`docs/runbooks/chat-api-key-rotation.md`. Set a new `CHAT_API_KEY` on `obi-backend`; `obi-web`
+inherits it via the reference.
+
+**Guardrail (standing).** Never run `railway variable list --kv/--json` on secret-bearing services —
+it prints real values. Use keys-only reads.
+
+Added: 2026-10-09
+
+---
+
+# Branded embed origin `obi.omniboost.com` — deferred (owner call 2026-10-09)
+
+**What it is.** Serve `/obi.js` and `/embed` from `https://obi.omniboost.com` instead of the
+Railway-generated host `https://obi-web-production.up.railway.app`. The brief and the `em-loader`
+panel's "Loads from" target name `obi.omniboost.com` as the eventual URL.
+
+**Why deferred.** The Railway host works today and is the recorded canonical origin
+(decision `obi-js-url`). The branded domain needs a DNS change on `omniboost.com` (it currently
+CNAMEs to the main marketing site, so `/obi.js` 404s there) — owner/IT access, not a code change.
+
+**Where it would land.** After a platform integration is live. Steps: add `obi.omniboost.com` as a
+custom domain on the Railway `obi-web` service → add the CNAME at the omniboost.com registrar →
+rebuild obi.js with `OBI_ORIGIN=https://obi.omniboost.com` (baked at build; redeploy via
+`scripts/deploy-frontend.sh`) → update decision `obi-js-url` and the Jasper reply URL.
+
+Added: 2026-10-09
+
+---
+
+# DB-password rotation (§D.15) — deferred to the owner's dashboard moment
+
+**What it is.** Rotate the Supabase database password(s) used by `obi-backend` (owner + `rag_reader`
+DSNs). Inventory, safety analysis and runbook already filed in `docs/Final_docs/plan.md` §D.15.
+
+**Why deferred.** Execution needs the owner at the Supabase + Railway dashboards (the rotation
+window). It is an operational tail, independent of the Phase 8 / Step 5 feature work; flagged
+IMPORTANT-NOW by owner decision round 2 but still owner-timed.
+
+**Where it would land.** Anytime, standalone. Follow §D.15: rotate in Supabase, update the Railway
+service variables (via `--stdin`, never printed), confirm `/health` 200 and the readiness gates.
+
+Added: 2026-10-09

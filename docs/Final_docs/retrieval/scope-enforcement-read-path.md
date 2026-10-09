@@ -18,7 +18,11 @@ those GUCs: a chunk is visible only when its `tags` array overlaps the allowed s
 (`tags && string_to_array(guc, ',')`), with `'*'` as the explicit internal opt-out sentinel and an
 unset/empty GUC failing closed to zero rows. The search SQL carries the same filters as its own
 predicates (active, child kind, current status, source list, scope overlap) for correctness and
-planner use — RLS stays the security net underneath.
+planner use — RLS stays the security net underneath. Since 8.3.1 the same `WHERE` clause also
+carries the applicability/eligibility predicate when a verified customer context is present
+(`eligibility-filtering.md`): it narrows INSIDE what these access filters already allow and never
+replaces them — parent expansion and the curated lookup stay access-only, reached solely from ids
+the filtered search produced.
 
 Scope *values* are validated at this choke point before being joined into the GUC: `None` means
 the internal/eval wildcard; a list may not contain an element with an embedded `,` or `*` —

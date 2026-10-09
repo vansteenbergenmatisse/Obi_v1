@@ -603,3 +603,34 @@ proof. Implementation note: the plan page stores ticks in browser localStorage o
 baked as a `checked` attribute on the two inputs, and the loader line was adjusted
 (`||b.defaultChecked`) so a baked tick renders instead of being wiped by an empty localStorage —
 a user's own browser ticks are unaffected.
+
+---
+
+## Design page + action plan EXTENDED for Step 5 — the multi-integration stages (§D.12 item 7, 2026-10-05)
+
+**What was added (additive only — no existing panel, target line, status or substep was edited):**
+
+- **Design page (`obi-rag-system-flow.html`):** new section **05.2 · Multi-integration context**
+  (section id `integration`, nav link added) between Knowledge scopes (05) and Retrieval (06), with
+  **11 new panels**, prefix `mi-`, all status **build** (Planned): `mi-contract` (company + three
+  slots), `mi-catalog` (central product catalog), `mi-gate` (slot validation + launch allowlist),
+  `mi-applies` ("Applies to" applicability metadata), `mi-match` (deterministic AND/OR matching),
+  `mi-filter` (in-database eligibility filtering, ≤75 candidates), `mi-rerank` (context-aware
+  reranking), `mi-prompt` (context in the prompt + the two-read cap), `mi-attrib` (per-slot source
+  attribution), `mi-presets` (standalone test presets), `mi-validate` (Phase A human validation).
+  `WF`/`SEC` maps gained the `mi` prefix. Panel content is authored from the owner's decision
+  rounds 1–2 of 2026-10-05 and `docs/Final_docs/5-integration-context/` (the contract, catalog,
+  decision memo and research docs). The brief was regenerated: **203 panels** (was 192).
+- **Action plan (`obi-action-plan.html`):** new **Phase 8 · Multi-integration context: Base and
+  Data Hub** (section id `p8`, nav link added) with 5 step groups / **16 substeps** in execution
+  order: 8.1.1 catalog loader · 8.1.2 contracts T1–T6 · 8.1.3 gate slots · 8.2.1 Applies-to schema
+  · 8.2.2 chunk applicability migration + restamp · 8.2.3 deterministic matching · 8.3.1 in-DB
+  eligibility filtering · 8.3.2 context-aware rerank · 8.3.3 prompt context · 8.3.4 attribution ·
+  8.4.1 standalone presets · 8.4.2 widget context shape · 8.4.3 frontend deploy on Railway ·
+  8.5.1 the five worked examples · 8.5.2 Phase A (human-run) · 8.5.3 the Jasper reply + platform
+  entries (deliberately last). Each substep carries Must-be-true/Proof/prompt/Check-it and a
+  `design page:` refs line naming its `mi-` panels; a 4-item phase gate closes it.
+- **Why new ids, not edits:** the never-edit-a-target-line rule and the append-only spirit — the
+  Step-5 capability is genuinely new, so it gets new panels and a new phase rather than rewording
+  built ones. The agent-built automated test expansion that follows Phase A is roadmap Step 6 and
+  is deliberately NOT in phase 8 (stated in the phase lede).

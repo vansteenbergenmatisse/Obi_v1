@@ -53,6 +53,53 @@ DB-password rotation window (runbook `plan.md` §D.15) and the obi-resync label 
 THIS file remains to execute — it stays as the record of the eight-rule work and the home of the
 §15 decision pointers; the forward plan is `docs/Final_docs/plan.md` §D.
 
+**Update 2026-10-05 (later) — Step 5 moved again; this file stays closed.** The owner's parallel
+batch ran (archive-caught-by-lightweight-sweep proven by test; `obi-resync` verified already
+clean; the §D.1 contract + product catalog designed in `docs/Final_docs/5-integration-context/`;
+§D.6 rerank-API + §D.9 Jasper research filed there) and **owner decision round 2 landed**
+(recorded in `plan.md` §D.16): frontend deploys on **Railway**; the launch allowlist gates
+**POS/PMS only** (O4 closed); §D.11's `toast-opera` example was proven to exist nowhere and is
+**removed** (O8 closed — note for readers of §5.7/§D.11 prose here and in plan.md: that value was
+illustrative, never real); the **DB-password rotation is the immediate owner action**; Base/Data
+Hub integration (O7, the Jasper reply) is deliberately **last**, after Phase A; the nine
+unlabeled real pages stay unlabeled until Phase A. Everything forward-looking lives in
+`plan.md` §D — this file remains the eight-rule record only.
+
+**Update 2026-10-06 (build complete bar the owner tail) — the §15 keuzes are now code; this file stays the record.** The
+§15 decisions these pages pointed at (keuzes 1–4, the three-slot contract, the launch allowlist) are
+built: Step 5's Phase 8 ran autonomously through **every agent-doable substep — 8.1.1–8.4.2 plus
+8.5.1 (thirteen substeps)** — the product-catalog loader, the three-slot token/Citation contract
+(legacy `integration` claim kept forever), the gate's five slot checks, the "Applies to" schema,
+chunk applicability (migration 0015, restamp-no-re-embed), the deterministic matcher, in-SQL
+eligibility filtering, context-aware reranking and answer prompt, per-slot source attribution, the
+standalone presets, the widget carrying the extended context, and the five §D.9 worked examples
+reproducing their exact include/exclude lists. The **eight sync rules this file documents stayed
+green and unmodified throughout** (the regression suite is the gate on every one of those substeps),
+and applicability is a *relevance narrowing on top of* membership + access — it never widens what a
+label or RLS allows. `make check` green (boundaries 0 · backend 1229 + 1 xfailed · kb 51), pyright
+43, `pnpm test:e2e` 6 specs, eval at the 4.5 floor + a new `mixed_connection` gold stage. **Only the
+owner tail remains in Phase 8:** 8.4.3 (frontend deploy to Railway), 8.5.2 (Phase A human
+validation), 8.5.3 (the Jasper reply) — plus the §D.15 DB-password rotation. Detail and status live
+in `plan.md` §D / §A row 5 and the ledger entries 8.1.1…8.5.1 — not here.
+
+**Update 2026-10-09 — 8.4.3 is DONE and the owner tail is now just human + send; this file still stays the record.** The
+"only the owner tail remains" line above is superseded in one place: **8.4.3 (frontend deploy to Railway) is done.** The
+frontend is live as the Railway service **`obi-web`** at `https://obi-web-production.up.railway.app`, serving `/obi.js`
+(the deployed origin baked into the bundle) and `/embed` (whose `frame-ancestors` CSP is computed from the active
+`platforms.json` domains); the deploy is codified as `scripts/deploy-frontend.sh` (it hides the backend-only repo-root
+`railway.json`/`Dockerfile`/`.dockerignore` during upload so Railway builds the web workspace, not the backend image) and
+re-proven 7/7 by the new `frontend/scripts/embed-check-live.mjs` (output in
+`docs/Final_docs/5-integration-context/embed-check-8.4.3-run.txt`). Runbook: `docs/runbooks/railway-frontend-deploy.md`;
+canonical embed origin recorded as decision `obi-js-url` (the Railway host for now, `obi.omniboost.com` deferred). **The
+eight sync rules this file documents were not touched** — 8.4.3 is a deploy of the existing frontend, no ingestion/retrieval
+code changed, `make check` still green (boundaries 0 · backend 1240 + 1 xfailed · kb 51). The two remaining Phase-8 items
+are now **prepped and owner-gated**: 8.5.2 (Phase A human validation) has its case doc
+`docs/Final_docs/5-integration-context/phase-a-validation-cases.md` (10 cases, humans run it), and 8.5.3 (the Jasper reply)
+has its draft `docs/Final_docs/5-integration-context/jasper-reply-draft.md` (owner edits + sends; the working obi.js URL now
+exists). Operational tails: §D.15 DB-password rotation, and a **temporary `obi-test` embed allow-list**
+(`platforms.json` domains = the Railway host) to remove at real integration. Detail + status: ledger entries `8.4.3`,
+`8.4.3-addendum`, and `8.5.2 / 8.5.3 prep + housekeeping` (2026-10-09), and `plan.md` §D / §A row 5 — not here.
+
 **§14 (Execution appendix)** inlines the exact test harness, the current + target RLS DDL, the
 counting embedder, the naming/docstring/coverage/proof formats, and the CI xfail mechanics — so a
 fresh-context agent can execute from this file alone, without re-deriving them from the tree.
@@ -1137,3 +1184,200 @@ De golven, in volgorde:
   beslismemo, daarna de falende tests die het besliste contract vastleggen, pas dan implementatie.
 
 Werkwijze per golf: één golf per keer, /obi-change-procedure, ledger-entry bij afronding.
+
+---
+
+## Volgende stap + afsluitende owner-items (toegevoegd 2026-10-09)
+
+**Context.** Op 2026-10-09 is de frontend live gezet op Railway (substep **8.4.3**; zie ledger + progress-log). `obi.js` draait op `https://obi-web-production.up.railway.app/obi.js`. Hieronder de **volgende stap** voor retrieval-routing en daarna de **twee afsluitende owner-items**.
+
+### Volgende stap — retrieval-routing per klant-connectie (reconciliatie tegen §D)
+
+**Activatie (één zin):** wanneer deze stap wordt geactiveerd, draaien we de onderstaande prompt en vergelijken we 'm regel voor regel tegen wat er nú al gebouwd is (§D / Phase 8, substeps 8.1.1–8.5.1), om conflicten en gaten te vinden en de prompt werkend te maken — níet om blind opnieuw te bouwen.
+
+> Let op: veel hiervan is al geïmplementeerd in §D / Phase 8 (catalog loader, drie-slot contract, applicability-schema + migratie 0015, deterministische matcher, in-SQL eligibility-filter, context-aware rerank/prompt, per-slot attributie, de vijf worked examples). Deze prompt dient als **onafhankelijke spec** om tegen de huidige implementatie te toetsen; begin met "Step 0: explore first" en post het verschil/conflicten vóór enige wijziging.
+
+````text
+# Task: route Obi retrieval by customer connection
+
+You are working in the Obi repo at Omniboost. Obi is a RAG assistant fed by Confluence. Read this whole brief first. Then explore the code. Then post a plan before you edit anything.
+
+## Context you need
+
+- Obi has exactly two workflows: ingestion and retrieval. Keep it that way. Chat start lives inside retrieval.
+- A Confluence page enters the index only when it carries a label listed in the `knowledge_scopes` file. Removing its last listed label removes it.
+- Any edit to an indexed page deletes the whole page from the vector store. Then the whole page is embedded again. Only published pages count.
+- Stack: Postgres with pgvector on Supabase. Hybrid search (vector plus keyword). Cohere rerank. A LightRAG graph agent. The backend runs on Railway.
+- Every chat starts with three values: `source_system`, `target_system` and `business_id`. Example: source Mews, target Toast, business ID B-3075.
+
+## The problem
+
+Today one search can return pages for any integration. A Mews to Toast customer can get Toast to QuickBooks steps. We fix this with Confluence labels and a hard filter inside the search.
+
+## Words we use
+
+- System: one product we integrate with, like Toast or Mews.
+- Kind: what a system is. One of `POS`, `PMS` or `ACCOUNTING`.
+- Slug: the lowercase name used in labels, like `toast` or `opera-cloud`.
+- Box: one Confluence label. Every page with that label sits in that box.
+- Connection: the source and target pair for one chat.
+- Connection block: the part of the system prompt that names the two systems.
+
+## The routing rule
+
+For a connection with source S and target T, Obi may read exactly 4 boxes:
+
+1. `obi-general`
+2. `{S.slug}-general`
+3. `{T.slug}-general`
+4. `{S.slug}-to-{T.kind in lowercase}`
+
+Examples you must support:
+
+| Connection | Kinds | The 4 labels |
+|---|---|---|
+| Toast → Mews | POS → PMS | obi-general, toast-general, mews-general, toast-to-pms |
+| Lightspeed → Opera Cloud | POS → PMS | obi-general, lightspeed-general, opera-cloud-general, lightspeed-to-pms |
+| Mews → Toast | PMS → POS | obi-general, mews-general, toast-general, mews-to-pos |
+| Mews → QuickBooks | PMS → ACCOUNTING | obi-general, mews-general, quickbooks-general, mews-to-accounting |
+| Toast → QuickBooks | POS → ACCOUNTING | obi-general, toast-general, quickbooks-general, toast-to-accounting |
+
+Lightspeed and Opera Cloud are example systems. Build the real catalog from the labels that exist in Confluence. A box with no pages is fine. Return what exists.
+
+## Step 0: explore first
+
+Find these and list them with file paths before you change code:
+
+- The ingestion workflow and the Confluence client it uses.
+- How chunks are stored. Table name, columns and indexes.
+- The `knowledge_scopes` file and the code that reads it.
+- The webhook handler for Confluence events.
+- Where a chat starts. Where `source_system`, `target_system` and `business_id` arrive.
+- The system prompt builder.
+- The hybrid search query. The Cohere rerank call. The LightRAG agent entry point.
+- Where a chat session is stored today, if anywhere.
+
+Post a short plan. Wait for approval before you run any migration.
+
+## Step 1: the system catalog
+
+Create one catalog file. Follow the repo's config style. Example: `config/system_catalog.yaml`.
+
+```yaml
+systems:
+  - name: Toast
+    slug: toast
+    kind: POS
+    aliases: []
+  - name: Mews
+    slug: mews
+    kind: PMS
+    aliases: []
+  - name: QuickBooks
+    slug: quickbooks
+    kind: ACCOUNTING
+    aliases: [quickbooks online]
+```
+
+- Load it once at startup.
+- Validate it. Slugs are unique. Kind is one of the three values. Slug matches `^[a-z0-9]+(-[a-z0-9]+)*$`. Fail fast on a bad file.
+- Expose `resolve_system(name)`. It returns the system or nothing. Match on name, slug or alias. Ignore case and extra spaces.
+- Expose `build_labels(source, target)`. It returns the 4 labels in the order of the routing rule.
+- Omniboost may already keep a master integration list with kinds. If you find one, ask before you read from it instead.
+
+## Step 2: ingestion changes
+
+1. Add a `labels text[] not null default '{}'` column to the chunk table. Add a GIN index on it.
+2. On ingest, fetch every label of the page from Confluence. Store the full list on every chunk of that page.
+3. Make LightRAG respect labels too. Either store the labels on the nodes and edges built from the page. Or store the page id and join to page labels at query time. Pick what fits the current setup. Explain your pick in the plan.
+4. Validate each label. Valid forms: `obi-general`, `{slug}-general` and `{slug}-to-(pos|pms|accounting)`, with a slug from the catalog. Log a warning for any other label that sits in `knowledge_scopes`. Never block ingestion on this.
+5. Add every routing label to `knowledge_scopes`.
+6. A label added or removed on a page must re-ingest that page with the existing whole-page flow. Check that the Confluence webhook sends label events. If it does not, add a scheduled job that compares labels and re-ingests changed pages. Report which one you built.
+7. Backfill. Write a one-off script that fetches labels for every indexed page and fills the new column. No new embeddings are needed for this. Make it safe to run twice.
+
+## Step 3: chat start (runs once per chat)
+
+Trigger: the event that starts a chat with `source_system`, `target_system` and `business_id`.
+
+1. Resolve both systems with the catalog.
+2. Build the 4 labels with the routing rule.
+3. Build the connection block and write it into the system prompt:
+
+```
+## Customer connection
+- Source system: Mews (PMS)
+- Target system: Toast (POS)
+- Direction: PMS → POS
+- Business ID: B-3075
+Answer for this connection only. If the user asks about another system, tell them to pick that partner first.
+```
+
+4. Save on the session: `business_id`, `source_slug`, `target_slug`, `labels`, `connection_block` and `updated_at`. Add a Supabase table or columns as needed.
+5. Unknown system: log it with the business ID. Set labels to `[obi-general]`. Say in the connection block that the system is unknown.
+6. Run this once per chat. Never on each question.
+
+## Step 4: each question (no lookup)
+
+1. Load the session. Read `labels` and `connection_block`. Do not call the catalog. Do not rebuild the labels.
+2. Hybrid search: add `labels && :session_labels` (array overlap) to the SQL. Do it for the vector part and the keyword part. Apply it before top-k. Never filter after ranking.
+3. Cohere rerank: send only the filtered candidates.
+4. LightRAG agent: apply the same label filter to graph retrieval.
+5. Build the LLM call from the base system prompt, the saved connection block, the retrieved chunks and the question.
+6. The connection block names the two systems so Obi words the answer right. The label filter decides which pages Obi sees. Never use the prompt as the filter.
+
+## Step 5: partner switch
+
+A customer can pick a new partner in the UI. Then:
+
+1. Fire the chat start flow again with the new source and target. Keep the business ID.
+2. Replace the connection block in the system prompt. Never append a second block.
+3. Replace the saved labels on the session.
+4. Same pair as the current one: do nothing.
+5. Keep the chat history unless the product owner says otherwise. Add one short system note like "Partner switched to Mews → QuickBooks."
+
+This fires once per switch. Never per question.
+
+## Step 6: logging
+
+- Chat start: log the business ID, both systems, both kinds and the 4 labels.
+- Each question: log the session id, the 4 labels, the candidate count before rerank and the chunk count after.
+- Warn when a filtered search returns zero chunks.
+- Partner switch: log the old pair and the new pair.
+
+## Step 7: tests
+
+- Unit: the 5 example connections return exactly the labels in the table.
+- Unit: an unknown system returns `[obi-general]` and logs a warning.
+- Unit: label validation accepts the valid forms. It rejects `toast-to-pmss` and `toast-to-hotel`.
+- Integration: seed chunks with mixed labels. A Toast → Mews session never returns chunks whose only labels are `toast-to-accounting`, `mews-to-pos` or `lightspeed-general`.
+- Integration: the LightRAG path respects the same filter.
+- Spy test: answering a question never calls the catalog.
+- Partner switch: the connection block and the labels are replaced. Exactly one connection block remains in the prompt.
+- Same pair switch: nothing changes and nothing is logged as a switch.
+
+## Done when
+
+- [ ] The catalog file exists and loads with validation.
+- [ ] Chunks carry labels. The backfill ran.
+- [ ] Label changes trigger a re-ingest.
+- [ ] Chat start saves the labels and the connection block once.
+- [ ] Every question filters hybrid search, rerank input and LightRAG on the saved labels.
+- [ ] A partner switch refires chat start and replaces the block and the labels.
+- [ ] Every test above passes.
+
+## Out of scope
+
+- Partner stamps inside a label. `toast-to-pms` still holds pages for every PMS. A Toast → Mews chat can still see Campspot pages from that box.
+- Any change to how pages are chunked or embedded.
+
+## Open questions to raise, not decide
+
+- Should a Toast → Mews chat also read `mews-to-pos` for the Mews side setup?
+- Does the production webhook fire when only a label changes?
+````
+
+### Laatste items (owner) — deze sluiten de plan af
+
+1. **Fase 4.x — platform-integratie voor Base + Data Hub (maakt een écht gesprek in productie mogelijk).** De embed-widget opent wel, maar authenticeert niet zonder een vertrouwd token per platform. Nodig, per platform: (a) een issuer die een kort levend JWT per gebruiker ondertekent met de juiste claims (company + integratie/slots + scope); (b) een publieke JWKS-URL zodat Obi de handtekening verifieert; (c) registratie in `knowledge-base/config/platforms.json` — issuer + jwks_url + domein + `active: true` (voor Data Hub de bestaande `datahub`-entry invullen; voor Base een nieuwe `base`-entry aanmaken); (d) een token-endpoint op de hostpagina dat obi.js' `tokenUrl` bedient. Bevestigde embed-hosts: **Base = `base.omniboost.io`**, **Data Hub = `datahub.omniboost.io`**. Owner levert de publieke sleutels/issuer per platform. Bij afronding: haal de tijdelijke test-allow-list (`obi-test.domains` = de Railway-host) uit `platforms.json`.
+
+2. **Eigen domein `obi.omniboost.com` (optioneel, cosmetisch).** Nu draait de frontend op de Railway-host `obi-web-production.up.railway.app`. Een merk-URL `obi.omniboost.com` vereist een DNS-wijziging (CNAME naar de Railway-service) die iemand met DNS-toegang moet zetten. Niet functioneel blokkerend; de Railway-URL werkt. Owner-actie.
