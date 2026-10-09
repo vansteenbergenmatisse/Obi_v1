@@ -1,0 +1,40 @@
+{
+  "name": "mixed_connection",
+  "cases": [
+    {
+      "id": "mc-01",
+      "question": "Why are my Mews invoices missing in QuickBooks?",
+      "relevant_chunk_ids": ["3011"],
+      "scope": "400",
+      "kind": "retrieval"
+    },
+    {
+      "id": "mc-02",
+      "question": "Why are Toast room charges missing in Mews?",
+      "relevant_chunk_ids": ["3004"],
+      "scope": "300",
+      "kind": "retrieval"
+    },
+    {
+      "id": "mc-03",
+      "question": "Why is Mews guest information unavailable in Toast?",
+      "relevant_chunk_ids": ["3002"],
+      "scope": "300",
+      "kind": "retrieval"
+    },
+    {
+      "id": "mc-04",
+      "question": "Why are restaurant charges not reaching QuickBooks over the linked connections?",
+      "relevant_chunk_ids": ["3011"],
+      "scope": "400",
+      "kind": "retrieval"
+    },
+    {
+      "id": "mc-05",
+      "question": "Our property runs Toast with Opera Cloud and Mews with QuickBooks — how is the Opera Cloud connection configured?",
+      "relevant_chunk_ids": ["3003"],
+      "scope": "300",
+      "kind": "retrieval"
+    }
+  ]
+}

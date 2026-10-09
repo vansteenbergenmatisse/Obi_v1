@@ -58,3 +58,65 @@ out_of_corpus 0.000; rerank lift p@5 0.200→0.200, ndcg@10 1.000→0.877). Thes
 THE before-gate: every later retrieval-touching change (Steps 5–6 included) must show its
 before-and-after against this table (rule 11). Mixed-scope gold questions (a Toast question under
 an Opera token etc.) are added when multi-scope lands — in Step 6, scored against this same floor.
+
+## 8.3.1 — eligibility filtering inside the database: rule-11 before/after (2026-10-05)
+
+`make eval` ran BEFORE the change (reproducing the 4.5 floor exactly) and AFTER it: **every
+number identical** (retrieval_smoke 1.000 / 0.750 / 1.000 · ambiguity 1.000 / 0.667 / 1.000 ·
+permission 0.667 / 0.250 / 0.667 · out_of_corpus 0.000; rerank lift p@5 0.200→0.200, ndcg@10
+1.000→0.877). Honest scope note: the bundled runner drives the fixture baseline ranker with NO
+customer context, so these numbers prove the no-context path is byte-identical (the eligibility
+predicate is only emitted when a context is passed); they cannot see the filter itself. The
+filter's own recall proof is the database-level exact-filtered-baseline test
+(`test_rt2_filter_recall_matches_exact_filtered_baseline`) plus the matcher-oracle sweep in
+`backend/app/features/retrieval/tests/test_eligibility_filter_db.py`; context-carrying gold
+cases land in Step 6 against this same floor.
+
+## 8.3.2 — context-aware reranking: rule-11 before/after + threshold re-tune (2026-10-05)
+
+`make eval` ran AFTER the enrichment landed and reproduces the floor **byte-identical in every
+metric** (retrieval_smoke 1.000 / 0.750 / 1.000 · ambiguity 1.000 / 0.667 / 1.000 · permission
+0.667 / 0.250 / 0.667 · out_of_corpus 0.000; rerank lift p@5 0.200→0.200, ndcg@10 1.000→0.877).
+The only JSON delta vs the committed report is a non-relevant fixture page (`3011`) in the
+ranked tail — pre-existing (it lives in the fixtures loader, not added here), metrics unchanged
+— so the committed `backend/eval-reports/baseline.json` was left as-is.
+
+**Threshold re-tune — old → new:** `refusal_min_rerank_score` 0.05 → **0.05 (unchanged)**;
+`offtopic_max_rerank_score` 0.035 → **0.035 (unchanged)**; CRAG weak-score trigger (keyed on
+`refusal_min_rerank_score`) **unchanged**. Honest reason, same scope note as §8.3.1: the
+bundled gold set carries **no** customer context, and the 8.3.2 enrichment only fires on the
+context path (empty context → the pre-8.3.2 query/documents byte-for-byte). So enrichment is
+invisible to this gold set and does not shift its rerank-score distribution — there is nothing
+to re-tune against here. The re-tune that the research memo warns about becomes real only when
+context-carrying gold cases exist; those land in Step 6 and MUST re-run this before/after and
+re-tune (or refuse to ship a loss, rule 11) against this same floor. The no-context
+byte-identity is proven at unit level by
+`test_rt4_rerank_without_context_sees_bare_query_and_unenriched_docs` and
+`test_rt2_filter_sql_unchanged_when_no_eligibility`.
+
+## 8.5.1 — worked examples reproduce their lists: the mixed_connection gold stage (2026-10-06)
+
+`make eval` ran after adding the fifth dataset `mixed_connection.json` (the five §D.9
+worked-example questions). **The existing four stages are byte-identical to the 4.5 floor**
+(retrieval_smoke 1.000 / 0.750 / 1.000 · ambiguity 1.000 / 0.667 / 1.000 · permission 0.667 /
+0.250 / 0.667 · out_of_corpus 0.000; rerank lift p@5 0.200→0.200, ndcg@10 1.000→0.877) — the new
+dataset does not touch them.
+
+**New stage `mixed_connection` (5 cases) — its OWN first baseline** (new cases, so there is no
+earlier number to regress against; "before" IS this run, stated honestly):
+
+| stage | cases | recall@5 | mrr | hit_rate@5 | precision@5 | ndcg@5 |
+|---|---|---|---|---|---|---|
+| mixed_connection | 5 | 1.000 | 0.6167 | 1.000 | 0.200 | 0.7123 |
+
+Per case (scope = the relevant page's space, baseline manifest-order ranker): mc-01 mrr 1.000
+(page 3011), mc-02 0.250 (3004), mc-03 0.500 (3002), mc-04 1.000 (3011), mc-05 0.3333 (3003).
+
+Honest scope note (same as §8.3.1/§8.3.2): the bundled runner scores the fixture baseline ranker
+with **no customer context**, so these numbers gate retrieval RANKING of the mixed-connection
+questions, not eligibility. The exact include/exclude proof for all five §D.9 examples is the
+database-level `backend/app/features/retrieval/tests/test_worked_examples_db.py` (5 tests, exact
+page-id include AND exclude sets + per-result attribution; break-it inversion red-first). These
+five numbers are now part of the floor: a later retrieval touch must show before/after against
+this table too (rule 11). Context-carrying gold cases (slots actually driving eligibility) still
+land in Step 6 / Phase B against this same floor.

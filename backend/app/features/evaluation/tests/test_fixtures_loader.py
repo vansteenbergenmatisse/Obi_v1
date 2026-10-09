@@ -21,6 +21,7 @@ def test_list_pages_expected_ids() -> None:
     # 1001-2003: the original ENG/HR corpus. 3001-3010: the substep 0.5.1 additions
     # (one page per knowledge-scope tag, two-label, classified, unlabeled, attachment,
     # group-restricted, empty) — see this directory's README.md page-mapping table.
+    # 3011: the Applies-to page (space 400, substep 8.2.2, panel mi-applies).
     assert ids == {
         "1001",
         "1002",
@@ -38,6 +39,7 @@ def test_list_pages_expected_ids() -> None:
         "3008",
         "3009",
         "3010",
+        "3011",
     }
 
 

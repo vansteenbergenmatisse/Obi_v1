@@ -68,3 +68,21 @@
 | Case | Kind | recall@k | mrr | ranked (top 5) |
 | --- | --- | --- | --- | --- |
 | ooc-01 | answer | 0.000 | 0.000 | 1001, 1002, 2001, 2002, 3001 |
+
+## Dataset: `mixed_connection` (5 cases)
+
+| Metric | Mean |
+| --- | --- |
+| hit_rate@5 | 1.0000 |
+| mrr | 0.6167 |
+| ndcg@5 | 0.7123 |
+| precision@5 | 0.2000 |
+| recall@5 | 1.0000 |
+
+| Case | Kind | recall@k | mrr | ranked (top 5) |
+| --- | --- | --- | --- | --- |
+| mc-01 | retrieval | 1.000 | 1.000 | 3011 |
+| mc-02 | retrieval | 1.000 | 0.250 | 3001, 3002, 3003, 3004, 3005 |
+| mc-03 | retrieval | 1.000 | 0.500 | 3001, 3002, 3003, 3004, 3005 |
+| mc-04 | retrieval | 1.000 | 1.000 | 3011 |
+| mc-05 | retrieval | 1.000 | 0.333 | 3001, 3002, 3003, 3004, 3005 |

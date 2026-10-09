@@ -36,6 +36,12 @@ _DATASET_FILES = [
     "ambiguity.json",
     "permission.json",
     "out_of_corpus.json",
+    # substep 8.5.1 (§D.9): the five worked-example mixed-connection questions. New cases, so
+    # their numbers here are their OWN first baseline (no earlier floor to regress against); the
+    # existing four stays unchanged. The bundled ranker carries no customer context, so — like
+    # the §8.3.1/§8.3.2 notes in baseline.md — this gates retrieval RANKING of the questions, not
+    # eligibility; the exact include/exclude proof is test_worked_examples_db.py.
+    "mixed_connection.json",
 ]
 _K = 5
 

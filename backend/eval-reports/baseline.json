@@ -230,7 +230,8 @@
             "3007",
             "3008",
             "3009",
-            "3010"
+            "3010",
+            "3011"
           ],
           "relevant_ids": [
             "2002"
@@ -260,7 +261,8 @@
             "3007",
             "3008",
             "3009",
-            "3010"
+            "3010",
+            "3011"
           ],
           "relevant_ids": [
             "1002"
@@ -290,7 +292,8 @@
             "3007",
             "3008",
             "3009",
-            "3010"
+            "3010",
+            "3011"
           ],
           "relevant_ids": []
         }
@@ -333,9 +336,137 @@
             "3007",
             "3008",
             "3009",
-            "3010"
+            "3010",
+            "3011"
           ],
           "relevant_ids": []
+        }
+      ],
+      "timestamp": "baseline"
+    },
+    {
+      "aggregates": {
+        "hit_rate@5": 1.0,
+        "mrr": 0.6166666666666667,
+        "ndcg@5": 0.7123212623289701,
+        "precision@5": 0.2,
+        "recall@5": 1.0
+      },
+      "case_count": 5,
+      "dataset_name": "mixed_connection",
+      "k": 5,
+      "results": [
+        {
+          "case_id": "mc-01",
+          "kind": "retrieval",
+          "metrics": {
+            "hit_rate@5": 1.0,
+            "mrr": 1.0,
+            "ndcg@5": 1.0,
+            "precision@5": 0.2,
+            "recall@5": 1.0
+          },
+          "ranked_ids": [
+            "3011"
+          ],
+          "relevant_ids": [
+            "3011"
+          ]
+        },
+        {
+          "case_id": "mc-02",
+          "kind": "retrieval",
+          "metrics": {
+            "hit_rate@5": 1.0,
+            "mrr": 0.25,
+            "ndcg@5": 0.43067655807339306,
+            "precision@5": 0.2,
+            "recall@5": 1.0
+          },
+          "ranked_ids": [
+            "3001",
+            "3002",
+            "3003",
+            "3004",
+            "3005",
+            "3006",
+            "3007",
+            "3008",
+            "3009",
+            "3010"
+          ],
+          "relevant_ids": [
+            "3004"
+          ]
+        },
+        {
+          "case_id": "mc-03",
+          "kind": "retrieval",
+          "metrics": {
+            "hit_rate@5": 1.0,
+            "mrr": 0.5,
+            "ndcg@5": 0.6309297535714575,
+            "precision@5": 0.2,
+            "recall@5": 1.0
+          },
+          "ranked_ids": [
+            "3001",
+            "3002",
+            "3003",
+            "3004",
+            "3005",
+            "3006",
+            "3007",
+            "3008",
+            "3009",
+            "3010"
+          ],
+          "relevant_ids": [
+            "3002"
+          ]
+        },
+        {
+          "case_id": "mc-04",
+          "kind": "retrieval",
+          "metrics": {
+            "hit_rate@5": 1.0,
+            "mrr": 1.0,
+            "ndcg@5": 1.0,
+            "precision@5": 0.2,
+            "recall@5": 1.0
+          },
+          "ranked_ids": [
+            "3011"
+          ],
+          "relevant_ids": [
+            "3011"
+          ]
+        },
+        {
+          "case_id": "mc-05",
+          "kind": "retrieval",
+          "metrics": {
+            "hit_rate@5": 1.0,
+            "mrr": 0.3333333333333333,
+            "ndcg@5": 0.5,
+            "precision@5": 0.2,
+            "recall@5": 1.0
+          },
+          "ranked_ids": [
+            "3001",
+            "3002",
+            "3003",
+            "3004",
+            "3005",
+            "3006",
+            "3007",
+            "3008",
+            "3009",
+            "3010"
+          ],
+          "relevant_ids": [
+            "3003"
+          ]
         }
       ],
       "timestamp": "baseline"
