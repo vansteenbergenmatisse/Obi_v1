@@ -109,6 +109,10 @@ class PageSource(Base):
     tags: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
     )
+    # validated "Applies to" record of the ACTIVE indexed state (§D.3, panel mi-applies,
+    # migration 0015): a JSON list of rules, OR between them. NULL = no record = the
+    # documented label-only default. Never grants access — it only narrows relevance.
+    applicability: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     parent_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     current_cf_version: Mapped[int] = mapped_column(Integer, nullable=False)
     active_doc_version_id: Mapped[int | None] = mapped_column(
@@ -288,6 +292,9 @@ class Chunk(Base):
     tags: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
     )
+    # validated "Applies to" record stamped at build/restamp (§D.3, panel mi-applies,
+    # migration 0015). NULL = no record = label-only behavior; never widens access.
+    applicability: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     source_url: Mapped[str] = mapped_column(Text, nullable=False)
     heading_path: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
     seq: Mapped[int] = mapped_column(Integer, nullable=False)

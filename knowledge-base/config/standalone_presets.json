@@ -1,0 +1,40 @@
+{
+  "_readme": "Backend-validated standalone test presets for the Obi standalone/test environment (plan.md §D.8, panel mi-presets, substep 8.4.1). This is the ONE canonical list of pretend customer setups the standalone environment picks from; it is read by the backend (backend/app/features/rag_agent/application/standalone_presets.py, which VALIDATES each preset through the real gate build_auth_context) AND by the frontend standalone preset selector (frontend/src/features/chat/model/standalone-presets.ts) — one source, exactly like platforms.json is read by both apps. Each preset expresses ONLY a verified-context shape: a company_id plus the three §D.13 slots (pos | pms | accounting, each a canonical product id from product_catalog.json or null). A preset is NOT a parallel code path and NEVER widens access — it is an input to the same authorization context the gate builds from a real note (never-bend rules 2–3). 'flow_type' is a display label naming which §D.2 flow the preset exercises (pos_to_pms | pms_to_pos | pms_to_accounting | pos_to_accounting) or the reserved 'three_system' for the Toast/Mews/QuickBooks three-system workflow (§D.9 example 4). Every slot value must be a canonical product id the catalog knows and the launch allowlist admits (Toast as POS, Mews as PMS) — a preset that would be refused by the gate (bad slug, wrong role, out-of-allowlist pos/pms) is a bug, caught by the backend unit tests. Simulated test context is clearly distinguished from real configuration in the widget, and switching presets starts a fresh chat.",
+  "presets": [
+    {
+      "id": "pos-to-pms",
+      "label": "Toast → Mews (POS to PMS)",
+      "flow_type": "pos_to_pms",
+      "company_id": "preset-pos-to-pms",
+      "slots": { "pos": "toast", "pms": "mews", "accounting": null }
+    },
+    {
+      "id": "pms-to-pos",
+      "label": "Mews → Toast (PMS to POS)",
+      "flow_type": "pms_to_pos",
+      "company_id": "preset-pms-to-pos",
+      "slots": { "pos": "toast", "pms": "mews", "accounting": null }
+    },
+    {
+      "id": "pms-to-accounting",
+      "label": "Mews → QuickBooks (PMS to accounting)",
+      "flow_type": "pms_to_accounting",
+      "company_id": "preset-pms-to-accounting",
+      "slots": { "pos": null, "pms": "mews", "accounting": "quickbooks-online" }
+    },
+    {
+      "id": "pos-to-accounting",
+      "label": "Toast → QuickBooks (POS to accounting)",
+      "flow_type": "pos_to_accounting",
+      "company_id": "preset-pos-to-accounting",
+      "slots": { "pos": "toast", "pms": null, "accounting": "quickbooks-online" }
+    },
+    {
+      "id": "three-system",
+      "label": "Toast + Mews + QuickBooks (three systems)",
+      "flow_type": "three_system",
+      "company_id": "preset-three-system",
+      "slots": { "pos": "toast", "pms": "mews", "accounting": "quickbooks-online" }
+    }
+  ]
+}
