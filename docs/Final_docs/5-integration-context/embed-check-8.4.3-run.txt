@@ -1,0 +1,16 @@
+embed-check-live · target origin: https://obi-web-production.up.railway.app
+platforms.json: /Users/matissevansteenbergen/Downloads/AGENTIC WORKLFOWS/OMNIBOOST/RAG-TOAST-omniboost-version2/knowledge-base/config/platforms.json
+run at: 2026-10-09T11:59:42.871Z
+
+active platforms.json domains (expected frame-ancestors): ["obi-web-production.up.railway.app"]
+
+  [PASS] obi.js served (200) — status=200
+  [PASS] deployed origin baked into obi.js (not host-page fallback) — found "https://obi-web-production.up.railway.app"
+  [PASS] obi.js points its iframe at ${origin}/embed
+  [PASS] /embed served (200) — status=200
+  [PASS] /embed carries a frame-ancestors CSP — csp="frame-ancestors obi-web-production.up.railway.app"
+  [PASS] frame-ancestors == active platforms.json domains — header=["obi-web-production.up.railway.app"] expected=["obi-web-production.up.railway.app"]
+  [PASS] service root reachable (200) — status=200
+
+result: 7/7 checks passed
+ALL EMBED CHECKS PASSED

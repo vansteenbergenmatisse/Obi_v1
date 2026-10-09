@@ -22,6 +22,17 @@ The Next.js app — the only place UI lives.
 
 ## Deploy posture
 
-The frontend **stays local for now** (`make web-dev`). Only its `AUTOMATION_API_BASE_URL` changes to
-point at the deployed backend; no CORS is involved because calls are server-to-server through the
-proxy. Package managers do not mix: `pnpm` here, `uv` for the Python roots.
+Locally it runs with `make web-dev`; `AUTOMATION_API_BASE_URL` points it at the backend (local or
+the deployed Railway URL). No CORS is involved because calls are server-to-server through the proxy.
+Package managers do not mix: `pnpm` here, `uv` for the Python roots.
+
+**Deployed (substep 8.4.3, 2026-10-09):** the frontend runs as the Railway service **`obi-web`** in
+the `obi-backend` project — Online, eu-west, at `https://obi-web-production.up.railway.app`, serving
+`/obi.js` (deployed origin baked in) and `/embed` (CSP `frame-ancestors` computed from the active
+`platforms.json` domains). It is the canonical embed origin handed to platforms (owner decision,
+round 2). The service is built by Railway's Railpack (Node) over the whole repo so
+`knowledge-base/config/platforms.json` resolves as a sibling. Deploy with
+`scripts/deploy-frontend.sh` (it hides the backend-only repo-root `railway.json`/`Dockerfile`/
+`.dockerignore` for the upload so Railway builds the web workspace, not the backend image) and
+re-prove with `node frontend/scripts/embed-check-live.mjs`. Full detail:
+`docs/runbooks/railway-frontend-deploy.md`.
