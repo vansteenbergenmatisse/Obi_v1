@@ -211,6 +211,130 @@ describe("initIframeBridge", () => {
     expect(onScopeChange).toHaveBeenCalledTimes(1);
   });
 
+  it("mi-contract · 8.4.2: a slot-shaped note (context.slots) is accepted and threaded like a legacy note", () => {
+    // panel mi-contract · substep 8.4.2 — the note now carries company_id + three slots inside the
+    // opaque JWT (T6 no-op: same `obi:token` message, richer claims). The bridge must accept it
+    // exactly as it accepts a legacy single-integration note.
+    const onToken = vi.fn();
+    teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN], onToken });
+
+    const slotToken = jwtWithClaims({
+      company_id: "c1",
+      context: { slots: { pos: "toast", pms: "mews", accounting: null } },
+    });
+    post({ type: "obi:token", token: slotToken }, ALLOWED_ORIGIN);
+
+    expect(getToken()).toBe(slotToken);
+    expect(onToken).toHaveBeenCalledWith(slotToken);
+    expect(warnSpy).not.toHaveBeenCalled();
+  });
+
+  it("mi-contract · 8.4.2: a renewal that changes a SLOT (not integration/company) resets the conversation", () => {
+    // panel mi-contract · substep 8.4.2 — two slot-shaped notes for the SAME company_id, differing
+    // only in the PMS slot, crossed into a different integration context (LC-2/LC-3/LC-6) → reset.
+    // Pre-8.4.2 `decodeScope` read only `integration`/`company_id`, so these two looked identical
+    // and NO reset fired (the red state this proves fixed).
+    const onScopeChange = vi.fn();
+    teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN], onScopeChange });
+
+    post(
+      {
+        type: "obi:token",
+        token: jwtWithClaims({
+          company_id: "c1",
+          context: { slots: { pos: "toast", pms: "mews", accounting: null } },
+        }),
+      },
+      ALLOWED_ORIGIN,
+    );
+    expect(onScopeChange).not.toHaveBeenCalled();
+
+    // Same company, same POS, but the PMS slot changed — a different integration context.
+    post(
+      {
+        type: "obi:token",
+        token: jwtWithClaims({
+          company_id: "c1",
+          context: { slots: { pos: "toast", pms: "opera-cloud", accounting: null } },
+        }),
+      },
+      ALLOWED_ORIGIN,
+    );
+    expect(onScopeChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("mi-contract · 8.4.2: a renewal to the IDENTICAL slot-shaped context does NOT reset", () => {
+    // panel mi-contract · substep 8.4.2 — a plain token refresh (same slots) must not wipe the
+    // open conversation.
+    const onScopeChange = vi.fn();
+    teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN], onScopeChange });
+
+    const claims = {
+      company_id: "c1",
+      context: { slots: { pos: "toast", pms: "mews", accounting: null } },
+    };
+    post({ type: "obi:token", token: jwtWithClaims(claims) }, ALLOWED_ORIGIN);
+    post({ type: "obi:token", token: jwtWithClaims(claims) }, ALLOWED_ORIGIN);
+    expect(onScopeChange).not.toHaveBeenCalled();
+  });
+
+  it("mi-contract · 8.4.2: crossing from a legacy note to a slot-shaped note resets the conversation", () => {
+    // panel mi-contract · substep 8.4.2 — a legacy single-integration note followed by a
+    // slot-shaped note for a different company is a different corpus/identity → reset.
+    const onScopeChange = vi.fn();
+    teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN], onScopeChange });
+
+    post(
+      { type: "obi:token", token: jwtWithClaims({ integration: "mews", company_id: "c1" }) },
+      ALLOWED_ORIGIN,
+    );
+    expect(onScopeChange).not.toHaveBeenCalled();
+
+    post(
+      {
+        type: "obi:token",
+        token: jwtWithClaims({
+          company_id: "c2",
+          context: { slots: { pos: "toast", pms: "mews", accounting: null } },
+        }),
+      },
+      ALLOWED_ORIGIN,
+    );
+    expect(onScopeChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("sec · 8.4.2: a slot-shaped note is held in memory only — no web storage, cookie, or logged context", () => {
+    // panel mi-contract · substep 8.4.2 — the extended context rides inside the opaque JWT; storing
+    // it must not spill the slot values to sessionStorage/localStorage/a cookie or any console
+    // channel (never-bend rule 10).
+    sessionStorage.clear();
+    globalThis.localStorage?.clear();
+    const cookieBefore = document.cookie;
+    const consoleSpies = (["log", "info", "error", "debug"] as const).map((m) =>
+      vi.spyOn(console, m).mockImplementation(() => undefined),
+    );
+    teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN] });
+
+    const slotToken = jwtWithClaims({
+      company_id: "secret-co",
+      context: { slots: { pos: "toast", pms: "mews", accounting: "quickbooks-online" } },
+    });
+    post({ type: "obi:token", token: slotToken }, ALLOWED_ORIGIN);
+
+    expect(getToken()).toBe(slotToken); // non-vacuous: the note really was handled
+    expect(sessionStorage.length).toBe(0);
+    expect(globalThis.localStorage?.length ?? 0).toBe(0);
+    expect(document.cookie).toBe(cookieBefore);
+    for (const spy of [warnSpy, ...consoleSpies]) {
+      for (const call of spy.mock.calls) {
+        const serialized = JSON.stringify(call);
+        expect(serialized).not.toContain(slotToken);
+        expect(serialized).not.toContain("secret-co");
+      }
+    }
+    for (const spy of consoleSpies) spy.mockRestore();
+  });
+
   it("BIT-9: logs rejection codes/events only — the token value never reaches any console output", () => {
     // Negative test: accepted-vs-rejected is logged as fixed code strings, never the JWT. Drive an
     // accepted path plus both rejection paths, all carrying the SAME token, and assert no console

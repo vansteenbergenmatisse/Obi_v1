@@ -72,14 +72,14 @@ function extractUserToken(request: Request): string | undefined {
 
 const IDEMPOTENCY_HEADER = "idempotency-key";
 // Resource-exhaustion ceiling, not a business-rule cap (see validation.ts) — must stay above the
-// backend's own legitimate max so its real caps (chat_max_images_per_turn=3 x
-// chat_max_image_bytes=3_000_000, decision w-composer-images 2026-09-18) stay authoritative, not
-// silently pre-empted here. Base64 inflates raw bytes by ~4/3: 3 * 3_000_000 * 4/3 = 12MB for one
-// turn's images alone. 30MB leaves ample headroom
-// for JSON/text overhead while still bounding a pathologically oversized body (PLAN 7.8 fix — the
+// backend's own legitimate max so its real caps (chat_max_images_per_turn x chat_max_image_bytes,
+// decision w-composer-images) stay authoritative, not silently pre-empted here. The per-turn image
+// cap was raised 3 -> 10 on 2026-10-07 (substep 3.6.7), each still <= 3_000_000 bytes of base64:
+// 10 * 3_000_000 = 30MB of image data for one turn. 40MB leaves headroom for that plus JSON/text
+// history overhead while still bounding a pathologically oversized body (PLAN 7.8 fix — the
 // pre-image 200_000 ceiling, set at Phase 4.5 for text-only history, was never raised when Phase 7
 // added image attachments, so it 413'd almost every real screenshot/photo before reaching the backend).
-const MAX_BODY_BYTES = 30_000_000;
+const MAX_BODY_BYTES = 40_000_000;
 const FEEDBACK_TIMEOUT_MS = 15_000;
 
 function errorResponse(status: number, error: string): Response {
@@ -116,6 +116,15 @@ function toBackendChatBody(request: ChatRequest): Record<string, unknown> {
     history: request.history,
     principal: request.principal,
     knowledge_scope: request.knowledgeScope,
+    // DEV/standalone harness only, non-authoritative (substep 8.4.2). Forwarded in snake_case so the
+    // backend accepts the shape (no 400); the backend logs and ignores it in favour of the verified
+    // token/note — the body never decides access (never-bend rule 2). Absent in a real session.
+    simulated_context: request.simulatedContext
+      ? {
+          company_id: request.simulatedContext.companyId,
+          slots: request.simulatedContext.slots,
+        }
+      : undefined,
   };
 }
 

@@ -13,6 +13,10 @@
  * loudly at build time rather than repeating this bug.
  */
 export { initIframeBridge, getToken } from "./iframe-bridge";
+// Edge-safe pure env check (no node:fs) — re-exported so other features read the local/dev signal
+// through this root instead of deep-importing `./csp` (substep 8.4.1: the chat standalone-preset
+// selector is dev-only). Safe in the client barrel; `platforms.ts` stays out (node:fs) as above.
+export { isLocalOrDevEnv } from "./csp";
 export type { InitIframeBridgeOptions } from "./iframe-bridge";
 export type {
   ObiMessage,

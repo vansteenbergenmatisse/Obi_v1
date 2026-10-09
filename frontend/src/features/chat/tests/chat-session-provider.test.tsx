@@ -334,6 +334,138 @@ describe("ChatSessionProvider", () => {
     expect((requestBodies[1] as { knowledgeScope?: string }).knowledgeScope).toBe("obi-mews-test");
   });
 
+  it("mi-contract · 8.4.2: carries the selected standalone preset's simulated context on the outgoing request", async () => {
+    // panel mi-contract · substep 8.4.2 — selecting a standalone preset threads its company_id +
+    // three §D.13 slots onto the request as the NON-AUTHORITATIVE `simulatedContext` (the dev
+    // harness path; the verified token/note is still the only authority — never-bend rules 2–3).
+    let requestBody: unknown;
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+      requestBody = init?.body ? JSON.parse(init.body as string) : undefined;
+      return Promise.resolve(
+        okStreamResponse([
+          sse({ type: "start", conversationId: "conv-1" }),
+          sse({ type: "done", answer: "hi", citations: [], traceId: "trace-1", refused: false }),
+        ]),
+      );
+    });
+
+    const preset = {
+      id: "pos-to-pms",
+      label: "Toast → Mews (POS to PMS)",
+      flowType: "pos_to_pms",
+      companyId: "preset-pos-to-pms",
+      slots: { pos: "toast", pms: "mews", accounting: null },
+    };
+
+    function PresetHarness() {
+      const { sendMessage, selectSimulatedPreset } = useChatSession();
+      return (
+        <div>
+          <button onClick={() => selectSimulatedPreset(preset)}>pick</button>
+          <button onClick={() => sendMessage("hi")}>send</button>
+        </div>
+      );
+    }
+
+    render(
+      <ChatSessionProvider>
+        <PresetHarness />
+      </ChatSessionProvider>,
+    );
+
+    await userEvent.click(screen.getByText("pick"));
+    await userEvent.click(screen.getByText("send"));
+    await waitFor(() => expect(requestBody).toBeDefined());
+
+    expect(
+      (requestBody as { simulatedContext?: unknown }).simulatedContext,
+    ).toEqual({
+      companyId: "preset-pos-to-pms",
+      slots: { pos: "toast", pms: "mews", accounting: null },
+    });
+  });
+
+  it("mi-contract · 8.4.2: a legacy/real session (no preset) sends NO simulatedContext (byte-compatible)", async () => {
+    // panel mi-contract · substep 8.4.2 — with no preset selected the request is unchanged from
+    // today: a legacy single-integration note renders and behaves exactly as before.
+    let requestBody: unknown;
+    fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+      requestBody = init?.body ? JSON.parse(init.body as string) : undefined;
+      return Promise.resolve(
+        okStreamResponse([
+          sse({ type: "start", conversationId: "conv-1" }),
+          sse({ type: "done", answer: "hi", citations: [], traceId: "trace-1", refused: false }),
+        ]),
+      );
+    });
+
+    render(
+      <ChatSessionProvider>
+        <Harness />
+      </ChatSessionProvider>,
+    );
+
+    await userEvent.click(screen.getByText("send"));
+    await waitFor(() => expect(requestBody).toBeDefined());
+
+    expect((requestBody as { simulatedContext?: unknown }).simulatedContext).toBeUndefined();
+  });
+
+  it("sec · 8.4.2: the simulated context is held in memory only — never written to storage, a cookie, or a log", async () => {
+    // panel mi-contract · substep 8.4.2 — the context lives in React state and on the wire only;
+    // selecting a preset and sending must not persist it anywhere (never-bend rule 10).
+    sessionStorage.clear();
+    globalThis.localStorage?.clear();
+    const cookieBefore = document.cookie;
+    const consoleSpies = (["log", "info", "warn", "error", "debug"] as const).map((m) =>
+      vi.spyOn(console, m).mockImplementation(() => undefined),
+    );
+    fetchMock.mockResolvedValue(
+      okStreamResponse([
+        sse({ type: "start", conversationId: "conv-1" }),
+        sse({ type: "done", answer: "hi", citations: [], traceId: "trace-1", refused: false }),
+      ]),
+    );
+
+    const preset = {
+      id: "three-system",
+      label: "Toast + Mews + QuickBooks (three systems)",
+      flowType: "three_system",
+      companyId: "preset-secret-co",
+      slots: { pos: "toast", pms: "mews", accounting: "quickbooks-online" },
+    };
+
+    function PresetHarness() {
+      const { sendMessage, selectSimulatedPreset } = useChatSession();
+      return (
+        <div>
+          <button onClick={() => selectSimulatedPreset(preset)}>pick</button>
+          <button onClick={() => sendMessage("hi")}>send</button>
+        </div>
+      );
+    }
+
+    render(
+      <ChatSessionProvider>
+        <PresetHarness />
+      </ChatSessionProvider>,
+    );
+
+    await userEvent.click(screen.getByText("pick"));
+    await userEvent.click(screen.getByText("send"));
+    await waitFor(() => expect(screen.queryByText("pick")).toBeTruthy());
+
+    expect(sessionStorage.length).toBe(0);
+    expect(globalThis.localStorage?.length ?? 0).toBe(0);
+    expect(document.cookie).toBe(cookieBefore);
+    for (const spy of consoleSpies) {
+      for (const call of spy.mock.calls) {
+        expect(JSON.stringify(call)).not.toContain("preset-secret-co");
+      }
+    }
+    for (const spy of consoleSpies) spy.mockRestore();
+  });
+
   it("attaches images to the newest history turn only, and reads imageAnalysis back off done", async () => {
     const image: SentImage = {
       mediaType: "image/png",

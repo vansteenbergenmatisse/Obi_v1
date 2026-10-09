@@ -226,6 +226,76 @@ describe("MessageBubble", () => {
     expect(screen.queryByRole("link")).not.toBeInTheDocument();
   });
 
+  // panel mi-attrib · substep 8.3.4
+  // Per-slot source attribution: the widget renders the attribution the BACKEND assembled on each
+  // citation (general / a named slot / a pair), straight off the Citation contract field — it
+  // never infers or recomputes eligibility. A citation with no attribution renders exactly as
+  // before (no badge), byte-compatible with pre-8.3.4.
+  describe("per-slot source attribution (substep 8.3.4, panel mi-attrib)", () => {
+    it("renders the general attribution badge on a general citation", () => {
+      render(
+        <MessageBubble
+          message={assistantMessage({
+            citations: [
+              { id: "1", pageId: "p1", title: "Overview", url: "u/1", attribution: "general" },
+            ],
+          })}
+        />,
+      );
+      const badge = document.querySelector('[data-attribution="general"]');
+      expect(badge).not.toBeNull();
+      expect(badge).toHaveTextContent("General guide");
+    });
+
+    it("renders each named slot's attribution label", () => {
+      render(
+        <MessageBubble
+          message={assistantMessage({
+            citations: [
+              { id: "1", pageId: "p1", title: "POS", url: "u/1", attribution: "pos" },
+              { id: "2", pageId: "p2", title: "PMS", url: "u/2", attribution: "pms" },
+              { id: "3", pageId: "p3", title: "Acc", url: "u/3", attribution: "accounting" },
+            ],
+          })}
+        />,
+      );
+      expect(document.querySelector('[data-attribution="pos"]')).toHaveTextContent("For your POS");
+      expect(document.querySelector('[data-attribution="pms"]')).toHaveTextContent("For your PMS");
+      expect(document.querySelector('[data-attribution="accounting"]')).toHaveTextContent(
+        "For your accounting",
+      );
+    });
+
+    it("attributes a pair guide to its pair, not to a member slot", () => {
+      render(
+        <MessageBubble
+          message={assistantMessage({
+            citations: [
+              { id: "1", pageId: "p1", title: "Toast + Mews", url: "u/1", attribution: "pair" },
+            ],
+          })}
+        />,
+      );
+      expect(document.querySelector('[data-attribution="pair"]')).toHaveTextContent(
+        "For your integration",
+      );
+      expect(document.querySelector('[data-attribution="pos"]')).toBeNull();
+      expect(document.querySelector('[data-attribution="pms"]')).toBeNull();
+    });
+
+    it("renders no attribution badge when the citation carries none (unchanged from before)", () => {
+      render(
+        <MessageBubble
+          message={assistantMessage({
+            citations: [{ id: "1", pageId: "p1", title: "Runbook", url: "u/1" }],
+          })}
+        />,
+      );
+      expect(screen.getByRole("link", { name: /Runbook/ })).toBeInTheDocument();
+      expect(document.querySelector("[data-attribution]")).toBeNull();
+    });
+  });
+
   it("shows thumbs feedback controls for a complete turn with a traceId", async () => {
     const onFeedback = vi.fn();
     render(

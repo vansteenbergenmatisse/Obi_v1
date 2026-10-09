@@ -33,37 +33,57 @@ export interface InitIframeBridgeOptions {
 let currentToken: string | null = null;
 
 /** Display/equality-only business scope decoded from a token (never trust-bearing — the backend
- * `TokenVerifier` is the authority). Kept in memory only, alongside `currentToken`. */
+ * `TokenVerifier` is the authority). Kept in memory only, alongside `currentToken`. `slots` is a
+ * stable signature of the §D.13 three-slot integration context (substep 8.4.2) — present when the
+ * note carries the extended `context.slots` shape, `null` for a legacy single-integration note. */
 interface TokenScope {
   integration: string | null;
   company: string | null;
+  slots: string | null;
 }
 
 let currentScope: TokenScope | null = null;
 
-/** Decodes the (untrusted, display-only) `integration` + `company_id` claims from a token's
- * payload — enough to tell whether a renewal changed which corpus/identity the note is scoped to
- * (see `packages/contracts/src/token-claims.json`). Never throws; an unparseable or claimless
- * token yields nulls, which compare equal to another claimless token (both scope to general). */
+/** A stable, order-independent signature of the three §D.13 slots, or `null` when the note carries
+ * no `context.slots` (a legacy single-integration note). Only used to tell whether a renewal
+ * crossed into a different integration context — never for trust. */
+function slotsSignature(context: unknown): string | null {
+  if (typeof context !== "object" || context === null) return null;
+  const slots = (context as Record<string, unknown>).slots;
+  if (typeof slots !== "object" || slots === null) return null;
+  const s = slots as Record<string, unknown>;
+  const read = (key: string): string => (typeof s[key] === "string" ? (s[key] as string) : "");
+  // Fixed key order (pos, pms, accounting) so the signature is deterministic regardless of the
+  // JSON's property order.
+  return `pos=${read("pos")};pms=${read("pms")};accounting=${read("accounting")}`;
+}
+
+/** Decodes the (untrusted, display-only) `integration` + `company_id` + `context.slots` claims
+ * from a token's payload — enough to tell whether a renewal changed which corpus/identity the note
+ * is scoped to (substep 8.4.2 extends this past the legacy single `integration` claim; see
+ * `packages/contracts/src/token-claims.json`). Never throws; an unparseable or claimless token
+ * yields nulls, which compare equal to another claimless token (both scope to general). */
 function decodeScope(token: string): TokenScope {
   try {
     const payload = token.split(".")[1];
-    if (!payload) return { integration: null, company: null };
+    if (!payload) return { integration: null, company: null, slots: null };
     const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as {
       integration?: unknown;
       company_id?: unknown;
+      context?: unknown;
     };
     return {
       integration: typeof json.integration === "string" ? json.integration : null,
       company: typeof json.company_id === "string" ? json.company_id : null,
+      slots: slotsSignature(json.context),
     };
   } catch {
-    return { integration: null, company: null };
+    return { integration: null, company: null, slots: null };
   }
 }
 
 function sameScope(a: TokenScope, b: TokenScope): boolean {
-  return a.integration === b.integration && a.company === b.company;
+  return a.integration === b.integration && a.company === b.company && a.slots === b.slots;
 }
 
 function isObiMessage(data: unknown): data is ObiMessage {

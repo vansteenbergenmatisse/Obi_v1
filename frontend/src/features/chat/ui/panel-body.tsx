@@ -16,6 +16,7 @@ import { Composer, type ComposerHandle } from "./composer";
 import { ContourBackground } from "./contour-background";
 import { MessageList } from "./message-list";
 import { PanelHeader } from "./panel-header";
+import { StandalonePresetBar } from "./standalone-preset-bar";
 import { useChatSession } from "./chat-session-provider";
 
 export interface PanelBodyProps {
@@ -72,6 +73,7 @@ export function PanelBody({ assistantName, onClose }: PanelBodyProps) {
         onClose={onClose}
         onScreenshot={handleScreenshot}
       />
+      <StandalonePresetBar />
       <div className="relative flex-1 overflow-hidden bg-[#fdfdfe]">
         <ContourBackground />
         <div className="absolute inset-0 overflow-y-auto px-md pb-[12px] pt-md">

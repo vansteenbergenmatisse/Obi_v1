@@ -23,6 +23,34 @@ describe("parseChatRequestBody", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("mi-contract · 8.4.2: passes a well-shaped simulatedContext through unchanged", () => {
+    const result = parseChatRequestBody({
+      history: [{ role: "user", content: "hi" }],
+      simulatedContext: {
+        companyId: "preset-pos-to-pms",
+        slots: { pos: "toast", pms: "mews", accounting: null },
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.simulatedContext).toEqual({
+        companyId: "preset-pos-to-pms",
+        slots: { pos: "toast", pms: "mews", accounting: null },
+      });
+    }
+  });
+
+  it("mi-contract · 8.4.2: rejects a malformed simulatedContext (shape check, never decides access)", () => {
+    const result = parseChatRequestBody({
+      history: [{ role: "user", content: "hi" }],
+      simulatedContext: { companyId: 42, slots: "nope" },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toMatch(/simulatedContext/);
+    }
+  });
+
   it.each([null, undefined, "string", 42])("rejects a non-object body: %s", (body) => {
     expect(parseChatRequestBody(body)).toEqual({
       ok: false,

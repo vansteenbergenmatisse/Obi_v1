@@ -59,7 +59,10 @@ function writeDraft(value: string): void {
   }
 }
 
-const MAX_ATTACHMENTS = 3;
+// Per-turn image cap, mirroring the backend `chat_max_images_per_turn` (decision
+// w-composer-images: raised 3 -> 10 on 2026-10-07, substep 3.6.7). Over this count the composer
+// shows a user-facing error and does not attach the extras; the backend's 400 stays defense in depth.
+const MAX_ATTACHMENTS = 10;
 /** Per-image byte cap, mirroring the backend `chat_max_image_bytes` (decision w-composer-images:
  * ≤ 3 MB, decimal). An image over this is refused here so it never reaches the proxy or the
  * backend's 400 — the backend cap stays as defense in depth. */

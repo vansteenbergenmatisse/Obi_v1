@@ -6,6 +6,7 @@
  * plain text, matching the mockup exactly (`docs/rag/PLAN.md` Phase 4.7's design spec).
  */
 import { useState } from "react";
+import type { Citation } from "@omniboost/contracts";
 import { TypingIndicator } from "./typing-indicator";
 import { ImageLightbox } from "./image-lightbox";
 import { useChatSession } from "./chat-session-provider";
@@ -131,6 +132,59 @@ function ClarificationChips({ options }: { options: string[] }) {
   );
 }
 
+/**
+ * Per-slot source attribution (substep 8.3.4, panel mi-attrib): a short, muted badge on each
+ * citation saying WHY this customer saw that source — general, one of their named systems, or one
+ * of their actual connections. The backend ASSEMBLES the attribution (§D.13 keuze 3) and sends it
+ * on the Citation; the widget only renders it, never inferring or recomputing eligibility. The
+ * label maps purely from the five-value contract enum, so it can reveal nothing beyond the
+ * customer's own context (no company id, scope, or page the customer couldn't see).
+ */
+const ATTRIBUTION_LABELS: Record<NonNullable<Citation["attribution"]>, string> = {
+  general: "General guide",
+  pos: "For your POS",
+  pms: "For your PMS",
+  accounting: "For your accounting",
+  pair: "For your integration",
+};
+
+/** One rendered citation chip plus its optional attribution badge. A citation with no attribution
+ * (a label-only page, or the no-context path) renders exactly as before — the badge is simply
+ * absent, so the pre-8.3.4 look is unchanged. */
+function CitationItem({ citation }: { citation: Citation }) {
+  const chip = citation.url ? (
+    <a
+      href={citation.url}
+      target="_blank"
+      rel="noreferrer"
+      className={`inline-block rounded-sm border border-border bg-surface-raised px-sm py-xs text-xs text-text-muted hover:text-text ${FOCUS_RING}`}
+    >
+      [{citation.id}] {citation.title}
+    </a>
+  ) : (
+    <span
+      className="inline-block rounded-sm border border-border bg-surface-raised px-sm py-xs text-xs text-text-muted opacity-70"
+      title="Source link unavailable"
+    >
+      [{citation.id}] {citation.title} (source unavailable)
+    </span>
+  );
+
+  return (
+    <li className="flex items-center gap-xs">
+      {chip}
+      {citation.attribution && (
+        <span
+          data-attribution={citation.attribution}
+          className="rounded-sm bg-surface-sunken px-xs py-xs text-xs text-text-muted"
+        >
+          {ATTRIBUTION_LABELS[citation.attribution]}
+        </span>
+      )}
+    </li>
+  );
+}
+
 export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
   const isUser = message.role === "user";
   const isPlaceholder = message.status === "streaming" && message.text.length === 0;
@@ -196,29 +250,9 @@ export function MessageBubble({ message, onFeedback }: MessageBubbleProps) {
 
       {message.citations && message.citations.length > 0 && (
         <ul className="mt-xs flex flex-wrap gap-xs">
-          {message.citations.map((citation) =>
-            citation.url ? (
-              <li key={citation.id}>
-                <a
-                  href={citation.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={`inline-block rounded-sm border border-border bg-surface-raised px-sm py-xs text-xs text-text-muted hover:text-text ${FOCUS_RING}`}
-                >
-                  [{citation.id}] {citation.title}
-                </a>
-              </li>
-            ) : (
-              <li key={citation.id}>
-                <span
-                  className="inline-block rounded-sm border border-border bg-surface-raised px-sm py-xs text-xs text-text-muted opacity-70"
-                  title="Source link unavailable"
-                >
-                  [{citation.id}] {citation.title} (source unavailable)
-                </span>
-              </li>
-            ),
-          )}
+          {message.citations.map((citation) => (
+            <CitationItem key={citation.id} citation={citation} />
+          ))}
         </ul>
       )}
 

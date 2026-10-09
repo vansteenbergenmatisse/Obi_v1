@@ -12,10 +12,11 @@
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import type { ChatTurn, ImageAttachment } from "@omniboost/contracts";
+import type { ChatTurn, ImageAttachment, SimulatedContext } from "@omniboost/contracts";
 import { ChatRequestError, sendFeedback, streamChat } from "../api/chat-client";
 import type { ChatMessage, SentImage } from "../model/messages";
 import type { Locale } from "../model/i18n";
+import type { StandalonePreset } from "../model/standalone-presets";
 
 /** Only complete/refused/clarifying turns (plus every user turn) become resendable history —
  * a streaming placeholder has no final text yet, and an error turn is our own proxy's error
@@ -54,6 +55,15 @@ export interface ChatSession {
    * `undefined` means the backend's default/general scope. */
   knowledgeScope: string | undefined;
   setKnowledgeScope: (scope: string | undefined) => void;
+  /** The standalone/test environment's currently-selected simulated preset (panel mi-presets,
+   * substep 8.4.1), or `undefined` when none is picked. `undefined` in a real customer session —
+   * the selector only renders in the standalone env. The simulated context never reaches the
+   * backend from here (that threading is substep 8.4.2); this only drives the dev-only selector
+   * and its "simulated context" marker. */
+  simulatedPreset: StandalonePreset | undefined;
+  /** Selecting a preset starts a FRESH chat (clears the thread, aborting any in-flight stream) —
+   * §D.8's "switching presets starts a fresh chat", so simulated contexts never bleed together. */
+  selectSimulatedPreset: (preset: StandalonePreset | undefined) => void;
 }
 
 const ChatSessionContext = createContext<ChatSession | null>(null);
@@ -81,6 +91,8 @@ export function ChatSessionProvider({
   // Seeded from the embed's prop (the deployment declares its scope once); the 10.8 switcher
   // sets it live so a tester can compare scopes without re-mounting the widget.
   const [knowledgeScope, setKnowledgeScope] = useState<string | undefined>(initialKnowledgeScope);
+  // substep 8.4.1: the standalone env's selected simulated preset. Undefined in a real session.
+  const [simulatedPreset, setSimulatedPreset] = useState<StandalonePreset | undefined>(undefined);
   const conversationId = useRef<string | undefined>(undefined);
   const nextId = useRef(0);
   const abortRef = useRef<AbortController | null>(null);
@@ -133,9 +145,26 @@ export function ChatSessionProvider({
       setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, ...patch } : m)));
     }
 
+    // substep 8.4.2: in the standalone/dev harness a selected preset carries its simulated
+    // integration context on the request as the NON-AUTHORITATIVE `simulatedContext` (company_id
+    // + the three §D.13 slots). Undefined in a real session (no preset), so the outgoing request
+    // is byte-identical to today — a legacy single-integration note is unaffected. The verified
+    // token/note stays the only authority; the backend logs and ignores this (never-bend rules
+    // 2–3). Held in React state only; never persisted (rule 10).
+    const simulatedContext: SimulatedContext | undefined = simulatedPreset
+      ? {
+          companyId: simulatedPreset.companyId,
+          slots: {
+            pos: simulatedPreset.slots.pos,
+            pms: simulatedPreset.slots.pms,
+            accounting: simulatedPreset.slots.accounting,
+          },
+        }
+      : undefined;
+
     try {
       await streamChat(
-        { conversationId: conversationId.current, history, knowledgeScope },
+        { conversationId: conversationId.current, history, knowledgeScope, simulatedContext },
         {
           onStart: (id) => {
             conversationId.current = id;
@@ -187,6 +216,12 @@ export function ChatSessionProvider({
     setPending(false);
   }
 
+  function selectSimulatedPreset(preset: StandalonePreset | undefined) {
+    setSimulatedPreset(preset);
+    // §D.8: switching presets starts a fresh chat so simulated contexts never bleed together.
+    restart();
+  }
+
   return (
     <ChatSessionContext.Provider
       value={{
@@ -199,6 +234,8 @@ export function ChatSessionProvider({
         setLocale,
         knowledgeScope,
         setKnowledgeScope,
+        simulatedPreset,
+        selectSimulatedPreset,
       }}
     >
       {children}

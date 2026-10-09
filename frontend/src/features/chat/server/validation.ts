@@ -6,9 +6,32 @@
  * before spending a network round trip; the backend remains the source of truth for its own
  * limits and returns 400 if they're exceeded, which the proxy forwards as-is.
  */
-import type { ChatRequest, ChatTurn, FeedbackRequest } from "@omniboost/contracts";
+import type {
+  ChatRequest,
+  ChatTurn,
+  FeedbackRequest,
+  SimulatedContext,
+} from "@omniboost/contracts";
 
 export type ParseResult<T> = { ok: true; value: T } | { ok: false; error: string };
+
+/** A slot value is a short slug or null/empty (substep 8.4.2). This is a SHAPE check only — the
+ * value never decides access (never-bend rule 2); the backend re-checks against the catalog. */
+function isSlotValue(value: unknown): value is string | null {
+  return value === null || value === undefined || typeof value === "string";
+}
+
+/** Shape-validates the DEV-only `simulatedContext` (panel mi-contract, substep 8.4.2). Rejects a
+ * malformed shape so a hand-rolled body cannot smuggle an unexpected structure through; it is
+ * still non-authoritative on the wire and the backend ignores it in favour of the verified token. */
+function isSimulatedContext(value: unknown): value is SimulatedContext {
+  if (typeof value !== "object" || value === null) return false;
+  const ctx = value as Record<string, unknown>;
+  if (typeof ctx.companyId !== "string") return false;
+  if (typeof ctx.slots !== "object" || ctx.slots === null) return false;
+  const slots = ctx.slots as Record<string, unknown>;
+  return isSlotValue(slots.pos) && isSlotValue(slots.pms) && isSlotValue(slots.accounting);
+}
 
 const MAX_HISTORY_TURNS = 200;
 const MAX_TURN_CHARS = 20_000;
@@ -44,6 +67,12 @@ export function parseChatRequestBody(json: unknown): ParseResult<ChatRequest> {
   if (body.knowledgeScope !== undefined && typeof body.knowledgeScope !== "string") {
     return { ok: false, error: "knowledgeScope must be a string" };
   }
+  if (body.simulatedContext !== undefined && !isSimulatedContext(body.simulatedContext)) {
+    return {
+      ok: false,
+      error: "simulatedContext must be { companyId: string, slots: { pos, pms, accounting } }",
+    };
+  }
   if (!Array.isArray(body.history) || body.history.length === 0) {
     return { ok: false, error: "history must be a non-empty array" };
   }
@@ -68,6 +97,7 @@ export function parseChatRequestBody(json: unknown): ParseResult<ChatRequest> {
       history,
       principal: body.principal as string | undefined,
       knowledgeScope: body.knowledgeScope as string | undefined,
+      simulatedContext: body.simulatedContext as SimulatedContext | undefined,
     },
   };
 }
