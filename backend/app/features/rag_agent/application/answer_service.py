@@ -16,18 +16,23 @@ question is never misrouted here; anything that doesn't match runs the full grou
 refusal included. This path skips rewrite, retrieval, CRAG, refusal, and citation enforcement
 entirely, and writes no `query_trace` row — it isn't a retrieval event.
 
-Image analysis (PLAN 7.3, ADR-0009): unlike small-talk, an image on the newest turn does not skip
-retrieval — a query can legitimately need both Confluence evidence and image content. What it does
-change is `decide_refusal`'s `has_image` gate (a text-empty-but-image-answerable turn should not
-refuse) and adds a second, independent `generate_image_analysis` call whose output rides alongside
-`text` on `Answer.image_analysis`, never merged into it and never passed through citation
-enforcement. **Disclosed gap, not decided by ADR-0009:** a turn classified as small-talk still
-short-circuits before this logic even runs, so a greeting with an attached image ("hi" + a
-screenshot) gets the small-talk reply and the image is silently dropped — `is_small_talk` only
-ever looks at message text. **Same gap, same reason, for the clarification branch below (PLAN 9.3):
-its bypass also returns before image analysis runs, so an ambiguous query with an attached image
-gets a clarifying question and the image is silently dropped.** Revisit either if raised as a real
-product gap.
+Image analysis (PLAN 7.3, ADR-0009; substep 3.6.7, panel r5-image): an image on the newest turn is
+transcribed by a second, independent `generate_image_analysis` call (verbatim on-screen text + a
+short UI description). Substep 3.6.7 moved this call to the very TOP of `answer()`, before every
+short-circuit, and put it to work three ways: (1) the transcription FOLDS INTO the one search query
+(`_fold_search_query`) so an attached screenshot DRIVES retrieval — an image-only turn now searches
+on the transcription instead of building an empty result; (2) it rides to grounded generation as an
+uncached CONTEXT block (`generate(..., image_analysis=...)`), never folded into the numbered
+evidence, so it never gains a citation marker and never passes citation enforcement (never-bend
+rule 7 holds — every answer sentence still cites a real retrieved chunk); (3) it still rides back
+on `Answer.image_analysis`, delivered on `done`. It is NOT a retrieval read, so the two-read cap
+(rule 8) is unchanged. Memory-only (C6, never-bend rule 10): the transcription is never logged,
+never written to the `query_trace` row (the trace records only the text-only query, passed as
+`trace_query`), and never persisted. Because the call runs before the short-circuits, a kept image
+is no longer silently dropped on a small-talk / identity / clarification turn — those paths still
+short-circuit, but the transcription rides back on `Answer.image_analysis` instead of being
+discarded (closing the pre-3.6.7 disclosed gap). It still does not change `decide_refusal`'s
+`has_image` gate (a text-empty-but-image-answerable turn does not refuse).
 
 Ambiguity classification + clarification (PLAN 9.2/9.3, ADR-0008): checked right after small-talk,
 before rewrite/retrieval — a message that is an exact small-talk match (e.g. "hi") is checked first
@@ -85,10 +90,14 @@ from app.features.rag_agent.infrastructure.curated_knowledge_repo import fetch_c
 from app.features.rag_agent.infrastructure.llm_client import AnswerGenerator, QueryRewriter
 from app.features.rag_agent.schemas import Answer, ChatMessage, Citation
 from app.features.retrieval import (
+    ConnectionRecord,
+    CustomerContext,
     HybridRetriever,
     RetrievalResult,
+    eligibility_params,
     update_query_trace_answer,
 )
+from app.platform.config.product_catalog import ProductCatalog
 from app.platform.logging import get_logger
 from app.shared.hashing import sha256_text
 
@@ -132,6 +141,17 @@ _HANDOFF_REASONS: frozenset[RefusalReason] = frozenset(
 )
 
 
+def _fold_search_query(text_query: str, image_analysis: str | None) -> str:
+    """Substep 3.6.7 (panel r2-embed): combine the text question with the image transcription into
+    the ONE standalone search query, so an attached screenshot DRIVES retrieval. Either part may be
+    empty — an image-only turn folds just the transcription (so it now searches instead of building
+    an empty result), a text-only turn folds just the question (byte-identical to pre-3.6.7). This
+    is the query the search embeds/keyword-matches on; the trace row records only the text query
+    (C6, memory-only transcription), passed separately as `trace_query`."""
+    parts = [p for p in (text_query.strip(), (image_analysis or "").strip()) if p]
+    return "\n\n".join(parts)
+
+
 @runtime_checkable
 class AnswerProvider(Protocol):
     """The shape `POST /chat` depends on — satisfied by `AnswerService` itself and by
@@ -164,6 +184,7 @@ class AnswerService:
         default_knowledge_scope: str | None = None,
         reader_sessionmaker: Callable[[], Session] | None = None,
         curated_knowledge_max_entries: int = 5,
+        product_catalog: ProductCatalog | None = None,
     ) -> None:
         self._retriever = retriever
         self._rewriter = rewriter
@@ -183,6 +204,12 @@ class AnswerService:
         # entries are then simply never composed into evidence, not an error.
         self._reader_sessionmaker = reader_sessionmaker
         self._curated_knowledge_max_entries = curated_knowledge_max_entries
+        # Substep 8.3.3 (panel mi-prompt): the committed product catalog, used ONLY to derive the
+        # customer's actual connections (§D.4) for the answer prompt's integration-context block.
+        # `None` in a test/deployment that never wires it — connections then fall back to the
+        # context's own real records (empty at launch), so the prompt simply omits the connections
+        # line rather than erroring. It never widens eligibility (the search already enforced that).
+        self._product_catalog = product_catalog
 
     def answer(self, history: Sequence[ChatMessage], auth: AuthContext) -> Answer:
         if not history or history[-1].role != "user":
@@ -191,9 +218,26 @@ class AnswerService:
         images = history[-1].images or []
         has_image = bool(images)
 
+        # Substep 3.6.7 (panel r5-image): transcribe the image FIRST — before every short-circuit —
+        # so (a) a kept image is never silently dropped on a small-talk/identity/clarification turn
+        # (the transcription still rides back on `Answer.image_analysis`), and (b) on the grounded
+        # path below the transcription can fold into the search query to DRIVE retrieval and ride to
+        # the answer as context. This vision call is NOT a retrieval read — it never counts against
+        # the two-read cap (never-bend rule 8). Memory-only (C6): the transcription is never logged,
+        # written to the trace row, or persisted.
+        image_analysis = (
+            self._generator.generate_image_analysis(original_query, images) if has_image else None
+        )
+
         if is_small_talk(original_query):
             text = self._generator.generate_small_talk(original_query)
-            return Answer(text=text, citations=[], refused=False, trace_id=None)
+            return Answer(
+                text=text,
+                citations=[],
+                refused=False,
+                trace_id=None,
+                image_analysis=image_analysis,
+            )
 
         # Per-user identity path (operator-requested 2026-09-12): checked right after small-talk,
         # before rewrite/retrieval. A basic identity question ("which integration do we use?",
@@ -211,7 +255,13 @@ class AnswerService:
                 company_id=auth.company_id,
             )
             text = self._generator.generate_identity(original_query, facts)
-            return Answer(text=text, citations=[], refused=False, trace_id=None)
+            return Answer(
+                text=text,
+                citations=[],
+                refused=False,
+                trace_id=None,
+                image_analysis=image_analysis,
+            )
 
         if self._enable_clarification_branch and self._clarification_classifier is not None:
             decision = decide_clarification(original_query, history, self._clarification_classifier)
@@ -222,8 +272,9 @@ class AnswerService:
             )
             if decision.is_ambiguous:
                 # PLAN 9.3: bypass rewrite/retrieval/CRAG/refusal, same shape as small-talk above —
-                # writes no `query_trace` row (ADR-0008 decision 1), and an image on this turn is
-                # silently dropped (see module docstring's disclosed gap, extended from small-talk).
+                # writes no `query_trace` row (ADR-0008 decision 1). Substep 3.6.7 (panel r5-image):
+                # a kept image is no longer silently dropped here — the transcription computed above
+                # rides back on `Answer.image_analysis`.
                 reply = self._generator.generate_clarification(original_query)
                 return Answer(
                     text=reply.question,
@@ -233,6 +284,7 @@ class AnswerService:
                     needs_clarification=True,
                     clarification_question=reply.question,
                     clarification_options=reply.options,
+                    image_analysis=image_analysis,
                 )
 
         # PLAN 11.1c (ADR-0014): scopes come from the verified edge identity, never a caller-
@@ -242,29 +294,59 @@ class AnswerService:
         # the page-ACL principal (always None for embedded users in v1).
         allowed_scopes = list(auth.allowed_scopes)
         scope = auth.principal
+        # Substep 8.3.1 (panel mi-filter): the VERIFIED slots + host platform become the one
+        # CustomerContext retrieval filters eligibility by, inside the search SQL — never a
+        # body value. Empty slots mean general-only eligibility; unstamped pages are unaffected
+        # (absence never excludes). The CRAG retry below reuses this same context.
+        customer_context = CustomerContext(
+            slot_pos=auth.slot_pos,
+            slot_pms=auth.slot_pms,
+            slot_accounting=auth.slot_accounting,
+            platform=auth.platform,
+        )
         # PLAN 11.1c (ADR-0014): audit *who* asked as sha256(sub) — never the raw subject/token.
         subject_hash = sha256_text(auth.token_subject).hex() if auth.token_subject else None
 
-        if original_query.strip():
-            rewritten = self._rewriter.rewrite(history) if self._rewrite_enabled else original_query
+        # The rewritten standalone question (text only). Rewrite is skipped when disabled or when
+        # there is no text to rewrite (an image-only turn), so `rewritten` is then "".
+        rewritten = (
+            self._rewriter.rewrite(history)
+            if self._rewrite_enabled and original_query.strip()
+            else original_query
+        )
+        # Substep 3.6.7 (panels r2-embed/r5-image): the image transcription folds into the ONE
+        # search query so it DRIVES retrieval. The search embeds/keyword-matches on the folded
+        # query; the trace row records only the text-only query (`trace_query=rewritten`) — the
+        # transcription is memory-only and never persisted (C6). An image-only turn's folded query
+        # is the transcription alone, so it now SEARCHES instead of building an empty result.
+        search_query = _fold_search_query(rewritten, image_analysis)
+        # The CRAG fallback query folds the user's VERBATIM text (not the rewrite) with the same
+        # transcription, and traces only the verbatim text.
+        retry_search_query = _fold_search_query(original_query, image_analysis)
+        if search_query:
             result = self._retriever.retrieve_with_context(
-                rewritten, scope, k=self._retrieve_k, knowledge_scopes=allowed_scopes
+                search_query,
+                scope,
+                k=self._retrieve_k,
+                knowledge_scopes=allowed_scopes,
+                customer_context=customer_context,
+                trace_query=rewritten,
             )
             result = self._apply_crag_retry(
-                result, original_query, rewritten, scope, allowed_scopes
+                result,
+                search_query,
+                retry_search_query,
+                original_query,
+                scope,
+                allowed_scopes,
+                customer_context,
             )
         else:
-            # A genuinely text-empty, image-only turn (PLAN 7.8) — there is no query to rewrite or
-            # embed; the embedding provider rejects an empty string outright (OpenAI: 400 "input
-            # cannot be an empty string"). Treat as no retrieved candidates instead of calling it —
-            # `has_image`'s decide_refusal gate below already means this does not force a refusal,
-            # so this takes the exact same degrade path a real no-candidates-with-image turn does.
-            rewritten = original_query
+            # No text AND no transcription (e.g. an image whose vision call produced nothing) —
+            # nothing to embed. Treat as no retrieved candidates; `has_image`'s decide_refusal gate
+            # below means this does not force a refusal, the same degrade path a real
+            # no-candidates-with-image turn takes.
             result = RetrievalResult()
-
-        image_analysis = (
-            self._generator.generate_image_analysis(original_query, images) if has_image else None
-        )
 
         decision = decide_refusal(
             result.top_score,
@@ -331,11 +413,27 @@ class AnswerService:
         # Per-chat business context for the answer prompt comes from the verified auth context
         # only (never the request body). A missing value is passed through as None and omitted
         # downstream, never guessed. Response context only; access stays governed by search/DB.
+        #
+        # Substep 8.3.3 (panel mi-prompt, §D.7): the SAME verified context the search (8.3.1) and
+        # reranker (8.3.2) already used is threaded into the answer prompt — slots + host platform
+        # plus the customer's actual connections, derived through the catalog by the exact §D.4
+        # derivation the search eligibility used (one semantics, two executors). When no catalog is
+        # wired the connections fall back to the context's own real records. This is answer
+        # guidance only — the backend alone enforces eligibility (rule 3); the prompt never widens
+        # access.
+        prompt_connections: tuple[ConnectionRecord, ...] = (
+            eligibility_params(customer_context, self._product_catalog).connections
+            if self._product_catalog is not None
+            else customer_context.connections
+        )
         raw_answer = self._generator.generate(
             rewritten,
             evidence,
             company_name=auth.company_name,
             integration=auth.integration,
+            customer_context=customer_context,
+            connections=prompt_connections,
+            image_analysis=image_analysis,
         )
         cleaned, used_markers = enforce_citations(
             raw_answer, valid_markers=range(1, len(evidence_hits) + 1)
@@ -364,12 +462,19 @@ class AnswerService:
                 image_analysis=image_analysis,
             )
 
+        # Substep 8.3.4 (panel mi-attrib, §D.13 keuze 3): the attribution the backend already
+        # assembled on each hit (the §D.4 matcher reason, collapsed to the citation enum) rides
+        # straight onto the Citation — the widget renders what the backend decided, never
+        # recomputing eligibility (rule 3). A curated hit, a label-only page, or the no-context
+        # path carries None, so the field is simply absent on the wire (unchanged from pre-8.3.4).
+        # The Citation schema's Literal re-validates the value server-side (fail-closed).
         citations = [
             Citation(
                 marker=m,
                 page_id=evidence_hits[m - 1].page_id,
                 title=evidence_hits[m - 1].title,
                 url=evidence_hits[m - 1].url,
+                attribution=evidence_hits[m - 1].attribution,
             )
             for m in used_markers
         ]
@@ -385,22 +490,35 @@ class AnswerService:
     def _apply_crag_retry(
         self,
         result: RetrievalResult,
-        original_query: str,
-        rewritten_query: str,
+        search_query: str,
+        retry_search_query: str,
+        retry_trace_query: str,
         scope: str | None,
         knowledge_scopes: Sequence[str],
+        customer_context: CustomerContext | None = None,
     ) -> RetrievalResult:
         """One corrective retry (PLAN 4.2 stage 6): if the rewrite may have hurt retrieval, retry
         with the user's verbatim query and keep whichever result scored higher. A no-op when
         rewrite is disabled/unchanged — retrying an identical query would return the same result.
         `knowledge_scopes` is the same allow-list `answer()` already resolved once (PLAN 10.5) —
-        the retry must stay inside it too, never a second, unscoped search."""
-        if self._crag_max_retries <= 0 or rewritten_query == original_query:
+        the retry must stay inside it too, never a second, unscoped search; `customer_context`
+        is the same verified context (8.3.1), so the retry filters eligibility identically.
+
+        Substep 3.6.7: `search_query` / `retry_search_query` carry the same folded image
+        transcription (when any), so the retry still DRIVES retrieval on the image; the retry
+        traces only `retry_trace_query` (the verbatim text), never the transcription (C6). This is
+        still a single retry — at most two reads total (never-bend rule 8)."""
+        if self._crag_max_retries <= 0 or search_query == retry_search_query:
             return result
         if result.top_score is not None and result.top_score >= self._refusal_min_rerank_score:
             return result
         retry = self._retriever.retrieve_with_context(
-            original_query, scope, k=self._retrieve_k, knowledge_scopes=knowledge_scopes
+            retry_search_query,
+            scope,
+            k=self._retrieve_k,
+            knowledge_scopes=knowledge_scopes,
+            customer_context=customer_context,
+            trace_query=retry_trace_query,
         )
         if retry.top_score is not None and (
             result.top_score is None or retry.top_score > result.top_score

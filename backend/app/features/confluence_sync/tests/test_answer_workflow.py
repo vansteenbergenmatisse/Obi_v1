@@ -48,6 +48,7 @@ class _CitingGenerator:
         *,
         company_name: str | None = None,
         integration: str | None = None,
+        **_: object,
     ) -> str:
         markers = sorted({int(m) for m in re.findall(r"\[(\d+)\]", evidence_block)})
         if not markers:
@@ -74,6 +75,7 @@ class _SilentGenerator:
         *,
         company_name: str | None = None,
         integration: str | None = None,
+        **_: object,
     ) -> str:
         return "This answer cites nothing."
 
@@ -106,6 +108,7 @@ class _SmallTalkOnlyGenerator:
         *,
         company_name: str | None = None,
         integration: str | None = None,
+        **_: object,
     ) -> str:
         raise AssertionError("generate must not be called for small talk")
 

@@ -17,6 +17,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.features.rag_agent.schemas import CitationAttribution
+
 
 @dataclass(frozen=True)
 class CuratedEntry:
@@ -48,6 +50,11 @@ class CuratedHit:
     chunk_id: int
     title: str
     url: str = ""
+    # Substep 8.3.4 (panel mi-attrib): curated entries are always-present, hand-authored evidence,
+    # not integration-context-filtered retrieval — so they carry NO per-slot attribution (always
+    # None), which keeps `evidence_hits` (curated + retrieved) uniformly `.attribution`-shaped for
+    # the Citation assembly while a curated citation stays attribution-less by construction.
+    attribution: CitationAttribution | None = None
 
 
 def curated_entry_to_hit(entry: CuratedEntry) -> CuratedHit:

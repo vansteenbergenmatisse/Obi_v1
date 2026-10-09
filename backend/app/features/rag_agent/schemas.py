@@ -49,6 +49,14 @@ class ChatMessage(BaseModel):
     )
 
 
+# Why a source was eligible for THIS customer (§D.13 keuze 3, panel mi-attrib; contract enum from
+# 8.1.2 in `packages/contracts`): a general guide, a guide admitted by one named filled slot, or a
+# guide for a slot pair the company actually has. Declared as a closed Literal so Pydantic rejects
+# any other value at Citation construction — the server-side validation the endpoint-security
+# checklist requires, and a fail-closed backstop on top of the retrieval mapping that produces it.
+CitationAttribution = Literal["general", "pos", "pms", "accounting", "pair"]
+
+
 class Citation(BaseModel):
     """A numbered source marker (`[marker]`) pointing at one retrieved page."""
 
@@ -58,6 +66,16 @@ class Citation(BaseModel):
     page_id: str
     title: str
     url: str | None = None
+    attribution: CitationAttribution | None = Field(
+        default=None,
+        description=(
+            "Why this source was eligible for THIS customer (substep 8.3.4, panel mi-attrib): "
+            "`general`, a named filled slot (`pos`/`pms`/`accounting`), or a `pair` the company "
+            "actually has. Assembled in the backend from the §D.4 matcher reason; absent (None) "
+            "on the no-context path and for a label-only page, so the wire is unchanged from "
+            "pre-8.3.4. Never carries anything beyond the customer's own verified context."
+        ),
+    )
 
 
 class Answer(BaseModel):

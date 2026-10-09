@@ -91,6 +91,51 @@ def test_in2_delete_page_never_indexed_is_clean_noop(gateway, settings):
     }
 
 
+def test_in2_archived_page_without_webhook_purged_by_lightweight_sweep(gateway, settings):
+    """panel i2-gone · rule 1 · §D.13 item 4 (archive rule follow-up)
+    The archive rule: published pages go into the vector database; archived or draft pages stay
+    out; a page leaving published status must lose its existing chunks. Confluence fires NO
+    webhook on archive, so detection must ride the daily LIGHTWEIGHT sweep — not the 14-day
+    complete sweep. An archived page vanishes from the current-pages enumeration, so the
+    lightweight sweep's orphan pass enqueues it (reason page_gone) and the worker's
+    decide_command purges it (archived is a gone status). Outcome assertions only: the sweep
+    counted the orphan and every row the page owns is gone."""
+    from sqlalchemy import select
+
+    from app.features.confluence_sync.application.reconciliation import (
+        KIND_LIGHTWEIGHT,
+        run_reconciliation,
+    )
+    from schema.engine import session_scope
+    from schema.models import Job
+
+    index_page(gateway, settings, 1001, version=3)
+    assert active_child_chunks(1001)  # indexed with live chunks first
+
+    # Archive upstream with NO webhook event: only the gateway's served status flips.
+    gateway.set_status(1001, "archived")
+
+    with session_scope() as s:
+        run = run_reconciliation(
+            s, gateway=gateway, settings=settings, kind=KIND_LIGHTWEIGHT, space_ids=[100]
+        )
+        # The lightweight sweep itself caught the page: its orphan pass queued it for re-check.
+        assert run.orphans_deleted == 1
+        assert run.report is not None and 1001 in run.report["orphan_pages"]
+        job_pages = s.execute(select(Job.page_id)).scalars().all()
+        assert 1001 in job_pages  # a sync job exists for the archived page
+
+    run_worker(gateway, settings)  # worker confirms archived status and hard-purges
+
+    assert page_row_counts(1001) == {
+        "chunk": 0,
+        "document_version": 0,
+        "document": 0,
+        "page_source": 0,
+        "page_restriction": 0,
+    }
+
+
 def test_in2_classified_label_removes_rows(gateway, settings):
     """panel tg-classified · rule 7
     Adding the reserved classified label removes every row of the page on the next sync, whatever

@@ -1,0 +1,22 @@
+{
+  "id": "3011",
+  "spaceId": "400",
+  "parentId": null,
+  "status": "current",
+  "title": "Mews to QuickBooks Mapping",
+  "version": {
+    "number": 2,
+    "createdAt": "2026-10-05T10:00:00.000Z",
+    "message": "Applies to narrowed to the actual Mews-to-QuickBooks connection (content untouched)",
+    "authorId": "acct-bob"
+  },
+  "body": {
+    "storage": {
+      "representation": "storage",
+      "value": "<h1>Mews to QuickBooks Mapping</h1><p>How nightly revenue postings map from Mews to QuickBooks Online journals.</p><table><tbody><tr><th>Applies to</th><th>value</th></tr><tr><td>level</td><td>connection</td></tr><tr><td>connection</td><td>pms-accounting</td></tr><tr><td>pms</td><td>mews</td></tr><tr><td>accounting</td><td>quickbooks-online</td></tr><tr><td>directions</td><td>pms_to_accounting</td></tr></tbody></table><h2>Account Mapping</h2><p>Map each Mews accounting category to one QuickBooks ledger account before enabling the nightly export.</p><h2>Posting Schedule</h2><p>Journals post once per night after the Mews end-of-day close completes.</p>"
+    }
+  },
+  "_links": {
+    "webui": "/spaces/INT/pages/3011/Mews+to+QuickBooks+Mapping"
+  }
+}

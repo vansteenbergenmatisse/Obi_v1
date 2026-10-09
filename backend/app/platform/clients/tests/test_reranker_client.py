@@ -66,6 +66,24 @@ def test_fake_satisfies_the_reranker_protocol() -> None:
     assert isinstance(FakeReranker(), Reranker)
 
 
+# 8.3.2 (panel mi-rerank): the request-shape contract, intentionally updated to the ENRICHED
+# body. The reranker client stays a thin v2 transport — it carries exactly {model, query,
+# documents, top_n}, no instruction/context field (the v2 API has none). What changed in 8.3.2
+# is what the retriever hands it: the query now leads with the verified-context preamble and
+# each document leads with a YAML applicability block (metadata-first) ahead of its body. This
+# test pins that the transport forwards that enriched body to the v2 wire verbatim — never
+# dropping the metadata, never mangling the enriched query.
+_ENRICHED_QUERY = "Customer setup: POS=toast; platform=datahub.\n\nhow do I deploy?"
+_ENRICHED_DOCS = [
+    (1001, "applies-to:\n- level: general\nmatched-rule: general\nonboarding guide"),
+    (
+        1002,
+        "applies-to:\n- level: software\n  product: toast\nmatched-rule: slot:pos\ndeploy steps",
+    ),
+    (2002, "expense policy"),  # a label-only chunk carries no YAML block
+]
+
+
 def test_cohere_sends_v2_shape_and_maps_indices_back_to_page_ids() -> None:
     seen: list[dict] = []
     seen_auth: list[str] = []
@@ -88,12 +106,22 @@ def test_cohere_sends_v2_shape_and_maps_indices_back_to_page_ids() -> None:
     settings = Settings(
         reranker_provider="cohere", reranker_model="rerank-v3.5", reranker_api_key="co-test"
     )
-    ranked = CohereReranker(settings, client=client).rerank("how do I deploy?", _DOCS, top_k=2)
+    ranked = CohereReranker(settings, client=client).rerank(
+        _ENRICHED_QUERY, _ENRICHED_DOCS, top_k=2
+    )
 
     assert ranked == [(2002, 0.91), (1001, 0.55)]  # index 2 -> page 2002, index 0 -> page 1001
     assert seen[0]["model"] == "rerank-v3.5"
-    assert seen[0]["query"] == "how do I deploy?"
-    assert seen[0]["documents"] == ["onboarding guide", "deploy steps", "expense policy"]
+    # the enriched query reaches the wire verbatim: preamble first, user question last
+    assert seen[0]["query"] == _ENRICHED_QUERY
+    assert seen[0]["query"].startswith("Customer setup:")
+    assert seen[0]["query"].endswith("how do I deploy?")
+    # each document reaches the wire verbatim, YAML applicability block leading where present
+    assert seen[0]["documents"] == [text for _pid, text in _ENRICHED_DOCS]
+    assert seen[0]["documents"][0].startswith("applies-to:")
+    assert "matched-rule: general" in seen[0]["documents"][0]
+    # the v2 string contract is unchanged: still exactly these four keys, no instruction field
+    assert set(seen[0]) == {"model", "query", "documents", "top_n"}
     assert seen[0]["top_n"] == 2
     assert seen_auth[0] == "Bearer co-test"
 

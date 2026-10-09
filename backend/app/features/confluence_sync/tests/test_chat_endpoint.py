@@ -381,6 +381,110 @@ def test_image_within_caps_is_accepted_and_analysis_reaches_the_done_event(
     assert "I see a diagram" not in done["answer"]  # kept separate, not merged (decision 5)
 
 
+def test_r1_limits_unsupported_image_media_type_is_rejected_400(
+    gateway, settings: Settings
+) -> None:
+    """panel r1-limits · substep p3-s3_6-7
+    C3 allowlist (substep 3.6.7): a media type outside {png, jpeg, webp, gif} is rejected with a
+    400 before any LLM call — the grounded service here would raise if the vision call ran."""
+    chat_settings = _chat_settings(settings)
+    client = _client_with_service(chat_settings, _grounded_service(gateway, chat_settings))
+    resp = client.post(
+        "/chat",
+        json={
+            "history": [
+                {
+                    "role": "user",
+                    "content": "what's in this?",
+                    "images": [{"mediaType": "image/svg+xml", "data": "YQ=="}],
+                }
+            ]
+        },
+        headers=_auth(),
+    )
+    assert resp.status_code == 400
+
+
+def test_r1_limits_each_allowed_image_media_type_is_accepted(
+    gateway, settings: Settings
+) -> None:
+    """panel r1-limits · substep p3-s3_6-7
+    C3 allowlist (substep 3.6.7): each of png/jpeg/webp/gif passes media-type validation and the
+    turn is accepted (200)."""
+    _index_corpus(gateway, settings)
+    chat_settings = _chat_settings(settings)
+    service = AnswerService(
+        _build_retriever(gateway, chat_settings),
+        _EchoRewriter(),
+        _ImageAnalyzingGenerator(),
+        get_sessionmaker(),
+    )
+    client = _client_with_service(chat_settings, service)
+    for media_type in ("image/png", "image/jpeg", "image/webp", "image/gif"):
+        resp = client.post(
+            "/chat",
+            json={
+                "history": [
+                    {
+                        "role": "user",
+                        "content": "How do I request access to core systems?",
+                        "images": [{"mediaType": media_type, "data": "ZmFrZQ=="}],
+                    }
+                ]
+            },
+            headers=_auth(),
+        )
+        assert resp.status_code == 200, media_type
+
+
+def test_r1_limits_tenth_image_accepted_eleventh_rejected(
+    gateway, settings: Settings
+) -> None:
+    """panel r1-limits · substep p3-s3_6-7
+    The per-turn image cap is 10 (raised 3->10, decision w-composer-images): ten images on a turn
+    are accepted, an eleventh is rejected with a 400."""
+    _index_corpus(gateway, settings)
+    chat_settings = _chat_settings(settings)  # default cap is now 10
+    service = AnswerService(
+        _build_retriever(gateway, chat_settings),
+        _EchoRewriter(),
+        _ImageAnalyzingGenerator(),
+        get_sessionmaker(),
+    )
+    client = _client_with_service(chat_settings, service)
+    ten = [{"mediaType": "image/png", "data": "ZmFrZQ=="} for _ in range(10)]
+    ok = client.post(
+        "/chat",
+        json={
+            "history": [
+                {
+                    "role": "user",
+                    "content": "How do I request access to core systems?",
+                    "images": ten,
+                }
+            ]
+        },
+        headers=_auth(),
+    )
+    assert ok.status_code == 200
+
+    eleven = [{"mediaType": "image/png", "data": "ZmFrZQ=="} for _ in range(11)]
+    rejected = client.post(
+        "/chat",
+        json={
+            "history": [
+                {
+                    "role": "user",
+                    "content": "How do I request access to core systems?",
+                    "images": eleven,
+                }
+            ]
+        },
+        headers=_auth(),
+    )
+    assert rejected.status_code == 400
+
+
 class _SpyAnswerService:
     """PLAN 11.1c (ADR-0014): records the AuthContext `POST /chat` forwards into
     `AnswerService.answer` — proves the *verified token* (not the request body) drives scope,
@@ -866,6 +970,7 @@ class _LeakyClarifyingGenerator:
         *,
         company_name: str | None = None,
         integration: str | None = None,
+        **_: object,
     ) -> str:
         raise AssertionError("generate must not be called: the clarification branch bypasses it")
 

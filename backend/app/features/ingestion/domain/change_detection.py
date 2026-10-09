@@ -46,6 +46,11 @@ class LocalState:
     # a mismatch to the metadata-only restamp path (§D.0 — a recognized-set or source_scope
     # allow-list edit must reach already-indexed pages at the complete-sweep cadence).
     tags: tuple[str, ...]
+    # The stamped "Applies to" payload (panel mi-applies, 8.2.2; None = no record).
+    # Not compared by classify() either — the Applies-to table is lifted OUT of the body
+    # before hashing, so the command handler compares the freshly parsed payload against
+    # this and routes a mismatch to the same metadata-only restamp path.
+    applicability: list | None = None
 
 
 @dataclass(frozen=True)

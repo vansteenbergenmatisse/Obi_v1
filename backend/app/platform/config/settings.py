@@ -17,6 +17,7 @@ from app.platform.config.knowledge_scopes import load_recognized_knowledge_scope
 
 if TYPE_CHECKING:
     from app.platform.config.platforms import PlatformRegistry
+    from app.platform.config.product_catalog import ProductCatalog
 
 # Envs where a missing hosted-provider key or DB role falls back to a safe offline default
 # instead of failing (PLAN 4.6.10) — was duplicated as a local constant in
@@ -197,11 +198,14 @@ class Settings(BaseSettings):
     # securing-http-and-llm-endpoints has no "add caps later" opt-out for an LLM-CALL surface.
     # chat_max_images_per_turn and chat_max_image_bytes are the caps the composer mirrors
     # (`frontend/src/features/chat/ui/composer.tsx`: MAX_ATTACHMENTS / MAX_IMAGE_BYTES) and the
-    # /chat endpoint enforces with a 400. Decision w-composer-images (2026-09-18, panel w-composer):
-    # at most 3 images per turn, each <= 3 MB (3_000_000 bytes — decimal MB, matching the composer's
-    # own byte check). Both stay under Anthropic's documented ~5MB per-image API limit; ADR-0009
-    # leaves the *real*, usage-tuned value undecided, so re-tune once real image traffic exists.
-    chat_max_images_per_turn: int = 3
+    # /chat endpoint enforces with a 400 (plus a media-type allowlist, substep 3.6.7). Decision
+    # w-composer-images: at most 10 images per turn (raised 3->10 on 2026-10-07, substep 3.6.7),
+    # each <= 3 MB (3_000_000 bytes — decimal MB, matching the composer's own byte check). Each
+    # image stays well under Anthropic's documented ~5 MB per-image API limit, and 10 images is far
+    # under its 100-images-per-request limit; 10 x 3 MB base64 = 30 MB stays under the 32 MB
+    # Messages-API request ceiling (the frontend proxy body ceiling was raised to 40 MB to fit 10
+    # images plus history). Re-tune once real image traffic exists.
+    chat_max_images_per_turn: int = 10
     chat_max_image_bytes: int = 3_000_000
     chat_output_max_answer_chars: int = 8000  # C5: defensive cap on the streamed answer size
     chat_token_chunk_chars: int = 40  # C5: SSE token-event chunk size (paces bytes/sec streamed)
@@ -312,6 +316,15 @@ class Settings(BaseSettings):
         return load_recognized_knowledge_scopes()
 
     @property
+    def product_catalog(self) -> ProductCatalog:
+        """The validated product catalog (panel mi-catalog): canonical ids, alias
+        resolution and the launch allowlist for the gate. Loaded fresh per access like
+        ``knowledge_scope_set``; the startup validator below makes a bad file fail fast."""
+        from app.platform.config.product_catalog import load_product_catalog
+
+        return load_product_catalog()
+
+    @property
     def obi_identity_text(self) -> str:
         """The operator's static identity block (config/obi_identity.md), stripped. Read at use
         time, not cached, so an operator edit takes effect on the next generator build. A missing
@@ -374,6 +387,13 @@ class Settings(BaseSettings):
     def _require_valid_platform_registry(self) -> Settings:
         # fail fast if platforms.json is malformed or maps unknown scopes
         _ = self.platform_registry
+        return self
+
+    @model_validator(mode="after")
+    def _require_valid_product_catalog(self) -> Settings:
+        # fail fast at startup if product_catalog.json breaks any of the 8 catalog.md §3
+        # rules (incl. the platforms.json cross-check) — panel mi-catalog, substep 8.1.1
+        _ = self.product_catalog
         return self
 
     @model_validator(mode="after")

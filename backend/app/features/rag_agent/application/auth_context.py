@@ -24,14 +24,42 @@ verifies-without-serving — PLAN 11.1c):
     assert only its own integration; a hub (datahub) may vend the product integrations it lists.
     Otherwise `IntegrationNotAllowedError` — so a trusted issuer can no longer claim any
     integration and reach another tenant's scopes. An integration that is not a real integration
-    at all raises `UnknownIntegrationError`."""
+    at all raises `UnknownIntegrationError`.
+
+Substep 8.1.3 (panels mi-gate/mi-contract): the gate accepts the three-slot integration context.
+After the active-platform gate, the FIVE slot checks of
+docs/Final_docs/5-integration-context/decision-memo.md §4 run in order over the filled slots —
+a legacy single-`integration` note is read as ONE filled slot (the product's catalog role picks
+the slot), so both token forms go through the same chain:
+
+  1. shape       — every filled value a short lowercase slug; company_id present when a slot is
+                   filled                                   -> `InvalidSlotValueError` (400)
+  2. membership  — every filled value resolves (canonical id or catalog alias) to a product in
+                   knowledge-base/config/product_catalog.json -> `UnknownIntegrationError` (400,
+                   before any search — §D.11 / chat.yaml)
+  3. role        — the product's catalog role matches the slot it sits in (toast is never a PMS)
+                                                             -> `InvalidSlotValueError` (400)
+  4. vend rights — the issuing platform may only fill slots with products its
+                   `allowed_integrations` resolve to (CIP-A1 generalized: Data Hub vends
+                   POS/PMS, Base vends Accounting)           -> `IntegrationNotAllowedError` (401)
+  5. allowlist   — a FILLED POS/PMS slot must be on the launch allowlist (Toast as POS, Mews as
+                   PMS); the Accounting slot is NEVER gated here (owner decision O4 — inert for
+                   eligibility); an EMPTY slot never refuses -> `SlotNotOnAllowlistError` (401)
+
+The one frozen AuthContext (never-bend rule 3) then carries the canonical slot ids
+(`slot_pos`/`slot_pms`/`slot_accounting`) and the union of the filled slots' knowledge scopes.
+When a token carries BOTH forms, the structured `context` is authoritative and the legacy claim
+is ignored (token-claims.json scopes the legacy trio rule to context-less tokens)."""
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import TYPE_CHECKING
 
 from app.platform.config.platforms import PlatformRegistry
+from app.platform.config.product_catalog import ProductCatalog, load_product_catalog
 
 if TYPE_CHECKING:
     # Imported for typing only: importing server.token_verifier at runtime would pull in
@@ -51,9 +79,16 @@ class AuthContextError(ValueError):
     this base and returns a bare 401 (no detail leaked about which gate failed)."""
 
 
-class UnknownIntegrationError(AuthContextError):
-    """The verified integration claim is not a real integration (not in the registry's integration
-    map) -> the router returns 401."""
+class InvalidSlotValueError(AuthContextError):
+    """Substep 8.1.3: a slot (or legacy integration) value that could never be valid — bad slug
+    shape, a missing company_id beside a filled slot, or a product in the wrong slot role. The
+    router maps this family to a 400 BEFORE any search (§D.11 / chat.yaml), the posture an
+    unknown body scope already has."""
+
+
+class UnknownIntegrationError(InvalidSlotValueError):
+    """Check 2 (membership): the verified value resolves to no product in the catalog (and, pre-
+    8.1.3, no integration in the registry map) -> the router returns 400 before any search."""
 
 
 class InactivePlatformError(AuthContextError):
@@ -62,8 +97,15 @@ class InactivePlatformError(AuthContextError):
 
 
 class IntegrationNotAllowedError(AuthContextError):
-    """CIP-A1: the verified issuer is a trusted platform, but is not trusted to assert this
-    (otherwise-real) integration -> the router returns 401."""
+    """CIP-A1 (check 4, vend rights): the verified issuer is a trusted platform, but is not
+    trusted to assert this (otherwise-real) product in this slot -> the router returns 401."""
+
+
+class SlotNotOnAllowlistError(AuthContextError):
+    """Check 5: a FILLED POS/PMS slot holds a real, vendable product outside the launch allowlist
+    (Toast as POS, Mews as PMS) — the session is refused (§D.13 item 3). The router returns the
+    same bare 401 as every other gate refusal; the frontend's hiding of Obi is UX on top, never
+    the boundary."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +117,15 @@ class AuthContext:
     allowed_sources: tuple[str, ...]
     principal: str | None
     token_subject: str | None
+    # substep 8.1.3: the validated integration context — one CANONICAL catalog id per filled
+    # slot (aliases already resolved), None for empty. A legacy note fills exactly one of these.
+    slot_pos: str | None = None
+    slot_pms: str | None = None
+    slot_accounting: str | None = None
+    # substep 8.3.1: the VERIFIED host platform key (the active registry entry for the token's
+    # issuer) — platform-interface eligibility needs it; None (tokenless/internal) never matches
+    # a platform-interface rule, never broadens.
+    platform: str | None = None
 
 
 def _identity_key(claims: VerifiedClaims) -> str:
@@ -101,38 +152,134 @@ def general_only_context() -> AuthContext:
     )
 
 
-def build_auth_context(claims: VerifiedClaims, registry: PlatformRegistry) -> AuthContext:
+# The §D.13 slot roles in their fixed order (matches the catalog's VALID_PRODUCT_ROLES).
+_SLOT_ROLES = ("pos", "pms", "accounting")
+# Check 1 (shape): mirrors the router's body knowledge_scope slug validator (decision-memo §4).
+_SLOT_VALUE_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
+
+
+@lru_cache(maxsize=1)
+def _default_catalog() -> ProductCatalog:
+    """The committed product catalog, loaded once per process. `Settings` already fail-fasts a
+    malformed file at boot (`_require_valid_product_catalog`); the cache keeps the gate from
+    re-reading the JSON on every /chat request (the AUTHRT-REGISTRY-RELOAD posture)."""
+    return load_product_catalog()
+
+
+def build_auth_context(
+    claims: VerifiedClaims,
+    registry: PlatformRegistry,
+    catalog: ProductCatalog | None = None,
+) -> AuthContext:
     # AUTH-1 / CIP-A2: gate on the ACTIVE view, not the verify-only by_issuer view. An inactive
     # platform's token verifies (token_verifier.by_issuer) but is not served here at all.
     entry = registry.platform_for(claims.issuer)
     if entry is None:
         raise InactivePlatformError(claims.issuer)
-    if claims.integration is None:
-        # no business values -> general only, still identified by the token subject
+
+    # The raw claimed value per slot role. Structured form: the context is authoritative (a
+    # legacy claim riding beside it is ignored). Legacy form: the single integration claim is
+    # one filled slot whose role the catalog decides after resolution (check 2).
+    structured = claims.slots is not None
+    raw_slots: dict[str, str] = {}
+    if claims.slots is not None:
+        for role in _SLOT_ROLES:
+            value = getattr(claims.slots, role)
+            if value is not None:
+                raw_slots[role] = value
+
+    if not raw_slots and (structured or claims.integration is None):
+        # no business values / every slot empty -> general only (an empty slot never refuses),
+        # still identified by the token subject; company_id carried for audit only.
         return AuthContext(
-            company_id=None,
-            company_name=None,
+            company_id=claims.company_id,
+            company_name=claims.company_name,
             integration=None,
             allowed_scopes=(_GENERAL,),
             allowed_sources=_DEFAULT_SOURCES,
             principal=None,
             token_subject=_identity_key(claims),
+            platform=entry.key,
         )
-    scopes = registry.scopes_for(claims.integration)
-    if scopes is None:
-        raise UnknownIntegrationError(claims.integration)
-    # CIP-A1: bind the integration claim to the issuing platform's allow-list — a trusted issuer
-    # may only assert an integration it is trusted to vend, never another tenant's.
-    if claims.integration not in entry.allowed_integrations:
-        raise IntegrationNotAllowedError(
-            f"platform {entry.key} may not assert integration '{claims.integration}'"
-        )
+
+    catalog = catalog if catalog is not None else _default_catalog()
+
+    # -- check 1 · shape --------------------------------------------------------------------
+    raw_values = list(raw_slots.values()) if structured else [str(claims.integration)]
+    for value in raw_values:
+        if not _SLOT_VALUE_PATTERN.match(value):
+            raise InvalidSlotValueError("slot value is not a short lowercase slug")
+    if claims.company_id is None:
+        raise InvalidSlotValueError("company_id is required when a slot is filled")
+
+    # -- check 2 · membership against the catalog (fail closed: 400 before any search) -------
+    # -- check 3 · role agreement (the product's catalog role matches the slot it sits in) ----
+    filled: dict[str, str] = {}  # slot role -> canonical catalog id
+    if structured:
+        for role, value in raw_slots.items():
+            canonicals = catalog.resolve(value)
+            if not canonicals:
+                raise UnknownIntegrationError(value)
+            if len(canonicals) != 1:
+                raise InvalidSlotValueError(f"{role} slot value expands to more than one product")
+            filled[role] = canonicals[0]
+        for role, canonical in filled.items():
+            if catalog.products[canonical].role != role:
+                raise InvalidSlotValueError(f"product '{canonical}' cannot fill the {role} slot")
+    else:
+        canonicals = catalog.resolve(str(claims.integration))
+        if not canonicals:
+            raise UnknownIntegrationError(claims.integration)
+        # a legacy (possibly compound) value fills the slot matching each product's role;
+        # catalog rule 5 guarantees an expansion never puts two products in one role.
+        for canonical in canonicals:
+            filled[catalog.products[canonical].role] = canonical
+
+    # -- check 4 · vend rights (CIP-A1 generalized) -------------------------------------------
+    # The issuing platform may only fill slots with products its allowed_integrations resolve
+    # to — Data Hub vends the POS/PMS products it lists, Base (once registered) the Accounting
+    # ones. Resolution runs on both sides so a trusted alias spelling never diverges.
+    vend_set: set[str] = set()
+    for allowed in entry.allowed_integrations:
+        vend_set.update(catalog.resolve(allowed))
+    for role, canonical in filled.items():
+        if canonical not in vend_set:
+            raise IntegrationNotAllowedError(
+                f"platform {entry.key} may not assert '{canonical}' in the {role} slot"
+            )
+
+    # -- check 5 · launch allowlist (POS/PMS only — O4: the Accounting slot is inert) ---------
+    for role in ("pos", "pms"):
+        canonical = filled.get(role)
+        if canonical is not None and canonical not in catalog.launch_allowlist.get(
+            role, frozenset()
+        ):
+            raise SlotNotOnAllowlistError(
+                f"{role} slot '{canonical}' is outside the launch allowlist"
+            )
+
+    # One authorization context (never-bend rule 3): general + the filled slots' scopes, in
+    # fixed slot order, deduplicated. A filled slot with no scope mapping yet (no Confluence
+    # tag exists for accounting products — O9 open) contributes no scopes and never errors.
+    ordered_scopes: list[str] = [_GENERAL]
+    for role in _SLOT_ROLES:
+        canonical = filled.get(role)
+        if canonical is None:
+            continue
+        for scope in registry.scopes_for(canonical) or []:
+            if scope not in ordered_scopes:
+                ordered_scopes.append(scope)
+
     return AuthContext(
         company_id=claims.company_id,
         company_name=claims.company_name,
-        integration=claims.integration,
-        allowed_scopes=tuple(scopes),
+        integration=None if structured else claims.integration,
+        allowed_scopes=tuple(ordered_scopes),
         allowed_sources=_DEFAULT_SOURCES,
         principal=None,  # v1: embedded users have no per-person Confluence ACL
         token_subject=_identity_key(claims),
+        slot_pos=filled.get("pos"),
+        slot_pms=filled.get("pms"),
+        slot_accounting=filled.get("accounting"),
+        platform=entry.key,
     )

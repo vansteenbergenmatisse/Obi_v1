@@ -152,6 +152,7 @@ from app.features.rag_agent.application.answer_service import AnswerProvider
 from app.features.rag_agent.application.auth_context import (
     AuthContext,
     AuthContextError,
+    InvalidSlotValueError,
     build_auth_context,
     general_only_context,
 )
@@ -182,6 +183,35 @@ _OBI_TOKEN_HEADER = "x-obi-token"
 # never be a real recognized scope from riding all the way down to the retrieval layer.
 _KNOWLEDGE_SCOPE_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 
+# C3 allowlist (substep 3.6.7, decision w-composer-images): only these image media types are ever
+# forwarded to the vision call — Anthropic's documented supported set. Any other media_type is
+# rejected with a 400 in `_validate_history`, BEFORE any LLM call runs.
+_ALLOWED_IMAGE_MEDIA_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
+
+
+class SimulatedContextSlots(BaseModel):
+    """The three §D.13 slots of a dev/standalone simulated context — shape only, never a scope
+    authority (substep 8.4.2)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    pos: str | None = None
+    pms: str | None = None
+    accounting: str | None = None
+
+
+class SimulatedContextBody(BaseModel):
+    """DEV / STANDALONE-HARNESS ONLY, non-authoritative (panel mi-contract, substep 8.4.2). The
+    simulated integration context the standalone preset selector carries on the wire — company_id
+    + three slots. The backend accepts the SHAPE so the dev harness does not 400, then logs and
+    IGNORES it in favour of the verified token/note: the body never decides access (never-bend
+    rule 2; the integration context comes only from the verified token — context-contract §4)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    company_id: str
+    slots: SimulatedContextSlots
+
 
 class ChatRequestBody(BaseModel):
     """`POST /chat` body. The caller owns conversation state and resends full turn history —
@@ -193,6 +223,8 @@ class ChatRequestBody(BaseModel):
     history: list[ChatMessage] = Field(min_length=1)
     principal: str | None = None
     knowledge_scope: str | None = None
+    # DEV/standalone harness only; accepted-and-ignored — see SimulatedContextBody.
+    simulated_context: SimulatedContextBody | None = None
 
     @field_validator("principal")
     @classmethod
@@ -255,15 +287,21 @@ def _resolve_auth_context(
     """PLAN 11.1c (ADR-0014). Turn the platform-signed `X-Obi-Token` into the frozen `AuthContext`
     that drives scope. No token -> the general-only context (the tokenless internal/eval path, and
     the pilot fallback while platforms are still being onboarded). A present-but-invalid token, or a
-    verified token an AuthContext gate refuses — an inactive platform (AUTH-1/CIP-A2), an
-    integration the issuer may not assert (CIP-A1), or an unknown integration — is a bare 401, no
-    detail leaked about which check failed."""
+    verified token an AuthContext gate refuses — an inactive platform (AUTH-1/CIP-A2), a slot the
+    issuer may not fill (CIP-A1/vend rights), or a filled POS/PMS slot outside the launch allowlist
+    (substep 8.1.3) — is a bare 401, no detail leaked about which check failed. One exception, per
+    the 8.1.2 contract (chat.yaml) and §D.11: an UNKNOWN or invalid slot / legacy-integration value
+    (`InvalidSlotValueError` — bad shape, no catalog product, wrong slot role) is the fail-closed
+    400 BEFORE any search, the same posture as an unknown body knowledge_scope below."""
     raw = request.headers.get(_OBI_TOKEN_HEADER, "")
     if not raw:
         return general_only_context()
     try:
         claims = verifier.verify(raw)
         return build_auth_context(claims, settings.platform_registry)
+    except InvalidSlotValueError as exc:
+        # never echoes the claimed value — a fixed detail string, like the body-scope 400
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "unknown integration value") from exc
     except (TokenError, AuthContextError) as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token") from exc
 
@@ -287,6 +325,29 @@ def _validate_body_knowledge_scope(
             requested=normalized,
             token_scopes=list(auth.allowed_scopes),
         )
+
+
+def _note_simulated_context_ignored(body: ChatRequestBody) -> None:
+    """substep 8.4.2: the standalone preset selector carries a simulated integration context on the
+    wire for the dev/standalone harness. It is NON-AUTHORITATIVE — the verified token/note is the
+    only authority (never-bend rules 2–3; the integration context comes only from the verified
+    token, context-contract §4). The body model accepts the shape so the dev harness does not 400;
+    here it is logged and IGNORED — it never widens access. Log only which slot keys were filled
+    (never the product ids or the company id), mirroring the body_knowledge_scope_ignored posture
+    and keeping rule 10 intact."""
+    sim = body.simulated_context
+    if sim is None:
+        return
+    filled = [
+        name
+        for name, value in (
+            ("pos", sim.slots.pos),
+            ("pms", sim.slots.pms),
+            ("accounting", sim.slots.accounting),
+        )
+        if value
+    ]
+    log.info("simulated_context_ignored", filled_slots=filled)
 
 
 def get_writer_db() -> Iterator[Session]:
@@ -366,6 +427,12 @@ def _validate_history(body: ChatRequestBody, settings: Settings) -> None:
                 f"a turn exceeds {settings.chat_max_images_per_turn} images",
             )
         for image in images:
+            # C3 (substep 3.6.7): reject any media type outside the allowlist BEFORE any LLM call.
+            if image.media_type not in _ALLOWED_IMAGE_MEDIA_TYPES:
+                raise HTTPException(
+                    status.HTTP_400_BAD_REQUEST,
+                    "unsupported image media type",
+                )
             if len(image.data) > settings.chat_max_image_bytes:
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
@@ -405,10 +472,21 @@ def _sse(event: dict) -> str:
 
 
 def _wire_citations(citations: list[Citation]) -> list[dict]:
-    return [
-        {"id": str(c.marker), "pageId": c.page_id, "title": c.title, "url": c.url or ""}
-        for c in citations
-    ]
+    # Substep 8.3.4 (panel mi-attrib): the backend-assembled attribution rides on the wire ONLY
+    # when present — a label-only / no-context citation omits the key entirely, so the shape is
+    # byte-identical to pre-8.3.4 and the OpenAPI `attribution` field stays optional in practice.
+    wire: list[dict] = []
+    for c in citations:
+        item: dict = {
+            "id": str(c.marker),
+            "pageId": c.page_id,
+            "title": c.title,
+            "url": c.url or "",
+        }
+        if c.attribution is not None:
+            item["attribution"] = c.attribution
+        wire.append(item)
+    return wire
 
 
 async def _stream_answer(
@@ -519,6 +597,7 @@ async def post_chat(
 
     _validate_history(body, settings)
     _validate_body_knowledge_scope(body, auth, settings)
+    _note_simulated_context_ignored(body)
 
     conversation_id = body.conversation_id or _new_conversation_id()
     idempotency_key = request.headers.get(_IDEMPOTENCY_HEADER)

@@ -46,6 +46,7 @@ from app.platform.clients import (
     build_reranker,
 )
 from app.platform.config import Settings, get_settings
+from app.platform.config.product_catalog import load_product_catalog
 from app.platform.logging import configure_logging, get_logger
 from app.shared.rate_limiter import SlidingWindowRateLimiter
 from schema.engine import get_reader_sessionmaker, get_sessionmaker, session_scope
@@ -116,6 +117,9 @@ def build_answer_service(settings: Settings) -> AnswerService:
         default_knowledge_scope=settings.default_knowledge_scope or None,
         reader_sessionmaker=get_reader_sessionmaker(),
         curated_knowledge_max_entries=settings.curated_knowledge_max_entries,
+        # Substep 8.3.3 (panel mi-prompt): the committed catalog, used only to derive the
+        # customer's actual connections for the answer prompt's integration-context block.
+        product_catalog=load_product_catalog(),
     )
 
 

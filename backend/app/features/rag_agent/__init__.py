@@ -39,9 +39,18 @@ from .application.auth_context import (
     AuthContextError,
     InactivePlatformError,
     IntegrationNotAllowedError,
+    InvalidSlotValueError,
+    SlotNotOnAllowlistError,
     UnknownIntegrationError,
     build_auth_context,
     general_only_context,
+)
+from .application.standalone_presets import (
+    PresetSlots,
+    StandalonePreset,
+    load_standalone_presets,
+    standalone_registry,
+    validate_preset,
 )
 from .domain.clarification import ClarificationReply
 from .domain.curated_knowledge import CuratedEntry
@@ -55,7 +64,7 @@ from .infrastructure.llm_client import (
 )
 from .schemas import Answer, ChatMessage, Citation, ImageAttachment
 from .server import chat_router_module, router
-from .server.token_verifier import TokenError, TokenVerifier, VerifiedClaims
+from .server.token_verifier import ContextSlots, TokenError, TokenVerifier, VerifiedClaims
 
 __all__ = [
     "Answer",
@@ -71,12 +80,20 @@ __all__ = [
     "build_auth_context",
     "general_only_context",
     "AuthContextError",
+    "InvalidSlotValueError",
     "UnknownIntegrationError",
     "InactivePlatformError",
     "IntegrationNotAllowedError",
+    "SlotNotOnAllowlistError",
+    "PresetSlots",
+    "StandalonePreset",
+    "load_standalone_presets",
+    "standalone_registry",
+    "validate_preset",
     "TokenVerifier",
     "TokenError",
     "VerifiedClaims",
+    "ContextSlots",
     "QueryRewriter",
     "AnswerGenerator",
     "AnthropicQueryRewriter",

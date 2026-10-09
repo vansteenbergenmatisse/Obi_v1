@@ -4,7 +4,8 @@
   "spaces": [
     { "id": "100", "key": "ENG", "name": "Engineering" },
     { "id": "200", "key": "HR", "name": "People Operations" },
-    { "id": "300", "key": "KB", "name": "Knowledge Base Fixtures" }
+    { "id": "300", "key": "KB", "name": "Knowledge Base Fixtures" },
+    { "id": "400", "key": "INT", "name": "Integration Context Fixtures" }
   ],
   "pages": [
     {
@@ -218,6 +219,20 @@
       "hasAttachments": false,
       "file": "page-3010-empty.json",
       "_fixtureCategory": "empty page: empty body, no labels, no restrictions, no attachments (substep 0.5.1)"
+    },
+    {
+      "id": "3011",
+      "spaceId": "400",
+      "title": "Mews to QuickBooks Mapping",
+      "parentId": null,
+      "currentStatus": "current",
+      "currentVersion": 1,
+      "versionsAvailable": [1, 2, 3, 4],
+      "hasLabels": false,
+      "hasRestrictions": false,
+      "hasAttachments": false,
+      "file": "page-3011-applies-to.json",
+      "_fixtureCategory": "Applies-to page: v1 valid software table, v2 valid connection table (content identical), v3 table removed, v4 invalid unknown product (substep 8.2.2)"
     }
   ],
   "attachmentFiles": [

@@ -33,9 +33,12 @@ from app.features.rag_agent.domain.prompt import (
     build_answer_prompt,
     build_identity_context_block,
     build_identity_system_prompt,
+    build_image_context_block,
+    build_integration_context_block,
     build_rewrite_prompt,
 )
 from app.features.rag_agent.schemas import ChatMessage, ImageAttachment
+from app.features.retrieval import ConnectionRecord, CustomerContext
 from app.platform.clients.anthropic_client import (
     AnthropicError,
     AnthropicMessagesClient,
@@ -50,7 +53,12 @@ _REWRITE_MAX_TOKENS = 200
 _ANSWER_MAX_TOKENS = 800
 _SMALL_TALK_MAX_TOKENS = 150
 _SMALL_TALK_FALLBACK = "Hi! I'm Obi — ask me anything about the documentation and I'll look it up."
-_IMAGE_ANALYSIS_MAX_TOKENS = 500
+# Substep 3.6.7 (panel r5-image): raised from 500. The call is now a disciplined TRANSCRIPTION
+# (verbatim on-screen text + a short UI description), and a dense screenshot's visible text can run
+# well past 500 tokens — a truncated transcription would silently drop on-screen text the search
+# and the answer need. 1500 gives a full screenshot's text room while still bounding cost (it is an
+# output cap, not a latency/scaling figure); re-tune once real image traffic exists.
+_IMAGE_ANALYSIS_MAX_TOKENS = 1500
 _IMAGE_ANALYSIS_FALLBACK = "I couldn't look at that image right now — feel free to try again."
 _IDENTITY_MAX_TOKENS = 150  # one or two short sentences of identity facts, never a full answer
 _IDENTITY_FALLBACK = (
@@ -80,12 +88,21 @@ class AnswerGenerator(Protocol):
         *,
         company_name: str | None = None,
         integration: str | None = None,
+        customer_context: CustomerContext | None = None,
+        connections: Sequence[ConnectionRecord] = (),
+        image_analysis: str | None = None,
     ) -> str:
         """Return a grounded answer citing the numbered markers in ``evidence_block``.
 
         ``company_name`` / ``integration`` are the verified per-chat business context (which
         business Obi is helping, which platform they use); a missing value is omitted, never
-        guessed. They are response context only and never affect access (Locks 0-3 still govern)."""
+        guessed. ``customer_context`` / ``connections`` are the verified integration setup
+        (substep 8.3.3, panel mi-prompt) — the known systems, absent roles, actual connections and
+        directions, and host platform the answer must attribute facts to. ``image_analysis``
+        (substep 3.6.7, panel r5-image) is the vision transcription of the user's attached image,
+        passed as an uncached CONTEXT block — never folded into ``evidence_block``, so it can never
+        gain a citation marker (never-bend rule 7). All are response context only and never affect
+        access (Locks 0-3 still govern)."""
         ...
 
     def generate_small_talk(self, query: str) -> str:
@@ -179,16 +196,36 @@ class AnthropicAnswerGenerator:
         *,
         company_name: str | None = None,
         integration: str | None = None,
+        customer_context: CustomerContext | None = None,
+        connections: Sequence[ConnectionRecord] = (),
+        image_analysis: str | None = None,
     ) -> str:
-        # Two system blocks, mirroring `generate_identity`: a CACHED persona/style block
-        # (`ANSWER_SYSTEM_PROMPT`, constant per deployment, billed once) and an optional UNCACHED
-        # per-chat business-context block, so per-chat company/integration variation never busts the
-        # shared cache. The context block is dropped entirely when neither value is known — missing
-        # values are omitted, never guessed — and it is response context only, never access control.
+        # System blocks, mirroring `generate_identity`: a CACHED persona/style block
+        # (`ANSWER_SYSTEM_PROMPT`, constant per deployment, billed once) and optional UNCACHED
+        # per-chat blocks, so per-chat variation never busts the shared cache. Each block is
+        # dropped entirely when its values are unknown — nothing is guessed — and both are response
+        # context only, never access control (the backend alone enforces eligibility, rule 3):
+        #   * the business-context block (company/integration, operator request 2026-09-23), and
+        #   * the verified integration setup (substep 8.3.3, panel mi-prompt): known systems,
+        #     absent roles, actual connections + directions, host platform, selected integration —
+        #     so the model can attribute each fact to its system and ask instead of inventing.
         system_blocks: list = [cached_system_block(ANSWER_SYSTEM_PROMPT)]
         context_block = build_answer_context_block(company_name, integration)
         if context_block is not None:
             system_blocks.append({"type": "text", "text": context_block})
+        if customer_context is not None:
+            integration_block = build_integration_context_block(
+                customer_context, connections, integration
+            )
+            if integration_block is not None:
+                system_blocks.append({"type": "text", "text": integration_block})
+        # Substep 3.6.7 (panel r5-image): the vision transcription rides as its own uncached
+        # context block — never folded into the user message's evidence block, so it can never
+        # gain a citation marker (rule 7). Dropped entirely when there is no image, so the
+        # no-image prompt is byte-identical to pre-3.6.7.
+        image_block = build_image_context_block(image_analysis)
+        if image_block is not None:
+            system_blocks.append({"type": "text", "text": image_block})
         return self._client.create_message(
             model=self._model,
             user_text=redact_pii(build_answer_prompt(query, evidence_block)),

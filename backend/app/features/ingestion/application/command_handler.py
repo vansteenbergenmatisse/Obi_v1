@@ -31,6 +31,11 @@ from app.features.ingestion.application.versioning import (
     stage_and_activate,
 )
 from app.features.ingestion.domain import normalization as norm
+from app.features.ingestion.domain.applicability import (
+    applies_to_payload,
+    validate_applies_to,
+)
+from app.features.ingestion.domain.applies_to_parsing import extract_applies_to
 from app.features.ingestion.domain.attachment_extraction import (
     attachment_to_blocks,
     extract_attachment,
@@ -130,9 +135,11 @@ def _apply_upsert(
 
     need_body = decide_body_fetch(local, meta, target)
     blocks: list[norm.Block] | None = None
+    applicability: list | None = None
+    applicability_known = False  # True only when the body was fetched this sync
     if need_body:
-        page = gateway.get_page(page_id)
-        blocks = norm.normalize_body(page.body_storage) if page else []
+        blocks, applicability = _normalize_fetched_body(gateway, page_id, settings)
+        applicability_known = True
 
     decision = classify(
         local=local,
@@ -155,8 +162,8 @@ def _apply_upsert(
     rebuild = local is None or bool(decision.classes & _REBUILD_CLASSES)
     if rebuild:
         if blocks is None:  # safety: a rebuild requires the body
-            page = gateway.get_page(page_id)
-            blocks = norm.normalize_body(page.body_storage) if page else []
+            blocks, applicability = _normalize_fetched_body(gateway, page_id, settings)
+            applicability_known = True
         # classify() always sets these three metadata hashes (they need no body), so they are
         # never None on the rebuild path — assert the invariant to satisfy the type checker.
         assert decision.labels_hash is not None
@@ -179,6 +186,7 @@ def _apply_upsert(
             page_status=page_status,
             services=services,
             tags=final_tags,
+            applicability=applicability,
         )
         if restrictions_changed:
             _replace_restrictions(session, page_id=page_id, principals=restrictions)
@@ -193,19 +201,62 @@ def _apply_upsert(
     # narrowed allow-list whose stale tags would keep satisfying the RLS overlap forever).
     scopes_drifted = local is not None and set(local.tags) != set(final_tags)
 
-    if decision.meaningful or scopes_drifted:
-        _apply_metadata_only(session, meta, decision, page_status, tags=final_tags)
+    # mi-applies (8.2.2): the Applies-to table is lifted out of the body before hashing,
+    # so a table-only edit changes no content hash — comparing the freshly parsed payload
+    # against the stamped one is what routes a metadata edit (changed OR removed record)
+    # to the same restamp path, invalidating stale eligibility with no re-embed. Only
+    # compared when the body was fetched this sync; the record cannot change without one.
+    applicability_drifted = (
+        local is not None and applicability_known and applicability != local.applicability
+    )
+
+    if decision.meaningful or scopes_drifted or applicability_drifted:
+        _apply_metadata_only(
+            session,
+            meta,
+            decision,
+            page_status,
+            tags=final_tags,
+            applicability=applicability if applicability_known else _KEEP,
+        )
         if restrictions_changed:
             _replace_restrictions(session, page_id=page_id, principals=restrictions)
-        classes = (
-            sorted(c.value for c in decision.classes)
-            if decision.meaningful
-            else ["scopes_restamped"]
-        )
+        if decision.meaningful:
+            classes = sorted(c.value for c in decision.classes)
+        else:
+            classes = (["applicability_restamped"] if applicability_drifted else []) + (
+                ["scopes_restamped"] if scopes_drifted else []
+            )
         return SyncOutcome(action="metadata_only", classes=classes, page_id=page_id)
 
     _touch_reconciled(session, page_id)
     return SyncOutcome(action="no_change", classes=["no_change"], page_id=page_id)
+
+
+def _normalize_fetched_body(
+    gateway: ConfluenceGateway, page_id: int, settings: Settings
+) -> tuple[list[norm.Block], list | None]:
+    """Fetch + split the body: normalized blocks (Applies-to tables lifted out) and the
+    validated applicability payload (mi-applies, 8.2.2).
+
+    The tables are removed BEFORE normalization so they are metadata, never chunk
+    content, and a table-only edit changes no content hash. An authored-but-invalid
+    table raises ``ApplicabilityValidationError`` out of the sync — loud by named
+    reason, never a silent fall-back to label-only (the job fails; the previously
+    indexed state survives untouched)."""
+    page = gateway.get_page(page_id)
+    if page is None:
+        return [], None
+    extraction = extract_applies_to(page.body_storage)
+    blocks = norm.normalize_body(extraction.body_storage)
+    if not extraction.rules:
+        return blocks, None  # no record: the documented label-only default
+    record = validate_applies_to(
+        extraction.rules,
+        settings.product_catalog,
+        settings.platform_registry.platform_keys(),
+    )
+    return blocks, applies_to_payload(record)
 
 
 def _attachment_blocks(
@@ -263,12 +314,24 @@ def _replace_restrictions(session: Session, *, page_id: int, principals: list[st
         )
 
 
-def _apply_metadata_only(session, meta, decision, page_status, *, tags=None) -> None:
+# Sentinel for _apply_metadata_only: the body was not fetched this sync, so the stamped
+# applicability is kept as-is (None is a real value: "the record was removed").
+_KEEP = object()
+
+
+def _apply_metadata_only(
+    session, meta, decision, page_status, *, tags=None, applicability=_KEEP
+) -> None:
     """Update registry + propagate retrieval-relevant metadata to chunks WITHOUT re-embedding."""
     ps = session.get(PageSource, meta.page_id)
     if ps is None:
         return
     now = datetime.now(UTC)
+    if meta.version_number > ps.current_cf_version:
+        # The revision is fully consumed here (the body was fetched and its content
+        # proved unchanged — only metadata moved), so advance the high-water mark or
+        # every later sweep re-flags the same version as drift forever.
+        ps.current_cf_version = meta.version_number
     ps.title = meta.title
     ps.parent_id = meta.parent_id
     ps.source_url = meta.source_url
@@ -282,6 +345,8 @@ def _apply_metadata_only(session, meta, decision, page_status, *, tags=None) -> 
         ps.attachment_manifest_hash = decision.attachment_manifest_hash
     if tags is not None:
         ps.tags = list(tags)
+    if applicability is not _KEEP:
+        ps.applicability = applicability  # mi-applies 8.2.2: restamp (None = removed)
     ps.last_indexed_at = now
     ps.updated_at = now
     if ps.active_doc_version_id is not None:
@@ -294,6 +359,8 @@ def _apply_metadata_only(session, meta, decision, page_status, *, tags=None) -> 
             values["access_scope"] = decision.access_scope_hash
         if tags is not None:
             values["tags"] = list(tags)
+        if applicability is not _KEEP:
+            values["applicability"] = applicability
         session.execute(
             update(Chunk).where(Chunk.doc_version_id == ps.active_doc_version_id).values(**values)
         )

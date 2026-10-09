@@ -22,7 +22,13 @@ from app.features.rag_agent.domain.clarification import ClarificationReply
 from app.features.rag_agent.domain.curated_knowledge import CuratedEntry
 from app.features.rag_agent.domain.identity import IdentityFacts
 from app.features.rag_agent.schemas import ChatMessage, ImageAttachment
-from app.features.retrieval import RetrievalResult, RetrievedHit
+from app.features.retrieval import (
+    ConnectionRecord,
+    CustomerContext,
+    RetrievalResult,
+    RetrievedHit,
+)
+from app.platform.config.product_catalog import load_product_catalog
 
 _IMAGE = ImageAttachment(mediaType="image/png", data="ZmFrZQ==")
 
@@ -57,12 +63,27 @@ class _FakeRetriever:
         # 3-tuple assertions on `retrieve_calls` stay untouched — only tests that care about
         # knowledge-scope threading need to look here.
         self.knowledge_scopes_calls: list[object] = []
+        # Substep 8.3.1 (panel mi-filter): the verified customer context threaded into the
+        # one filtered search — tracked separately for the same reason as above.
+        self.customer_context_calls: list[object] = []
+        # Substep 3.6.7 (panel r5-image, C6): the trace-safe query the retriever would write to
+        # the query_trace row — captured so a test can prove the image transcription (which folds
+        # into `query` to drive retrieval) is never the value written to the trace row.
+        self.trace_query_calls: list[object] = []
 
     def retrieve_with_context(
-        self, query: str, scope: str | None, k: int = 5, knowledge_scopes=None
+        self,
+        query: str,
+        scope: str | None,
+        k: int = 5,
+        knowledge_scopes=None,
+        customer_context=None,
+        trace_query: str | None = None,
     ) -> RetrievalResult:
         self.retrieve_calls.append((query, scope, k))
         self.knowledge_scopes_calls.append(knowledge_scopes)
+        self.customer_context_calls.append(customer_context)
+        self.trace_query_calls.append(trace_query if trace_query is not None else query)
         return self._results[query]
 
     def fetch_parent_texts(self, chunk_ids):
@@ -102,10 +123,18 @@ class _FakeGenerator:
         )
         self.called_with: list[tuple[str, str]] = []
         self.generate_context: list[tuple[str | None, str | None]] = []
+        # Substep 8.3.3 (panel mi-prompt): the verified integration context + its derived
+        # connections threaded into the answer prompt — captured separately so the existing
+        # 2-tuple `generate_context` assertions stay untouched.
+        self.integration_context: list[tuple[object, object]] = []
         self.small_talk_called_with: list[str] = []
         self.image_analysis_called_with: list[tuple[str, tuple]] = []
         self.clarification_called_with: list[str] = []
         self.identity_called_with: list[tuple[str, IdentityFacts]] = []
+        # Substep 3.6.7 (panel r5-image): the image transcription threaded into grounded
+        # generation as context (never as citable evidence) — captured separately so the existing
+        # `called_with` / `generate_context` assertions stay untouched.
+        self.generate_image_analysis_context: list[str | None] = []
 
     def generate(
         self,
@@ -114,9 +143,14 @@ class _FakeGenerator:
         *,
         company_name: str | None = None,
         integration: str | None = None,
+        customer_context: object = None,
+        connections: object = (),
+        image_analysis: str | None = None,
     ) -> str:
         self.called_with.append((query, evidence_block))
         self.generate_context.append((company_name, integration))
+        self.integration_context.append((customer_context, connections))
+        self.generate_image_analysis_context.append(image_analysis)
         return self._text
 
     def generate_small_talk(self, query: str) -> str:
@@ -159,6 +193,9 @@ class _RaisingGenerator:
         *,
         company_name: str | None = None,
         integration: str | None = None,
+        customer_context: object = None,
+        connections: object = (),
+        image_analysis: str | None = None,
     ) -> str:
         raise AssertionError("generator must not be called once refusal is decided")
 
@@ -300,6 +337,176 @@ def test_grounded_answer_threads_verified_business_context_into_generate() -> No
         [ChatMessage(role="user", content="how do I get access?")], general_only_context()
     )
     assert generator_general.generate_context == [(None, None)]
+
+
+def test_rt3_answer_carries_each_hits_attribution_onto_its_citation() -> None:
+    """panel mi-attrib · substep 8.3.4
+    The attribution the backend assembled on each retrieved hit (general / a named slot / a
+    pair) rides straight onto that hit's Citation — the widget renders what the backend
+    decided, never recomputing eligibility."""
+    hit_general = RetrievedHit(
+        page_id="201", chunk_id=701, score=0.9, title="General Guide", url="u/201",
+        attribution="general",
+    )
+    hit_pair = RetrievedHit(
+        page_id="202", chunk_id=702, score=0.8, title="Toast + Mews", url="u/202",
+        attribution="pair",
+    )
+    retriever = _FakeRetriever(
+        {"q": RetrievalResult(hits=[hit_general, hit_pair], trace_id=None)},
+        parent_texts={701: "General grounding.", 702: "Pair grounding."},
+    )
+    generator = _FakeGenerator("General [1]. Pair [2].")
+    service, _ = _service(retriever, _FakeRewriter("q"), generator)
+
+    result = service.answer([ChatMessage(role="user", content="how?")], _auth(principal="100"))
+    by_marker = {c.marker: c for c in result.citations}
+    assert by_marker[1].attribution == "general"
+    assert by_marker[2].attribution == "pair"
+
+
+def test_rt3_answer_leaves_attribution_absent_for_a_label_only_hit() -> None:
+    """panel mi-attrib · substep 8.3.4
+    A hit with no attribution (a label-only page, or the no-context path) carries no
+    attribution on its Citation — the field stays None, byte-compatible with today."""
+    retriever = _FakeRetriever(
+        {"q": RetrievalResult(hits=[_HIT_A], trace_id=None)},
+        parent_texts={501: "Some grounding text."},
+    )
+    generator = _FakeGenerator("Answer with a citation [1].")
+    service, _ = _service(retriever, _FakeRewriter("q"), generator)
+
+    result = service.answer([ChatMessage(role="user", content="how?")], _auth(principal="100"))
+    assert result.citations[0].attribution is None
+
+
+def test_rt1_answer_threads_the_verified_slots_into_retrieval_as_customer_context() -> None:
+    """panel mi-filter · substep 8.3.1
+    The one filtered search: answer() builds a CustomerContext from the VERIFIED auth
+    context's slots (never the request body) and passes it to retrieval, so eligibility is
+    enforced inside the database for every retrieve — including the CRAG retry. A context
+    with no slots threads an empty CustomerContext (general-only eligibility, label-only
+    pages unaffected)."""
+    retriever = _FakeRetriever(
+        {"q": RetrievalResult(hits=[_HIT_A], trace_id=None)},
+        parent_texts={501: "Some grounding text."},
+    )
+    generator = _FakeGenerator("Answer with a citation [1].")
+    service, _ = _service(retriever, _FakeRewriter("q"), generator)
+
+    auth = AuthContext(
+        company_id="42",
+        company_name="Hotel Co",
+        integration=None,
+        allowed_scopes=("obi-general-test", "obi-toast-test", "obi-mews-test"),
+        allowed_sources=("confluence:default",),
+        principal=None,
+        token_subject="iss\x00sub",
+        slot_pos="toast",
+        slot_pms="mews",
+        platform="datahub",
+    )
+    service.answer([ChatMessage(role="user", content="how do I get access?")], auth)
+    assert retriever.customer_context_calls == [
+        CustomerContext(slot_pos="toast", slot_pms="mews", platform="datahub")
+    ]
+
+    retriever_general = _FakeRetriever(
+        {"q": RetrievalResult(hits=[_HIT_A], trace_id=None)},
+        parent_texts={501: "Some grounding text."},
+    )
+    service_general, _ = _service(retriever_general, _FakeRewriter("q"), generator)
+    service_general.answer(
+        [ChatMessage(role="user", content="how do I get access?")], general_only_context()
+    )
+    assert retriever_general.customer_context_calls == [CustomerContext()]
+
+
+def test_rt5_answer_threads_the_verified_context_and_connections_into_generation() -> None:
+    """panel mi-prompt · substep 8.3.3
+    The answering model receives the same verified context — the slots + host platform and the
+    customer's actual connections (derived from the filled slots through the catalog, the same
+    §D.4 derivation the search eligibility uses) — so it can name which system each fact comes
+    from. A context with no slots threads an empty context and no connections (nothing guessed)."""
+    retriever = _FakeRetriever(
+        {"q": RetrievalResult(hits=[_HIT_A], trace_id=None)},
+        parent_texts={501: "Some grounding text."},
+    )
+    generator = _FakeGenerator("Answer with a citation [1].")
+    service, _ = _service(
+        retriever,
+        _FakeRewriter("q"),
+        generator,
+        product_catalog=load_product_catalog(),
+    )
+
+    auth = AuthContext(
+        company_id="42",
+        company_name="Hotel Co",
+        integration=None,
+        allowed_scopes=("obi-general-test", "obi-toast-test", "obi-mews-test"),
+        allowed_sources=("confluence:default",),
+        principal=None,
+        token_subject="iss\x00sub",
+        slot_pos="toast",
+        slot_pms="mews",
+        platform="datahub",
+    )
+    service.answer([ChatMessage(role="user", content="how do I get access?")], auth)
+
+    context, connections = generator.integration_context[0]
+    assert context == CustomerContext(slot_pos="toast", slot_pms="mews", platform="datahub")
+    # derive_connections sorts the role/product pairs (pms < pos)
+    assert connections == (
+        ConnectionRecord(
+            connection_type="pos-pms",
+            products=(("pms", "mews"), ("pos", "toast")),
+            directions=("pos_to_pms", "pms_to_pos"),
+            derived=True,
+        ),
+    )
+
+    # general-only path: empty context, no connections, nothing guessed
+    retriever_general = _FakeRetriever(
+        {"q": RetrievalResult(hits=[_HIT_A], trace_id=None)},
+        parent_texts={501: "Some grounding text."},
+    )
+    generator_general = _FakeGenerator("Answer with a citation [1].")
+    service_general, _ = _service(
+        retriever_general,
+        _FakeRewriter("q"),
+        generator_general,
+        product_catalog=load_product_catalog(),
+    )
+    service_general.answer(
+        [ChatMessage(role="user", content="how do I get access?")], general_only_context()
+    )
+    assert generator_general.integration_context[0] == (CustomerContext(), ())
+
+
+def test_rt5_further_retrieval_never_exceeds_two_reads() -> None:
+    """panel mi-prompt · substep 8.3.3
+    Never-bend rule 8: at most two extra reads per question, never a loop. Even when every result
+    scores weak enough to trigger the corrective retry, the retriever is read at most twice (the
+    initial search plus the single CRAG retry) — the prompt change adds no new read."""
+    weak = RetrievalResult(hits=[_HIT_B], trace_id=None)  # top_score 0.5, below the 0.99 floor
+    retriever = _FakeRetriever(
+        {"rewritten q": weak, "verbatim q": weak},
+        parent_texts={502: "Weak grounding text."},
+    )
+    generator = _FakeGenerator("Answer with a citation [1].")
+    service, _ = _service(
+        retriever,
+        _FakeRewriter("rewritten q"),
+        generator,
+        refusal_min_rerank_score=0.99,  # force the weak-score branch so CRAG retries once
+        crag_max_retries=1,
+    )
+
+    service.answer([ChatMessage(role="user", content="verbatim q")], _auth())
+
+    # exactly two reads: the initial search + one CRAG retry, never a third (no loop, rule 8)
+    assert len(retriever.retrieve_calls) == 2
 
 
 def test_rewrite_disabled_skips_rewriter_and_uses_verbatim_query() -> None:
@@ -827,7 +1034,10 @@ def test_image_on_turn_with_no_retrieved_candidates_does_not_refuse() -> None:
     """ADR-0009 decision 3: a turn whose text retrieval found nothing can still produce a real
     answer from the attached image alone — `decide_refusal`'s `has_image` gate must prevent the
     no-candidates refusal that would otherwise fire here."""
-    retriever = _FakeRetriever({"q": RetrievalResult(hits=[], trace_id=3)}, parent_texts={})
+    # Substep 3.6.7: the one search now folds the transcription in ("q" + "I see a cat.").
+    retriever = _FakeRetriever(
+        {"q\n\nI see a cat.": RetrievalResult(hits=[], trace_id=3)}, parent_texts={}
+    )
     generator = _FakeGenerator("I don't have documentation evidence for that.")
     service, _ = _service(retriever, _FakeRewriter("q"), generator)
 
@@ -842,8 +1052,10 @@ def test_image_analysis_survives_a_citation_enforcement_refusal() -> None:
     """ADR-0009 decision 3: `no_citations` (citation enforcement stripped every claim) is
     unaffected by `has_image` — the grounded text still degrades to refusal, but the
     independently-generated image analysis is not blocked by that and rides along regardless."""
+    # Substep 3.6.7: the one search now folds the transcription in ("q" + "I see a cat.").
     retriever = _FakeRetriever(
-        {"q": RetrievalResult(hits=[_HIT_A], trace_id=9)}, parent_texts={501: "text"}
+        {"q\n\nI see a cat.": RetrievalResult(hits=[_HIT_A], trace_id=9)},
+        parent_texts={501: "text"},
     )
     generator = _FakeGenerator("This sentence cites nothing at all.")
     service, _ = _service(retriever, _FakeRewriter("q"), generator)
@@ -857,26 +1069,27 @@ def test_image_analysis_survives_a_citation_enforcement_refusal() -> None:
     assert result.image_analysis == "I see a cat."
 
 
-def test_image_only_turn_with_empty_content_skips_retrieval() -> None:
-    """PLAN 7.8: a genuinely text-empty, image-only turn (the widget's screenshot-capture button
-    sent with no typed text) must never reach the rewriter or retriever with an empty query string
-    — the real OpenAI embeddings provider rejects an empty string outright (400), which crashed
-    this exact path in production before this fix; both fakes here raise/KeyError if touched, so
-    this test fails loudly if that guard regresses. Falls through to the same degrade path a real
-    no-candidates-with-image turn already takes (see `test_image_analysis_survives_a_citation_
-    enforcement_refusal`): citation enforcement strips the empty-evidence generation into a
-    no_citations refusal, while `image_analysis` still rides along."""
+def test_image_only_turn_with_no_text_and_no_transcription_skips_retrieval() -> None:
+    """PLAN 7.8 (updated substep 3.6.7): the embedder must never be reached with an empty query
+    string — the real OpenAI provider rejects an empty string outright (400), which crashed this
+    path in production before the PLAN 7.8 fix. Substep 3.6.7 changed the image-only path to search
+    on the TRANSCRIPTION (see `test_rt2_image_only_turn_now_retrieves_on_the_transcription`), so the
+    only remaining empty-query case is when there is neither typed text NOR any transcription (the
+    vision call produced nothing). This locks that edge: retrieval is skipped entirely, the
+    retriever is never touched, and the turn degrades to a no_citations refusal while
+    `image_analysis` still rides along."""
     retriever = _FakeRetriever({}, {})  # any retrieve_with_context call -> KeyError
-    generator = _FakeGenerator("This sentence cites nothing at all.")
+    # a vision call that produced no transcription text at all
+    generator = _FakeGenerator("This sentence cites nothing at all.", image_analysis_text="")
     service, _ = _service(retriever, _RaisingRewriter(), generator)
 
     history = [ChatMessage(role="user", content="", images=[_IMAGE])]
     result = service.answer(history, general_only_context())
 
+    assert retriever.retrieve_calls == []  # empty query never reaches the embedder
     assert result.refused
     assert result.refusal_reason == "no_citations"
     assert result.text == _REFUSAL_COPY["no_citations"]
-    assert result.image_analysis == "I see a cat."
     assert generator.image_analysis_called_with == [("", (_IMAGE,))]
 
 
@@ -1054,8 +1267,10 @@ def test_small_talk_short_circuits_before_the_clarification_classifier_too() -> 
 def test_image_analysis_is_never_passed_through_citation_enforcement() -> None:
     """The image-analysis text must never end up in `citations` or gain a marker — it is a
     separate, uncited field, per ADR-0009 decision 4."""
+    # Substep 3.6.7: the one search now folds the transcription in.
     retriever = _FakeRetriever(
-        {"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, parent_texts={501: "Grounding text."}
+        {"q\n\nA screenshot with no markers.": RetrievalResult(hits=[_HIT_A], trace_id=1)},
+        parent_texts={501: "Grounding text."},
     )
     generator = _FakeGenerator("Answer [1].", image_analysis_text="A screenshot with no markers.")
     service, _ = _service(retriever, _FakeRewriter("q"), generator)
@@ -1242,14 +1457,20 @@ def test_curated_entries_fetched_with_the_same_resolved_allowed_scopes(monkeypat
 
 
 def test_curated_entries_still_compose_on_the_text_empty_image_only_path(monkeypatch) -> None:
-    """PLAN 10.6: the always-present layer must reach the image-only path too, which never
-    retrieves — this is why `allowed_scopes` resolution moved above the query/no-query split."""
+    """PLAN 10.6: the always-present layer must reach the image-only path too. Substep 3.6.7
+    (panel r2-embed) changed that path: an image-only turn now RETRIEVES on the transcription
+    instead of building an empty result, so the retriever is reached (keyed on the transcription)
+    and the curated layer still composes alongside the retrieved hit."""
     curated = [CuratedEntry(id=1, tags=(), title="General FAQ", body="Curated body.")]
     monkeypatch.setattr(
         answer_service_module, "fetch_curated_entries", lambda session, scopes, limit: curated
     )
-    retriever = _FakeRetriever({}, {})  # never called -- the image-only path skips retrieval
-    generator = _FakeGenerator("Curated fact [1].")
+    # The image-only turn searches on the transcription ("I see a cat.", the default fake
+    # transcription), not an empty string — so the retriever IS now reached, keyed on it.
+    retriever = _FakeRetriever(
+        {"I see a cat.": RetrievalResult(hits=[_HIT_A], trace_id=3)}, parent_texts={501: "text"}
+    )
+    generator = _FakeGenerator("Curated fact [1]. Retrieved fact [2].")
     service, _ = _service(
         retriever, _RaisingRewriter(), generator, reader_sessionmaker=_DummyReaderSession
     )
@@ -1259,3 +1480,163 @@ def test_curated_entries_still_compose_on_the_text_empty_image_only_path(monkeyp
 
     assert not result.refused
     assert result.citations[0].page_id == "curated:1"
+    # retrieval ran on the transcription (not skipped with an empty result)
+    assert retriever.retrieve_calls == [("I see a cat.", None, 5)]
+
+
+# -- substep 3.6.7 (panels r5-image, r2-embed, w-composer, r1-limits): the screenshot drives
+# retrieval -----------------------------------------------------------------------------------
+
+
+def test_rt2_image_transcription_folds_into_the_search_query() -> None:
+    """panel r2-embed · substep p3-s3_6-7
+    When the newest turn carries an image, the vision transcription folds into the standalone
+    search query (combined with the rewritten question) so it drives retrieval."""
+    retriever = _FakeRetriever(
+        {"rewritten q\n\nI see a cat.": RetrievalResult(hits=[_HIT_A], trace_id=1)},
+        parent_texts={501: "text"},
+    )
+    generator = _FakeGenerator("Answer [1].", image_analysis_text="I see a cat.")
+    service, _ = _service(retriever, _FakeRewriter("rewritten q"), generator)
+
+    history = [ChatMessage(role="user", content="q", images=[_IMAGE])]
+    result = service.answer(history, general_only_context())
+
+    assert not result.refused
+    # the one search ran on BOTH the rewritten question and the transcription
+    search_query = retriever.retrieve_calls[0][0]
+    assert "rewritten q" in search_query
+    assert "I see a cat." in search_query
+
+
+def test_rt2_image_only_turn_now_retrieves_on_the_transcription() -> None:
+    """panel r2-embed · substep p3-s3_6-7
+    A text-empty, image-only turn now SEARCHES on the transcription instead of building an empty
+    RetrievalResult — the retriever is reached, keyed on the transcription, and the answer cites
+    the real retrieved chunk."""
+    retriever = _FakeRetriever(
+        {"I see a cat.": RetrievalResult(hits=[_HIT_A], trace_id=2)}, parent_texts={501: "text"}
+    )
+    generator = _FakeGenerator("Answer [1].", image_analysis_text="I see a cat.")
+    service, _ = _service(retriever, _RaisingRewriter(), generator)
+
+    history = [ChatMessage(role="user", content="", images=[_IMAGE])]
+    result = service.answer(history, general_only_context())
+
+    assert retriever.retrieve_calls == [("I see a cat.", None, 5)]
+    assert not result.refused
+    assert [c.marker for c in result.citations] == [1]
+    assert result.citations[0].page_id == "101"
+
+
+def test_r5_small_talk_turn_with_an_image_still_analyzes_it() -> None:
+    """panel r5-image · substep p3-s3_6-7
+    A kept image is never silently dropped on a small-talk turn: the greeting still short-circuits
+    (no retrieval), but the image transcription rides back on `Answer.image_analysis`."""
+    retriever = _FakeRetriever({}, {})  # never called — small talk still short-circuits
+    generator = _FakeGenerator(
+        "unused", small_talk_text="Hi there!", image_analysis_text="I see a cat."
+    )
+    service, _ = _service(retriever, _RaisingRewriter(), generator)
+
+    history = [ChatMessage(role="user", content="hi", images=[_IMAGE])]
+    result = service.answer(history, general_only_context())
+
+    assert result.text == "Hi there!"
+    assert result.image_analysis == "I see a cat."  # analyzed, not dropped
+    assert retriever.retrieve_calls == []  # small talk still skips retrieval
+
+
+def test_r5_clarification_turn_with_an_image_still_analyzes_it() -> None:
+    """panel r5-image · substep p3-s3_6-7
+    A kept image is never silently dropped on a clarification turn either: the ambiguous query
+    still bypasses retrieval to ask a clarifying question, but the transcription rides back on
+    `Answer.image_analysis`."""
+    retriever = _FakeRetriever({}, {})  # never called — the clarification branch bypasses it
+    generator = _FakeGenerator(
+        "unused",
+        image_analysis_text="I see a cat.",
+        clarification_reply=ClarificationReply(question="Which limits?", options=["A", "B"]),
+    )
+    service, _ = _service(
+        retriever,
+        _RaisingRewriter(),
+        generator,
+        clarification_classifier=_FakeClassifier(True),
+        enable_clarification_branch=True,
+    )
+
+    history = [ChatMessage(role="user", content="what are the limits?", images=[_IMAGE])]
+    result = service.answer(history, general_only_context())
+
+    assert result.needs_clarification
+    assert result.image_analysis == "I see a cat."  # analyzed, not dropped
+    assert retriever.retrieve_calls == []
+
+
+def test_r5_image_transcription_is_passed_as_context_but_never_a_citable_source() -> None:
+    """panel r5-image · substep p3-s3_6-7
+    The transcription is given to grounded generation as context, but never enters the evidence
+    block and never passes citation enforcement (rule 7): the answer cites only the real retrieved
+    chunk, and the transcription text never appears in the evidence the generator was given."""
+    retriever = _FakeRetriever(
+        {"q\n\nScreenshot says SECRET-TOKEN": RetrievalResult(hits=[_HIT_A], trace_id=1)},
+        parent_texts={501: "Grounding text."},
+    )
+    generator = _FakeGenerator(
+        "Answer [1].", image_analysis_text="Screenshot says SECRET-TOKEN"
+    )
+    service, _ = _service(retriever, _FakeRewriter("q"), generator)
+
+    history = [ChatMessage(role="user", content="q", images=[_IMAGE])]
+    result = service.answer(history, general_only_context())
+
+    assert not result.refused
+    assert [c.marker for c in result.citations] == [1]
+    assert result.text == "Answer [1]."
+    # the transcription reached generation only as its own context argument ...
+    assert generator.generate_image_analysis_context == ["Screenshot says SECRET-TOKEN"]
+    # ... never folded into the numbered evidence block (so it can never gain a marker)
+    assert "SECRET-TOKEN" not in generator.called_with[0][1]
+    # ... and never became a citation
+    assert all("SECRET-TOKEN" not in (c.title or "") for c in result.citations)
+
+
+def test_r5_two_read_cap_holds_with_an_image() -> None:
+    """panel r1-limits · substep p3-s3_6-7
+    An image turn stays within the two-read cap (rule 8): the one search plus the single CRAG
+    retry — the vision transcription call is not a retrieval read, so it adds no search."""
+    weak = RetrievalResult(hits=[RetrievedHit("101", 501, 0.02, "Weak", "u")], trace_id=1)
+    strong = RetrievalResult(hits=[_HIT_A], trace_id=1)
+    retriever = _FakeRetriever(
+        {"rewritten q\n\nI see a cat.": weak, "q\n\nI see a cat.": strong},
+        parent_texts={501: "text"},
+    )
+    generator = _FakeGenerator("Answer [1].", image_analysis_text="I see a cat.")
+    service, _ = _service(retriever, _FakeRewriter("rewritten q"), generator)
+
+    history = [ChatMessage(role="user", content="q", images=[_IMAGE])]
+    result = service.answer(history, general_only_context())
+
+    assert not result.refused
+    assert len(retriever.retrieve_calls) == 2  # one search + one CRAG retry, never a loop
+    assert len(generator.image_analysis_called_with) == 1  # vision call runs once, not per read
+
+
+def test_sec_image_transcription_is_never_written_to_the_trace_query() -> None:
+    """panel r5-image · substep p3-s3_6-7
+    C6 (memory-only): the transcription drives retrieval (folds into `query`) but is never the
+    value the retriever writes to the query_trace row — the trace query stays the text-only
+    rewritten question, so the transcription is never persisted."""
+    retriever = _FakeRetriever(
+        {"rewritten q\n\nScreenshot says SECRET-TOKEN": RetrievalResult(hits=[_HIT_A], trace_id=1)},
+        parent_texts={501: "text"},
+    )
+    generator = _FakeGenerator("Answer [1].", image_analysis_text="Screenshot says SECRET-TOKEN")
+    service, _ = _service(retriever, _FakeRewriter("rewritten q"), generator)
+
+    history = [ChatMessage(role="user", content="q", images=[_IMAGE])]
+    service.answer(history, general_only_context())
+
+    assert retriever.trace_query_calls == ["rewritten q"]  # text-only, no transcription
+    assert all("SECRET-TOKEN" not in tq for tq in retriever.trace_query_calls)

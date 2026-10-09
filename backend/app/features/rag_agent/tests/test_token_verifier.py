@@ -155,6 +155,53 @@ def test_no_business_claims_is_valid(registry, keypair):
     assert vc.subject == "u1"
 
 
+def test_rt1_verifier_extracts_context_slots(registry, keypair):
+    """panel mi-contract · substep 8.1.3
+    A signed token carrying the structured form (company_id + context.slots) verifies and the
+    slots reach VerifiedClaims — the gate's input. Null and omitted keys are both empty."""
+    from app.features.rag_agent.server.token_verifier import ContextSlots
+
+    tok = _sign(
+        keypair,
+        company_id="c1",
+        context={"slots": {"pos": None, "pms": "mews", "accounting": "xero"}},
+    )
+    vc = _verifier(registry, keypair).verify(tok)
+    assert vc.slots == ContextSlots(pos=None, pms="mews", accounting="xero")
+    assert vc.company_id == "c1"
+    assert vc.integration is None
+
+
+def test_rt1_context_token_is_company_id_only_no_trio_rule(registry, keypair):
+    """panel mi-contract · substep 8.1.3
+    The legacy all-three-or-none business rule is scoped to context-ABSENT tokens (the schema's
+    if/then, substep 8.1.2): a structured token carrying company_id without company_name or
+    integration verifies — it is the decided company-ID-only form."""
+    tok = _sign(keypair, company_id="c1", context={"slots": {"pms": "mews"}})
+    vc = _verifier(registry, keypair).verify(tok)
+    assert vc.company_id == "c1"
+    assert vc.company_name is None
+    assert vc.slots is not None and vc.slots.pms == "mews"
+
+
+def test_rt1_malformed_context_is_rejected(registry, keypair):
+    """panel mi-contract · substep 8.1.3
+    Structural garbage in the context claim — context not an object, slots missing, a fourth
+    slot name, or a non-string slot value — collapses to a bare TokenError (401), the same
+    no-detail posture as every other malformed token."""
+    bad_contexts = [
+        "not-an-object",
+        {},  # no slots key
+        {"slots": "not-an-object"},
+        {"slots": {"pms": "mews", "crm": "salesforce"}},  # a fourth slot can't sneak in
+        {"slots": {"pms": 42}},  # a non-string slot value
+    ]
+    for context in bad_contexts:
+        tok = _sign(keypair, company_id="c1", context=context)
+        with pytest.raises(TokenError):
+            _verifier(registry, keypair).verify(tok)
+
+
 def test_missing_sub_rejected(registry, keypair):
     """gap AUTHRT-3: `sub` is a required registered claim (REQUIRED_CLAIMS) — a token without it is
     rejected before it can identify anyone (mirrors test_missing_iat_rejected)."""

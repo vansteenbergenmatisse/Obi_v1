@@ -33,8 +33,15 @@ def test_audience_constant_matches_the_verifier() -> None:
 
 def test_business_claims_are_all_three_or_none() -> None:
     """Mirrors the verifier's `partial business claims` rejection: any one of company_id /
-    company_name / integration present requires the other two."""
-    dep = _schema()["dependentRequired"]
+    company_name / integration present requires the other two.
+
+    Since substep 8.1.2 (panel mi-contract) the rule is scoped to the LEGACY form — it
+    lives under the context-absent conditional, so a structured-context token carrying
+    company_id without company_name/integration stays valid, while a context-less token
+    keeps today's verifier behavior exactly."""
+    schema = _schema()
+    assert schema["if"] == {"not": {"required": ["context"]}}
+    dep = schema["then"]["dependentRequired"]
     business = {"company_id", "company_name", "integration"}
     for key in business:
         assert set(dep[key]) == business - {key}

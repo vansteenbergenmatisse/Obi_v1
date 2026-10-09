@@ -61,11 +61,11 @@ def test_enable_knowledge_scope_filtering_defaults_to_false() -> None:
 
 
 def test_chat_image_caps_default_to_the_w_composer_images_decision() -> None:
-    """4.2.7 · The composer image cap (design panel w-composer). Decision w-composer-images
-    (2026-09-18): at most 3 images per turn, each <= 3 MB. These two defaults are what the
-    composer mirrors and the /chat endpoint enforces with a 400; asserting the field defaults
-    keeps that contract from silently drifting back to the old 4 / 5 MB caps."""
-    assert Settings.model_fields["chat_max_images_per_turn"].default == 3
+    """3.6.7 · The screenshot drives retrieval (design panel w-composer / r1-limits). Decision
+    w-composer-images: at most 10 images per turn (raised 3->10 on 2026-10-07, substep 3.6.7),
+    each <= 3 MB. These two defaults are what the composer mirrors and the /chat endpoint enforces
+    with a 400; asserting the field defaults keeps that contract from silently drifting."""
+    assert Settings.model_fields["chat_max_images_per_turn"].default == 10
     assert Settings.model_fields["chat_max_image_bytes"].default == 3_000_000
 
 

@@ -29,12 +29,28 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
+from functools import lru_cache
 
 from sqlalchemy.orm import Session
 
+from app.features.retrieval.domain.applicability_match import (
+    AttributionValue,
+    CustomerContext,
+    EligibilityParams,
+    attribution_for_reason,
+    eligibility_params,
+    match_applicability,
+)
 from app.features.retrieval.domain.fusion import reciprocal_rank_fusion
 from app.features.retrieval.domain.permission import PrincipalPermissionPolicy, classify_scope
+from app.features.retrieval.domain.rerank_enrichment import (
+    applicability_yaml,
+    build_rerank_document,
+    build_rerank_query,
+    context_preamble,
+)
 from app.features.retrieval.infrastructure.search_repo import (
+    RerankCandidate,
     apply_hnsw_gucs,
     apply_knowledge_scope,
     apply_source_scope,
@@ -46,17 +62,34 @@ from app.features.retrieval.infrastructure.search_repo import (
 )
 from app.features.retrieval.infrastructure.trace_repo import write_query_trace
 from app.platform.clients import EmbeddingProvider, Reranker
+from app.platform.config.product_catalog import ProductCatalog, load_product_catalog
+
+
+@lru_cache(maxsize=1)
+def _catalog() -> ProductCatalog:
+    """The committed product catalog, loaded once per process for eligibility derivation
+    (substep 8.3.1, panel mi-filter). `Settings` already fail-fasts a malformed file at boot;
+    the cache keeps the search path from re-reading the JSON per request (the same posture as
+    the gate's `_default_catalog`)."""
+    return load_product_catalog()
 
 
 @dataclass(frozen=True)
 class RetrievedHit:
-    """One ranked, permitted, reranked page — with the extra fields Phase 4 needs."""
+    """One ranked, permitted, reranked page — with the extra fields Phase 4 needs.
+
+    ``attribution`` (substep 8.3.4, panel mi-attrib) is why this result was eligible for THIS
+    customer — ``general`` / a named slot (``pos`` / ``pms`` / ``accounting``) / ``pair`` —
+    assembled in the backend from the §D.4 matcher reason the rerank step already computed.
+    ``None`` on the no-context / eval path and for a label-only (unstamped) page, so the pre-8.3.4
+    shape is unchanged. It carries nothing beyond the customer's own context (rule 10)."""
 
     page_id: str
     chunk_id: int
     score: float
     title: str
     url: str
+    attribution: AttributionValue | None = None
 
 
 @dataclass(frozen=True)
@@ -122,6 +155,7 @@ class HybridRetriever:
         scope: str | None,
         k: int,
         knowledge_scopes: Sequence[str] | None = None,
+        customer_context: CustomerContext | None = None,
     ) -> tuple[list[RetrievedHit], list[str] | None]:
         space_id, principal = classify_scope(scope)
         query_vec = self._embedder.embed([query])[0]
@@ -130,6 +164,20 @@ class HybridRetriever:
             list(knowledge_scopes)
             if self._enable_knowledge_scope_filtering and knowledge_scopes is not None
             else None
+        )
+        # 8.3.1 (panel mi-filter): one eligibility derivation per search, applied inside the
+        # SQL of BOTH candidate queries and the rerank-text fetch below — applicability narrows
+        # within what access (RLS + scope + permissions) already allows, before the limit. No
+        # context (the internal/eval path) means no applicability predicate — unchanged SQL.
+        eligibility: EligibilityParams | None = (
+            eligibility_params(customer_context, _catalog())
+            if customer_context is not None
+            else None
+        )
+        # Passed as a kwarg only when present, so the no-context call shape (and every test
+        # double that fakes these repo functions) stays byte-identical to pre-8.3.1.
+        elig_kwargs: dict[str, EligibilityParams] = (
+            {"eligibility": eligibility} if eligibility is not None else {}
         )
         with self._session_factory() as session:
             # Per-txn knobs, same transaction as the searches below:
@@ -146,7 +194,13 @@ class HybridRetriever:
             apply_source_scope(session, sources)
             apply_knowledge_scope(session, knowledge_scopes)
             kw = keyword_search(
-                session, query, space_id, self._candidate_k, sources, effective_scopes
+                session,
+                query,
+                space_id,
+                self._candidate_k,
+                sources,
+                effective_scopes,
+                **elig_kwargs,
             )
             dense = dense_search(
                 session,
@@ -156,6 +210,7 @@ class HybridRetriever:
                 self._embedder.dim,
                 sources,
                 effective_scopes,
+                **elig_kwargs,
             )
 
             kw_pages = _dedupe(kw)
@@ -178,10 +233,24 @@ class HybridRetriever:
             # Cross-encoder rerank the permitted candidates (never a doc the scope can't see).
             # FakeReranker is order-preserving, so offline this is exactly the pre-rerank ranking.
             to_rerank = allowed[: self._rerank_depth]
-            candidates = fetch_rerank_texts(session, to_rerank, space_id, sources, effective_scopes)
-            docs = [(pid, candidates[pid].text) for pid in to_rerank if pid in candidates]
+            candidates = fetch_rerank_texts(
+                session, to_rerank, space_id, sources, effective_scopes, **elig_kwargs
+            )
 
-        reranked = self._reranker.rerank(query, docs, top_k=k)
+        # 8.3.2 (panel mi-rerank): tell the reranker who is asking. With a verified context the
+        # query carries the context preamble and each document leads with a short YAML
+        # applicability block (metadata-first so it survives the 4000-char cap), the matched
+        # reason derived from the already-fetched stamped payload via the §D.4 matcher. The
+        # candidate set is unchanged — eligibility ran in the SQL above (rule: enforced before
+        # rerank, never widened by it). No context -> the bare query and body, byte-identical to
+        # pre-8.3.2, so the fake reranker keeps zero lift and the context-free gold set is unmoved.
+        rerank_query, docs, attributions = self._build_rerank_inputs(
+            query, to_rerank, candidates, customer_context
+        )
+        reranked = self._reranker.rerank(rerank_query, docs, top_k=k)
+        # 8.3.4 (panel mi-attrib): carry each hit's backend-assembled attribution (the §D.4
+        # matcher reason, collapsed to the citation enum) through to the answer layer, which
+        # copies it straight onto the Citation. No context -> every attribution is None.
         hits = [
             RetrievedHit(
                 page_id=str(pid),
@@ -189,11 +258,49 @@ class HybridRetriever:
                 score=score,
                 title=candidates[pid].title,
                 url=candidates[pid].source_url,
+                attribution=attributions.get(pid),
             )
             for pid, score in reranked
             if pid in candidates
         ]
         return hits, effective_scopes
+
+    def _build_rerank_inputs(
+        self,
+        query: str,
+        to_rerank: Sequence[int],
+        candidates: dict[int, RerankCandidate],
+        customer_context: CustomerContext | None,
+    ) -> tuple[str, list[tuple[int, str]], dict[int, AttributionValue | None]]:
+        """Build the ``(query, docs, attributions)`` for the cross-encoder (panel mi-rerank, 8.3.2;
+        panel mi-attrib, 8.3.4).
+
+        No verified context -> the bare query and each candidate's body text, byte-for-byte the
+        pre-8.3.2 shape, and no attribution (every value None). With a context -> the context
+        preamble prepended to the query, a YAML applicability block (its matched reason from the
+        §D.4 matcher) ahead of each candidate's body, and that SAME matched reason collapsed to the
+        citation attribution enum per candidate — one matcher call, reused for both the rerank
+        YAML and the attribution (no recomputation). Only the already-eligible candidate set is
+        used — never widened."""
+        if customer_context is None:
+            docs = [(pid, candidates[pid].text) for pid in to_rerank if pid in candidates]
+            return query, docs, {}
+        catalog = _catalog()
+        rerank_query = build_rerank_query(context_preamble(customer_context), query)
+        docs = []
+        attributions: dict[int, AttributionValue | None] = {}
+        for pid in to_rerank:
+            candidate = candidates.get(pid)
+            if candidate is None:
+                continue
+            payload = candidate.applicability
+            reason = (
+                match_applicability(customer_context, payload, catalog).reason if payload else None
+            )
+            attributions[pid] = attribution_for_reason(reason)
+            yaml_block = applicability_yaml(payload, reason)
+            docs.append((pid, build_rerank_document(yaml_block, candidate.text)))
+        return rerank_query, docs, attributions
 
     def _trace(
         self,
@@ -225,9 +332,10 @@ class HybridRetriever:
         scope: str | None,
         k: int = 5,
         knowledge_scopes: Sequence[str] | None = None,
+        customer_context: CustomerContext | None = None,
     ) -> list[str]:
         started = time.perf_counter()
-        hits, effective_scopes = self._search(query, scope, k, knowledge_scopes)
+        hits, effective_scopes = self._search(query, scope, k, knowledge_scopes, customer_context)
         self._trace(query, hits, started, effective_scopes)
         return [h.page_id for h in hits]
 
@@ -237,11 +345,22 @@ class HybridRetriever:
         scope: str | None,
         k: int = 5,
         knowledge_scopes: Sequence[str] | None = None,
+        customer_context: CustomerContext | None = None,
+        trace_query: str | None = None,
     ) -> RetrievalResult:
-        """Phase 4.2 entry point: hits carry chunk id + score + title/url, plus the trace row id."""
+        """Phase 4.2 entry point: hits carry chunk id + score + title/url, plus the trace row id.
+
+        ``trace_query`` (substep 3.6.7, panel r5-image · C6): the value written to the
+        ``query_trace`` row's ``raw_query``, when it must differ from the ``query`` actually
+        searched. The search embeds/keyword-matches on ``query``; the trace records
+        ``trace_query`` when given, else ``query`` (byte-identical to every pre-3.6.7 caller).
+        The answer workflow uses this so an image turn can fold the vision transcription into
+        ``query`` to DRIVE retrieval while the trace records only the text-only question — the
+        transcription is memory-only and never persisted (never-bend rule 10, ADR-0009 C6)."""
         started = time.perf_counter()
-        hits, effective_scopes = self._search(query, scope, k, knowledge_scopes)
-        trace_id = self._trace(query, hits, started, effective_scopes)
+        hits, effective_scopes = self._search(query, scope, k, knowledge_scopes, customer_context)
+        traced_query = trace_query if trace_query is not None else query
+        trace_id = self._trace(traced_query, hits, started, effective_scopes)
         return RetrievalResult(hits=hits, trace_id=trace_id)
 
     def fetch_parent_texts(self, chunk_ids: Sequence[int]) -> dict[int, str]:

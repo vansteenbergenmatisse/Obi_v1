@@ -16,6 +16,7 @@ from app.features.rag_agent.infrastructure.llm_client import (
     AnthropicQueryRewriter,
 )
 from app.features.rag_agent.schemas import ChatMessage, ImageAttachment
+from app.features.retrieval import ConnectionRecord, CustomerContext
 from app.platform.clients.anthropic_client import AnthropicError, AnthropicMessagesClient
 
 
@@ -158,6 +159,53 @@ def test_generate_adds_no_business_block_when_context_is_missing() -> None:
     assert len(seen[0]["system"]) == 1
 
 
+def test_rt5_generate_attaches_the_verified_integration_context_as_an_uncached_block() -> None:
+    """panel mi-prompt · substep 8.3.3
+    The verified integration setup (known systems, connections + directions, host platform,
+    selected integration) rides in its own UNCACHED system block alongside the cached persona, so
+    the answering model knows the customer's real configuration — and the backend, not this block,
+    still enforces eligibility."""
+    seen: list[dict] = []
+    generator = AnthropicAnswerGenerator(_client_capturing(seen), "answer-model")
+    generator.generate(
+        "why are my Toast charges missing in Mews?",
+        "[1] Onboarding Guide\nRequest via the portal.",
+        integration="toast",
+        customer_context=CustomerContext(slot_pos="toast", slot_pms="mews", platform="datahub"),
+        connections=(
+            ConnectionRecord(
+                connection_type="pos-pms",
+                products=(("pos", "toast"), ("pms", "mews")),
+                directions=("pos_to_pms", "pms_to_pos"),
+                derived=True,
+            ),
+        ),
+    )
+
+    system = seen[0]["system"]
+    assert system[0]["cache_control"] == {"type": "ephemeral"}  # persona still cached
+    integration_block = next(b for b in system if "pos-pms" in b.get("text", ""))
+    assert "cache_control" not in integration_block  # per-chat context is uncached
+    assert "datahub" in integration_block["text"]
+    assert "pos_to_pms" in integration_block["text"]
+    assert "which system" in integration_block["text"]
+
+
+def test_rt5_generate_adds_no_integration_block_without_a_verified_context() -> None:
+    """panel mi-prompt · substep 8.3.3
+    No verified customer context (the bundled gold set, the tokenless path): the integration block
+    is never added, so the no-context answer prompt stays byte-identical to the pre-8.3.3 path."""
+    seen: list[dict] = []
+    generator = AnthropicAnswerGenerator(_client_capturing(seen), "answer-model")
+    generator.generate(
+        "how do I get access?",
+        "[1] Onboarding Guide\nRequest via the portal.",
+        customer_context=CustomerContext(),
+    )
+
+    assert len(seen[0]["system"]) == 1
+
+
 def test_generate_small_talk_sends_the_small_talk_system_prompt_and_redacts_pii() -> None:
     seen: list[dict] = []
     generator = AnthropicAnswerGenerator(_client_capturing(seen), "answer-model")
@@ -285,17 +333,38 @@ def test_generate_image_analysis_redacts_query_and_sends_image_blocks() -> None:
     assert out == "ok"  # the mocked transport's canned reply
 
 
-def test_generate_image_analysis_caps_at_the_500_token_budget() -> None:
-    """panel r5-image · substep p0-s0_5-reg-retrieval-stage-5
-    Call: max_tokens=500, the configured image-analysis budget — independent of the 800-token
-    answer-generation budget `generate` uses."""
+def test_generate_image_analysis_uses_the_raised_transcription_token_budget() -> None:
+    """panel r5-image · substep p3-s3_6-7
+    Substep 3.6.7 raised the image-extraction budget above the old 500-token cap so a dense
+    screenshot's verbatim on-screen text plus a short UI description fits; the budget is the
+    module's `_IMAGE_ANALYSIS_MAX_TOKENS` and stays independent of `generate`'s 800-token
+    answer budget."""
+    from app.features.rag_agent.infrastructure import llm_client as llm_client_module
+
     seen: list[dict] = []
     generator = AnthropicAnswerGenerator(_client_capturing(seen), "answer-model")
     images = [ImageAttachment(mediaType="image/png", data="ZmFrZQ==")]
 
     generator.generate_image_analysis("what's in this?", images)
 
-    assert seen[0]["max_tokens"] == 500
+    assert seen[0]["max_tokens"] == llm_client_module._IMAGE_ANALYSIS_MAX_TOKENS
+    assert seen[0]["max_tokens"] > 500  # raised from the pre-3.6.7 cap
+
+
+def test_generate_image_analysis_prompt_is_transcription_grade() -> None:
+    """panel r5-image · substep p3-s3_6-7
+    The extraction prompt asks the vision model to transcribe the verbatim on-screen text plus a
+    short description of the UI — a disciplined transcription, not a free-form answer."""
+    seen: list[dict] = []
+    generator = AnthropicAnswerGenerator(_client_capturing(seen), "answer-model")
+    images = [ImageAttachment(mediaType="image/png", data="ZmFrZQ==")]
+
+    generator.generate_image_analysis("what's in this?", images)
+
+    system_text = seen[0]["system"][0]["text"].lower()
+    assert "verbatim" in system_text
+    assert "on-screen text" in system_text
+    assert "describe" in system_text
 
 
 def test_generate_image_analysis_sends_the_anti_injection_instruction() -> None:

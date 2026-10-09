@@ -24,6 +24,19 @@ from .application.versioning import (
     stage_and_activate,
 )
 from .domain import normalization
+from .domain.applicability import (
+    ANY,
+    APPLIES_TO_LEVELS,
+    WORKFLOW_BINDINGS,
+    ApplicabilityRule,
+    ApplicabilityValidationError,
+    AppliesTo,
+    ConnectionSpec,
+    applies_to_payload,
+    validate_applies_to,
+    validate_rule,
+)
+from .domain.applies_to_parsing import AppliesToExtraction, extract_applies_to
 from .domain.attachment_extraction import ExtractionResult, attachment_to_blocks, extract_attachment
 from .domain.change_detection import (
     ChangeClass,
@@ -35,12 +48,22 @@ from .domain.change_detection import (
 from .infrastructure.page_source_repo import get_local_state
 
 __all__ = [
+    "ANY",
+    "APPLIES_TO_LEVELS",
+    "WORKFLOW_BINDINGS",
+    "ApplicabilityRule",
+    "ApplicabilityValidationError",
+    "AppliesTo",
+    "AppliesToExtraction",
     "ChangeClass",
+    "ConnectionSpec",
     "ExtractionResult",
     "PageHashes",
     "TargetVersions",
+    "applies_to_payload",
     "apply_sync_command",
     "attachment_to_blocks",
+    "extract_applies_to",
     "build_ingestion_services",
     "classify",
     "deactivate_page",
@@ -52,4 +75,6 @@ __all__ = [
     "purge_page",
     "stage_and_activate",
     "target_versions",
+    "validate_applies_to",
+    "validate_rule",
 ]

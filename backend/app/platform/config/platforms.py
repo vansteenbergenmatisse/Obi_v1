@@ -136,6 +136,12 @@ class PlatformRegistry:
         """Sorted keys of every active platform — the boot log's registry summary."""
         return sorted(e.key for e in self._by_issuer.values() if e.active)
 
+    def platform_keys(self) -> frozenset[str]:
+        """Every registered platform key, active or not — the level-3 "Applies to"
+        authoring vocabulary (panel mi-applies, 8.2.2). Vocabulary, not access: a
+        temporarily inactive platform must not start failing page syncs."""
+        return frozenset(e.key for e in self._by_issuer.values())
+
     def active_domains(self) -> list[str]:
         out: list[str] = []
         for e in self._by_issuer.values():

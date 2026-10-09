@@ -25,6 +25,15 @@ paths:
         line is a JSON `ChatStreamEvent`: a single `start` (with the
         conversationId), zero or more `token` deltas, a `citations` event, and
         a terminal `done` or `error`.
+
+        Integration context (§D.13, substep 8.1.2): access is decided by the
+        verified embed token (see `token-claims.json`), never by this body. A
+        verified token whose FILLED POS or PMS slot holds a catalog product
+        outside the launch allowlist (Toast as POS, Mews as PMS) is refused
+        service — Obi stays hidden for that company and the backend gate
+        refuses the session too (the frontend hiding is UX, not the boundary).
+        An empty slot never triggers this refusal. Enforced at the gate
+        (substep 8.1.3); documented here as the contract.
       requestBody:
         required: true
         content:
@@ -39,7 +48,13 @@ paths:
               schema:
                 $ref: "#/components/schemas/ChatStreamEvent"
         "400":
-          description: Malformed request body, empty/oversized history, or history not ending on a user turn.
+          description: >
+            Malformed request body, empty/oversized history, or history not
+            ending on a user turn. Also the fail-closed answer for an unknown
+            integration value: a verified-token slot (or legacy integration)
+            value that resolves to no product in the catalog, or an unknown
+            body knowledgeScope, is a 400 before any search ever runs (§D.11;
+            token-side slot enforcement lands at the gate, substep 8.1.3).
           content:
             application/json:
               schema:
@@ -202,6 +217,47 @@ components:
             "toast". Resolved once per request, not inferred from message
             content. Omitted or unrecognized falls back to the deployment
             default (or general alone) server-side — never a hard error.
+        simulatedContext:
+          $ref: "#/components/schemas/SimulatedContext"
+          description: >
+            DEV / STANDALONE-HARNESS ONLY, non-authoritative (panel mi-contract,
+            substep 8.4.2). The simulated integration context chosen in the
+            standalone preset selector (company_id + the three §D.13 slots).
+            NEVER set in a real customer session and NEVER decides access — the
+            verified token/note is the only authority (never-bend rules 2–3;
+            the integration context comes only from the verified token). The
+            backend accepts the shape so the dev harness does not 400, then
+            logs and ignores it in favour of the token, exactly like a body
+            knowledgeScope hint.
+
+    SimulatedContext:
+      type: object
+      required:
+        - companyId
+        - slots
+      properties:
+        companyId:
+          type: string
+          description: The pretend company id (a preset-* id in the committed standalone preset list).
+        slots:
+          type: object
+          required:
+            - pos
+            - pms
+            - accounting
+          properties:
+            pos:
+              type: string
+              nullable: true
+            pms:
+              type: string
+              nullable: true
+            accounting:
+              type: string
+              nullable: true
+          description: >
+            The three §D.13 slots — each a canonical product id from
+            product_catalog.json, or null when empty.
 
     Citation:
       type: object
@@ -225,6 +281,16 @@ components:
           description: Not currently populated by the retrieval pipeline; reserved for a future page-version join.
         snippet:
           type: string
+        attribution:
+          type: string
+          enum: [general, pos, pms, accounting, pair]
+          description: >
+            Why this source was eligible for THIS customer (§D.13 keuze 3,
+            panel mi-attrib): a general guide, a guide admitted by one named
+            filled slot (pos / pms / accounting), or a guide for a slot pair
+            the company actually has. Optional — absent until the backend
+            assembles attribution (substep 8.3.4); the field never carries
+            anything beyond the customer's own verified context.
 
     ChatStartEvent:
       type: object

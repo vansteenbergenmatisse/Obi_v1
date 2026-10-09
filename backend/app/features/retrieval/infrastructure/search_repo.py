@@ -8,11 +8,14 @@ matching child) and is de-duplicated by the caller.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import json
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+
+from app.features.retrieval.domain.applicability_match import EligibilityParams
 
 _HALFVEC_MIN_DIM = 2001
 
@@ -91,10 +94,107 @@ def apply_knowledge_scope(session: Session, allowed_scopes: Sequence[str] | None
     )
 
 
+# ---------------------------------------------------------------------------------------------
+# Substep 8.3.1 (panel mi-filter, plan.md §D.5): the applicability predicate, inside the same
+# WHERE clause as the access filters — before ORDER BY/LIMIT, never a shortlist cleaned up later.
+# It MIRRORS `domain.applicability_match.match_applicability` (the §D.4 semantics of record):
+#   - a chunk with NO record (`applicability IS NULL`) keeps label-only behavior — absence never
+#     excludes (§D.11 default);
+#   - OR between rules, a rule with a `variants` requirement never matches at launch (never
+#     assumes);
+#   - general always matches; software/platform-interface match a FILLED slot (plus the verified
+#     platform); connection/workflow rules must be satisfied by a connection the company actually
+#     has — the bound `:elig_connections` JSON, derived from filled slots (plus real records),
+#     with the explicit `any` binding to the connection's concrete product and every required
+#     direction enabled on that SAME connection.
+# All context values are BOUND (`:elig_products`, `:elig_platform`, `:elig_connections`) — never
+# interpolated; the SQL text below is static. Malformed JSON shapes (impossible for stamped
+# payloads, which pass the 8.2.1 validator) fail closed via jsonb_typeof guards.
+# One documented bound vs. the Python matcher: the workflow distinct-assignment check is encoded
+# as "every spec satisfied AND distinct satisfying connections >= specs", which is exactly
+# Hall's condition for every launch-reachable input (derived connections are one-per-type; real
+# records don't exist yet) and for every two-connection workflow; a 3+-spec workflow against
+# multiple same-type REAL connection records would need a true matching — revisit when §D.1's
+# richer context record lands (noted in docs/Final_docs/retrieval/eligibility-filtering.md).
+
+
+def _sat_sql(spec: str, conn: str) -> str:
+    """The `_satisfies` predicate in SQL: same type, every role side held by the SAME actual
+    connection (`any` binds to its concrete product), every required direction enabled on it."""
+    return (
+        f"{spec}->>'type' = {conn}->>'type'"
+        f" AND jsonb_typeof({spec}->'products') = 'object'"
+        f" AND jsonb_typeof({spec}->'directions') = 'array'"
+        f" AND NOT EXISTS (SELECT 1 FROM jsonb_each_text({spec}->'products') AS _p(prole, pwant)"
+        f" WHERE {conn}->'products'->>_p.prole IS NULL"
+        f" OR (_p.pwant <> 'any' AND _p.pwant <> {conn}->'products'->>_p.prole))"
+        f" AND NOT EXISTS"
+        f" (SELECT 1 FROM jsonb_array_elements_text({spec}->'directions') AS _d(dir)"
+        f" WHERE NOT ({conn}->'directions' @> to_jsonb(_d.dir)))"
+    )
+
+
+_CONNS = "CAST(:elig_connections AS jsonb)"
+_WF_CANDIDATE = "(NOT jsonb_exists(_r.rule, 'bindings') OR (_c.conn->>'derived')::boolean)"
+
+_ELIGIBILITY_CLAUSE = (
+    # No record = label-only behavior, in BOTH spellings: SQL NULL (the migration default the
+    # sync path leaves untouched) and jsonb 'null' (what the ORM writes for a Python None —
+    # JSONB none_as_null defaults off). Absence never excludes (§D.11).
+    " AND (applicability IS NULL OR jsonb_typeof(applicability) = 'null'"
+    " OR (jsonb_typeof(applicability) = 'array' AND EXISTS ("
+    "SELECT 1 FROM jsonb_array_elements(applicability) AS _r(rule) "
+    "WHERE NOT jsonb_exists(_r.rule, 'variants') AND ("
+    "_r.rule->>'level' = 'general'"
+    " OR (_r.rule->>'level' = 'software' AND _r.rule->>'product' = ANY(:elig_products))"
+    " OR (_r.rule->>'level' = 'platform-interface'"
+    " AND _r.rule->>'product' = ANY(:elig_products)"
+    " AND _r.rule->>'platform' = :elig_platform)"
+    " OR (_r.rule->>'level' = 'connection'"
+    " AND jsonb_typeof(_r.rule->'connections') = 'array'"
+    " AND jsonb_array_length(_r.rule->'connections') >= 1"
+    f" AND EXISTS (SELECT 1 FROM jsonb_array_elements({_CONNS}) AS _c(conn)"
+    f" WHERE {_sat_sql("_r.rule->'connections'->0", '_c.conn')}))"
+    " OR (_r.rule->>'level' = 'workflow'"
+    " AND jsonb_typeof(_r.rule->'connections') = 'array'"
+    " AND jsonb_array_length(_r.rule->'connections') >= 2"
+    " AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(_r.rule->'connections') AS _s(spec)"
+    f" WHERE NOT EXISTS (SELECT 1 FROM jsonb_array_elements({_CONNS}) AS _c(conn)"
+    f" WHERE {_WF_CANDIDATE} AND {_sat_sql('_s.spec', '_c.conn')}))"
+    " AND (SELECT count(DISTINCT _c.conn->>'index')"
+    " FROM jsonb_array_elements(_r.rule->'connections') AS _s(spec),"
+    f" jsonb_array_elements({_CONNS}) AS _c(conn)"
+    f" WHERE {_WF_CANDIDATE} AND {_sat_sql('_s.spec', '_c.conn')})"
+    " >= jsonb_array_length(_r.rule->'connections'))"
+    "))))"
+)
+
+
+def _eligibility_bind_params(eligibility: EligibilityParams) -> dict[str, object]:
+    """The three bound values the clause consumes — values only, never SQL text."""
+    return {
+        "elig_products": list(eligibility.products),
+        "elig_platform": eligibility.platform,
+        "elig_connections": json.dumps(
+            [
+                {
+                    "index": index,
+                    "type": conn.connection_type,
+                    "products": dict(conn.products),
+                    "directions": list(conn.directions),
+                    "derived": conn.derived,
+                }
+                for index, conn in enumerate(eligibility.connections)
+            ]
+        ),
+    }
+
+
 def _base_filters(
     space_id: int | None,
     sources: Sequence[str] | None,
     knowledge_scopes: Sequence[str] | None = None,
+    eligibility: EligibilityParams | None = None,
 ) -> str:
     clause = "is_active AND kind = 1 AND page_status = 'current'"
     if space_id is not None:
@@ -109,6 +209,10 @@ def _base_filters(
         # knowledge-scope tag at all (empty array) overlaps nothing, so it does not participate
         # (Decision 1: "no recognized tag -> does not participate", not a silent fallback-visible).
         clause += " AND tags && :knowledge_scopes"
+    if eligibility is not None:
+        # 8.3.1: applicability narrows INSIDE what access already allows — RLS and the scope
+        # predicates above are untouched and still apply first (never-bend rule 3).
+        clause += _ELIGIBILITY_CLAUSE
     return clause
 
 
@@ -125,11 +229,13 @@ def keyword_search(
     limit: int,
     sources: Sequence[str] | None = None,
     knowledge_scopes: Sequence[str] | None = None,
+    eligibility: EligibilityParams | None = None,
 ) -> list[tuple[int, float]]:
     sql = text(
         f"SELECT page_id, ts_rank(tsv, {_OR_TSQUERY}) AS score "
         f"FROM chunk "
-        f"WHERE {_base_filters(space_id, sources, knowledge_scopes)} AND tsv @@ {_OR_TSQUERY} "
+        f"WHERE {_base_filters(space_id, sources, knowledge_scopes, eligibility)} "
+        f"AND tsv @@ {_OR_TSQUERY} "
         f"ORDER BY score DESC, page_id ASC LIMIT :limit"
     )
     params: dict[str, object] = {"q": query, "limit": limit}
@@ -139,6 +245,8 @@ def keyword_search(
         params["sources"] = list(sources)
     if knowledge_scopes is not None:
         params["knowledge_scopes"] = list(knowledge_scopes)
+    if eligibility is not None:
+        params.update(_eligibility_bind_params(eligibility))
     return [(int(pid), float(score)) for pid, score in session.execute(sql, params)]
 
 
@@ -154,6 +262,7 @@ def dense_search(
     dim: int,
     sources: Sequence[str] | None = None,
     knowledge_scopes: Sequence[str] | None = None,
+    eligibility: EligibilityParams | None = None,
 ) -> list[tuple[int, float]]:
     # >2000-dim models are indexed as halfvec; cast both sides so the ANN index is used.
     if dim >= _HALFVEC_MIN_DIM:
@@ -165,7 +274,8 @@ def dense_search(
     sql = text(
         f"SELECT page_id, ({lhs} <=> {rhs}) AS dist "
         f"FROM chunk "
-        f"WHERE {_base_filters(space_id, sources, knowledge_scopes)} AND embedding IS NOT NULL "
+        f"WHERE {_base_filters(space_id, sources, knowledge_scopes, eligibility)} "
+        f"AND embedding IS NOT NULL "
         f"ORDER BY dist ASC, page_id ASC LIMIT :limit"
     )
     params: dict[str, object] = {"qvec": _vector_literal(query_vec), "limit": limit}
@@ -175,17 +285,25 @@ def dense_search(
         params["sources"] = list(sources)
     if knowledge_scopes is not None:
         params["knowledge_scopes"] = list(knowledge_scopes)
+    if eligibility is not None:
+        params.update(_eligibility_bind_params(eligibility))
     return [(int(pid), float(dist)) for pid, dist in session.execute(sql, params)]
 
 
 @dataclass(frozen=True)
 class RerankCandidate:
-    """One page's representative child chunk, ready for the cross-encoder + later grounding."""
+    """One page's representative child chunk, ready for the cross-encoder + later grounding.
+
+    ``applicability`` carries the chunk's stamped payload (the §D.4 rules) when a verified
+    context is present, so the retriever can build the 8.3.2 YAML enrichment block; it stays
+    ``None`` on the no-context path (and for a label-only chunk), leaving the reranker document
+    byte-identical to the pre-8.3.2 shape."""
 
     chunk_id: int
     title: str
     source_url: str
     text: str
+    applicability: Sequence[Mapping[str, object]] | None = None
 
 
 def fetch_rerank_texts(
@@ -194,21 +312,34 @@ def fetch_rerank_texts(
     space_id: int | None,
     sources: Sequence[str] | None = None,
     knowledge_scopes: Sequence[str] | None = None,
+    eligibility: EligibilityParams | None = None,
 ) -> dict[int, RerankCandidate]:
     """One representative child chunk per page for the cross-encoder, keyed by page id.
 
     The retriever deals in page ids; reranking needs text, and Phase 4 grounding needs that same
     chunk's id (to join its parent) plus title/url (for citations) — one query serves all three,
     keyed by page id. Picks the earliest active child chunk under the same pre-model filters as
-    search, so a page the filters would exclude never gets reranked in.
+    search (including 8.3.1 eligibility), so a page the filters would exclude never gets
+    reranked in.
     """
     if not page_ids:
         return {}
+    # 8.3.2 (panel mi-rerank): the stamped applicability payload rides along ONLY on the
+    # context path (eligibility present), so the retriever can build the YAML enrichment. The
+    # no-context/internal/eval path selects the exact pre-8.3.2 columns — the word
+    # "applicability" never enters that SQL, keeping the 8.3.1 byte-for-byte guarantee.
+    select_applicability = eligibility is not None
+    columns = (
+        "page_id, id AS chunk_id, title, source_url, "
+        "left(title || ' ' || retrieval_content, 4000) AS txt"
+    )
+    if select_applicability:
+        columns += ", applicability"
     sql = text(
-        f"SELECT DISTINCT ON (page_id) page_id, id AS chunk_id, title, source_url, "
-        f"left(title || ' ' || retrieval_content, 4000) AS txt "
+        f"SELECT DISTINCT ON (page_id) {columns} "
         f"FROM chunk "
-        f"WHERE {_base_filters(space_id, sources, knowledge_scopes)} AND page_id = ANY(:page_ids) "
+        f"WHERE {_base_filters(space_id, sources, knowledge_scopes, eligibility)} "
+        f"AND page_id = ANY(:page_ids) "
         f"ORDER BY page_id, seq"
     )
     params: dict[str, object] = {"page_ids": list(page_ids)}
@@ -218,12 +349,23 @@ def fetch_rerank_texts(
         params["sources"] = list(sources)
     if knowledge_scopes is not None:
         params["knowledge_scopes"] = list(knowledge_scopes)
-    return {
-        int(pid): RerankCandidate(
-            chunk_id=int(cid), title=str(title), source_url=str(url), text=str(txt)
+    if eligibility is not None:
+        params.update(_eligibility_bind_params(eligibility))
+    out: dict[int, RerankCandidate] = {}
+    for row in session.execute(sql, params):
+        if select_applicability:
+            pid, cid, title, url, txt, payload = row
+        else:
+            pid, cid, title, url, txt = row
+            payload = None
+        out[int(pid)] = RerankCandidate(
+            chunk_id=int(cid),
+            title=str(title),
+            source_url=str(url),
+            text=str(txt),
+            applicability=payload if isinstance(payload, list) else None,
         )
-        for pid, cid, title, url, txt in session.execute(sql, params)
-    }
+    return out
 
 
 def fetch_page_scopes(
