@@ -19,6 +19,11 @@ export interface TestHostConfig {
   publicKeyEnv: string;
   /** `null` for `none` — a note with no business values (general-only, per ADR-0014). */
   businessClaims: { company_id: string; company_name: string; integration: string } | null;
+  /** Directed source → target connection claims (substep 9.3.1, ADR-0020 Option A). When the mint
+   * route is asked for the directed form (`?form=directed`) it emits THESE instead of
+   * `businessClaims`, so the same test host can demonstrate both the legacy note and the directed
+   * connection form. Absent on hosts that have no directed demo. */
+  directedClaims?: { source_system: string; target_system: string; business_id: string };
 }
 
 /** 60 minutes, matching `config/platforms.local.json`'s `lifetime_minutes` for every test entry. */
@@ -55,6 +60,8 @@ export const TEST_HOSTS: readonly TestHostConfig[] = [
       company_name: "Test Restaurant",
       integration: "toast",
     },
+    // Directed demo: Toast (POS) → Mews (PMS), the launch connection.
+    directedClaims: { source_system: "toast", target_system: "mews", business_id: "B-3075" },
   },
   {
     name: "opera-cloud",
@@ -68,6 +75,9 @@ export const TEST_HOSTS: readonly TestHostConfig[] = [
       company_name: "Test Resort",
       integration: "opera-cloud",
     },
+    // Directed demo in the OTHER direction: Opera Cloud (PMS) → Toast (POS) — a direction swap
+    // relative to the toast host, so a connection-switch renewal visibly changes the connection.
+    directedClaims: { source_system: "opera-cloud", target_system: "toast", business_id: "B-3075" },
   },
 ];
 

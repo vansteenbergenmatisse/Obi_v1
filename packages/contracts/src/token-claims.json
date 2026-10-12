@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://omniboost.dev/contracts/obi-token-claims.json",
   "title": "Obi embed token claims",
-  "description": "The claim set a platform's server puts in the short-lived JWT it signs at Obi button-click (PLAN 11.1c, ADR-0014). The Obi backend verifier (backend .../server/token_verifier.py) is the security-authoritative side; this schema mirrors it and a drift test keeps them in lockstep. TWO business-claim forms exist side by side and the legacy form is never dropped (owner decision §D.13 keuze 4): (1) the LEGACY form — company_id/company_name/integration all-three-or-none, the single integration value read as one filled slot; (2) the STRUCTURED form — company_id plus `context` with the three POS/PMS/Accounting slots, company-ID-only (no company name, §D.13 item 2). A note with neither form scopes to obi-general-test only.",
+  "description": "The claim set a platform's server puts in the short-lived JWT it signs at Obi button-click (PLAN 11.1c, ADR-0014). The Obi backend verifier (backend .../server/token_verifier.py) is the security-authoritative side; this schema mirrors it and a drift test keeps them in lockstep. THREE business-claim forms exist side by side and the older ones are never dropped (owner decisions §D.13 keuze 4 / ADR-0020): (1) the LEGACY form — company_id/company_name/integration all-three-or-none, the single integration value read as one filled slot; (2) the STRUCTURED form — company_id plus `context` with the three POS/PMS/Accounting slots, company-ID-only (no company name, §D.13 item 2); (3) the DIRECTED form (substep 9.3.1, ADR-0020 Option A) — source_system + target_system (canonical catalog ids) + business_id (≈ company_id). The directed form is what ROUTES; the legacy and structured forms stay accepted for back-compat but no longer drive routing. A note with none of the three forms scopes to obi-general-test only.",
   "type": "object",
   "required": ["iss", "aud", "sub", "iat", "exp"],
   "properties": {
@@ -14,6 +14,9 @@
     "company_id": { "type": "string", "description": "Opaque customer id. In the structured form (`context` present) it is the ONLY company identity — company-ID-only, no company name (§D.13 item 2). Never a scope axis by itself." },
     "company_name": { "type": "string", "description": "Human-readable customer name. Display/audit only. Legacy form only — the structured form never adds it, but a legacy token still carrying it stays valid." },
     "integration": { "type": "string", "description": "LEGACY single-integration claim, accepted forever (§D.13 keuze 4 — never dropped): read as a token with ONE filled slot. The value resolves through the product catalog (knowledge-base/config/product_catalog.json, canonical id or alias) and fills the slot matching the product's role (e.g. \"mews\" → PMS filled, POS and Accounting empty). New notes send `context` instead." },
+    "source_system": { "type": "string", "description": "DIRECTED form (substep 9.3.1, ADR-0020 Option A): the canonical catalog id of the connection's SOURCE system (e.g. \"toast\"). Present together with target_system + business_id. Direction is primary — source → target is not the same connection as target → source. The gate resolves it through the product catalog; an unknown system is a 400 before any search. This is the routing claim; `integration`/`context` stay accepted but no longer route." },
+    "target_system": { "type": "string", "description": "DIRECTED form (substep 9.3.1, ADR-0020 Option A): the canonical catalog id of the connection's TARGET system (e.g. \"mews\"). Accounting is a first-class target (D5). Resolved and vend-checked at the gate exactly like source_system; an unknown value is a 400 before any search." },
+    "business_id": { "type": "string", "description": "DIRECTED form (substep 9.3.1, ADR-0020 Option A): the opaque customer id for this connection (≈ company_id). Becomes the company-isolation axis for the chat; never a scope axis by itself, and never traced raw." },
     "context": {
       "type": "object",
       "description": "The structured integration context (§D.13): the customer's three systems, one catalog product per slot or empty. Slot values are canonical ids from knowledge-base/config/product_catalog.json; aliases resolve through the catalog before validation. An unknown value fails closed at the backend gate: 400 before any search (§D.11). Deliberately slots-only at launch — no connection records, property bindings or selected_connection (decision memo §5).",
@@ -36,7 +39,7 @@
   "dependentRequired": {
     "context": ["company_id"]
   },
-  "if": { "not": { "required": ["context"] } },
+  "if": { "not": { "anyOf": [{ "required": ["context"] }, { "required": ["source_system"] }] } },
   "then": {
     "dependentRequired": {
       "company_id": ["company_name", "integration"],

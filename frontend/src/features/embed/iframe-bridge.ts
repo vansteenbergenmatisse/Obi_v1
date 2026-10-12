@@ -35,11 +35,18 @@ let currentToken: string | null = null;
 /** Display/equality-only business scope decoded from a token (never trust-bearing — the backend
  * `TokenVerifier` is the authority). Kept in memory only, alongside `currentToken`. `slots` is a
  * stable signature of the §D.13 three-slot integration context (substep 8.4.2) — present when the
- * note carries the extended `context.slots` shape, `null` for a legacy single-integration note. */
+ * note carries the extended `context.slots` shape, `null` for a legacy single-integration note.
+ * `source`/`target` are the directed-connection endpoints (substep 9.3.1, ADR-0020 Option A) —
+ * present when the note carries the `source_system`/`target_system` form, `null` otherwise. They
+ * join the signature so a silent renewal that switches the connection (even a direction swap:
+ * toast→mews vs mews→toast) counts as a scope change and resets the thread (no cross-connection
+ * bleed). */
 interface TokenScope {
   integration: string | null;
   company: string | null;
   slots: string | null;
+  source: string | null;
+  target: string | null;
 }
 
 let currentScope: TokenScope | null = null;
@@ -63,27 +70,49 @@ function slotsSignature(context: unknown): string | null {
  * is scoped to (substep 8.4.2 extends this past the legacy single `integration` claim; see
  * `packages/contracts/src/token-claims.json`). Never throws; an unparseable or claimless token
  * yields nulls, which compare equal to another claimless token (both scope to general). */
+const EMPTY_SCOPE: TokenScope = {
+  integration: null,
+  company: null,
+  slots: null,
+  source: null,
+  target: null,
+};
+
 function decodeScope(token: string): TokenScope {
   try {
     const payload = token.split(".")[1];
-    if (!payload) return { integration: null, company: null, slots: null };
+    if (!payload) return { ...EMPTY_SCOPE };
     const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as {
       integration?: unknown;
       company_id?: unknown;
       context?: unknown;
+      source_system?: unknown;
+      target_system?: unknown;
+      business_id?: unknown;
     };
+    const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
     return {
-      integration: typeof json.integration === "string" ? json.integration : null,
-      company: typeof json.company_id === "string" ? json.company_id : null,
+      integration: str(json.integration),
+      // The directed form carries `business_id` (≈ company_id) instead of `company_id`; either
+      // one identifies the customer this note is scoped to.
+      company: str(json.company_id) ?? str(json.business_id),
       slots: slotsSignature(json.context),
+      source: str(json.source_system),
+      target: str(json.target_system),
     };
   } catch {
-    return { integration: null, company: null, slots: null };
+    return { ...EMPTY_SCOPE };
   }
 }
 
 function sameScope(a: TokenScope, b: TokenScope): boolean {
-  return a.integration === b.integration && a.company === b.company && a.slots === b.slots;
+  return (
+    a.integration === b.integration &&
+    a.company === b.company &&
+    a.slots === b.slots &&
+    a.source === b.source &&
+    a.target === b.target
+  );
 }
 
 function isObiMessage(data: unknown): data is ObiMessage {

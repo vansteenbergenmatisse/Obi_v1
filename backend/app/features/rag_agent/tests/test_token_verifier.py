@@ -202,6 +202,43 @@ def test_rt1_malformed_context_is_rejected(registry, keypair):
             _verifier(registry, keypair).verify(tok)
 
 
+def test_rt1_verifier_extracts_directed_connection(registry, keypair):
+    """panel mi-contract · substep 9.3.1
+    The directed form (source_system + target_system + business_id, ADR-0020) verifies and the
+    triple reaches VerifiedClaims — the gate's routing input. The legacy trio rule does not apply
+    (no company_id/company_name/integration are present)."""
+    tok = _sign(
+        keypair,
+        source_system="toast",
+        target_system="mews",
+        business_id="B-3075",
+    )
+    vc = _verifier(registry, keypair).verify(tok)
+    assert vc.source_system == "toast"
+    assert vc.target_system == "mews"
+    assert vc.business_id == "B-3075"
+    assert vc.slots is None
+    assert vc.company_id is None
+
+
+def test_rt1_malformed_directed_connection_rejected(registry, keypair):
+    """panel mi-contract · substep 9.3.1
+    A directed token missing its partner system or its business_id, or carrying a non-string
+    value, is structurally malformed — a bare TokenError (401), the same no-detail posture as a
+    malformed context. (Catalog membership of a WELL-SHAPED value is the gate's 400, not here.)"""
+    bad = [
+        {"source_system": "toast"},  # no target, no business_id
+        {"target_system": "mews"},  # no source
+        {"source_system": "toast", "target_system": "mews"},  # no business_id
+        {"source_system": "toast", "target_system": 42, "business_id": "B-1"},  # non-string
+        {"source_system": "", "target_system": "mews", "business_id": "B-1"},  # empty source
+    ]
+    for claims in bad:
+        tok = _sign(keypair, **claims)
+        with pytest.raises(TokenError):
+            _verifier(registry, keypair).verify(tok)
+
+
 def test_missing_sub_rejected(registry, keypair):
     """gap AUTHRT-3: `sub` is a required registered claim (REQUIRED_CLAIMS) — a token without it is
     rejected before it can identify anyone (mirrors test_missing_iat_rejected)."""

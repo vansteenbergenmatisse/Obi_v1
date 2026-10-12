@@ -28,8 +28,9 @@ _TOKEN_CLAIMS = _CONTRACTS_SRC / "token-claims.json"
 _CHAT_YAML = _CONTRACTS_SRC / "openapi" / "chat.yaml"
 _INDEX_TS = _CONTRACTS_SRC / "index.ts"
 
-# The decided attribution vocabulary (§D.13 keuze 3): general, a named slot, or a pair.
-_ATTRIBUTION_VALUES = frozenset({"general", "pair"}) | VALID_PRODUCT_ROLES
+# The attribution vocabulary (§D.13 keuze 3 + substep 9.3.1): general, a named slot, a pair, or
+# `connection` — the directed source → target box of Option A routing (ADR-0020).
+_ATTRIBUTION_VALUES = frozenset({"general", "pair", "connection"}) | VALID_PRODUCT_ROLES
 
 
 def _claims_schema() -> dict:
@@ -77,8 +78,11 @@ def test_data_mi_contract_structured_form_is_company_id_only() -> None:
     tokens WITHOUT `context`, so legacy tokens still carrying company_name stay valid."""
     schema = _claims_schema()
     assert schema["dependentRequired"] == {"context": ["company_id"]}
-    # The all-three-or-none rule now lives under the context-absent conditional.
-    assert schema["if"] == {"not": {"required": ["context"]}}
+    # The all-three-or-none rule lives under the conditional that fires only when a token carries
+    # NEITHER the structured context NOR (substep 9.3.1) the directed source/target form.
+    assert schema["if"] == {
+        "not": {"anyOf": [{"required": ["context"]}, {"required": ["source_system"]}]}
+    }
     legacy_rule = schema["then"]["dependentRequired"]
     business = {"company_id", "company_name", "integration"}
     for key in business:
@@ -120,17 +124,20 @@ def test_data_mi_attrib_citation_schema_carries_attribution() -> None:
 
 
 def test_data_mi_attrib_attribution_values_match_backend_roles() -> None:
-    """panel mi-attrib · substep 8.1.2
-    Drift: the attribution vocabulary is exactly general + the backend catalog's three
-    slot roles + pair (§D.13 keuze 3) — no invented value on either side."""
+    """panel mi-attrib · substep 8.1.2 / 9.3.1
+    Drift: the attribution vocabulary is exactly general + the backend catalog's three slot roles
+    + pair (§D.13 keuze 3) + the directed `connection` box (substep 9.3.1, ADR-0020) — no invented
+    value on either side."""
     attribution = _chat_document()["components"]["schemas"]["Citation"]["properties"]["attribution"]
-    assert set(attribution["enum"]) == frozenset({"general", "pair"}) | VALID_PRODUCT_ROLES
+    assert set(attribution["enum"]) == (
+        frozenset({"general", "pair", "connection"}) | VALID_PRODUCT_ROLES
+    )
 
 
 def test_data_mi_attrib_ts_citation_carries_attribution() -> None:
-    """panel mi-attrib · substep 8.1.2
+    """panel mi-attrib · substep 8.1.2 / 9.3.1
     The hand-written TS mirror (index.ts) carries the same field: a CitationAttribution
-    union of the five values, used as Citation's optional `attribution`."""
+    union of the six values, used as Citation's optional `attribution`."""
     text = _INDEX_TS.read_text()
     match = re.search(r"export type CitationAttribution =([^;]+);", text)
     assert match, "index.ts does not export CitationAttribution"

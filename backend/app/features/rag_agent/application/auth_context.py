@@ -58,7 +58,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import TYPE_CHECKING
 
-from app.platform.config.platforms import PlatformRegistry
+from app.platform.config.platforms import PlatformEntry, PlatformRegistry
 from app.platform.config.product_catalog import ProductCatalog, load_product_catalog
 
 if TYPE_CHECKING:
@@ -122,6 +122,11 @@ class AuthContext:
     slot_pos: str | None = None
     slot_pms: str | None = None
     slot_accounting: str | None = None
+    # substep 9.3.1 (Option A, ADR-0020): the directed connection this chat is bound to — the
+    # resolved CANONICAL catalog ids of the source and target systems, None for the slot/legacy
+    # forms. Chat-start (9.2.1) reuses these to build the four routing labels + connection block.
+    source_slug: str | None = None
+    target_slug: str | None = None
     # substep 8.3.1: the VERIFIED host platform key (the active registry entry for the token's
     # issuer) — platform-interface eligibility needs it; None (tokenless/internal) never matches
     # a platform-interface rule, never broadens.
@@ -166,6 +171,66 @@ def _default_catalog() -> ProductCatalog:
     return load_product_catalog()
 
 
+def _build_directed_context(
+    claims: VerifiedClaims,
+    entry: PlatformEntry,
+    catalog: ProductCatalog | None,
+) -> AuthContext:
+    """The directed source → target gate (substep 9.3.1, Option A, ADR-0020, panels mi-gate/
+    mi-contract).
+
+    Only two of the slot form's five checks apply, plus vend rights:
+      1-2 · shape + membership — each endpoint resolves through the SAME lenient catalog resolver
+            chat-start uses (`resolve_system`: canonical id, alias, or display name, case/space
+            insensitive) so the gate can never admit a connection chat-start would then fail to
+            resolve. An unresolved source OR target fails closed as UnknownIntegrationError — the
+            400-before-any-search family (§D.11), raised before any retrieval runs.
+      4   · vend rights (CIP-A1 generalized) — the issuing platform may assert only systems its
+            `allowed_integrations` resolve to; a connection it may not vend is IntegrationNotAllowed
+            (401), the same cross-issuer boundary as the slot form.
+    The slot role check (3) and the launch allowlist (5) LAPSE for the directed form (ADR-0020
+    D4/D5: direction is primary, accounting is a first-class target, launch is content-gated by the
+    label boxes, not an allowlist).
+
+    `business_id` (verified present for this form) becomes `company_id` — the company-isolation
+    axis the chat-session key and the audit trail already consume (never a scope axis by itself).
+    Scopes stay general-only here; the four routing labels (built from `source_slug`/`target_slug`
+    at chat-start) are the content axis, wired into the hard filter in a later stage. The body
+    never contributes any of this (never-bend rules 2-3): the gate reads only the verified token."""
+    catalog = catalog if catalog is not None else _default_catalog()
+
+    # -- checks 1-2 · shape + membership (fail closed: 400 before any search) ------------------
+    source = catalog.resolve_system(claims.source_system or "")
+    if source is None:
+        raise UnknownIntegrationError("source system")
+    target = catalog.resolve_system(claims.target_system or "")
+    if target is None:
+        raise UnknownIntegrationError("target system")
+
+    # -- check 4 · vend rights (both endpoints) ------------------------------------------------
+    vend_set: set[str] = set()
+    for allowed in entry.allowed_integrations:
+        vend_set.update(catalog.resolve(allowed))
+    for role, product in (("source", source), ("target", target)):
+        if product.id not in vend_set:
+            raise IntegrationNotAllowedError(
+                f"platform {entry.key} may not assert '{product.id}' as the {role} system"
+            )
+
+    return AuthContext(
+        company_id=claims.business_id,
+        company_name=None,
+        integration=None,
+        allowed_scopes=(_GENERAL,),
+        allowed_sources=_DEFAULT_SOURCES,
+        principal=None,  # v1: embedded users have no per-person Confluence ACL
+        token_subject=_identity_key(claims),
+        source_slug=source.id,
+        target_slug=target.id,
+        platform=entry.key,
+    )
+
+
 def build_auth_context(
     claims: VerifiedClaims,
     registry: PlatformRegistry,
@@ -176,6 +241,11 @@ def build_auth_context(
     entry = registry.platform_for(claims.issuer)
     if entry is None:
         raise InactivePlatformError(claims.issuer)
+
+    # Directed-connection form (substep 9.3.1, Option A, ADR-0020): routes on source → target,
+    # not the membership slots. Validated here and short-circuits the slot chain below.
+    if claims.source_system is not None or claims.target_system is not None:
+        return _build_directed_context(claims, entry, catalog)
 
     # The raw claimed value per slot role. Structured form: the context is authoritative (a
     # legacy claim riding beside it is ignored). Legacy form: the single integration claim is

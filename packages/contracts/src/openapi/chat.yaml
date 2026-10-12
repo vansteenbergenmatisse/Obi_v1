@@ -34,6 +34,14 @@ paths:
         refuses the session too (the frontend hiding is UX, not the boundary).
         An empty slot never triggers this refusal. Enforced at the gate
         (substep 8.1.3); documented here as the contract.
+
+        Directed connection (substep 9.3.1, ADR-0020 Option A): the token MAY
+        instead carry a directed `source_system` → `target_system` +
+        `business_id` connection (see `token-claims.json`), which is what routes
+        going forward; the slot and legacy forms stay accepted but no longer
+        route. The gate resolves both systems against the product catalog and
+        refuses an unknown source or target with a 400 before any search; the
+        body never decides the connection (never-bend rules 2-3).
       requestBody:
         required: true
         content:
@@ -52,9 +60,11 @@ paths:
             Malformed request body, empty/oversized history, or history not
             ending on a user turn. Also the fail-closed answer for an unknown
             integration value: a verified-token slot (or legacy integration)
-            value that resolves to no product in the catalog, or an unknown
-            body knowledgeScope, is a 400 before any search ever runs (§D.11;
-            token-side slot enforcement lands at the gate, substep 8.1.3).
+            value that resolves to no product in the catalog, a verified-token
+            directed `source_system`/`target_system` that resolves to no product
+            (substep 9.3.1), or an unknown body knowledgeScope, is a 400 before
+            any search ever runs (§D.11; token-side enforcement lands at the
+            gate, substeps 8.1.3 / 9.3.1).
           content:
             application/json:
               schema:
@@ -283,14 +293,16 @@ components:
           type: string
         attribution:
           type: string
-          enum: [general, pos, pms, accounting, pair]
+          enum: [general, pos, pms, accounting, pair, connection]
           description: >
             Why this source was eligible for THIS customer (§D.13 keuze 3,
             panel mi-attrib): a general guide, a guide admitted by one named
-            filled slot (pos / pms / accounting), or a guide for a slot pair
-            the company actually has. Optional — absent until the backend
-            assembles attribution (substep 8.3.4); the field never carries
-            anything beyond the customer's own verified context.
+            filled slot (pos / pms / accounting), a guide for a slot pair the
+            company actually has, or `connection` — the directed source → target
+            connection box this chat is bound to (substep 9.3.1, ADR-0020 Option
+            A). Optional — absent until the backend assembles attribution
+            (substep 8.3.4); the field never carries anything beyond the
+            customer's own verified context.
 
     ChatStartEvent:
       type: object

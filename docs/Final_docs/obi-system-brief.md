@@ -2590,10 +2590,10 @@ _Every box is dashed: nothing here is built. The four flow directions modeled ar
 
 _Workflow label shown in the drawer: Multi-integration context_
 
-##### Panel `mi-contract` · The integration context: a company and three slots · [Implemented, needs changing]
+##### Panel `mi-contract` · The integration context: a company and three slots · [Implemented]
 - Kind: Contract
 - In plain words: The note now names the customer's three systems — point of sale, hotel system, accounting — instead of one integration. Any slot may be empty.
-- Today: SUPERSEDED for routing by Option A (ADR-0020, 2026-10-09): the directed source→target token replaces the three-slot contract. A chat carries source_system + target_system (canonical catalog ids) + business_id; context.slots and the legacy integration claim stay accepted for back-compat but no longer route. See mi-route / mi-session and action-plan 9.3.1.
+- Today: Built (Option A Stage 5 / 9.3.1): token-claims.json gains the directed source_system + target_system + business_id form (legacy integration and context.slots stay accepted but no longer route); token_verifier.py parses it into VerifiedClaims, chat.yaml and the REQUIRED_CLAIMS/if drift tests move with it, and the widget bridge + CitationAttribution gain the connection variant. Unit + browser tested.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2634,10 +2634,10 @@ _Workflow label shown in the drawer: Multi-integration context_
   - operacloud resolves to opera-cloud; an unmatched value fails closed.
 - Target and notes: Option A (ADR-0020), 2026-10-09 adds resolve_system + build_labels on top of the loader; the slot lookups above remain valid.
 
-##### Panel `mi-gate` · Slot validation and the launch allowlist · [Implemented, needs changing]
+##### Panel `mi-gate` · Slot validation and the launch allowlist · [Implemented]
 - Kind: Gate
 - In plain words: At the door Obi checks each named system against the catalog and the launch list. A supported setup gets in, an unsupported filled system keeps Obi hidden, and an empty slot is always fine.
-- Today: SUPERSEDED for routing by Option A (ADR-0020): the five slot checks and the POS/PMS launch allowlist give way to source/target validation — the gate resolves both systems against the catalog and refuses an unknown source or target with a 400 before any search. The body still never decides the connection (rules 2–3). See mi-route and 9.3.1.
+- Today: Built (Option A Stage 5 / 9.3.1): build_auth_context gains the directed branch — it resolves source/target against the catalog (the same lenient resolver chat-start uses), refuses an unknown source or target with a 400 before any search, runs the vend-rights check on both systems, and drops the slot role check + launch allowlist for the directed form (ADR-0020 D4/D5). business_id becomes company_id; the body never decides the connection (rules 2-3). Unit tested.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -5090,9 +5090,9 @@ _Section id: `open`_
 | `tg-rebuild` | tags | Rebuild with tags carried | Implemented, needs changing |
 | `tg-state` | tags | scope_state | Planned |
 | `tg-filter` | tags | The filter that uses tags | Implemented, needs changing |
-| `mi-contract` | integration | The integration context: a company and three slots | Implemented, needs changing |
+| `mi-contract` | integration | The integration context: a company and three slots | Implemented |
 | `mi-catalog` | integration | The central product catalog | Implemented, needs changing |
-| `mi-gate` | integration | Slot validation and the launch allowlist | Implemented, needs changing |
+| `mi-gate` | integration | Slot validation and the launch allowlist | Implemented |
 | `mi-applies` | integration | "Applies to": applicability on the page | Implemented, needs changing |
 | `mi-match` | integration | Deterministic matching against real connections | Implemented, needs changing |
 | `mi-filter` | integration | Eligibility filtering inside the database | Implemented, needs changing |

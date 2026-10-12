@@ -303,6 +303,77 @@ describe("initIframeBridge", () => {
     expect(onScopeChange).toHaveBeenCalledTimes(1);
   });
 
+  it("widget · 9.3.1: a renewal that switches the directed connection resets the conversation", () => {
+    // panel mi-contract/mi-gate · substep 9.3.1 — two directed notes for the SAME business_id,
+    // differing only in which systems the connection joins, crossed into a different connection
+    // context (ADR-0020 Option A) → reset. Without source/target in the scope signature these two
+    // would look identical and NO reset would fire (the red state this proves fixed).
+    const onScopeChange = vi.fn();
+    teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN], onScopeChange });
+
+    post(
+      {
+        type: "obi:token",
+        token: jwtWithClaims({
+          business_id: "B-3075",
+          source_system: "toast",
+          target_system: "mews",
+        }),
+      },
+      ALLOWED_ORIGIN,
+    );
+    expect(onScopeChange).not.toHaveBeenCalled();
+
+    // Same business, but the target changed (mews → xero) — a different connection.
+    post(
+      {
+        type: "obi:token",
+        token: jwtWithClaims({
+          business_id: "B-3075",
+          source_system: "toast",
+          target_system: "xero",
+        }),
+      },
+      ALLOWED_ORIGIN,
+    );
+    expect(onScopeChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("widget · 9.3.1: a direction swap (source↔target) resets the conversation", () => {
+    // panel mi-gate · substep 9.3.1 — direction is primary (ADR-0020 D4): toast→mews is NOT the
+    // same connection as mews→toast, so a renewal that swaps the direction must reset the thread.
+    const onScopeChange = vi.fn();
+    teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN], onScopeChange });
+
+    post(
+      {
+        type: "obi:token",
+        token: jwtWithClaims({ business_id: "B-1", source_system: "toast", target_system: "mews" }),
+      },
+      ALLOWED_ORIGIN,
+    );
+    post(
+      {
+        type: "obi:token",
+        token: jwtWithClaims({ business_id: "B-1", source_system: "mews", target_system: "toast" }),
+      },
+      ALLOWED_ORIGIN,
+    );
+    expect(onScopeChange).toHaveBeenCalledTimes(1);
+  });
+
+  it("widget · 9.3.1: a renewal to the IDENTICAL directed connection does NOT reset", () => {
+    // panel mi-contract · substep 9.3.1 — a plain token refresh (same source/target/business_id)
+    // must not wipe the open conversation.
+    const onScopeChange = vi.fn();
+    teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN], onScopeChange });
+
+    const claims = { business_id: "B-9", source_system: "toast", target_system: "mews" };
+    post({ type: "obi:token", token: jwtWithClaims(claims) }, ALLOWED_ORIGIN);
+    post({ type: "obi:token", token: jwtWithClaims(claims) }, ALLOWED_ORIGIN);
+    expect(onScopeChange).not.toHaveBeenCalled();
+  });
+
   it("sec · 8.4.2: a slot-shaped note is held in memory only — no web storage, cookie, or logged context", () => {
     // panel mi-contract · substep 8.4.2 — the extended context rides inside the opaque JWT; storing
     // it must not spill the slot values to sessionStorage/localStorage/a cookie or any console

@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 import { TEST_TOKEN_LIFETIME_SECONDS, byName } from "../../config";
 
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ name: string }> },
 ): Promise<Response> {
   const { name } = await params;
@@ -24,10 +24,18 @@ export async function GET(
     return NextResponse.json({ error: "test signing key not configured" }, { status: 503 });
   }
 
+  // `?form=directed` mints the directed source → target connection form (substep 9.3.1,
+  // ADR-0020 Option A) instead of the legacy business claims, so a test host can exercise either
+  // token shape. A host without directedClaims falls back to its legacy note. The two forms are
+  // mutually exclusive on a token — the directed note never also carries the legacy trio.
+  const wantsDirected = new URL(request.url).searchParams.get("form") === "directed";
+  const claims =
+    wantsDirected && host.directedClaims ? host.directedClaims : (host.businessClaims ?? {});
+
   const privateKey = await importPKCS8(privateKeyPem, "RS256");
   const now = Math.floor(Date.now() / 1000);
 
-  const token = await new SignJWT({ ...(host.businessClaims ?? {}) })
+  const token = await new SignJWT({ ...claims })
     .setProtectedHeader({ alg: "RS256", kid: host.kid })
     .setIssuer(host.issuer)
     .setAudience("obi")

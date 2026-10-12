@@ -89,6 +89,22 @@ class ContextSlots:
     accounting: str | None = None
 
 
+def _parse_directed(payload: dict) -> tuple[str, str, str]:
+    """Structural validation of the directed-connection form (substep 9.3.1, ADR-0020): a token
+    carrying `source_system` + `target_system` + `business_id`, all three non-empty strings.
+    A partner system missing its counterpart, or a missing/empty/non-string business_id, is a
+    malformed token -> bare TokenError (401), the same no-detail posture as a malformed context.
+    The VALUES are not judged here — catalog membership of a well-shaped source/target is the
+    gate's check (`build_auth_context`), which fails an unknown system with a 400 before search."""
+    source = payload.get("source_system")
+    target = payload.get("target_system")
+    business = payload.get("business_id")
+    for value in (source, target, business):
+        if not isinstance(value, str) or not value:
+            raise TokenError("malformed directed connection")
+    return source, target, business  # type: ignore[return-value]  # narrowed by the loop above
+
+
 @dataclass(frozen=True, slots=True)
 class VerifiedClaims:
     issuer: str
@@ -99,6 +115,12 @@ class VerifiedClaims:
     # substep 8.1.3: the structured form's slots; None when the token carries no `context`
     # claim (the legacy form — `integration` above is then read as one filled slot by the gate).
     slots: ContextSlots | None = None
+    # substep 9.3.1 (Option A, ADR-0020): the directed source → target connection form. Present
+    # (all three non-None) only when the token carries `source_system`; None otherwise. These
+    # drive routing when present — `slots`/`integration` stay accepted but no longer route.
+    source_system: str | None = None
+    target_system: str | None = None
+    business_id: str | None = None
 
 
 class TokenVerifier:
@@ -154,12 +176,19 @@ class TokenVerifier:
             if int(payload["exp"]) - int(payload["iat"]) > entry.lifetime_minutes * 60:
                 raise TokenError("lifetime exceeds platform max")
 
-            # 6. business values. Two forms (token-claims.json, substep 8.1.2):
+            # 6. business values. Three forms (token-claims.json, substeps 8.1.2 / 9.3.1):
+            #    - directed (ADR-0020): `source_system`+`target_system`+`business_id` — the
+            #      routing form; the legacy trio rule does NOT apply;
             #    - structured: a `context` claim with the three slots — company-ID-only, the
-            #      legacy trio rule does NOT apply (the schema's context-absent conditional);
-            #    - legacy: no `context` — company_id/company_name/integration all three or none.
+            #      legacy trio rule does NOT apply (the schema's context/source_system conditional);
+            #    - legacy: neither — company_id/company_name/integration all three or none.
             slots: ContextSlots | None = None
-            if "context" in payload:
+            source_system: str | None = None
+            target_system: str | None = None
+            business_id: str | None = None
+            if "source_system" in payload or "target_system" in payload:
+                source_system, target_system, business_id = _parse_directed(payload)
+            elif "context" in payload:
                 slots = _parse_context_slots(payload["context"])
             else:
                 biz = (
@@ -177,6 +206,9 @@ class TokenVerifier:
                 company_name=payload.get("company_name"),
                 integration=payload.get("integration"),
                 slots=slots,
+                source_system=source_system,
+                target_system=target_system,
+                business_id=business_id,
             )
         except TokenError:
             raise

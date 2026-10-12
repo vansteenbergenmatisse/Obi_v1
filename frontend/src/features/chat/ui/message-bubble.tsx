@@ -135,9 +135,9 @@ function ClarificationChips({ options }: { options: string[] }) {
 /**
  * Per-slot source attribution (substep 8.3.4, panel mi-attrib): a short, muted badge on each
  * citation saying WHY this customer saw that source — general, one of their named systems, or one
- * of their actual connections. The backend ASSEMBLES the attribution (§D.13 keuze 3) and sends it
- * on the Citation; the widget only renders it, never inferring or recomputing eligibility. The
- * label maps purely from the five-value contract enum, so it can reveal nothing beyond the
+ * of their actual connections. The backend ASSEMBLES the attribution (§D.13 keuze 3 / ADR-0020)
+ * and sends it on the Citation; the widget only renders it, never inferring or recomputing
+ * eligibility. The label maps purely from the contract enum, so it can reveal nothing beyond the
  * customer's own context (no company id, scope, or page the customer couldn't see).
  */
 const ATTRIBUTION_LABELS: Record<NonNullable<Citation["attribution"]>, string> = {
@@ -146,6 +146,7 @@ const ATTRIBUTION_LABELS: Record<NonNullable<Citation["attribution"]>, string> =
   pms: "For your PMS",
   accounting: "For your accounting",
   pair: "For your integration",
+  connection: "For your connection",
 };
 
 /** One rendered citation chip plus its optional attribution badge. A citation with no attribution

@@ -103,9 +103,17 @@ export interface SimulatedContext {
  * Why a cited source was eligible for THIS customer (§D.13 keuze 3, panel
  * mi-attrib, substep 8.1.2): a general guide, a guide admitted by one named
  * filled slot of the verified integration context (pos / pms / accounting),
- * or a guide for a slot pair the company actually has.
+ * or a guide for a slot pair the company actually has. `connection` is the
+ * directed-routing variant (substep 9.3.1, ADR-0020 Option A): a guide for the
+ * chat's directed `source → target` connection box.
  */
-export type CitationAttribution = "general" | "pos" | "pms" | "accounting" | "pair";
+export type CitationAttribution =
+  | "general"
+  | "pos"
+  | "pms"
+  | "accounting"
+  | "pair"
+  | "connection";
 
 /**
  * A single citation backing an answer, pointing at the Confluence source that

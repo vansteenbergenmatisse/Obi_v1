@@ -4,10 +4,12 @@
 - **Owning code:** `backend/app/features/rag_agent/application/auth_context.py` (the gate),
   `backend/app/features/rag_agent/server/token_verifier.py` (the trust boundary that feeds it),
   `backend/app/features/rag_agent/server/router.py` (`_resolve_auth_context`, the HTTP mapping)
-- **Design panel:** `r1-auth` (edge identity) · `mi-gate` (slot validation + launch allowlist) ·
-  `mi-contract` (the company + three-slots claim shape)
-- **Status:** Implemented (substep 8.1.3 — the gate accepts slots; tested at unit + database
-  levels, not yet proven against a live platform-signed slot token)
+- **Design panel:** `r1-auth` (edge identity) · `mi-gate` (slot validation + launch allowlist /
+  directed source-target validation) · `mi-contract` (the company + three-slots / directed
+  connection claim shapes)
+- **Status:** Implemented (substep 8.1.3 — the gate accepts slots). Amended by substep 9.3.1
+  (Option A, ADR-0020 — the gate also accepts the directed source → target form); both tested at
+  unit + database levels, not yet proven against a live platform-signed token.
 
 ## What it does
 
@@ -46,6 +48,34 @@ scope mapping yet (accounting products, O9 open) contributes none and never erro
 `knowledge_scope` stays non-authoritative: an unknown body value is a 400 before any search; a
 recognized value disagreeing with the token is logged (`body_knowledge_scope_ignored`) and
 ignored. All 401 failure modes stay byte-identical on the wire.
+
+### The directed connection form (substep 9.3.1, Option A, ADR-0020)
+
+When the verified token carries the directed form — `source_system` + `target_system` +
+`business_id` (`VerifiedClaims.source_system`/`target_system`/`business_id`, parsed by
+`token_verifier._parse_directed`; a partner system missing its counterpart or a missing/empty
+`business_id` is a malformed token → bare `TokenError`, 401) — `build_auth_context` takes a
+separate branch (`_build_directed_context`) **before** the slot chain and routes on the directed
+connection instead of the membership slots:
+
+1. **Shape + membership (checks 1-2)** — source and target each resolve through the SAME lenient
+   catalog resolver chat-start uses (`ProductCatalog.resolve_system`: canonical id, per-product
+   alias or display name, case/space-insensitive), so the gate can never admit a connection
+   chat-start would then fail to resolve. An unresolved source OR target → `UnknownIntegrationError`
+   (the **400-before-any-search** family, §D.11), raised before any retrieval runs.
+2. **Vend rights (check 4)** — the issuing platform may assert only systems its
+   `allowed_integrations` resolve to; a source or target it may not vend → `IntegrationNotAllowedError`
+   (401), the same cross-issuer boundary as the slot form.
+3. The slot **role check (3)** and the **launch allowlist (5)** LAPSE for the directed form
+   (ADR-0020 D4/D5: direction is primary — `toast → mews ≠ mews → toast`; accounting is a
+   first-class target; launch is content-gated by the label boxes, not an allowlist).
+
+`business_id` (verified present for this form) becomes the `AuthContext.company_id`
+company-isolation axis; the resolved `source_slug`/`target_slug` ride the context for chat-start
+(9.2.1) to build the four routing labels + connection block. Scopes stay general-only here — the
+label hard filter is the content axis and is wired into retrieval in a later stage (9.4.1). The
+body still never decides the connection (rules 2-3): `build_auth_context` takes no body, and
+`ChatRequestBody` forbids a `source_system`/`target_system` key outright (`extra="forbid"`).
 
 ## Why it does it
 
@@ -90,7 +120,23 @@ filled slot (§D.13 keuze 4).
   both forced by the 8.1.2 contract, not a weakening).
 - `backend/app/features/rag_agent/tests/test_auth_context.py` (unit, panel `r1-auth`): all 15
   pre-8.1.3 tests green **unmodified** — the legacy token path is byte-compatible.
+- `backend/app/features/rag_agent/tests/test_mi_gate_directed.py` (unit, panels `mi-gate` /
+  `mi-contract`, substep 9.3.1): the directed branch — `test_rt1_directed_form_accepted`,
+  `test_rt1_directed_unknown_source_is_400_before_search`,
+  `test_rt1_directed_unknown_target_is_400_before_search`,
+  `test_rt1_directed_vend_rights_bind_both_systems`,
+  `test_rt1_directed_accounting_target_is_first_class`, and
+  `test_sec_body_can_never_carry_the_connection` (the body model forbids source/target).
+- `backend/app/features/rag_agent/tests/test_token_verifier.py` (unit, panel `mi-contract`,
+  substep 9.3.1): `test_rt1_verifier_extracts_directed_connection`,
+  `test_rt1_malformed_directed_connection_rejected`.
+- Contract drift (unit): `test_token_claims_contract.py::test_directed_connection_form_is_published_and_optional`
+  and the updated `test_business_claims_are_all_three_or_none` (new `if` conditional);
+  `test_mi_contract_slots.py` moved with the contract (the `if` shape, the directed fields, and
+  the `connection` attribution value in the TS mirror + OpenAPI enum).
 
-Gap (honest): no live proof yet against a real platform-signed slot token (no platform mints
-the structured form today — O7 keeps Base/Data Hub registry entries for Step 5's tail), and
-the slots do not yet filter retrieval — eligibility lands in 8.3.1, attribution in 8.3.4.
+Gap (honest): no live proof yet against a real platform-signed token (slot or directed — no
+platform mints either form today), and neither the slots nor the directed labels yet filter
+retrieval — slot eligibility landed in 8.3.x; the directed label hard filter lands in 9.4.1, and
+chat-start session population (9.2.1's `start_chat_session`) is not yet wired into the request
+path (it is wired where the labels are consumed, in 9.4.1).
