@@ -64,12 +64,24 @@ request body (rules 2–3). The filter is never behind a flag — it is a hard f
 - **Wiring** (`rag_agent/tests/test_answer_service.py`, 2 tests, panels mi-session/mi-hardfilter):
   a directed chat threads its four labels into the retriever and the connection block into the
   prompt, resolving the catalog once per chat; a legacy chat threads `None` for both.
-- **Eval (rule 11):** `make eval` run before and after — no gold-set loss against the recorded
-  floor. Honest note: the bundled runner carries no routing labels yet, so it proves no regression
-  on the no-connection path; the formal routing-off-vs-on labelled dataset is substep 9.5.2.
+- **Eval (rule 11), substep 9.5.2:** the labelled connection gold stage `connection_routing.json`
+  (its `EvalCase`s carry the four directed-connection `session_labels`) plus `evaluate_routing_lift`
+  record the routing-off-vs-on before/after number — the rule-11 gate on this filter. The DB test
+  `retrieval/tests/test_eval_routing_db.py` seeds the labelled pages hermetically (the Confluence
+  relabel is still the parallel owner task 9.5.1) and runs the real `HybridRetriever` with labels
+  off then on; the result is written to `backend/eval-reports/routing_lift.{json,md}` and printed by
+  `make eval`. Numbers (2 cases, k=50): recall `1.000 → 1.000` (no gold-set loss), served_precision
+  `0.167 → 0.333` (noise removed), served_count `6.0 → 3.0` (candidate set narrowed). The bundled
+  baseline datasets are unchanged against their recorded floor (retrieval_smoke/ambiguity/permission/
+  out_of_corpus/mixed_connection all unmoved). Honest note: this is proven on seeded labels + a gold
+  stage, not yet on a relabeled live corpus (9.5.1).
 - **Break-it:** removing the `labels && :session_labels` clause lets every wrong-connection page
-  leak back into the Toast→Mews result — the db exact-exclude assertions go red; restored green.
+  leak back into the Toast→Mews result — the db exact-exclude assertions go red; restored green. For
+  the 9.5.2 eval gate, feeding the routing-on side no session labels collapses off == on, so the
+  narrowing deltas drop to zero and the `served_precision` / `served_count` asserts go red
+  (`test_eval_routing_off_vs_on_break_it_no_labels_is_zero_lift`).
 
 Not yet proven live: the Confluence corpus is not relabelled to the new scheme yet (owner/content
-task 9.5.1), so no production question has run through the filter; the labelled before/after gold
-numbers are substep 9.5.2.
+task 9.5.1), so no production question has run through the filter. The labelled routing-off-vs-on
+before/after gold numbers now exist (substep 9.5.2, above); the live relabel + a production question
+through them is still 9.5.1.

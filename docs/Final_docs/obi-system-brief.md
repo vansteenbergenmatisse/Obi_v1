@@ -2679,7 +2679,7 @@ _Workflow label shown in the drawer: Multi-integration context_
 ##### Panel `mi-match` · Deterministic matching against real connections · [Implemented, needs changing]
 - Kind: Rules
 - In plain words: A guide for 'Toast connected to Mews' only shows when the customer actually has that connection — not when both products merely exist somewhere in the account.
-- Today: SUPERSEDED for routing by Option A (ADR-0020): the slot/connection matcher is replaced by the deterministic four-box resolver (build_labels) — direction is primary (toast-to-pms ≠ mews-to-pos) and a chat reads exactly its four boxes. Cross-match safety now comes from the hard label filter. See mi-route, mi-hardfilter and 9.1.1/9.4.1.
+- Today: SUPERSEDED for routing by Option A (ADR-0020): cross-match safety is the hard label filter (mi-hardfilter), now carrying a 9.5.2 routing-off-vs-on before/after number over the labelled connection_routing gold stage (a Toast->Mews chat never sees a toast-to-accounting / mews-to-pos page; recall held, served set narrowed). See mi-route, mi-hardfilter and 9.1.1/9.4.1/9.5.2.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2872,7 +2872,7 @@ _Workflow label shown in the drawer: Multi-integration context_
 ##### Panel `mi-hardfilter` · The hard label filter before top-k · [Unverified]
 - Kind: Search
 - In plain words: The database only returns pages whose labels match this chat's connection. Wrong-connection pages can never reach the answer, no matter how similar they look.
-- Today: Built (9.4.1): labels && :session_labels in _base_filters threaded through keyword/dense/rerank + the app.allowed_labels GUC mirroring the chunk_labels_read RLS policy; wired into POST /chat via the chat-session labels; parent expansion exempt. DB+eval green; not yet proven on a relabeled live corpus (9.5.1).
+- Today: 9.5.2: the routing-off-vs-on before/after gate (rule 11) now exists — the labelled connection_routing gold stage + evaluate_routing_lift record off=1.000/0.167/6.0 vs on=1.000/0.333/3.0 (recall held, served_precision up, served_count down) into eval-reports/routing_lift.{json,md}, printed by make eval. Still Unverified overall: proven on seeded labels + a gold stage, not yet on a relabeled live corpus (9.5.1).
 - Settings and rules:
   | Setting | Value |
   |---|---|

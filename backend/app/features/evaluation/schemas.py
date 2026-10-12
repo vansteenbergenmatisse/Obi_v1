@@ -25,6 +25,11 @@ class EvalCase(BaseModel):
     expected_answer: str | None = None
     scope: str | None = None
     kind: EvalKind = "retrieval"
+    # substep 9.5.2 (panel mi-hardfilter): the four directed-connection routing labels a chat is
+    # bound to (``obi-general``, ``{source}-general``, ``{target}-general``,
+    # ``{source}-to-{target.kind}``). Empty on a context-free/legacy case — the hard label filter
+    # is then a no-op, so every pre-9.5.2 dataset loads unchanged.
+    session_labels: list[str] = Field(default_factory=list)
 
 
 class EvalDataset(BaseModel):
@@ -88,6 +93,36 @@ class RerankLiftReport(BaseModel):
     delta: dict[str, float] = Field(default_factory=dict)
 
 
+class RoutingLiftReport(BaseModel):
+    """Routing-off vs routing-on comparison for one labelled connection dataset (substep 9.5.2,
+    panel mi-hardfilter). This is the rule-11 before/after number that gates the 9.4.1 directed-
+    connection hard label filter.
+
+    ``before`` is retrieval with NO session labels — the pre-9.4.1 no-op path, where every
+    candidate (wrong-connection pages included) is served. ``after`` is retrieval under the chat's
+    four directed-connection labels, where the hard filter narrows the candidate set. ``delta`` is
+    ``after - before`` per metric. The three metrics:
+
+    * ``recall`` — fraction of the relevant pages served. It must NOT drop off→on (no gold-set
+      loss, never-bend rule 11); the filter removes wrong-connection noise, never the answer.
+    * ``served_precision`` — relevant / served count. It RISES off→on as wrong-connection pages
+      are removed from the served set.
+    * ``served_count`` — mean number of pages served. It FALLS off→on as routing narrows.
+
+    The timestamp is passed in (no clock read), like the other reports.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    dataset_name: str
+    timestamp: str
+    case_count: int
+    retrieve_k: int
+    before: dict[str, float] = Field(default_factory=dict)
+    after: dict[str, float] = Field(default_factory=dict)
+    delta: dict[str, float] = Field(default_factory=dict)
+
+
 __all__ = [
     "EvalKind",
     "EvalCase",
@@ -95,4 +130,5 @@ __all__ = [
     "EvalResult",
     "EvalReport",
     "RerankLiftReport",
+    "RoutingLiftReport",
 ]

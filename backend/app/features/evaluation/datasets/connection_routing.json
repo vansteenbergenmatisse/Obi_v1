@@ -1,0 +1,21 @@
+{
+  "name": "connection_routing",
+  "cases": [
+    {
+      "id": "cr-01-toast-to-mews",
+      "question": "Why are my Toast room charges not posting into Mews?",
+      "relevant_chunk_ids": ["95103"],
+      "scope": "95100",
+      "kind": "retrieval",
+      "session_labels": ["obi-general", "toast-general", "mews-general", "toast-to-pms"]
+    },
+    {
+      "id": "cr-02-mews-to-quickbooks",
+      "question": "Why are my Mews invoices missing in QuickBooks?",
+      "relevant_chunk_ids": ["95203"],
+      "scope": "95200",
+      "kind": "retrieval",
+      "session_labels": ["obi-general", "mews-general", "quickbooks-online-general", "mews-to-accounting"]
+    }
+  ]
+}

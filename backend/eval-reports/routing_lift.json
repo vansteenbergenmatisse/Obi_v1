@@ -1,0 +1,21 @@
+{
+  "after": {
+    "recall": 1.0,
+    "served_count": 3.0,
+    "served_precision": 0.3333333333333333
+  },
+  "before": {
+    "recall": 1.0,
+    "served_count": 6.0,
+    "served_precision": 0.16666666666666666
+  },
+  "case_count": 2,
+  "dataset_name": "connection_routing",
+  "delta": {
+    "recall": 0.0,
+    "served_count": -3.0,
+    "served_precision": 0.16666666666666666
+  },
+  "retrieve_k": 50,
+  "timestamp": "9.5.2"
+}

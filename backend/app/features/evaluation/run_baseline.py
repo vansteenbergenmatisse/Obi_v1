@@ -25,7 +25,12 @@ from pathlib import Path
 
 from app.features.evaluation.fixtures import load_corpus_loader
 from app.features.evaluation.runner import RankFn, evaluate
-from app.features.evaluation.schemas import EvalDataset, EvalReport, RerankLiftReport
+from app.features.evaluation.schemas import (
+    EvalDataset,
+    EvalReport,
+    RerankLiftReport,
+    RoutingLiftReport,
+)
 from app.platform.logging import get_logger
 
 logger = get_logger(__name__)
@@ -52,6 +57,7 @@ def _reports_dir() -> Path:
 
 
 _RERANK_LIFT_JSON = "rerank_lift.json"
+_ROUTING_LIFT_JSON = "routing_lift.json"
 
 
 def load_dataset(path: Path) -> EvalDataset:
@@ -93,6 +99,7 @@ def run() -> list[EvalReport]:
     _write_reports(reports, now_iso)
     _print_summary(reports)
     _print_saved_rerank_lift()
+    _print_saved_routing_lift()
     return reports
 
 
@@ -135,6 +142,77 @@ def write_rerank_lift_reports(report: RerankLiftReport) -> Path:
         handle.write(render_rerank_lift_markdown(report))
     logger.info("rerank_lift_report_written", json=str(json_path), markdown=str(md_path))
     return json_path
+
+
+_ROUTING_METRIC_ORDER = ("recall", "served_precision", "served_count")
+
+
+def render_routing_lift_markdown(report: RoutingLiftReport) -> str:
+    """Render a routing-off vs routing-on table (substep 9.5.2), in the baseline report format."""
+    lines: list[str] = []
+    lines.append("# Routing Lift Report")
+    lines.append("")
+    lines.append(f"- Timestamp: `{report.timestamp}`")
+    lines.append(f"- Dataset: `{report.dataset_name}` ({report.case_count} cases)")
+    lines.append(f"- Retrieve k: {report.retrieve_k}")
+    lines.append(
+        "- Off = retrieval with NO session labels (pre-9.4.1 no-op path, every candidate served); "
+        "On = retrieval under the chat's four directed-connection labels (the hard label filter)."
+    )
+    lines.append(
+        "- recall must not drop off→on (no gold-set loss, rule 11); served_precision rises and "
+        "served_count falls as routing narrows the candidate set."
+    )
+    lines.append("")
+    lines.append("| Metric | Off | On | Δ |")
+    lines.append("| --- | --- | --- | --- |")
+    for key in _ROUTING_METRIC_ORDER:
+        lines.append(
+            f"| {key} | {report.before.get(key, 0.0):.4f} | "
+            f"{report.after.get(key, 0.0):.4f} | {report.delta.get(key, 0.0):+.4f} |"
+        )
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_routing_lift_reports(report: RoutingLiftReport) -> Path:
+    """Persist the routing-lift report as JSON + Markdown next to the baseline reports."""
+    out_dir = _reports_dir()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    json_path = out_dir / _ROUTING_LIFT_JSON
+    with json_path.open("w", encoding="utf-8") as handle:
+        json.dump(report.model_dump(), handle, indent=2, sort_keys=True)
+        handle.write("\n")
+    md_path = out_dir / "routing_lift.md"
+    with md_path.open("w", encoding="utf-8") as handle:
+        handle.write(render_routing_lift_markdown(report))
+    logger.info("routing_lift_report_written", json=str(json_path), markdown=str(md_path))
+    return json_path
+
+
+def _print_saved_routing_lift() -> None:
+    """Echo the last measured routing lift (substep 9.5.2) if a run has produced one.
+
+    The numbers come from the DB-backed routing measurement over the labelled connection gold
+    stage (``test_eval_routing_db.py``). This DB-free baseline entrypoint only surfaces what was
+    saved, so ``make eval`` shows the routing-off vs routing-on table — the rule-11 before/after
+    gate on the 9.4.1 hard label filter.
+    """
+    json_path = _reports_dir() / _ROUTING_LIFT_JSON
+    if not json_path.exists():
+        return
+    with json_path.open(encoding="utf-8") as handle:
+        report = RoutingLiftReport.model_validate(json.load(handle))
+    print()
+    print(f"Routing lift ({report.dataset_name}, off vs on, k={report.retrieve_k})")
+    print("=" * 40)
+    for key in _ROUTING_METRIC_ORDER:
+        print(
+            f"{key:<18} off={report.before.get(key, 0.0):.3f} "
+            f"on={report.after.get(key, 0.0):.3f} "
+            f"Δ={report.delta.get(key, 0.0):+.3f}"
+        )
+    print("=" * 40)
 
 
 def _print_saved_rerank_lift() -> None:

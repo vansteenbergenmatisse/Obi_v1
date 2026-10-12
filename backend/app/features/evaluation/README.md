@@ -37,11 +37,28 @@ evaluation/
     retrieval_smoke.json   hand-labelled retrieval cases over the fixtures
     ambiguity.json         under-specified questions
     permission.json        access-scope / status cases
+    connection_routing.json  labelled directed-connection gold stage (substep 9.5.2); each case
+                             carries the four `session_labels` the chat is bound to
   fixtures.py              locates + loads the Confluence fixture corpus (no DB)
-  runner.py                evaluate(dataset, rank_fn, now_iso, k) -> EvalReport
-  run_baseline.py          `python -m` entrypoint; writes eval-reports/baseline.{json,md}
-  tests/                   unit tests for metrics, latency, loader, runner
+  runner.py                evaluate(dataset, rank_fn, now_iso, k) -> EvalReport;
+                           evaluate_rerank_lift(...) and evaluate_routing_lift(...) comparisons
+  run_baseline.py          `python -m` entrypoint; writes eval-reports/baseline.{json,md} and
+                           prints the saved rerank-lift + routing-lift tables
+  tests/                   unit tests for metrics, latency, loader, runner, rerank/routing lift
 ```
+
+## Routing off vs on (substep 9.5.2, rule 11)
+
+`evaluate_routing_lift(dataset, off_fn, on_fn, now_iso)` is the before/after gate on the 9.4.1
+directed-connection hard label filter (panel `mi-hardfilter`). `off_fn` runs retrieval with NO
+session labels (the pre-9.4.1 no-op path); `on_fn` runs it under the case's four directed-connection
+labels. Three set-based metrics, order-independent so the off/on comparison never rides on an
+internal tie-break: `recall` (must not drop — no gold-set loss), `served_precision` (relevant /
+served, rises as wrong-connection pages are removed) and `served_count` (mean candidates, falls as
+routing narrows). The labelled pages are seeded in the DB test
+`retrieval/tests/test_eval_routing_db.py` (hermetic — the Confluence relabel is the parallel owner
+task 9.5.1); the measurement is written to `eval-reports/routing_lift.{json,md}` and printed by
+`make eval`.
 
 ## Running
 
