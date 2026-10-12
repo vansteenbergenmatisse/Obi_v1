@@ -439,8 +439,10 @@ Added: 2026-10-09
 DSNs). Inventory, safety analysis and runbook already filed in `docs/Final_docs/plan.md` §D.15.
 
 **Why deferred.** Execution needs the owner at the Supabase + Railway dashboards (the rotation
-window). It is an operational tail, independent of the Phase 8 / Step 5 feature work; flagged
-IMPORTANT-NOW by owner decision round 2 but still owner-timed.
+window). It is an operational tail, independent of the Phase 8 / Step 5 feature work. Owner decision
+round 2 (2026-10-05) flagged it IMPORTANT-NOW, but on **2026-10-12 the owner decided the reset is
+not necessary now** — it is no longer blocking and carries no target date; revisit only if a
+credential-exposure event or a routine security review calls for it.
 
 **Where it would land.** Anytime, standalone. Follow §D.15: rotate in Supabase, update the Railway
 service variables (via `--stdin`, never printed), confirm `/health` 200 and the readiness gates.
