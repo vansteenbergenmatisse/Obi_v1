@@ -1,6 +1,6 @@
 # Obi, part by part — the complete brief, A to Z
 
-Generated on 2026-10-09 from `docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
+Generated on 2026-10-12 from `docs/Final_docs/obi-rag-system-flow.html` (the target design for Obi). This file carries every visible section, every table, every diagram box and every click panel of that page, in the page's order, so a reader who cannot open the HTML has the same information.
 
 ## 0 · How to read this brief
 
@@ -2586,14 +2586,14 @@ Diagram (Four rows. The context: the note carries a company and three slots, the
 
 _Every box is dashed: nothing here is built. The four flow directions modeled are POS→PMS, PMS→POS (two directions of one connection), PMS→Accounting and POS→Accounting. After Phase A: the agent-built test expansion, then — deliberately last — the Base/Data Hub platform entries and the Jasper reply._
 
-#### Panels that belong to this section (11)
+#### Panels that belong to this section (15)
 
 _Workflow label shown in the drawer: Multi-integration context_
 
-##### Panel `mi-contract` · The integration context: a company and three slots · [Implemented]
+##### Panel `mi-contract` · The integration context: a company and three slots · [Implemented, needs changing]
 - Kind: Contract
 - In plain words: The note now names the customer's three systems — point of sale, hotel system, accounting — instead of one integration. Any slot may be empty.
-- Today: The widget now carries both token forms end to end (substep 8.4.2): the iframe bridge reads context.slots as a display-only, order-independent scope signature so a slot-only renewal resets the conversation (T6 is an opaque-JWT no-op — legacy single-integration notes stay byte-compatible and behave as one filled slot), and the standalone preset selector threads a NON-authoritative simulatedContext onto the chat request (memory-only, never persisted/logged; the backend logs-and-ignores it in favour of the verified token). The verifier + gate stay the sole authority (8.1.2/8.1.3; never-bend rules 2-3).
+- Today: SUPERSEDED for routing by Option A (ADR-0020, 2026-10-09): the directed source→target token replaces the three-slot contract. A chat carries source_system + target_system (canonical catalog ids) + business_id; context.slots and the legacy integration claim stay accepted for back-compat but no longer route. See mi-route / mi-session and action-plan 9.3.1.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2610,11 +2610,12 @@ _Workflow label shown in the drawer: Multi-integration context_
   - An old single-integration note verifies and behaves exactly as a note with one filled slot.
   - A note with an unknown product in a slot is a 400 before any search.
   - The contract drift test keeps token-claims.json and the backend in lockstep.
+- Target and notes: SUPERSEDED by Option A (ADR-0020), 2026-10-09 — the three-slot contract above is kept for provenance; routing is now directed source→target (packages/contracts token-claims.json gains the third form in 9.3.1).
 
-##### Panel `mi-catalog` · The central product catalog · [Implemented]
+##### Panel `mi-catalog` · The central product catalog · [Implemented, needs changing]
 - Kind: Config
 - In plain words: One small file lists every software product we know — its id, its role, its other spellings, which connections it can join. Everything else points here, so product number 20 is one entry, not new code.
-- Today: The loader backend/app/platform/config/product_catalog.py reads product_catalog.json at startup, fails fast on the 8 catalog.md §3 rules (incl. the platforms.json cross-check), and exposes product lookups, alias resolution (operacloud → opera-cloud, unknown fails closed) and the launch allowlist via Settings.product_catalog and the platform config root; 17 unit tests green (substep 8.1.1).
+- Today: EXTENDED for Option A (ADR-0020): the same catalog now also powers directed routing — resolve_system(name/slug/alias, case-insensitive) and build_labels(source, target) emit the four ordered label boxes. Still the single product registry; nothing else defines a product. See mi-route and 9.1.1.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2631,11 +2632,12 @@ _Workflow label shown in the drawer: Multi-integration context_
   - The loader rejects a duplicate alias, a role outside pos/pms/accounting, an unknown connection type, and a reserved name (classified, obi-*).
   - Every platforms.json integration key resolves to a catalog id or alias.
   - operacloud resolves to opera-cloud; an unmatched value fails closed.
+- Target and notes: Option A (ADR-0020), 2026-10-09 adds resolve_system + build_labels on top of the loader; the slot lookups above remain valid.
 
-##### Panel `mi-gate` · Slot validation and the launch allowlist · [Implemented]
+##### Panel `mi-gate` · Slot validation and the launch allowlist · [Implemented, needs changing]
 - Kind: Gate
 - In plain words: At the door Obi checks each named system against the catalog and the launch list. A supported setup gets in, an unsupported filled system keeps Obi hidden, and an empty slot is always fine.
-- Today: build_auth_context runs the five §4 checks in order — shape, catalog membership, role agreement, vend rights, allowlist (POS/PMS only, O4) — a legacy note reads as one filled slot, empty slots never refuse, an unknown value is a 400 before any search, and the out-of-allowlist refusal is a bare 401 (substep 8.1.3).
+- Today: SUPERSEDED for routing by Option A (ADR-0020): the five slot checks and the POS/PMS launch allowlist give way to source/target validation — the gate resolves both systems against the catalog and refuses an unknown source or target with a 400 before any search. The body still never decides the connection (rules 2–3). See mi-route and 9.3.1.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2651,11 +2653,12 @@ _Workflow label shown in the drawer: Multi-integration context_
   - PMS=opera-cloud (filled, outside the allowlist) is refused; empty POS with Mews PMS serves.
   - An unknown slot value is a 400 before any search touches the database.
   - A body hint disagreeing with the note is ignored and logged.
+- Target and notes: SUPERSEDED by Option A (ADR-0020), 2026-10-09 — slot-checks 3–5 and the launch allowlist are retired for the directed form; kept for provenance. Source/target membership is the new check.
 
-##### Panel `mi-applies` · "Applies to": applicability on the page · [Implemented]
+##### Panel `mi-applies` · "Applies to": applicability on the page · [Implemented, needs changing]
 - Kind: Metadata
 - In plain words: A page can say exactly which setup it is for — 'Mews connected to QuickBooks', not just 'Mews'. A page that says nothing keeps behaving as it does today.
-- Today: Sync parses the Applies-to table out of the body (applies_to_parsing.py), validates it against the 8.2.1 schema and stamps the payload on page_source and every chunk (migration 0015, nullable JSONB); a table-only edit rides the D.0 restamp route — same document_version, zero embeds, classes applicability_restamped — removal restamps to NULL, an invalid table fails the job by named reason, and an untagged or classified page gains nothing (substep 8.2.2; matching is 8.2.3).
+- Today: DEPRECATED for routing by Option A (ADR-0020): the Applies-to applicability stamp (migration 0015, applies_to_parsing.py) no longer drives retrieval — directed labels do. The 0015 column and plumbing stay as data for provenance; routing authority moves to the label boxes (mi-labels, mi-hardfilter). See 9.4.1.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2671,11 +2674,12 @@ _Workflow label shown in the drawer: Multi-integration context_
   - A metadata edit restamps existing chunks without re-embedding and invalidates stale eligibility.
   - A record with missing required fields fails validation loudly at sync.
   - An applicability record on a classified or untagged page grants no access.
+- Target and notes: DEPRECATED-for-routing by Option A (ADR-0020), 2026-10-09 — the stamp is dead for routing (not deleted); the label boxes are authoritative.
 
-##### Panel `mi-match` · Deterministic matching against real connections · [Implemented]
+##### Panel `mi-match` · Deterministic matching against real connections · [Implemented, needs changing]
 - Kind: Rules
 - In plain words: A guide for 'Toast connected to Mews' only shows when the customer actually has that connection — not when both products merely exist somewhere in the account.
-- Today: The cross-matching guard is now proven end to end (8.5.1): §D.9 example 5 (Toast/OperaCloud + Mews/QuickBooks via two real connection records) never returns a Toast/Mews pair guide through the live retriever, and the direct Toast→QuickBooks guide never derives from three filled slots — both fail loudly if cross-matching regresses (test_worked_examples_db.py).
+- Today: SUPERSEDED for routing by Option A (ADR-0020): the slot/connection matcher is replaced by the deterministic four-box resolver (build_labels) — direction is primary (toast-to-pms ≠ mews-to-pos) and a chat reads exactly its four boxes. Cross-match safety now comes from the hard label filter. See mi-route, mi-hardfilter and 9.1.1/9.4.1.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2690,11 +2694,12 @@ _Workflow label shown in the drawer: Multi-integration context_
   - A page for Mews/QuickBooks OR OperaCloud/Xero never matches Mews/Xero.
   - Toast/OperaCloud plus Mews/QuickBooks at one property never qualifies for Toast/Mews guidance.
   - Three filled slots alone never produce a Toast-QuickBooks pair.
+- Target and notes: SUPERSEDED by Option A (ADR-0020), 2026-10-09 — slot-pair matching kept for provenance; routing is now the four-box resolver + hard filter.
 
-##### Panel `mi-filter` · Eligibility filtering inside the database · [Implemented]
+##### Panel `mi-filter` · Eligibility filtering inside the database · [Implemented, needs changing]
 - Kind: Search
 - In plain words: The database itself only hands back pieces this customer's setup may use. We never fetch everything and hope the model ignores the wrong ones.
-- Today: The in-SQL eligibility filter is now proven end to end against the five §D.9 worked examples (8.5.1, test_worked_examples_db.py): each example's exact include and exclude page lists reproduce through the real HybridRetriever; eval unchanged vs the 4.5 floor and a new mixed_connection gold stage recorded its own first baseline.
+- Today: SUPERSEDED for routing by Option A (ADR-0020): the §D.5 slot-eligibility SQL is replaced by a hard directed-label filter — labels && :session_labels inside _base_filters, mirrored by an app.allowed_labels GUC and a RESTRICTIVE RLS policy, applied before top-k across keyword, dense and rerank inputs. See mi-hardfilter and 9.4.1.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2710,6 +2715,7 @@ _Workflow label shown in the drawer: Multi-integration context_
   - An excluded page never appears among the candidates regardless of vector similarity.
   - Fewer than 75 eligible candidates is served as-is, never padded.
   - Gold-set recall against the exact filtered baseline records no loss.
+- Target and notes: SUPERSEDED by Option A (ADR-0020), 2026-10-09 — the slot eligibility predicate above is kept for provenance; the new filter is mi-hardfilter.
 
 ##### Panel `mi-rerank` · Context-aware reranking · [Implemented]
 - Kind: Rerank
@@ -2803,6 +2809,85 @@ _Workflow label shown in the drawer: Multi-integration context_
   - Each worked example reproduces its exact include AND exclude list.
   - Inclusion and exclusion reasons are inspectable per result.
   - Evidence is recorded before any checkbox ticks.
+
+##### Panel `mi-route` · Directed connection: the four label boxes · [Planned]
+- Kind: Gate
+- In plain words: Every chat is one direction between two systems — say, Toast feeding Mews. From those two names Obi works out the four groups of pages that connection is allowed to see, and nothing else.
+- Today: Planned (Option A Stage 2 / action-plan 9.1.1). resolve_system + build_labels in product_catalog.py turn a source and target into the four ordered boxes; not built yet.
+- Settings and rules:
+  | Setting | Value |
+  |---|---|
+  | The four boxes | obi-general · {source.slug}-general · {target.slug}-general · {source.slug}-to-{target.kind} — in that order (D4) |
+  | Direction is primary | toast-to-pms ≠ mews-to-pos; a chat is one directed source→target pair (D7) |
+  | Resolution | resolve_system matches name/slug/alias case-insensitively; an unknown system yields [obi-general] only |
+  | Target kind | {target.kind} is the target product's role from the catalog (pos/pms/accounting), never the product id |
+- Where in the code:
+  - `platform/config/product_catalog.py` — resolve_system / build_labels
+  - `docs/adr/0020-Directed-Connection-Retrieval-Routing.md` — the locked model + D0–D7
+- How to test it:
+  - The five example connections each resolve to exactly their four ordered boxes.
+  - An unknown source or target resolves to [obi-general] alone, never a wildcard.
+  - A malformed pair (toast-to-pmss, toast-to-hotel) is rejected.
+- Target and notes: New for Option A (ADR-0020), 2026-10-09. Replaces the slot matcher (mi-match) as the routing resolver.
+
+##### Panel `mi-labels` · Raw routing labels on every chunk · [Planned]
+- Kind: Metadata
+- In plain words: Each stored piece of a page remembers the exact Confluence labels it was published with. The search uses those labels to keep a chat to its own connection.
+- Today: Planned (Option A Stage 3 / action-plan 9.1.2). A new labels column + GIN index on chunk, filled from the raw labels already fetched at sync; not built yet.
+- Settings and rules:
+  | Setting | Value |
+  |---|---|
+  | New column | chunk.labels text[] NOT NULL DEFAULT '{}' + partial GIN ix_chunk_labels_gin WHERE is_active; mirrored on page_source |
+  | Migration | 0016 (down_revision 0015_applicability_stamp), reversible; copies the 0007 knowledge_scope pattern |
+  | Separate from tags | labels (raw Confluence labels) stay distinct from tags (resolved scope); isolation locks 0–2 unchanged |
+  | Label change | a label-only edit restamps labels via the metadata-only path — no re-embed, same version (D3) |
+- Where in the code:
+  - `knowledge-base/migrations/versions/0016_*.py` — the labels column + GIN + GUC/RLS
+  - `ingestion versioning.py + command_handler.py` — thread labels through inserts and the restamp path
+- How to test it:
+  - A chunk carries its raw labels after a build.
+  - A label-only change updates labels with no re-embed and the same version id.
+  - The backfill is safe to run twice (idempotent).
+- Target and notes: New for Option A (ADR-0020), 2026-10-09. The raw-labels axis the hard filter reads.
+
+##### Panel `mi-session` · One connection per chat · [Planned]
+- Kind: Gate
+- In plain words: Obi works out the connection once, when a chat begins, and reuses it for every later question. Switching to a different connection starts a fresh chat.
+- Today: Planned (Option A Stage 4 / action-plan 9.2.1). A chat_session row bound to the verified subject + company stores the resolved connection and its prompt block; not built yet.
+- Settings and rules:
+  | Setting | Value |
+  |---|---|
+  | Bound to identity | chat_session keyed on the verified token_subject + company_id, never the caller's conversation id alone |
+  | Chat-start runs once | resolve source/target → build_labels → build_connection_block → store; later questions reuse the row, no re-lookup |
+  | Stored | business_id, source_slug, target_slug, labels, connection_block, updated_at |
+  | Partner switch | a different source/target refires chat-start and replaces the block and labels (D7) |
+- Where in the code:
+  - `knowledge-base migration (chat_session)` — the session table
+  - `rag_agent prompt.py` — build_connection_block (new)
+- How to test it:
+  - Chat-start runs once per chat — a second question does not call the catalog again.
+  - A session row is bound to its subject; another subject can neither read nor mutate it.
+- Target and notes: New for Option A (ADR-0020), 2026-10-09. The once-per-chat resolution that feeds the prompt and the filter.
+
+##### Panel `mi-hardfilter` · The hard label filter before top-k · [Planned]
+- Kind: Search
+- In plain words: The database only returns pages whose labels match this chat's connection. Wrong-connection pages can never reach the answer, no matter how similar they look.
+- Today: Planned (Option A Stage 6 / action-plan 9.4.1). labels && session_labels inside the single search chokepoint plus a mirrored RLS policy; not built yet.
+- Settings and rules:
+  | Setting | Value |
+  |---|---|
+  | Hard pre-filter | AND labels && :session_labels in _base_filters, at the same spot as today's tags overlap; before top-k, across keyword, dense and rerank inputs |
+  | Two layers | app.allowed_labels GUC + a RESTRICTIVE RLS policy mirroring chunk_scope_read, so rule 1 (RLS) and rule 3 (no read looser than the search) both hold (D1) |
+  | Always on | not behind a flag; an unlabelled chunk overlaps nothing and is invisible under a connection (D2) |
+  | Parent expansion exempt | fetch_parent_context carries no label filter — the matched child is already authorized |
+- Where in the code:
+  - `retrieval/infrastructure/search_repo.py` — _base_filters + the GUC in the apply_knowledge_scope path
+  - `knowledge-base/schema/schema.py` — the RESTRICTIVE labels RLS policy
+- How to test it:
+  - A Toast→Mews chat never receives a chunk whose only label is toast-to-accounting or mews-to-pos.
+  - The rerank input is already label-filtered.
+  - An empty-labels chunk is never served under an active connection.
+- Target and notes: New for Option A (ADR-0020), 2026-10-09. Supersedes the §D.5 slot eligibility filter (mi-filter).
 
 ---
 
@@ -5005,12 +5090,12 @@ _Section id: `open`_
 | `tg-rebuild` | tags | Rebuild with tags carried | Implemented, needs changing |
 | `tg-state` | tags | scope_state | Planned |
 | `tg-filter` | tags | The filter that uses tags | Implemented, needs changing |
-| `mi-contract` | integration | The integration context: a company and three slots | Implemented |
-| `mi-catalog` | integration | The central product catalog | Implemented |
-| `mi-gate` | integration | Slot validation and the launch allowlist | Implemented |
-| `mi-applies` | integration | "Applies to": applicability on the page | Implemented |
-| `mi-match` | integration | Deterministic matching against real connections | Implemented |
-| `mi-filter` | integration | Eligibility filtering inside the database | Implemented |
+| `mi-contract` | integration | The integration context: a company and three slots | Implemented, needs changing |
+| `mi-catalog` | integration | The central product catalog | Implemented, needs changing |
+| `mi-gate` | integration | Slot validation and the launch allowlist | Implemented, needs changing |
+| `mi-applies` | integration | "Applies to": applicability on the page | Implemented, needs changing |
+| `mi-match` | integration | Deterministic matching against real connections | Implemented, needs changing |
+| `mi-filter` | integration | Eligibility filtering inside the database | Implemented, needs changing |
 | `mi-rerank` | integration | Context-aware reranking | Implemented |
 | `mi-prompt` | integration | The answer model knows the setup; extra reads stay capped | Implemented |
 | `mi-attrib` | integration | Per-slot source attribution | Implemented |
@@ -5105,3 +5190,7 @@ _Section id: `open`_
 | `e-monitor` | eval | Freshness and recall telemetry | Planned |
 | `e-judge` | eval | An LLM as judge | Planned |
 | `em-button` | embed | The frame: the round button and the chat window | Implemented |
+| `mi-route` | integration | Directed connection: the four label boxes | Planned |
+| `mi-labels` | integration | Raw routing labels on every chunk | Planned |
+| `mi-session` | integration | One connection per chat | Planned |
+| `mi-hardfilter` | integration | The hard label filter before top-k | Planned |
