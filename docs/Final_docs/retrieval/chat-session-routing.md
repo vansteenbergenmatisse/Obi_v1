@@ -61,7 +61,21 @@ that fences every non-chunk table (rule 1).
   downgrade/upgrade round-trip tests pass once `schema.enable/disable_non_chunk_rls` guard on
   table existence, so the chain stays valid for a table added after 0009).
 
-Not yet wired: the HTTP endpoint does not call these functions — the token does not yet carry
-`source_system`/`target_system`/`business_id` and the gate does not populate the session. That
-wiring is substep 9.3.1 (token + gate + widget); the hard-filter that consumes the stored labels
-is 9.4.1. This component is the mechanism and its store, proven at the unit and database levels.
+Wired into `POST /chat` (substep 9.4.1): `AnswerService._resolve_directed_routing` loads this
+subject's session on every question and, on the first question of a chat or a partner switch
+(a different source/target than the stored row), calls `start_chat_session` — the one catalog
+lookup — otherwise reuses the stored row with no catalog call (never-bend rule 8). The stored
+`labels` become the retrieval hard filter's `session_labels` (fed to `retrieve_with_context` and
+the CRAG retry) and the `connection_block` is threaded into the answer prompt
+(`AnthropicAnswerGenerator.generate(..., connection_block=...)`). A legacy/slot/tokenless chat is
+not directed, so routing resolves to `(None, None)` — the filter is a no-op and the prompt carries
+no connection block. The gate's directed path (`source_system`/`target_system`/`business_id`)
+landed in 9.3.1; this substep connected that verified identity to the session store and the filter.
+
+- `test_rt1_directed_chat_feeds_session_labels_to_filter_and_block_to_prompt` (unit,
+  `rag_agent/tests/test_answer_service.py`, panels `mi-session`/`mi-hardfilter`): a directed
+  Toast→Mews chat threads its four routing labels into the retriever and the connection block into
+  the generator; chat-start resolves the catalog once and the second question reuses the stored
+  session (no further lookup).
+- `test_rt1_legacy_chat_routes_no_session_labels_or_connection_block` (unit, same file): a
+  general/tokenless chat threads `None` for both and never starts a session row.

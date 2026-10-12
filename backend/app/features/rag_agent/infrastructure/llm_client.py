@@ -91,6 +91,7 @@ class AnswerGenerator(Protocol):
         customer_context: CustomerContext | None = None,
         connections: Sequence[ConnectionRecord] = (),
         image_analysis: str | None = None,
+        connection_block: str | None = None,
     ) -> str:
         """Return a grounded answer citing the numbered markers in ``evidence_block``.
 
@@ -101,8 +102,10 @@ class AnswerGenerator(Protocol):
         directions, and host platform the answer must attribute facts to. ``image_analysis``
         (substep 3.6.7, panel r5-image) is the vision transcription of the user's attached image,
         passed as an uncached CONTEXT block — never folded into ``evidence_block``, so it can never
-        gain a citation marker (never-bend rule 7). All are response context only and never affect
-        access (Locks 0-3 still govern)."""
+        gain a citation marker (never-bend rule 7). ``connection_block`` (substep 9.4.1, panel
+        mi-session) is the directed ``source → target`` connection summary chat-start wrote on the
+        session row. All are response context only and never affect access (Locks 0-3 still
+        govern)."""
         ...
 
     def generate_small_talk(self, query: str) -> str:
@@ -199,6 +202,7 @@ class AnthropicAnswerGenerator:
         customer_context: CustomerContext | None = None,
         connections: Sequence[ConnectionRecord] = (),
         image_analysis: str | None = None,
+        connection_block: str | None = None,
     ) -> str:
         # System blocks, mirroring `generate_identity`: a CACHED persona/style block
         # (`ANSWER_SYSTEM_PROMPT`, constant per deployment, billed once) and optional UNCACHED
@@ -219,6 +223,12 @@ class AnthropicAnswerGenerator:
             )
             if integration_block is not None:
                 system_blocks.append({"type": "text", "text": integration_block})
+        # Substep 9.4.1 (panel mi-session, ADR-0020): the directed-connection block chat-start wrote
+        # on the session row — an uncached per-chat block (varies per connection), presented as
+        # facts, never instructions (anti-injection posture). Response context only; the label hard
+        # filter + the database decide what the chat may see (rule 3), never anything said here.
+        if connection_block:
+            system_blocks.append({"type": "text", "text": connection_block})
         # Substep 3.6.7 (panel r5-image): the vision transcription rides as its own uncached
         # context block — never folded into the user message's evidence block, so it can never
         # gain a citation marker (rule 7). Dropped entirely when there is no image, so the

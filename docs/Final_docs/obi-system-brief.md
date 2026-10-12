@@ -2869,10 +2869,10 @@ _Workflow label shown in the drawer: Multi-integration context_
   - A session row is bound to its subject; another subject can neither read nor mutate it.
 - Target and notes: New for Option A (ADR-0020), 2026-10-09. The once-per-chat resolution that feeds the prompt and the filter.
 
-##### Panel `mi-hardfilter` · The hard label filter before top-k · [Planned]
+##### Panel `mi-hardfilter` · The hard label filter before top-k · [Unverified]
 - Kind: Search
 - In plain words: The database only returns pages whose labels match this chat's connection. Wrong-connection pages can never reach the answer, no matter how similar they look.
-- Today: Planned (Option A Stage 6 / action-plan 9.4.1). labels && session_labels inside the single search chokepoint plus a mirrored RLS policy; not built yet.
+- Today: Built (9.4.1): labels && :session_labels in _base_filters threaded through keyword/dense/rerank + the app.allowed_labels GUC mirroring the chunk_labels_read RLS policy; wired into POST /chat via the chat-session labels; parent expansion exempt. DB+eval green; not yet proven on a relabeled live corpus (9.5.1).
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -5193,4 +5193,4 @@ _Section id: `open`_
 | `mi-route` | integration | Directed connection: the four label boxes | Implemented |
 | `mi-labels` | integration | Raw routing labels on every chunk | Implemented |
 | `mi-session` | integration | One connection per chat | Implemented |
-| `mi-hardfilter` | integration | The hard label filter before top-k | Planned |
+| `mi-hardfilter` | integration | The hard label filter before top-k | Unverified |

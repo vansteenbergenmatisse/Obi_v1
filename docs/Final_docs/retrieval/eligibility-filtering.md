@@ -1,5 +1,13 @@
 # Eligibility filtering inside the database (§D.5)
 
+> **SUPERSEDED for routing by Option A (ADR-0020), 2026-10-12 (substep 9.4.1).** The slot/
+> applicability eligibility predicate below is kept for provenance and still ships as code, but the
+> routing axis is now the directed-connection **hard label filter** — see
+> `directed-label-hardfilter.md` (panel `mi-hardfilter`). The `_ELIGIBILITY_CLAUSE` here and the new
+> `labels && :session_labels` overlap are independent predicates in the same `_base_filters`; a
+> directed chat carries session labels, the slot eligibility rides only on the (now legacy) slot
+> context.
+
 - **Workflow:** retrieval
 - **Owning code:** `backend/app/features/retrieval/infrastructure/search_repo.py` (the
   `_ELIGIBILITY_CLAUSE` applicability predicate inside `_base_filters`, consumed by

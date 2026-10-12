@@ -63,6 +63,7 @@ def _build_retriever(
     monkeypatch.setattr(retriever_module, "apply_hnsw_gucs", lambda *a, **k: None)
     monkeypatch.setattr(retriever_module, "apply_source_scope", lambda *a, **k: None)
     monkeypatch.setattr(retriever_module, "apply_knowledge_scope", lambda *a, **k: None)
+    monkeypatch.setattr(retriever_module, "apply_allowed_labels", lambda *a, **k: None)
     monkeypatch.setattr(retriever_module, "keyword_search", lambda *a, **k: [(1, 2.0), (2, 1.0)])
     monkeypatch.setattr(retriever_module, "dense_search", lambda *a, **k: [(1, 0.9), (2, 0.8)])
     monkeypatch.setattr(

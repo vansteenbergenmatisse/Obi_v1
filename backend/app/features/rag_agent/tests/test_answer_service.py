@@ -70,6 +70,9 @@ class _FakeRetriever:
         # the query_trace row — captured so a test can prove the image transcription (which folds
         # into `query` to drive retrieval) is never the value written to the trace row.
         self.trace_query_calls: list[object] = []
+        # Substep 9.4.1 (panel mi-hardfilter): the directed-connection session labels threaded into
+        # the hard filter — tracked separately so existing assertions stay untouched.
+        self.session_labels_calls: list[object] = []
 
     def retrieve_with_context(
         self,
@@ -79,11 +82,13 @@ class _FakeRetriever:
         knowledge_scopes=None,
         customer_context=None,
         trace_query: str | None = None,
+        session_labels=None,
     ) -> RetrievalResult:
         self.retrieve_calls.append((query, scope, k))
         self.knowledge_scopes_calls.append(knowledge_scopes)
         self.customer_context_calls.append(customer_context)
         self.trace_query_calls.append(trace_query if trace_query is not None else query)
+        self.session_labels_calls.append(session_labels)
         return self._results[query]
 
     def fetch_parent_texts(self, chunk_ids):
@@ -135,6 +140,9 @@ class _FakeGenerator:
         # generation as context (never as citable evidence) — captured separately so the existing
         # `called_with` / `generate_context` assertions stay untouched.
         self.generate_image_analysis_context: list[str | None] = []
+        # Substep 9.4.1 (panel mi-session): the directed-connection block chat-start wrote on the
+        # session row, threaded into the answer prompt — captured separately for the same reason.
+        self.connection_block_context: list[str | None] = []
 
     def generate(
         self,
@@ -146,11 +154,13 @@ class _FakeGenerator:
         customer_context: object = None,
         connections: object = (),
         image_analysis: str | None = None,
+        connection_block: str | None = None,
     ) -> str:
         self.called_with.append((query, evidence_block))
         self.generate_context.append((company_name, integration))
         self.integration_context.append((customer_context, connections))
         self.generate_image_analysis_context.append(image_analysis)
+        self.connection_block_context.append(connection_block)
         return self._text
 
     def generate_small_talk(self, query: str) -> str:
@@ -196,6 +206,7 @@ class _RaisingGenerator:
         customer_context: object = None,
         connections: object = (),
         image_analysis: str | None = None,
+        connection_block: str | None = None,
     ) -> str:
         raise AssertionError("generator must not be called once refusal is decided")
 
@@ -345,11 +356,19 @@ def test_rt3_answer_carries_each_hits_attribution_onto_its_citation() -> None:
     pair) rides straight onto that hit's Citation — the widget renders what the backend
     decided, never recomputing eligibility."""
     hit_general = RetrievedHit(
-        page_id="201", chunk_id=701, score=0.9, title="General Guide", url="u/201",
+        page_id="201",
+        chunk_id=701,
+        score=0.9,
+        title="General Guide",
+        url="u/201",
         attribution="general",
     )
     hit_pair = RetrievedHit(
-        page_id="202", chunk_id=702, score=0.8, title="Toast + Mews", url="u/202",
+        page_id="202",
+        chunk_id=702,
+        score=0.8,
+        title="Toast + Mews",
+        url="u/202",
         attribution="pair",
     )
     retriever = _FakeRetriever(
@@ -1583,9 +1602,7 @@ def test_r5_image_transcription_is_passed_as_context_but_never_a_citable_source(
         {"q\n\nScreenshot says SECRET-TOKEN": RetrievalResult(hits=[_HIT_A], trace_id=1)},
         parent_texts={501: "Grounding text."},
     )
-    generator = _FakeGenerator(
-        "Answer [1].", image_analysis_text="Screenshot says SECRET-TOKEN"
-    )
+    generator = _FakeGenerator("Answer [1].", image_analysis_text="Screenshot says SECRET-TOKEN")
     service, _ = _service(retriever, _FakeRewriter("q"), generator)
 
     history = [ChatMessage(role="user", content="q", images=[_IMAGE])]
@@ -1640,3 +1657,150 @@ def test_sec_image_transcription_is_never_written_to_the_trace_query() -> None:
 
     assert retriever.trace_query_calls == ["rewritten q"]  # text-only, no transcription
     assert all("SECRET-TOKEN" not in tq for tq in retriever.trace_query_calls)
+
+
+# ---------------------------------------------------------------------------------------------
+# Substep 9.4.1 (panels mi-session/mi-hardfilter, ADR-0020): the directed-connection session is
+# wired into the answer path — chat-start runs once, its four routing labels feed the retrieval
+# hard filter, and its connection block feeds the answer prompt. A legacy/general chat routes None.
+# ---------------------------------------------------------------------------------------------
+def _directed_auth(
+    *, source_slug: str, target_slug: str, company_id: str, subject: str
+) -> AuthContext:
+    """The AuthContext `_build_directed_context` (9.3.1) produces for a verified source→target
+    token: resolved source/target slugs, business_id as company_id, general-only scopes."""
+    return AuthContext(
+        company_id=company_id,
+        company_name=None,
+        integration=None,
+        allowed_scopes=("obi-general-test",),
+        allowed_sources=("confluence:default",),
+        principal=None,
+        token_subject=subject,
+        source_slug=source_slug,
+        target_slug=target_slug,
+    )
+
+
+class _FakeChatSessionStore:
+    """A dict-backed stand-in for the writer session the chat-session store uses: supports the
+    `get`/`add`/`flush`/`commit`/context-manager surface `load_chat_session`/`start_chat_session`
+    call, and PERSISTS its rows across `answer()` calls so once-per-chat reuse is observable."""
+
+    def __init__(self) -> None:
+        self.rows: dict[tuple[str, str], object] = {}
+        self.commits = 0
+
+    def get(self, _model: object, pk: tuple[str, str]) -> object | None:
+        return self.rows.get(pk)
+
+    def add(self, row: object) -> None:
+        self.rows[(row.subject_hash, row.company_id)] = row  # type: ignore[attr-defined]
+
+    def flush(self) -> None:
+        return None
+
+    def commit(self) -> None:
+        self.commits += 1
+
+    def __enter__(self) -> _FakeChatSessionStore:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+
+class _CountingCatalog:
+    """Wraps the real product catalog, counting the catalog lookups chat-start makes so a test can
+    prove the per-question path performs NO catalog lookup (once-per-chat, never-bend rule 8)."""
+
+    def __init__(self) -> None:
+        self._catalog = load_product_catalog()
+        self.resolve_calls = 0
+        self.build_labels_calls = 0
+
+    def resolve_system(self, name: str):
+        self.resolve_calls += 1
+        return self._catalog.resolve_system(name)
+
+    def build_labels(self, source: str, target: str) -> list[str]:
+        self.build_labels_calls += 1
+        return self._catalog.build_labels(source, target)
+
+    def __getattr__(self, name: str) -> object:
+        # Delegate everything else (e.g. `connection_types`, used by the prompt's connection
+        # derivation) to the real catalog — only the two routing lookups above are counted.
+        return getattr(object.__getattribute__(self, "_catalog"), name)
+
+
+def test_rt1_directed_chat_feeds_session_labels_to_filter_and_block_to_prompt() -> None:
+    """panels mi-session/mi-hardfilter · substep 9.4.1
+    A directed Toast->Mews chat threads its four routing labels into the retrieval hard filter and
+    the connection block into the answer prompt; chat-start resolves the catalog exactly once and
+    the second question reuses the stored session (no further catalog lookup)."""
+    retriever = _FakeRetriever(
+        {"q": RetrievalResult(hits=[_HIT_A], trace_id=None)},
+        parent_texts={501: "Grounding text."},
+    )
+    generator = _FakeGenerator("Answer with a citation [1].")
+    store = _FakeChatSessionStore()
+    catalog = _CountingCatalog()
+    service, _ = _service(
+        retriever,
+        _FakeRewriter("q"),
+        generator,
+        session_store_sessionmaker=lambda: store,
+        product_catalog=catalog,
+    )
+    auth = _directed_auth(
+        source_slug="toast", target_slug="mews", company_id="B-1", subject="iss\x00sub"
+    )
+
+    service.answer([ChatMessage(role="user", content="how do room charges sync?")], auth)
+
+    assert retriever.session_labels_calls == [
+        ["obi-general", "toast-general", "mews-general", "toast-to-pms"]
+    ]
+    block = generator.connection_block_context[0]
+    assert block is not None
+    assert "Toast" in block and "Mews" in block
+    assert catalog.resolve_calls == 2  # source + target, once
+    assert catalog.build_labels_calls == 1
+
+    # second question, same chat: the stored session is reused — no further catalog lookup
+    service.answer([ChatMessage(role="user", content="how do room charges sync?")], auth)
+    assert catalog.resolve_calls == 2  # unchanged: once-per-chat (never-bend rule 8)
+    assert catalog.build_labels_calls == 1
+    assert retriever.session_labels_calls[1] == [
+        "obi-general",
+        "toast-general",
+        "mews-general",
+        "toast-to-pms",
+    ]
+
+
+def test_rt1_legacy_chat_routes_no_session_labels_or_connection_block() -> None:
+    """panels mi-session/mi-hardfilter · substep 9.4.1
+    A legacy/general chat carries no directed connection, so the hard filter gets None (a no-op)
+    and the answer prompt carries no connection block (pre-9.4.1 behavior)."""
+    retriever = _FakeRetriever(
+        {"q": RetrievalResult(hits=[_HIT_A], trace_id=None)},
+        parent_texts={501: "Grounding text."},
+    )
+    generator = _FakeGenerator("Answer with a citation [1].")
+    store = _FakeChatSessionStore()
+    service, _ = _service(
+        retriever,
+        _FakeRewriter("q"),
+        generator,
+        session_store_sessionmaker=lambda: store,
+        product_catalog=load_product_catalog(),
+    )
+
+    service.answer(
+        [ChatMessage(role="user", content="how do I get access?")], general_only_context()
+    )
+
+    assert retriever.session_labels_calls == [None]
+    assert generator.connection_block_context == [None]
+    assert store.rows == {}  # a non-directed chat never starts a session

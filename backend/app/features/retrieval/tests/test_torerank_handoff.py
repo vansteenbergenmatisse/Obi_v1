@@ -58,6 +58,7 @@ def test_rt3_torerank_caps_at_rerank_depth_after_locks_pass(
     monkeypatch.setattr(retriever_module, "apply_hnsw_gucs", lambda *a, **k: None)
     monkeypatch.setattr(retriever_module, "apply_source_scope", lambda *a, **k: None)
     monkeypatch.setattr(retriever_module, "apply_knowledge_scope", lambda *a, **k: None)
+    monkeypatch.setattr(retriever_module, "apply_allowed_labels", lambda *a, **k: None)
     monkeypatch.setattr(retriever_module, "keyword_search", lambda *a, **k: kw_pages)
     monkeypatch.setattr(retriever_module, "dense_search", lambda *a, **k: [])
     monkeypatch.setattr(
@@ -162,6 +163,7 @@ def test_rt3_torerank_fetches_text_in_same_transaction_same_scope(
     monkeypatch.setattr(retriever_module, "apply_hnsw_gucs", lambda *a, **k: None)
     monkeypatch.setattr(retriever_module, "apply_source_scope", lambda s, sources: None)
     monkeypatch.setattr(retriever_module, "apply_knowledge_scope", lambda s, scopes: None)
+    monkeypatch.setattr(retriever_module, "apply_allowed_labels", lambda s, labels: None)
     monkeypatch.setattr(retriever_module, "keyword_search", _keyword)
     monkeypatch.setattr(retriever_module, "dense_search", _dense)
     monkeypatch.setattr(retriever_module, "fetch_page_scopes", _page_scopes)

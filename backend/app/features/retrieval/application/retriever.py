@@ -30,6 +30,7 @@ import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -51,6 +52,7 @@ from app.features.retrieval.domain.rerank_enrichment import (
 )
 from app.features.retrieval.infrastructure.search_repo import (
     RerankCandidate,
+    apply_allowed_labels,
     apply_hnsw_gucs,
     apply_knowledge_scope,
     apply_source_scope,
@@ -156,6 +158,7 @@ class HybridRetriever:
         k: int,
         knowledge_scopes: Sequence[str] | None = None,
         customer_context: CustomerContext | None = None,
+        session_labels: Sequence[str] | None = None,
     ) -> tuple[list[RetrievedHit], list[str] | None]:
         space_id, principal = classify_scope(scope)
         query_vec = self._embedder.embed([query])[0]
@@ -165,6 +168,12 @@ class HybridRetriever:
             if self._enable_knowledge_scope_filtering and knowledge_scopes is not None
             else None
         )
+        # Option A Stage 6 / 9.4.1 (panel mi-hardfilter, ADR-0020 D1/D2): the directed-connection
+        # label list this chat is bound to. A directed chat carries its four routing boxes; a
+        # legacy/slot/tokenless chat carries None, so the hard filter is a no-op (the label axis is
+        # relevance, not the access fence). Passed as a kwarg only when present so every existing
+        # call shape (and the repo-function test doubles) stays byte-identical to pre-9.4.1.
+        label_filter = list(session_labels) if session_labels is not None else None
         # 8.3.1 (panel mi-filter): one eligibility derivation per search, applied inside the
         # SQL of BOTH candidate queries and the rerank-text fetch below — applicability narrows
         # within what access (RLS + scope + permissions) already allows, before the limit. No
@@ -174,11 +183,15 @@ class HybridRetriever:
             if customer_context is not None
             else None
         )
-        # Passed as a kwarg only when present, so the no-context call shape (and every test
-        # double that fakes these repo functions) stays byte-identical to pre-8.3.1.
-        elig_kwargs: dict[str, EligibilityParams] = (
-            {"eligibility": eligibility} if eligibility is not None else {}
-        )
+        # Both the eligibility predicate (8.3.1) and the directed-connection label filter (9.4.1)
+        # ride along as kwargs ONLY when present, so the no-context / no-connection call shape — and
+        # every repo-function test double that fakes a narrower signature — stays byte-identical to
+        # its earlier shape. Typed `dict[str, Any]` so the one `**` expansion type-checks cleanly.
+        search_kwargs: dict[str, Any] = {}
+        if eligibility is not None:
+            search_kwargs["eligibility"] = eligibility
+        if label_filter is not None:
+            search_kwargs["session_labels"] = label_filter
         with self._session_factory() as session:
             # Per-txn knobs, same transaction as the searches below:
             #  - HNSW iterative_scan keeps recall honest once a narrow scope prunes rows (3.5.1)
@@ -193,6 +206,10 @@ class HybridRetriever:
             )
             apply_source_scope(session, sources)
             apply_knowledge_scope(session, knowledge_scopes)
+            # 9.4.1 (ADR-0020 D1): the labels GUC is set in the SAME txn/path as the scope GUC, so
+            # the RESTRICTIVE chunk_labels_read policy and the app-layer `labels && :session_labels`
+            # predicate agree (rules 1 and 3). None -> '*' opt-out (legacy/slot chats route none).
+            apply_allowed_labels(session, label_filter)
             kw = keyword_search(
                 session,
                 query,
@@ -200,7 +217,7 @@ class HybridRetriever:
                 self._candidate_k,
                 sources,
                 effective_scopes,
-                **elig_kwargs,
+                **search_kwargs,
             )
             dense = dense_search(
                 session,
@@ -210,7 +227,7 @@ class HybridRetriever:
                 self._embedder.dim,
                 sources,
                 effective_scopes,
-                **elig_kwargs,
+                **search_kwargs,
             )
 
             kw_pages = _dedupe(kw)
@@ -234,7 +251,12 @@ class HybridRetriever:
             # FakeReranker is order-preserving, so offline this is exactly the pre-rerank ranking.
             to_rerank = allowed[: self._rerank_depth]
             candidates = fetch_rerank_texts(
-                session, to_rerank, space_id, sources, effective_scopes, **elig_kwargs
+                session,
+                to_rerank,
+                space_id,
+                sources,
+                effective_scopes,
+                **search_kwargs,
             )
 
         # 8.3.2 (panel mi-rerank): tell the reranker who is asking. With a verified context the
@@ -333,9 +355,12 @@ class HybridRetriever:
         k: int = 5,
         knowledge_scopes: Sequence[str] | None = None,
         customer_context: CustomerContext | None = None,
+        session_labels: Sequence[str] | None = None,
     ) -> list[str]:
         started = time.perf_counter()
-        hits, effective_scopes = self._search(query, scope, k, knowledge_scopes, customer_context)
+        hits, effective_scopes = self._search(
+            query, scope, k, knowledge_scopes, customer_context, session_labels
+        )
         self._trace(query, hits, started, effective_scopes)
         return [h.page_id for h in hits]
 
@@ -347,6 +372,7 @@ class HybridRetriever:
         knowledge_scopes: Sequence[str] | None = None,
         customer_context: CustomerContext | None = None,
         trace_query: str | None = None,
+        session_labels: Sequence[str] | None = None,
     ) -> RetrievalResult:
         """Phase 4.2 entry point: hits carry chunk id + score + title/url, plus the trace row id.
 
@@ -358,7 +384,9 @@ class HybridRetriever:
         ``query`` to DRIVE retrieval while the trace records only the text-only question — the
         transcription is memory-only and never persisted (never-bend rule 10, ADR-0009 C6)."""
         started = time.perf_counter()
-        hits, effective_scopes = self._search(query, scope, k, knowledge_scopes, customer_context)
+        hits, effective_scopes = self._search(
+            query, scope, k, knowledge_scopes, customer_context, session_labels
+        )
         traced_query = trace_query if trace_query is not None else query
         trace_id = self._trace(traced_query, hits, started, effective_scopes)
         return RetrievalResult(hits=hits, trace_id=trace_id)
@@ -375,4 +403,9 @@ class HybridRetriever:
         with self._session_factory() as session:
             apply_source_scope(session, self._allowed_sources)
             apply_knowledge_scope(session, None)  # '*': ids already authorized by the scoped search
+            # 9.4.1 (panel mi-hardfilter): parent expansion is label-EXEMPT — the matched child
+            # already passed the hard filter, and its parent shares the same page. Set the labels
+            # GUC to the '*' opt-out so the RESTRICTIVE chunk_labels_read policy admits the parent
+            # on this fresh txn (an unset GUC also opts out, but set it explicitly for safety).
+            apply_allowed_labels(session, None)
             return fetch_parent_context(session, chunk_ids)

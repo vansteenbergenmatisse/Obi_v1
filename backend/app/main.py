@@ -120,6 +120,9 @@ def build_answer_service(settings: Settings) -> AnswerService:
         # Substep 8.3.3 (panel mi-prompt): the committed catalog, used only to derive the
         # customer's actual connections for the answer prompt's integration-context block.
         product_catalog=load_product_catalog(),
+        # Substep 9.4.1 (panel mi-session): the WRITER sessionmaker for the directed-connection
+        # chat-session store (chat-start upserts, every later question reads the stored row).
+        session_store_sessionmaker=get_sessionmaker(),
     )
 
 

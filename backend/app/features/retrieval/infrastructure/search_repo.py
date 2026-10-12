@@ -94,6 +94,47 @@ def apply_knowledge_scope(session: Session, allowed_scopes: Sequence[str] | None
     )
 
 
+# The '*' sentinel opts out of the routing-label filter (same spelling the chunk_labels_read policy
+# reads, migration 0016). Distinct from the scope wildcard above: labels are the relevance/routing
+# axis, NOT the access fence, so an unset/opt-out GUC fails OPEN (the legacy/slot and parent-
+# expansion paths route nothing) — source isolation (lock 1) and customer-scope isolation (lock 2)
+# stay the fail-closed boundary and are untouched by this GUC.
+ALLOWED_LABELS_WILDCARD = "*"
+
+
+def apply_allowed_labels(session: Session, session_labels: Sequence[str] | None) -> None:
+    """Set the directed-connection routing GUC ``app.allowed_labels`` for this txn (ADR-0020 D1).
+
+    The RESTRICTIVE ``chunk_labels_read`` policy (migration 0016) overlaps ``chunk.labels`` against
+    this value; the app-layer ``labels && :session_labels`` predicate in ``_base_filters`` mirrors
+    it (two layers, never-bend rules 1 and 3). Called in the SAME path as ``apply_knowledge_scope``.
+
+    * ``None`` -> the ``'*'`` opt-out sentinel (legacy/slot chats and already-authorized parent
+      expansion): the policy and the predicate both pass through, so labels filter nothing. This is
+      fail-OPEN on purpose — labels are the routing axis, not the access boundary (migration 0016).
+    * a list -> bound and joined; the policy and predicate overlap ``labels`` against it. An empty
+      list yields ``''`` -> the policy opts out (empty GUC = no-op, same fail-open posture).
+
+    Bound param, never interpolated (same injection discipline as ``apply_knowledge_scope``):
+    ``string_to_array(.., ',')`` means an element carrying an embedded comma would widen to every
+    label it names, and a single element equal to ``'*'`` would hit the opt-out sentinel — both are
+    rejected before the join (fail safe for the routing axis)."""
+    if session_labels is None:
+        value = ALLOWED_LABELS_WILDCARD
+    else:
+        for label in session_labels:
+            if "," in label or ALLOWED_LABELS_WILDCARD in label:
+                raise ValueError(
+                    f"invalid routing label {label!r}: ',' and '*' would alter the "
+                    "app.allowed_labels predicate"
+                )
+        value = ",".join(session_labels)
+    session.execute(
+        text("SELECT set_config('app.allowed_labels', :s, true)"),
+        {"s": value},
+    )
+
+
 # ---------------------------------------------------------------------------------------------
 # Substep 8.3.1 (panel mi-filter, plan.md §D.5): the applicability predicate, inside the same
 # WHERE clause as the access filters — before ORDER BY/LIMIT, never a shortlist cleaned up later.
@@ -195,6 +236,7 @@ def _base_filters(
     sources: Sequence[str] | None,
     knowledge_scopes: Sequence[str] | None = None,
     eligibility: EligibilityParams | None = None,
+    session_labels: Sequence[str] | None = None,
 ) -> str:
     clause = "is_active AND kind = 1 AND page_status = 'current'"
     if space_id is not None:
@@ -209,6 +251,15 @@ def _base_filters(
         # knowledge-scope tag at all (empty array) overlaps nothing, so it does not participate
         # (Decision 1: "no recognized tag -> does not participate", not a silent fallback-visible).
         clause += " AND tags && :knowledge_scopes"
+    if session_labels is not None:
+        # Option A Stage 6 / 9.4.1 (panel mi-hardfilter, ADR-0020 D1/D2): the directed-connection
+        # routing filter, at the SAME spot as the tags overlap, against the labels GIN index
+        # (ix_chunk_labels_gin, migration 0016). Bound, never interpolated (never-bend rule 10).
+        # An unlabelled chunk (empty array) overlaps nothing, so it is invisible under an active
+        # connection (D2). Mirrored by the app.allowed_labels GUC + the RESTRICTIVE RLS policy so
+        # the app predicate and the database agree (rules 1 and 3). Not behind a flag — a hard
+        # filter. A None argument (legacy/slot chats, parent expansion) omits it entirely.
+        clause += " AND labels && :session_labels"
     if eligibility is not None:
         # 8.3.1: applicability narrows INSIDE what access already allows — RLS and the scope
         # predicates above are untouched and still apply first (never-bend rule 3).
@@ -230,11 +281,12 @@ def keyword_search(
     sources: Sequence[str] | None = None,
     knowledge_scopes: Sequence[str] | None = None,
     eligibility: EligibilityParams | None = None,
+    session_labels: Sequence[str] | None = None,
 ) -> list[tuple[int, float]]:
     sql = text(
         f"SELECT page_id, ts_rank(tsv, {_OR_TSQUERY}) AS score "
         f"FROM chunk "
-        f"WHERE {_base_filters(space_id, sources, knowledge_scopes, eligibility)} "
+        f"WHERE {_base_filters(space_id, sources, knowledge_scopes, eligibility, session_labels)} "
         f"AND tsv @@ {_OR_TSQUERY} "
         f"ORDER BY score DESC, page_id ASC LIMIT :limit"
     )
@@ -247,6 +299,8 @@ def keyword_search(
         params["knowledge_scopes"] = list(knowledge_scopes)
     if eligibility is not None:
         params.update(_eligibility_bind_params(eligibility))
+    if session_labels is not None:
+        params["session_labels"] = list(session_labels)
     return [(int(pid), float(score)) for pid, score in session.execute(sql, params)]
 
 
@@ -263,6 +317,7 @@ def dense_search(
     sources: Sequence[str] | None = None,
     knowledge_scopes: Sequence[str] | None = None,
     eligibility: EligibilityParams | None = None,
+    session_labels: Sequence[str] | None = None,
 ) -> list[tuple[int, float]]:
     # >2000-dim models are indexed as halfvec; cast both sides so the ANN index is used.
     if dim >= _HALFVEC_MIN_DIM:
@@ -274,7 +329,7 @@ def dense_search(
     sql = text(
         f"SELECT page_id, ({lhs} <=> {rhs}) AS dist "
         f"FROM chunk "
-        f"WHERE {_base_filters(space_id, sources, knowledge_scopes, eligibility)} "
+        f"WHERE {_base_filters(space_id, sources, knowledge_scopes, eligibility, session_labels)} "
         f"AND embedding IS NOT NULL "
         f"ORDER BY dist ASC, page_id ASC LIMIT :limit"
     )
@@ -287,6 +342,8 @@ def dense_search(
         params["knowledge_scopes"] = list(knowledge_scopes)
     if eligibility is not None:
         params.update(_eligibility_bind_params(eligibility))
+    if session_labels is not None:
+        params["session_labels"] = list(session_labels)
     return [(int(pid), float(dist)) for pid, dist in session.execute(sql, params)]
 
 
@@ -313,6 +370,7 @@ def fetch_rerank_texts(
     sources: Sequence[str] | None = None,
     knowledge_scopes: Sequence[str] | None = None,
     eligibility: EligibilityParams | None = None,
+    session_labels: Sequence[str] | None = None,
 ) -> dict[int, RerankCandidate]:
     """One representative child chunk per page for the cross-encoder, keyed by page id.
 
@@ -338,7 +396,7 @@ def fetch_rerank_texts(
     sql = text(
         f"SELECT DISTINCT ON (page_id) {columns} "
         f"FROM chunk "
-        f"WHERE {_base_filters(space_id, sources, knowledge_scopes, eligibility)} "
+        f"WHERE {_base_filters(space_id, sources, knowledge_scopes, eligibility, session_labels)} "
         f"AND page_id = ANY(:page_ids) "
         f"ORDER BY page_id, seq"
     )
@@ -351,6 +409,8 @@ def fetch_rerank_texts(
         params["knowledge_scopes"] = list(knowledge_scopes)
     if eligibility is not None:
         params.update(_eligibility_bind_params(eligibility))
+    if session_labels is not None:
+        params["session_labels"] = list(session_labels)
     out: dict[int, RerankCandidate] = {}
     for row in session.execute(sql, params):
         if select_applicability:

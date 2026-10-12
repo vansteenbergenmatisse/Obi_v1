@@ -79,6 +79,7 @@ def _patch_search_repo(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(retriever_module, "apply_hnsw_gucs", lambda *a, **k: None)
     monkeypatch.setattr(retriever_module, "apply_source_scope", lambda *a, **k: None)
     monkeypatch.setattr(retriever_module, "apply_knowledge_scope", lambda *a, **k: None)
+    monkeypatch.setattr(retriever_module, "apply_allowed_labels", lambda *a, **k: None)
     monkeypatch.setattr(
         retriever_module,
         "keyword_search",

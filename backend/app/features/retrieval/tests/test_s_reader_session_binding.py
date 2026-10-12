@@ -70,6 +70,12 @@ def test_s_reader_sibling_read_runs_on_the_guc_bound_reader_session(
         "apply_knowledge_scope",
         lambda s, scopes: guc_sessions.__setitem__("apply_knowledge_scope", s),
     )
+    # substep 9.4.1: the directed-connection labels GUC is set in the SAME path (rule 3).
+    monkeypatch.setattr(
+        retriever_module,
+        "apply_allowed_labels",
+        lambda s, labels: guc_sessions.__setitem__("apply_allowed_labels", s),
+    )
 
     def _keyword(s: object, *a: Any, **k: Any) -> list[tuple[int, float]]:
         seen["keyword_search"] = s
@@ -106,3 +112,4 @@ def test_s_reader_sibling_read_runs_on_the_guc_bound_reader_session(
     assert seen[sibling] is reader_session  # this read's OWN captured session, not an inference
     assert guc_sessions["apply_source_scope"] is reader_session
     assert guc_sessions["apply_knowledge_scope"] is reader_session
+    assert guc_sessions["apply_allowed_labels"] is reader_session

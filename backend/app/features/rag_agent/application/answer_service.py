@@ -79,6 +79,11 @@ from typing import Protocol, runtime_checkable
 from sqlalchemy.orm import Session
 
 from app.features.rag_agent.application.auth_context import AuthContext
+from app.features.rag_agent.application.chat_session import (
+    ChatSessionError,
+    load_chat_session,
+    start_chat_session,
+)
 from app.features.rag_agent.domain.citations import enforce_citations
 from app.features.rag_agent.domain.clarification import AmbiguityClassifier, decide_clarification
 from app.features.rag_agent.domain.curated_knowledge import CuratedEntry, curated_entry_to_hit
@@ -185,6 +190,7 @@ class AnswerService:
         reader_sessionmaker: Callable[[], Session] | None = None,
         curated_knowledge_max_entries: int = 5,
         product_catalog: ProductCatalog | None = None,
+        session_store_sessionmaker: Callable[[], Session] | None = None,
     ) -> None:
         self._retriever = retriever
         self._rewriter = rewriter
@@ -210,6 +216,52 @@ class AnswerService:
         # context's own real records (empty at launch), so the prompt simply omits the connections
         # line rather than erroring. It never widens eligibility (the search already enforced that).
         self._product_catalog = product_catalog
+        # Option A Stage 6 (substep 9.4.1, panel mi-session): the WRITER sessionmaker for the
+        # directed-connection chat-session store. `None` in a test/deployment that never wires it —
+        # a directed chat then degrades to no routing (general-only), never an error.
+        self._session_store_sessionmaker = session_store_sessionmaker
+
+    def _resolve_directed_routing(self, auth: AuthContext) -> tuple[list[str] | None, str | None]:
+        """Option A Stage 6 (substep 9.4.1, panels mi-session/mi-hardfilter, ADR-0020): resolve the
+        directed ``source → target`` chat's session ONCE and reuse it on every later question.
+
+        Returns ``(session_labels, connection_block)``: the four routing labels feed the retrieval
+        hard filter + the ``app.allowed_labels`` GUC; the connection block feeds the answer prompt.
+        Chat-start (the one catalog lookup) runs only on the first question of a chat or on a
+        partner switch (a different source/target); otherwise the stored row is reused, no lookup
+        (never-bend rule 8 — the session read is a keyed lookup, not a corpus search). A
+        legacy/slot/tokenless chat is NOT directed, so this returns ``(None, None)`` and the label
+        filter is a no-op (labels are the relevance axis, not the access fence — locks 1-2 stand).
+        The connection comes only from the verified token/session, never the request body (rules
+        2-3)."""
+        if auth.source_slug is None and auth.target_slug is None:
+            return None, None  # not a directed-connection chat
+        if self._product_catalog is None or self._session_store_sessionmaker is None:
+            return None, None  # store/catalog not wired (an uncoupled test path)
+        try:
+            with self._session_store_sessionmaker() as session:
+                row = load_chat_session(session, auth)
+                if (
+                    row is None
+                    or row.source_slug != auth.source_slug
+                    or row.target_slug != auth.target_slug
+                ):
+                    row = start_chat_session(
+                        session,
+                        auth,
+                        source_system=auth.source_slug or "",
+                        target_system=auth.target_slug or "",
+                        business_id=auth.company_id or "",
+                        catalog=self._product_catalog,
+                    )
+                labels = list(row.labels)
+                connection_block = row.connection_block
+                session.commit()
+            return labels, connection_block
+        except ChatSessionError:
+            # a directed form always rides a verified token carrying subject + company; if either is
+            # missing the session cannot be keyed -> degrade to general-only, never crash.
+            return None, None
 
     def answer(self, history: Sequence[ChatMessage], auth: AuthContext) -> Answer:
         if not history or history[-1].role != "user":
@@ -304,6 +356,13 @@ class AnswerService:
             slot_accounting=auth.slot_accounting,
             platform=auth.platform,
         )
+        # Substep 9.4.1 (panels mi-session/mi-hardfilter, ADR-0020): resolve this directed chat's
+        # session once (chat-start) and reuse it per question. The four routing labels feed the
+        # retrieval hard filter below; the connection block feeds the answer prompt. A
+        # legacy/slot/tokenless chat is not directed -> (None, None), so the filter is a no-op and
+        # the prompt carries no connection block (pre-9.4.1 behavior). The CRAG retry reuses the
+        # same labels, so the retry can never widen the connection.
+        session_labels, connection_block = self._resolve_directed_routing(auth)
         # PLAN 11.1c (ADR-0014): audit *who* asked as sha256(sub) — never the raw subject/token.
         subject_hash = sha256_text(auth.token_subject).hex() if auth.token_subject else None
 
@@ -331,6 +390,7 @@ class AnswerService:
                 knowledge_scopes=allowed_scopes,
                 customer_context=customer_context,
                 trace_query=rewritten,
+                session_labels=session_labels,
             )
             result = self._apply_crag_retry(
                 result,
@@ -340,6 +400,7 @@ class AnswerService:
                 scope,
                 allowed_scopes,
                 customer_context,
+                session_labels,
             )
         else:
             # No text AND no transcription (e.g. an image whose vision call produced nothing) —
@@ -434,6 +495,7 @@ class AnswerService:
             customer_context=customer_context,
             connections=prompt_connections,
             image_analysis=image_analysis,
+            connection_block=connection_block,
         )
         cleaned, used_markers = enforce_citations(
             raw_answer, valid_markers=range(1, len(evidence_hits) + 1)
@@ -496,6 +558,7 @@ class AnswerService:
         scope: str | None,
         knowledge_scopes: Sequence[str],
         customer_context: CustomerContext | None = None,
+        session_labels: Sequence[str] | None = None,
     ) -> RetrievalResult:
         """One corrective retry (PLAN 4.2 stage 6): if the rewrite may have hurt retrieval, retry
         with the user's verbatim query and keep whichever result scored higher. A no-op when
@@ -503,6 +566,8 @@ class AnswerService:
         `knowledge_scopes` is the same allow-list `answer()` already resolved once (PLAN 10.5) —
         the retry must stay inside it too, never a second, unscoped search; `customer_context`
         is the same verified context (8.3.1), so the retry filters eligibility identically.
+        `session_labels` is the same directed-connection label list (9.4.1), so the retry can never
+        widen past this chat's four routing boxes (the hard filter + GUC apply identically).
 
         Substep 3.6.7: `search_query` / `retry_search_query` carry the same folded image
         transcription (when any), so the retry still DRIVES retrieval on the image; the retry
@@ -519,6 +584,7 @@ class AnswerService:
             knowledge_scopes=knowledge_scopes,
             customer_context=customer_context,
             trace_query=retry_trace_query,
+            session_labels=session_labels,
         )
         if retry.top_score is not None and (
             result.top_score is None or retry.top_score > result.top_score

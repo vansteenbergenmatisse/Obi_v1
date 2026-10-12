@@ -8592,9 +8592,9 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "mi-hardfilter": {
 "n": "Search",
 "h": "The hard label filter before top-k",
-"st": "build",
+"st": "unverified",
 "simple": "The database only returns pages whose labels match this chat's connection. Wrong-connection pages can never reach the answer, no matter how similar they look.",
-"today": "Planned (Option A Stage 6 / action-plan 9.4.1). labels && session_labels inside the single search chokepoint plus a mirrored RLS policy; not built yet.",
+"today": "Built (9.4.1): labels && :session_labels in _base_filters threaded through keyword/dense/rerank + the app.allowed_labels GUC mirroring the chunk_labels_read RLS policy; wired into POST /chat via the chat-session labels; parent expansion exempt. DB+eval green; not yet proven on a relabeled live corpus (9.5.1).",
 "f": [
 [
 "Hard pre-filter",
