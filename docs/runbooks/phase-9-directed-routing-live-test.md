@@ -79,9 +79,23 @@ Ask a question that would pull each marker page, and read the citations.
 thread resets to a fresh chat, and now it cites `mews-to-pos` (*bronze plums*) and **never**
 `toast-to-pms` (*silver pears*). That one flip proves direction and isolation at once.
 
-**Fast cross-check (optional, DB only):** a `rag_reader` with the Toast → Mews session set sees only
-the four boxes. I can hand you a one-command `verify_directed_routing_live.py` that sets the session
-exactly as the gate does and prints which marker pages the reader sees — ask and I will add it.
+**Fast cross-check (DB only, one command):** `scripts/verify_directed_routing_live.py` sets a
+`rag_reader` session exactly as the gate does (`app.allowed_sources` / `allowed_knowledge_scopes` /
+`allowed_labels`) and prints, per page, whether the connection can see it versus whether it should:
+
+```
+cd backend
+DATABASE_URL=postgresql+psycopg://rag:rag@localhost:5434/omniboost_rag \
+DATABASE_READER_URL=postgresql+psycopg://rag_reader:rag_reader@localhost:5434/omniboost_rag \
+ENV=local uv run python scripts/verify_directed_routing_live.py --source toast --target mews --mirror
+```
+
+**Good result:** `RESULT: PASS` for both `toast -> mews` and the mirrored `mews -> toast`, every
+row's `visible` matching `expected`, and `RLS enforced: True`. Exit code 0. If it prints
+`RLS enforced: False` it refuses to call it a pass — set `DATABASE_READER_URL` to the `rag_reader`
+DSN (locally the role's password is `rag_reader`; set it once with
+`ALTER ROLE rag_reader WITH LOGIN PASSWORD 'rag_reader';` as the owner if auth fails). Exit 2 means
+nothing is indexed yet — run Gate 2 first.
 
 ### Gate 4 · Phase A (human validation)
 
@@ -121,9 +135,11 @@ Supabase backup first** — the migrate is upgrade-only and cannot be rolled bac
 2. **Re-sync** the relabelled corpus into prod: `make reingest` (uses the prod `.env`), then
    `scripts/page_state.py <page_id>` — same "good result" as Track A Gate 2.
 
-3. **Live isolation:** same as Track A Gate 3, against the deployed widget / a directed token
-   minted by a configured issuer. Save the output into
-   `docs/Final_docs/5-integration-context/phase-9-isolation-run.txt` (it has a slot for the live run).
+3. **Live isolation:** run the same `scripts/verify_directed_routing_live.py --source toast
+   --target mews --mirror` against prod — point `DATABASE_URL` + `DATABASE_READER_URL` at Supabase
+   (the reader URL must be the `rag_reader` role so RLS bites). Expect `RESULT: PASS` both ways and
+   `RLS enforced: True`. Also drive the deployed widget with a directed token for the human view.
+   Save the output into `docs/Final_docs/5-integration-context/phase-9-isolation-run.txt`.
 
 4. Only after Phase A passes: send the partner replies
    (`docs/Final_docs/5-integration-context/phase-9-partner-replies.md`).
