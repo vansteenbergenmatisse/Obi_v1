@@ -186,6 +186,7 @@ def _apply_upsert(
             page_status=page_status,
             services=services,
             tags=final_tags,
+            labels=list(labels),
             applicability=applicability,
         )
         if restrictions_changed:
@@ -217,6 +218,7 @@ def _apply_upsert(
             decision,
             page_status,
             tags=final_tags,
+            labels=list(labels),
             applicability=applicability if applicability_known else _KEEP,
         )
         if restrictions_changed:
@@ -320,7 +322,7 @@ _KEEP = object()
 
 
 def _apply_metadata_only(
-    session, meta, decision, page_status, *, tags=None, applicability=_KEEP
+    session, meta, decision, page_status, *, tags=None, labels=None, applicability=_KEEP
 ) -> None:
     """Update registry + propagate retrieval-relevant metadata to chunks WITHOUT re-embedding."""
     ps = session.get(PageSource, meta.page_id)
@@ -345,6 +347,8 @@ def _apply_metadata_only(
         ps.attachment_manifest_hash = decision.attachment_manifest_hash
     if tags is not None:
         ps.tags = list(tags)
+    if labels is not None:
+        ps.labels = list(labels)  # raw labels restamp (ADR-0020 D3, mi-labels): no re-embed
     if applicability is not _KEEP:
         ps.applicability = applicability  # mi-applies 8.2.2: restamp (None = removed)
     ps.last_indexed_at = now
@@ -359,6 +363,8 @@ def _apply_metadata_only(
             values["access_scope"] = decision.access_scope_hash
         if tags is not None:
             values["tags"] = list(tags)
+        if labels is not None:
+            values["labels"] = list(labels)
         if applicability is not _KEEP:
             values["applicability"] = applicability
         session.execute(

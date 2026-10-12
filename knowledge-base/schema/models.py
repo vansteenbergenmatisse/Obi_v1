@@ -109,6 +109,12 @@ class PageSource(Base):
     tags: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
     )
+    # raw Confluence labels the page was published with (ADR-0020 D1, panel mi-labels, migration
+    # 0016): the unresolved ``get_labels`` output, the directed-connection routing axis. Kept
+    # strictly distinct from ``tags`` (the recognized-scope ∩ authorized set). Empty = no labels.
+    labels: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
+    )
     # validated "Applies to" record of the ACTIVE indexed state (§D.3, panel mi-applies,
     # migration 0015): a JSON list of rules, OR between them. NULL = no record = the
     # documented label-only default. Never grants access — it only narrows relevance.
@@ -292,6 +298,12 @@ class Chunk(Base):
     tags: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
     )
+    # raw Confluence labels the page was published with (ADR-0020 D1, panel mi-labels, migration
+    # 0016): the directed-connection routing axis, distinct from the resolved scope ``tags``. The
+    # 9.4.1 hard filter reads it via ``app.allowed_labels`` + ``labels && :session_labels``.
+    labels: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
+    )
     # validated "Applies to" record stamped at build/restamp (§D.3, panel mi-applies,
     # migration 0015). NULL = no record = label-only behavior; never widens access.
     applicability: Mapped[list | None] = mapped_column(JSONB, nullable=True)
@@ -353,6 +365,13 @@ class Chunk(Base):
         Index(
             "ix_chunk_tags_gin",
             "tags",
+            postgresql_using="gin",
+            postgresql_where=text("is_active"),
+        ),
+        # directed-connection routing hot path: `labels && ARRAY[...]` overlap (ADR-0020, 9.4.1)
+        Index(
+            "ix_chunk_labels_gin",
+            "labels",
             postgresql_using="gin",
             postgresql_where=text("is_active"),
         ),

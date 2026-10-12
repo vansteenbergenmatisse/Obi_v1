@@ -76,6 +76,7 @@ def build_chunks(
     target: TargetVersions,
     services: IngestionServices,
     tags: list[str] | None = None,
+    labels: list[str] | None = None,
     applicability: list | None = None,
 ) -> list[Chunk]:
     """Token-aware parent/child chunks with contextual retrieval_content, embeddings and tsv.
@@ -101,6 +102,8 @@ def build_chunks(
         source_type=_SOURCE_TYPE,
         source_id=_SOURCE_ID,
         tags=list(tags) if tags is not None else [],
+        # raw Confluence labels (ADR-0020 D1, mi-labels); the routing axis, distinct from tags.
+        labels=list(labels) if labels is not None else [],
         # validated "Applies to" payload (mi-applies, 8.2.2); None = label-only default.
         applicability=applicability,
         source_url=meta.source_url,
@@ -193,6 +196,7 @@ def stage_and_activate(
     services: IngestionServices,
     retain_superseded: int = DEFAULT_RETAIN_SUPERSEDED,
     tags: list[str] | None = None,
+    labels: list[str] | None = None,
     applicability: list | None = None,
 ) -> DocumentVersion:
     """Stage a new version, validate, and atomically activate it. Single transaction."""
@@ -223,6 +227,7 @@ def stage_and_activate(
         target=target,
         services=services,
         tags=tags,
+        labels=labels,
         applicability=applicability,
     )
     # link parent<-child and prev/next among children in reading order
@@ -244,6 +249,7 @@ def stage_and_activate(
         new_version=new_version,
         embedding_dim=services.embedding_dim,
         tags=tags,
+        labels=labels,
         applicability=applicability,
     )
     _gc_superseded(session, document_id=doc.id, retain=retain_superseded)
@@ -280,6 +286,7 @@ def _activate(
     new_version: DocumentVersion,
     embedding_dim: int,
     tags: list[str] | None = None,
+    labels: list[str] | None = None,
     applicability: list | None = None,
 ) -> None:
     now = _now()
@@ -312,6 +319,7 @@ def _activate(
     ps.source_type = _SOURCE_TYPE  # source-tag seam (ADR-0004), mirrors the chunk stamp above
     ps.source_id = _SOURCE_ID
     ps.tags = list(tags) if tags is not None else []
+    ps.labels = list(labels) if labels is not None else []  # raw labels (ADR-0020 D1, mi-labels)
     ps.applicability = applicability  # mi-applies 8.2.2: None = no record = label-only
     ps.parent_id = meta.parent_id
     ps.current_cf_version = meta.version_number

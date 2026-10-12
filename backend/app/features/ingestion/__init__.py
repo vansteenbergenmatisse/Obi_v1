@@ -15,6 +15,7 @@ They import each other by full submodule path.
 
 from __future__ import annotations
 
+from .application.backfill_labels import BackfillReport, backfill_labels
 from .application.command_handler import apply_sync_command, target_versions
 from .application.services import build_ingestion_services
 from .application.versioning import (
@@ -55,6 +56,7 @@ __all__ = [
     "ApplicabilityValidationError",
     "AppliesTo",
     "AppliesToExtraction",
+    "BackfillReport",
     "ChangeClass",
     "ConnectionSpec",
     "ExtractionResult",
@@ -63,6 +65,7 @@ __all__ = [
     "applies_to_payload",
     "apply_sync_command",
     "attachment_to_blocks",
+    "backfill_labels",
     "extract_applies_to",
     "build_ingestion_services",
     "classify",

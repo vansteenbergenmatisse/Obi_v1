@@ -144,6 +144,10 @@ def provision_test_database() -> Iterator[None]:
         # analogue toggles non-chunk RLS state in a dedicated isolated test
         # (test_customer_isolation_backstop), which relies on this shared harness leaving it off.
         schema.apply_chunk_scope_rls(conn)
+        # Option A / ADR-0020 D1: the directed-connection labels policy (RESTRICTIVE, ANDs with the
+        # source + scope policies). A no-op until app.allowed_labels is set (9.4.1), so retrieval is
+        # unchanged today; applied here so the sec tests exercise the live policy shape.
+        schema.apply_chunk_labels_rls(conn)
 
     # Point the reader engine at the same test DB but as the non-owner rag_reader role.
     reader_url = (

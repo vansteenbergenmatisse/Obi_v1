@@ -129,6 +129,46 @@ def drop_chunk_scope_rls(conn: Connection) -> None:
     conn.execute(text(f"DROP POLICY IF EXISTS {_CHUNK_SCOPE_POLICY} ON chunk"))
 
 
+# --- Option A / ADR-0020 D1: directed-connection routing label policy on ``chunk`` ------------
+# The raw-labels axis (migration 0016). A RESTRICTIVE policy keyed on ``app.allowed_labels`` that
+# mirrors ``chunk_scope_read`` in SHAPE but is deliberately a **no-op until the GUC is set** — the
+# retrieval path that sets ``app.allowed_labels`` lands in a later substep (9.4.1 / Stage 6). Unlike
+# the scope GUC (which fails CLOSED on unset so a dropped call denies), labels are the
+# routing/relevance axis, NOT the access boundary: source isolation (``chunk_source_read``, lock 1)
+# and customer-scope isolation (``chunk_scope_read``, lock 2) remain the fail-closed enforcement
+# fence. So this policy opts out when the GUC is unset (NULL/empty) and on the explicit ``'*'``
+# sentinel, and only overlaps when a real connection-label list is set.
+_LABELS_GUC = "app.allowed_labels"
+_CHUNK_LABELS_POLICY = "chunk_labels_read"
+
+
+def apply_chunk_labels_rls(conn: Connection) -> None:
+    """Add the RESTRICTIVE directed-connection labels policy to ``chunk`` (ADR-0020 D1, mig 0016).
+
+    Composes (ANDs) with ``chunk_source_read`` + ``chunk_scope_read``; requires chunk RLS enabled.
+    No-op until ``app.allowed_labels`` is set (9.4.1): unset/empty -> opt out; ``'*'`` -> opt out;
+    a real list -> ``labels``-overlap. Idempotent.
+    """
+    conn.execute(text("ALTER TABLE chunk ENABLE ROW LEVEL SECURITY"))
+    conn.execute(text(f"DROP POLICY IF EXISTS {_CHUNK_LABELS_POLICY} ON chunk"))
+    conn.execute(
+        text(
+            f"CREATE POLICY {_CHUNK_LABELS_POLICY} ON chunk AS RESTRICTIVE FOR SELECT "
+            f"USING (coalesce(current_setting('{_LABELS_GUC}', true), '') = '' "
+            f"OR current_setting('{_LABELS_GUC}', true) = '*' "
+            f"OR labels && string_to_array(current_setting('{_LABELS_GUC}', true), ','))"
+        )
+    )
+
+
+def drop_chunk_labels_rls(conn: Connection) -> None:
+    """Reverse ``apply_chunk_labels_rls`` (keeps the source + scope policies + RLS enable state).
+
+    Safe on any host: the policy is a no-op (unset GUC opts out), so dropping it loosens nothing —
+    source + scope isolation (locks 1-2) are untouched. Idempotent."""
+    conn.execute(text(f"DROP POLICY IF EXISTS {_CHUNK_LABELS_POLICY} ON chunk"))
+
+
 def apply_curated_scope_rls(conn: Connection) -> None:
     """Add the RESTRICTIVE knowledge-scope policy to ``curated_knowledge_entry`` (ADR-0014).
 

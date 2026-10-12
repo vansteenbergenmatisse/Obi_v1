@@ -2830,10 +2830,10 @@ _Workflow label shown in the drawer: Multi-integration context_
   - A malformed pair (toast-to-pmss, toast-to-hotel) is rejected.
 - Target and notes: New for Option A (ADR-0020), 2026-10-09. Replaces the slot matcher (mi-match) as the routing resolver.
 
-##### Panel `mi-labels` · Raw routing labels on every chunk · [Planned]
+##### Panel `mi-labels` · Raw routing labels on every chunk · [Implemented]
 - Kind: Metadata
 - In plain words: Each stored piece of a page remembers the exact Confluence labels it was published with. The search uses those labels to keep a chat to its own connection.
-- Today: Planned (Option A Stage 3 / action-plan 9.1.2). A new labels column + GIN index on chunk, filled from the raw labels already fetched at sync; not built yet.
+- Today: Built (9.1.2): migration 0016 adds chunk/page_source.labels text[] + partial GIN ix_chunk_labels_gin WHERE is_active + a no-op-until-9.4.1 app.allowed_labels RESTRICTIVE policy; sync threads the raw get_labels output through builds and the metadata-only restamp (no re-embed, same version), and an idempotent backfill_labels CLI fills existing chunks. Database-tested; live corpus relabel is 9.5.1.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -5191,6 +5191,6 @@ _Section id: `open`_
 | `e-judge` | eval | An LLM as judge | Planned |
 | `em-button` | embed | The frame: the round button and the chat window | Implemented |
 | `mi-route` | integration | Directed connection: the four label boxes | Implemented |
-| `mi-labels` | integration | Raw routing labels on every chunk | Planned |
+| `mi-labels` | integration | Raw routing labels on every chunk | Implemented |
 | `mi-session` | integration | One connection per chat | Planned |
 | `mi-hardfilter` | integration | The hard label filter before top-k | Planned |
