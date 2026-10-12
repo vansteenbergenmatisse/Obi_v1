@@ -618,6 +618,40 @@ class CuratedKnowledgeEntry(Base):
     )
 
 
+class ChatSession(Base):
+    """One directed-connection chat session (Option A Stage 4, panel mi-session, ADR-0020).
+
+    Chat-start resolves the directed ``source → target`` connection once and stores it here; every
+    later question in the chat reuses this row instead of re-resolving (never-bend rule 8). The row
+    is keyed on the VERIFIED edge identity — ``subject_hash`` (sha256 of the issuer-namespaced token
+    subject, mirroring ``query_trace.subject_hash`` and ``router._idempotency_cache_key``) plus
+    ``company_id`` — never the caller-supplied conversation id, so a different subject can neither
+    read nor mutate another's session (the composite primary key is the boundary). A partner switch
+    (a different source/target) refires chat-start and replaces ``labels``/``connection_block`` in
+    place (D7). ``source_slug``/``target_slug`` are nullable: an unrecognized system resolves to no
+    product, leaving ``labels = {obi-general}`` and an "unknown" connection block (step 5).
+
+    Written and read via the WRITER engine (the chat path), so RLS never blocks it; the migration
+    still ENABLEs RLS with no policy so the Supabase public REST roles are default-denied (rule 1).
+    """
+
+    __tablename__ = "chat_session"
+
+    subject_hash: Mapped[str] = mapped_column(Text, primary_key=True)
+    company_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    business_id: Mapped[str] = mapped_column(Text, nullable=False)
+    source_slug: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_slug: Mapped[str | None] = mapped_column(Text, nullable=True)
+    labels: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
+    )
+    connection_block: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = _ts_created()
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 __all__ = [
     "PageSource",
     "Document",
@@ -629,6 +663,7 @@ __all__ = [
     "SourceScope",
     "QueryTrace",
     "CuratedKnowledgeEntry",
+    "ChatSession",
     "KIND_PARENT",
     "KIND_CHILD",
     "EMB_DIM",

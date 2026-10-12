@@ -26,6 +26,14 @@ same rendering drives both the real runtime and its tests:
   ``EXAMPLE_INTEGRATION_CONTEXT_BASE`` are populated example renderings for the two launch host
   platforms. The prompt gives context and answer guidance only — the backend alone enforces
   eligibility (never-bend rule 3); this block never widens access.
+* ``build_connection_block`` (Option A Stage 4, substep 9.2.1, panel mi-session, ADR-0020 chat-
+  start step 3): the directed ``source → target`` connection the chat is bound to — both systems
+  and their roles, the direction, and the business id — plus the instruction to answer for this
+  connection only and tell the user to pick another partner if they ask about a different system.
+  Built once at chat-start from the resolved catalog products and stored on the ``chat_session``
+  row; every later question reuses the stored string instead of rebuilding it. An unresolved
+  source/target renders a plain "could not be recognized" block (never a fabricated system), so the
+  answer stays general-only — this mirrors ``build_labels`` degrading to ``[obi-general]`` alone.
 * ``ANSWER_SYSTEM_PROMPT`` (user request, 2026-08-13): the grounding/citation rules are unchanged
   and load-bearing (``enforce_citations`` depends on the model actually emitting ``[1]``/``[2]``
   markers) — everything after them is added, natural-writing style guidance (plain language, no
@@ -47,11 +55,16 @@ same rendering drives both the real runtime and its tests:
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from app.features.rag_agent.domain.identity import IdentityFacts
 from app.features.rag_agent.schemas import ChatMessage
 from app.features.retrieval import ConnectionRecord, CustomerContext
+
+if TYPE_CHECKING:
+    # typing only: build_connection_block reads .label/.role off a resolved catalog Product (or
+    # None); importing the type here keeps the signature honest without a runtime platform import.
+    from app.platform.config.product_catalog import Product
 
 ANSWER_SYSTEM_PROMPT = (
     "You are Obi, a professional, helpful, and concise support assistant. You answer clearly and "
@@ -302,6 +315,44 @@ def build_image_context_block(image_analysis: str | None) -> str | None:
         "Attached image (a transcription of what the user shared, for context only — it is NOT a "
         "citable source: never attach a numbered marker to it, and still cite the numbered "
         "evidence for every factual claim):\n" + trimmed
+    )
+
+
+def build_connection_block(
+    source: Product | None,
+    target: Product | None,
+    business_id: str,
+) -> str:
+    """Render the directed-connection block chat-start writes into the system prompt (Option A
+    Stage 4, panel mi-session, ADR-0020 chat-start step 3).
+
+    ``source``/``target`` are the resolved catalog products for this chat's directed connection;
+    ``business_id`` is the verified company/business id (never the request body). A known
+    connection names both systems with their roles, the direction (source role → target role), and
+    the business id, then instructs the model to answer for this connection only. When either
+    endpoint could not be resolved (``None``), it renders a plain "could not be recognized" block
+    and never fabricates a system — matching ``ProductCatalog.build_labels`` degrading to
+    ``[obi-general]`` alone (chat-start step 5).
+
+    This is response context only, presented as facts, not instructions (same anti-injection posture
+    as ``build_answer_context_block``); it changes nothing about access — the label hard-filter and
+    the database (Locks 0-3) decide what the chat may see, never anything said here."""
+    header = "## Customer connection"
+    if source is None or target is None:
+        return (
+            f"{header}\n"
+            f"- Business ID: {business_id}\n"
+            "The connection systems could not be recognized. Answer only from general "
+            "documentation and ask the user to pick a supported source and target system."
+        )
+    return (
+        f"{header}\n"
+        f"- Source system: {source.label} ({source.role.upper()})\n"
+        f"- Target system: {target.label} ({target.role.upper()})\n"
+        f"- Direction: {source.role.upper()} → {target.role.upper()}\n"
+        f"- Business ID: {business_id}\n"
+        "Answer for this connection only. If the user asks about another system, tell them to "
+        "pick that partner first."
     )
 
 

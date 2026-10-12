@@ -216,16 +216,32 @@ def _non_chunk_tables() -> list[str]:
     return sorted(name for name in Base.metadata.tables if name != "chunk")
 
 
+def _table_exists(conn: Connection, table: str) -> bool:
+    """True iff ``public.<table>`` exists in the connected database.
+
+    ``_non_chunk_tables`` derives from live ORM metadata, so it lists every table the CURRENT
+    models know about — including tables created by a LATER migration (e.g. ``chat_session``,
+    migration 0017). When the 0009 enable/disable helpers run at their own point in the chain (a
+    fresh ``upgrade head``, or a round-trip test that downgrades through 0009 and back), such a
+    table does not exist yet, and a bare ``ALTER TABLE`` would raise ``UndefinedTable``. Guarding
+    on existence keeps these helpers valid for any table added after 0009, which then enables its
+    own RLS in its own migration — the chain stays reversible (never-bend rule 11)."""
+    return (
+        conn.execute(text("SELECT to_regclass(:t)"), {"t": f"public.{table}"}).scalar() is not None
+    )
+
+
 def enable_non_chunk_rls(conn: Connection) -> None:
     """Enable RLS on every non-chunk table so anon/authenticated are default-denied.
 
     Idempotent, and safe-by-default on a fresh managed deploy: with no policy an RLS-enabled table
     yields zero rows to any non-owner, non-BYPASSRLS role (the Supabase PostgREST roles). The owner
     (writer) bypasses RLS by ownership (ADR-0013); rag_reader is let back in only where needed, by
-    ``apply_reader_rls``.
+    ``apply_reader_rls``. Skips a not-yet-created table (see ``_table_exists``).
     """
     for table in _non_chunk_tables():
-        conn.execute(text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
+        if _table_exists(conn, table):
+            conn.execute(text(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY"))
 
 
 def disable_non_chunk_rls(conn: Connection) -> None:
@@ -233,10 +249,12 @@ def disable_non_chunk_rls(conn: Connection) -> None:
 
     WARNING: on Supabase this re-exposes every non-chunk table to the public anon REST role (which
     holds GRANT SELECT), because RLS is the only thing fencing those roles out. Only downgrade a
-    store with no PostgREST/anon exposure (local docker, RDS fallback).
+    store with no PostgREST/anon exposure (local docker, RDS fallback). Skips a not-yet-created
+    table (see ``_table_exists``).
     """
     for table in _non_chunk_tables():
-        conn.execute(text(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY"))
+        if _table_exists(conn, table):
+            conn.execute(text(f"ALTER TABLE {table} DISABLE ROW LEVEL SECURITY"))
 
 
 def apply_reader_rls(conn: Connection, *, role: str = "rag_reader") -> None:

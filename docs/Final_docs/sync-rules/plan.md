@@ -100,6 +100,24 @@ exists). Operational tails: §D.15 DB-password rotation, and a **temporary `obi-
 (`platforms.json` domains = the Railway host) to remove at real integration. Detail + status: ledger entries `8.4.3`,
 `8.4.3-addendum`, and `8.5.2 / 8.5.3 prep + housekeeping` (2026-10-09), and `plan.md` §D / §A row 5 — not here.
 
+**Update 2026-10-12 — owner decision round 3; the rule-5 question that lived against THIS file is
+resolved (fix-code).** The round's forward calls are recorded in `plan.md` §D.17 (DB-password
+rotation **deflagged** — not needed now, moved to future work; Base and Data Hub always have exactly
+**two** systems, a `source` and a `target`, superseding the "up to 3 / max 2" note; the `obi.js`
+script `src` stays the Railway **web** host for the test phase, with `obi.omniboost.com` before
+go-live; the Jasper reply corrected — earlier threads gave the **backend** host as the origin, but
+the script `src` is the web host, and the sample `toast-opera` token is refused with a 401). The one
+call that belongs to this file: the owner picked **fix-code** on the open `live-0.5.3-cm-docs`
+decision (rule 5 vs shipped code). **Nothing to change** — the membership gate this file built in
+§13 step 2 (`ingest_decision.resolve_scopes`: `if not recognized_labels: return set()` → `delete`)
+plus step 6's first-tag positive guard already make the code conform to never-bend rule 5 (published
++ a recognized tag to be indexed; losing the last recognized tag removes the page; roots decide
+nothing), and step 3 retired `scope_state` (ADR-0016). The lone wording nuance — rule 5 says
+last-tag-loss *"deactivates"* while the code *purges* — is the deliberate D1/D4 choice (kill
+rollback, retain 0), not a divergence to fix. `docs/plan/decisions.md`'s `live-0.5.3-cm-docs` row is
+closed on this pick. Step 6 (Phase B automated-test expansion) still starts **only after Phase A
+human-validation evidence is in** (§D.17 item 6). This file stays the eight-rule record.
+
 **§14 (Execution appendix)** inlines the exact test harness, the current + target RLS DDL, the
 counting embedder, the naming/docstring/coverage/proof formats, and the CI xfail mechanics — so a
 fresh-context agent can execute from this file alone, without re-deriving them from the tree.
@@ -1200,7 +1218,13 @@ Werkwijze per golf: één golf per keer, /obi-change-procedure, ledger-entry bij
 
 **Dit is DE volgende stap** (toegevoegd 2026-10-09; owner koos **Option A** boven het membership-slot-model, bron: `~/Downloads/Obi page routing Option A ... how Obi picks pages.html`). Het **overschrijft** de slot-/`context.slots`-routing uit `plan.md` §D voor het *routing-gedeelte* (zie Override-map in Stage 0). De acht sync-regels, de RLS-locks 0–2 (company/source-isolatie, `source_scope`) en regel 8 (max twee extra reads) blijven **ongewijzigd** — Option A verandert alleen *welke pagina's* een vraag mag zien, niet de beveiligingsgrenzen.
 
-> **Build status (bijgewerkt 2026-10-12).** **Stage 0 ✅** (commit `0209579` — ADR-0020 + decisions.md + override-map). **Stage 1 ✅** (commit `42448cb` — 4 nieuwe panels `mi-route`/`mi-labels`/`mi-session`/`mi-hardfilter`, 6 bijgewerkt, brief 203→207; action-plan **Phase 9** toegevoegd, substeps `9.1.1`–`9.6.1`; `make check` groen). **Stage 2 ✅** (substep `9.1.1`, commit `099caef` — catalogus-resolver `resolve_system`/`build_labels`/`is_valid_label`; `make check` groen: backend 1265+1xfail · kb 51 · boundaries 0). **Stage 3 = nu in uitvoering — substep `9.1.2`** (ruwe `labels`-kolom + migratie 0016 + restamp-threading; de labels-RLS blijft inert tot 9.4.1 om de retrieval niet te breken). Daarna 9.2.1 (sessie) → **review-gate vóór 9.3.1** (token/gate) en **vóór 9.4.1** (hard-filter). Owner-modus: autonoom met gates. DB-password-rotatie (§D.15) door de owner op *niet nu nodig* gezet (`docs/future-ideas.md`).
+> **Build status (bijgewerkt 2026-10-12).** **Stage 0 ✅** (commit `0209579` — ADR-0020 + decisions.md + override-map). **Stage 1 ✅** (commit `42448cb` — 4 nieuwe panels `mi-route`/`mi-labels`/`mi-session`/`mi-hardfilter`, 6 bijgewerkt, brief 203→207; action-plan **Phase 9** toegevoegd, substeps `9.1.1`–`9.6.1`; `make check` groen). **Stage 2 ✅** (substep `9.1.1`, commit `099caef` — catalogus-resolver `resolve_system`/`build_labels`/`is_valid_label`; `make check` groen: backend 1265+1xfail · kb 51 · boundaries 0). **Stage 3 ✅** (substep `9.1.2`, commit `8746e71` — ruwe `labels`-kolom + migratie 0016 + restamp-threading; de labels-RLS blijft inert tot 9.4.1 om de retrieval niet te breken; `make check` groen: backend 1270+1xfail · kb 53 · boundaries 0). **Stage 4 ✅** (substep `9.2.1` — `chat_session`-tabel + migratie `0017` gebonden aan geverifieerde `token_subject`+`company_id`; `start_chat_session` lost op + slaat één keer op, `load_chat_session` hergebruikt de rij zonder catalogus-call (regel 8); `build_connection_block` nieuw in `prompt.py`; `make check` groen: backend 1275+1xfail · kb 53 · boundaries 0; `make eval` ongewijzigd). **Volgende: `9.3.1` (token + gate + widget).**
+
+> **Owner go-ahead 2026-10-12 (decision round 3, `plan.md` §D.17) — BUILD THE FULL ROUTING ENGINE AUTONOMOUSLY.** The owner authorized building the entire agent-doable engine end to end in one run: **`9.2.1` (chat-start/session) → `9.3.1` (token + gate + widget) → `9.4.1` (hard-filter `labels && session_labels`) → `9.5.2` (eval before/after) → `9.6.1` (triple-check + partner-reply drafts)**. **The two review gates (before `9.3.1` and before `9.4.1`) are WAIVED by explicit owner instruction** — do NOT stop to ask between substeps; keep the per-substep `/obi-change` rigor (failing test first, `make check` + `make eval` green, panel flip, ledger + progress-log per substep), but run them back-to-back. **Report to the owner ONLY when the whole engine is done**, and at that point tell them exactly what to test. Each substep is still its own atomic commit + ledger entry.
+>
+> **`9.5.1` (relabel the corpus) is the owner's parallel content task** — the owner is creating separate Confluence test pages carrying the routing labels (scheme handed over 2026-10-12; see the label set below / `docs/Final_docs/sync-rules/routing-test-labels.md`). Every test page carries the base membership tag **`obi-general-test`** (so it is indexed and passes locks 0–2) **plus exactly one routing label** from the box scheme. The engine build must make the ingestion + membership path recognize a page that carries a routing label + the base scope so these pages index and route without a per-integration `obi-*-test` tag — fold that reconciliation into `9.3.1`/`9.5`-adjacent config, keeping locks 0–2 unchanged (ADR-0020 D0). Until the relabel lands, `9.4.x` DB-tests seed labels directly (hermetic), so the build does not block on the owner's pages.
+>
+> DB-password-rotatie (§D.15) staat op *niet nu nodig* (`docs/future-ideas.md`).
 
 **Het model in één alinea.** Elk gesprek is één gerichte connectie: `source_system → target_system` + `business_id`. Bij *chat-start* (één keer per gesprek) lost de backend beide systemen op in de product-catalogus (die al `role`/kind + `connection_types` kent), bouwt exact **4 Confluence-label-"boxes"** — `obi-general`, `{source.slug}-general`, `{target.slug}-general`, `{source.slug}-to-{target.kind}` — schrijft een *connection block* in de system-prompt, en bewaart (business_id, source, target, labels, block) op een sessierij. Elke vraag hergebruikt die sessie (géén nieuwe lookup) en **hard-filtert** hybride search + rerank op die 4 labels, vóór top-k. Een partnerswitch herdraait chat-start en vervangt block + labels. Richting is primair: `toast-to-pms ≠ mews-to-pos`.
 

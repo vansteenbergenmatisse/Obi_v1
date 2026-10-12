@@ -45,6 +45,11 @@ from .application.auth_context import (
     build_auth_context,
     general_only_context,
 )
+from .application.chat_session import (
+    ChatSessionError,
+    load_chat_session,
+    start_chat_session,
+)
 from .application.standalone_presets import (
     PresetSlots,
     StandalonePreset,
@@ -76,6 +81,9 @@ __all__ = [
     "AnswerService",
     "AnswerProvider",
     "CachingAnswerService",
+    "ChatSessionError",
+    "load_chat_session",
+    "start_chat_session",
     "AuthContext",
     "build_auth_context",
     "general_only_context",

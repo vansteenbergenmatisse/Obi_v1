@@ -2850,10 +2850,10 @@ _Workflow label shown in the drawer: Multi-integration context_
   - The backfill is safe to run twice (idempotent).
 - Target and notes: New for Option A (ADR-0020), 2026-10-09. The raw-labels axis the hard filter reads.
 
-##### Panel `mi-session` · One connection per chat · [Planned]
+##### Panel `mi-session` · One connection per chat · [Implemented]
 - Kind: Gate
 - In plain words: Obi works out the connection once, when a chat begins, and reuses it for every later question. Switching to a different connection starts a fresh chat.
-- Today: Planned (Option A Stage 4 / action-plan 9.2.1). A chat_session row bound to the verified subject + company stores the resolved connection and its prompt block; not built yet.
+- Today: Built (Option A Stage 4 / 9.2.1): chat_session table (migration 0017) keyed on the verified token_subject + company_id stores business_id, source/target slugs, labels, connection_block, updated_at; start_chat_session resolves source/target + build_labels + build_connection_block (new in prompt.py) once, load_chat_session reuses the row with no catalog call (rule 8). Unit + DB tested (5 tests): once-per-chat spy, cross-subject denial, partner-switch refire.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -5192,5 +5192,5 @@ _Section id: `open`_
 | `em-button` | embed | The frame: the round button and the chat window | Implemented |
 | `mi-route` | integration | Directed connection: the four label boxes | Implemented |
 | `mi-labels` | integration | Raw routing labels on every chunk | Implemented |
-| `mi-session` | integration | One connection per chat | Planned |
+| `mi-session` | integration | One connection per chat | Implemented |
 | `mi-hardfilter` | integration | The hard label filter before top-k | Planned |
