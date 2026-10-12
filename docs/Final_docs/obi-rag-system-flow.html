@@ -8193,7 +8193,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "Rules",
 "h": "Deterministic matching against real connections",
 "st": "change",
-"today": "SUPERSEDED for routing by Option A (ADR-0020): cross-match safety is the hard label filter (mi-hardfilter), now carrying a 9.5.2 routing-off-vs-on before/after number over the labelled connection_routing gold stage (a Toast->Mews chat never sees a toast-to-accounting / mews-to-pos page; recall held, served set narrowed). See mi-route, mi-hardfilter and 9.1.1/9.4.1/9.5.2.",
+"today": "SUPERSEDED for routing by the hard label filter (mi-hardfilter), closed out in 9.6.1: a Toast->Mews chat never sees a toast-to-accounting / mews-to-pos page (DB + eval proven, recall held); the live relabeled-corpus proof is owner-blocked (9.5.1).",
 "f": [
 [
 "Within one rule",
@@ -8594,7 +8594,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "h": "The hard label filter before top-k",
 "st": "unverified",
 "simple": "The database only returns pages whose labels match this chat's connection. Wrong-connection pages can never reach the answer, no matter how similar they look.",
-"today": "9.5.2: the routing-off-vs-on before/after gate (rule 11) now exists — the labelled connection_routing gold stage + evaluate_routing_lift record off=1.000/0.167/6.0 vs on=1.000/0.333/3.0 (recall held, served_precision up, served_count down) into eval-reports/routing_lift.{json,md}, printed by make eval. Still Unverified overall: proven on seeded labels + a gold stage, not yet on a relabeled live corpus (9.5.1).",
+"today": "9.6.1 closeout: Phase-9 triple-check green (boundaries 0 · backend 912 unit + 392 db + 1 xfailed · kb 29+24 · make eval floor + routing-off-vs-on · pnpm test:e2e 7/7), securing-http-and-llm-endpoints review on file (PASS, phase-9-directed-connection-security-review.md), DB-level isolation + 0016/0017 reversibility proven (phase-9-isolation-run.txt); stays Unverified overall — the live relabeled-corpus leg is owner-blocked (prod wiped + at 0014, 9.5.1 relabel + prod migrate + re-sync pending).",
 "f": [
 [
 "Hard pre-filter",

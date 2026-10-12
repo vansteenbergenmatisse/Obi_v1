@@ -1,0 +1,55 @@
+Phase 9 (Option A directed-connection routing) — isolation + reversibility run
+substep 9.6.1 · 2026-10-12 · branch feat/rag-phase-4-embed-security-hardening
+
+WHAT THIS PROVES
+  A directed source->target chat hard-filters retrieval to its four label boxes and never
+  receives another connection's pages — at any vector similarity, in the rerank input, and with
+  an empty-labels chunk never served (ADR-0020 D1/D2, panel mi-hardfilter). Plus: migrations
+  0016 + 0017 are reversible.
+
+ENVIRONMENT (honest scope)
+  Run against the LOCAL pgvector Postgres (omniboost_rag_pg, :5434) at migration head (0017),
+  with labelled chunks seeded directly in the DB (hermetic). This is the authoritative isolation
+  evidence available now.
+  The LIVE-against-deployed-origin run is OWNER-BLOCKED and deliberately NOT done: the production
+  Supabase corpus was wiped for the Option A relabel (ledger "Corpus reset", 2026-10-12), prod is
+  at migration 0014 (the labels/applicability/chat_session columns 0015/0016/0017 are not applied
+  there), and the relabelled pages (9.5.1, owner content task) are not re-synced. Unblock order:
+  (1) owner runs `alembic upgrade head` on Supabase (upgrade only; never-bend rule 1),
+  (2) owner finishes the 9.5.1 relabel + re-sync, (3) then run the live isolation spot-check
+  (a Toast->Mews token sees only its four boxes) against the deployed origin and append it here.
+
+ISOLATION — directed-connection hard filter (make test-db harness, local pgvector)
+  $ pytest app/features/retrieval/tests/test_label_hardfilter_db.py -v
+  PASSED  test_tags_toast_mews_chat_never_sees_wrong_connection_at_any_similarity
+  PASSED  test_tags_empty_labels_chunk_never_served_under_active_connection
+  PASSED  test_tags_rerank_text_fetch_is_already_label_filtered
+  PASSED  test_tags_recall_against_exact_filtered_baseline_records_no_loss
+  PASSED  test_tags_legacy_token_without_session_labels_is_a_no_op
+  $ pytest app/features/retrieval/tests/test_eval_routing_db.py -v
+  PASSED  test_eval_routing_off_vs_on_records_no_loss_and_narrows
+  PASSED  test_eval_routing_off_vs_on_break_it_no_labels_is_zero_lift
+
+  A Toast->Mews session never receives a chunk whose only label is toast-to-accounting or
+  mews-to-pos, at any similarity; the rerank input is already label-filtered; an empty-labels
+  chunk is never served under an active connection; a legacy/slot token (no session labels) is a
+  no-op (the filter does not fire).
+
+ROUTING LIFT — before vs after (make eval, connection_routing gold stage, 2 cases, k=50)
+  recall            off=1.000  on=1.000  d=+0.000   (no gold-set loss — never-bend rule 11)
+  served_precision  off=0.167  on=0.333  d=+0.167   (wrong-connection noise removed)
+  served_count      off=6.000  on=3.000  d=-3.000   (candidate set narrowed to the connection)
+  Report on file: backend/eval-reports/routing_lift.{json,md}
+
+MIGRATION REVERSIBILITY (local pgvector, alembic)
+  0016_chunk_labels   — reversible, round-trip proven by
+                        knowledge-base/tests/test_migration_0016_chunk_labels.py (green in make test-db).
+  0017_chat_session   — reversible, verified live this run:
+                          head                -> to_regclass('chat_session') = chat_session
+                          downgrade -1 (0016) -> to_regclass('chat_session') = <dropped>
+                          upgrade head (0017) -> to_regclass('chat_session') = chat_session
+
+VERDICT
+  Isolation holds at the DB + eval level with no recall loss. Migrations reversible. The live
+  deployed-origin spot-check remains owner-blocked on the prod migrate + 9.5.1 relabel/re-sync
+  (recorded above and in the ledger).
