@@ -8054,7 +8054,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "n": "Config",
 "h": "The central product catalog",
 "st": "change",
-"today": "EXTENDED for Option A (ADR-0020): the same catalog now also powers directed routing — resolve_system(name/slug/alias, case-insensitive) and build_labels(source, target) emit the four ordered label boxes. Still the single product registry; nothing else defines a product. See mi-route and 9.1.1.",
+"today": "EXTENDED for Option A (ADR-0020): the same catalog now resolves a directed connection — resolve_system / build_labels / is_valid_label landed in 9.1.1 (unit-tested). Still the single product registry; nothing else defines a product. See mi-route.",
 "f": [
 [
 "Owner rule",
@@ -8470,9 +8470,9 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "mi-route": {
 "n": "Gate",
 "h": "Directed connection: the four label boxes",
-"st": "build",
+"st": "built",
 "simple": "Every chat is one direction between two systems — say, Toast feeding Mews. From those two names Obi works out the four groups of pages that connection is allowed to see, and nothing else.",
-"today": "Planned (Option A Stage 2 / action-plan 9.1.1). resolve_system + build_labels in product_catalog.py turn a source and target into the four ordered boxes; not built yet.",
+"today": "Built (Option A Stage 2 / 9.1.1): resolve_system (case-insensitive name/slug/alias), build_labels (four ordered boxes obi-general · {source.slug}-general · {target.slug}-general · {source.slug}-to-{target.kind}) and is_valid_label landed in product_catalog.py; unknown source/target yields [obi-general] alone. Unit-tested (25 assertions); retrieval hard-filter wiring is 9.4.1+.",
 "f": [
 [
 "The four boxes",

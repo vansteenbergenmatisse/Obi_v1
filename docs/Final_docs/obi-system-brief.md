@@ -2615,7 +2615,7 @@ _Workflow label shown in the drawer: Multi-integration context_
 ##### Panel `mi-catalog` · The central product catalog · [Implemented, needs changing]
 - Kind: Config
 - In plain words: One small file lists every software product we know — its id, its role, its other spellings, which connections it can join. Everything else points here, so product number 20 is one entry, not new code.
-- Today: EXTENDED for Option A (ADR-0020): the same catalog now also powers directed routing — resolve_system(name/slug/alias, case-insensitive) and build_labels(source, target) emit the four ordered label boxes. Still the single product registry; nothing else defines a product. See mi-route and 9.1.1.
+- Today: EXTENDED for Option A (ADR-0020): the same catalog now resolves a directed connection — resolve_system / build_labels / is_valid_label landed in 9.1.1 (unit-tested). Still the single product registry; nothing else defines a product. See mi-route.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2810,10 +2810,10 @@ _Workflow label shown in the drawer: Multi-integration context_
   - Inclusion and exclusion reasons are inspectable per result.
   - Evidence is recorded before any checkbox ticks.
 
-##### Panel `mi-route` · Directed connection: the four label boxes · [Planned]
+##### Panel `mi-route` · Directed connection: the four label boxes · [Implemented]
 - Kind: Gate
 - In plain words: Every chat is one direction between two systems — say, Toast feeding Mews. From those two names Obi works out the four groups of pages that connection is allowed to see, and nothing else.
-- Today: Planned (Option A Stage 2 / action-plan 9.1.1). resolve_system + build_labels in product_catalog.py turn a source and target into the four ordered boxes; not built yet.
+- Today: Built (Option A Stage 2 / 9.1.1): resolve_system (case-insensitive name/slug/alias), build_labels (four ordered boxes obi-general · {source.slug}-general · {target.slug}-general · {source.slug}-to-{target.kind}) and is_valid_label landed in product_catalog.py; unknown source/target yields [obi-general] alone. Unit-tested (25 assertions); retrieval hard-filter wiring is 9.4.1+.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -5190,7 +5190,7 @@ _Section id: `open`_
 | `e-monitor` | eval | Freshness and recall telemetry | Planned |
 | `e-judge` | eval | An LLM as judge | Planned |
 | `em-button` | embed | The frame: the round button and the chat window | Implemented |
-| `mi-route` | integration | Directed connection: the four label boxes | Planned |
+| `mi-route` | integration | Directed connection: the four label boxes | Implemented |
 | `mi-labels` | integration | Raw routing labels on every chunk | Planned |
 | `mi-session` | integration | One connection per chat | Planned |
 | `mi-hardfilter` | integration | The hard label filter before top-k | Planned |

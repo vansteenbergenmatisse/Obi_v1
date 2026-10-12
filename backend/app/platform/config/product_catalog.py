@@ -55,6 +55,21 @@ _DIRECTION_RE = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
 _RESERVED_EXACT = frozenset({"classified", "general", "obi-general-test"})
 _RESERVED_PREFIX = "obi-"
 
+# Option A routing labels (ADR-0020 D0/D4): the content-routing axis. These are
+# Confluence LABELS, not products — the reserved-name rules above gate product ids,
+# never these boxes. The four ordered boxes a directed source→target connection sees are
+# obi-general, {source.slug}-general, {target.slug}-general, {source.slug}-to-{target.kind}.
+GENERAL_LABEL = "obi-general"
+_GENERAL_SUFFIX = "-general"
+_DIRECTION_SEP = "-to-"
+
+
+def _normalize_system_name(value: str) -> str:
+    """Case-fold and collapse whitespace for the lenient routing resolver (plan Step 1:
+    "match on name, slug or alias; ignore case and extra spaces"). Distinct from the strict
+    gate resolver ``ProductCatalog.resolve``, which never lowercases or fuzzy-matches."""
+    return " ".join(value.split()).casefold()
+
 
 @dataclass(frozen=True)
 class Product:
@@ -95,6 +110,66 @@ class ProductCatalog:
         if expansion is not None:
             return expansion
         return ()
+
+    def resolve_system(self, name: str) -> Product | None:
+        """Resolve one directed-connection endpoint to a product (panel mi-route, ADR-0020
+        D4/D7). Matches the canonical id, any per-product alias, or the display name,
+        ignoring case and surrounding/collapsed whitespace. An unmatched value returns
+        ``None`` — a clear miss, never a fuzzy match and never a wildcard.
+
+        This is the routing-side resolver: lenient about case and spacing because a
+        partner-supplied system name is less controlled than a token slot value. The strict
+        gate resolver ``resolve`` is left unchanged.
+        """
+        key = _normalize_system_name(name)
+        if not key:
+            return None
+        for product in self.products.values():
+            if _normalize_system_name(product.id) == key:
+                return product
+            if _normalize_system_name(product.label) == key:
+                return product
+            if any(_normalize_system_name(alias) == key for alias in product.aliases):
+                return product
+        return None
+
+    def build_labels(self, source: str, target: str) -> list[str]:
+        """Turn a directed ``source → target`` connection into exactly the four ordered
+        Confluence label boxes (ADR-0020 D4, plan "The routing rule"):
+        ``obi-general``, ``{source.slug}-general``, ``{target.slug}-general``,
+        ``{source.slug}-to-{target.kind}`` — where the slug is the resolved product's
+        canonical id and the kind is the TARGET product's role (pos/pms/accounting).
+
+        An unknown source OR target yields ``[obi-general]`` alone — never a wildcard
+        (ADR-0020 chat-start step 5 / panel mi-route). Direction is primary:
+        ``build_labels("toast", "mews")`` ≠ ``build_labels("mews", "toast")``.
+        """
+        src = self.resolve_system(source)
+        tgt = self.resolve_system(target)
+        if src is None or tgt is None:
+            return [GENERAL_LABEL]
+        return [
+            GENERAL_LABEL,
+            f"{src.id}{_GENERAL_SUFFIX}",
+            f"{tgt.id}{_GENERAL_SUFFIX}",
+            f"{src.id}{_DIRECTION_SEP}{tgt.role}",
+        ]
+
+    def is_valid_label(self, label: str) -> bool:
+        """True iff ``label`` is a well-formed routing label (panel mi-route). The three
+        valid forms are ``obi-general``; ``{slug}-general``; and
+        ``{slug}-to-(pos|pms|accounting)`` — where the slug is a canonical id in this
+        catalog. Anything else (``toast-to-pmss``, ``toast-to-hotel``, an unknown slug, a
+        bare ``general`` or bare slug) is rejected.
+        """
+        if label == GENERAL_LABEL:
+            return True
+        if label.endswith(_GENERAL_SUFFIX):
+            return label[: -len(_GENERAL_SUFFIX)] in self.products
+        if _DIRECTION_SEP in label:
+            slug, _, kind = label.rpartition(_DIRECTION_SEP)
+            return slug in self.products and kind in VALID_PRODUCT_ROLES
+        return False
 
 
 def _require_slug(path: Path, kind: str, name: str) -> None:

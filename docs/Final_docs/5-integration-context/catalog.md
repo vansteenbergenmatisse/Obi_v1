@@ -20,6 +20,24 @@ knowledge_scopes.py pattern), enforcing §3 below — one red-first unit test pe
 `backend/app/platform/config/tests/test_product_catalog.py`. The gate does not consume it yet
 (§6 items 2 onward; substep 8.1.3).
 
+**Loader extended for directed routing (substep 9.1.1, Option A / ADR-0020):** the same catalog
+now also resolves a directed `source → target` connection into the four ordered Confluence label
+boxes. `product_catalog.py` gains three members on `ProductCatalog`:
+`resolve_system(name)` (lenient, case- and whitespace-insensitive match on canonical id, alias or
+display name; an unmatched value → `None`, a clear miss — distinct from the strict gate resolver
+`resolve`, which is left unchanged); `build_labels(source, target)` →
+`[obi-general, {source.slug}-general, {target.slug}-general, {source.slug}-to-{target.kind}]`
+(slug = the resolved canonical id; kind = the **target** product's role; an unknown source OR
+target yields `[obi-general]` alone, never a wildcard); and `is_valid_label(label)` (accepts only
+`obi-general`, `{slug}-general`, `{slug}-to-(pos|pms|accounting)` with a catalog slug — rejects
+`toast-to-pmss`, `toast-to-hotel`, unknown slugs). The module constant `GENERAL_LABEL = "obi-general"`
+names the always-present box. These are routing **labels**, not products — the §3 reserved-name
+rules gate product ids, never these boxes. Unit-tested in
+`backend/app/platform/config/tests/test_connection_routing.py` (the five worked examples, the
+unknown-system fallback, the malformed-label rejections). Retrieval still does not consume them —
+the chunk `labels` column, the chat session and the hard filter are later Option A substeps
+(9.1.2+). **How we know it works:** 25 red-first-then-green unit assertions; `make check` green.
+
 ## 1 · Division of labor with the existing registries
 
 | File | Owns | Does NOT own |
