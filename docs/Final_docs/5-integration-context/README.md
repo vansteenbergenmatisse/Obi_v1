@@ -3,9 +3,16 @@
 The single home for the §D.1 "Complete integration context" **design + data deliverable**
 (`docs/Final_docs/plan.md` §D.1, built strictly on the owner decisions of record in §D.13).
 Same rule as `4-test-foundation/`: anything about the shared integration-context contract goes
-here; look here first. This folder is design documentation plus one data file
-(`knowledge-base/config/product_catalog.json`) — it changes **no running behavior** (see the
-last section).
+here; look here first. This folder began as design documentation plus one data file
+(`knowledge-base/config/product_catalog.json`).
+
+> **Status update (2026-10-09).** The §D.1 design has since been **implemented** — the three-slot
+> token/`context.slots` contract, the catalog loader, the gate's slot checks, chunk applicability
+> (migration 0015) and the launch allowlist all landed in substeps 8.1.1–8.5.1 (see the ledger).
+> The "What this does NOT change yet" section below describes the original design-only pass and is
+> kept for history; where it says a change is not wired, read it as **now wired**. The frontend is
+> also deployed (8.4.3). The design docs here still describe the contract of record; the ledger and
+> the design page are authoritative for current state.
 
 - `context-contract.md` — THE shared context contract for all environments (Base, Data Hub,
   standalone): the three-slot token (POS/PMS from Data Hub, Accounting from Base), company-ID-only
@@ -22,20 +29,26 @@ last section).
   items the owner has **not** decided yet (each with a pointer to the §D part that will decide it).
 - `catalog.md` — documentation of the new central product catalog
   (`knowledge-base/config/product_catalog.json`): every field, the validation rules a future
-  loader must enforce, how to add a product, how aliases (including the legacy `toast-opera`
-  value) resolve, and the rule that **nothing else in the repo may define a product**.
+  loader must enforce, how to add a product, how aliases resolve (the `legacy_aliases` table is
+  empty today — the once-illustrative `toast-opera` value was confirmed in §D.16/O8 to exist in no
+  config, code, token or tag and is **not** a real alias), and the rule that **nothing else in the
+  repo may define a product**.
 - `research-rerank-api.md` — read-only findings on the reranker as actually wired (Cohere
   `rerank-v3.5` via v2, string-documents only, **no instruction field exists**), the
   eligibility-before-rerank invariant, and the ranked options for the §D.6 build (enrich the
   query string + YAML metadata in document strings; `rank_fields` is v1-only escalation).
-- `research-jasper-handoff.md` — the §D.9 Jasper-handoff verification: **no deployed `obi.js`
-  URL exists** (frontend not deployed; `obi.omniboost.com/obi.js` → 404 parking host), the
-  embed contract and JWT/JWKS requirements per side, the four-case test matrix
-  (works-today vs future), and the draft reply skeleton the owner edits before sending.
+- `research-jasper-handoff.md` — the §D.9 Jasper-handoff verification (written **before** 8.4.3):
+  it recorded that no deployed `obi.js` URL existed yet. As of 8.4.3 (2026-10-09) obi.js **is**
+  deployed at `https://obi-web-production.up.railway.app/obi.js` (frame at `/embed`); the eventual
+  `obi.omniboost.com` host is deferred. The file still holds the embed contract and JWT/JWKS
+  requirements per side, the four-case test matrix (works-today vs future), and the draft reply
+  skeleton the owner edits before sending.
 
-## What this does NOT change yet
+## What this did NOT change in the original design pass (now superseded — all landed)
 
-This deliverable is design + data only. Explicitly out of scope in this pass:
+At authoring, this deliverable was design + data only. Everything listed below has **since been
+implemented** (substeps 8.1.1–8.5.1); the list is kept for history. Read each "no change" item as
+"designed here, wired later":
 
 - **No backend behavior changes.** No loader, no validator, no gate change, no migration, no
   retrieval change is wired. The catalog JSON sits unread by any code until its implementation

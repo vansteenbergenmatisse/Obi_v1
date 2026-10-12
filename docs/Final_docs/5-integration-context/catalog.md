@@ -2,7 +2,9 @@
 
 **What it is:** THE single canonical registry of software products for the integration context
 (§D.1: "canonical product identifiers, aliases (incl. legacy values like `toast-opera`), roles
-(pms/pos/accounting/…), and supported connection types"). It is a data concern, so it lives in
+(pms/pos/accounting/…), and supported connection types" — note: `toast-opera` was an *illustrative*
+example only; §4 below (O8) records it exists nowhere and `legacy_aliases` is empty). It is a data
+concern, so it lives in
 `knowledge-base/config/` beside the tag map and the platform list (root `CLAUDE.md`, "Where a
 new file goes" rule 1; §D.12 item 2).
 

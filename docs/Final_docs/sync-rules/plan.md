@@ -1085,6 +1085,11 @@ per keuze. Status: **BESLIST (owner, 2026-10-05)** — alle vier de keuzes vastg
 `docs/Final_docs/plan.md` §D.13 (drie-slots-token, één gefilterde zoekronde, slot-attributie in de
 bronnen, oude tokens = één gevuld slot); de bouw is roadmap-stap 5.
 
+> **Update 2026-10-09 — gesuperseerd voor routing.** Owner koos **Option A (directed source→target
+> routing)**. Het slot-model hierboven blijft geaccepteerd maar routet niet meer; zie de sectie
+> **"Volgende stap — Option A: directed-connection retrieval routing"** onderaan dit document
+> (gefaseerd plan + override-map + ADR-0020).
+
 ### 15.1 · Harde voorwaarde vóór de multi-scope bouw: eerst een rotsvast testfundament
 
 Dit is géén kleine wijziging: meerdere scopes per vraag (bijv. Toast + Mews/Opera tegelijk) raakt
@@ -1191,7 +1196,76 @@ Werkwijze per golf: één golf per keer, /obi-change-procedure, ledger-entry bij
 
 **Context.** Op 2026-10-09 is de frontend live gezet op Railway (substep **8.4.3**; zie ledger + progress-log). `obi.js` draait op `https://obi-web-production.up.railway.app/obi.js`. Hieronder de **volgende stap** voor retrieval-routing en daarna de **twee afsluitende owner-items**.
 
-### Volgende stap — retrieval-routing per klant-connectie (reconciliatie tegen §D)
+### Volgende stap — Option A: directed-connection retrieval routing (DE volgende stap)
+
+**Dit is DE volgende stap** (toegevoegd 2026-10-09; owner koos **Option A** boven het membership-slot-model, bron: `~/Downloads/Obi page routing Option A ... how Obi picks pages.html`). Het **overschrijft** de slot-/`context.slots`-routing uit `plan.md` §D voor het *routing-gedeelte* (zie Override-map in Stage 0). De acht sync-regels, de RLS-locks 0–2 (company/source-isolatie, `source_scope`) en regel 8 (max twee extra reads) blijven **ongewijzigd** — Option A verandert alleen *welke pagina's* een vraag mag zien, niet de beveiligingsgrenzen.
+
+**Het model in één alinea.** Elk gesprek is één gerichte connectie: `source_system → target_system` + `business_id`. Bij *chat-start* (één keer per gesprek) lost de backend beide systemen op in de product-catalogus (die al `role`/kind + `connection_types` kent), bouwt exact **4 Confluence-label-"boxes"** — `obi-general`, `{source.slug}-general`, `{target.slug}-general`, `{source.slug}-to-{target.kind}` — schrijft een *connection block* in de system-prompt, en bewaart (business_id, source, target, labels, block) op een sessierij. Elke vraag hergebruikt die sessie (géén nieuwe lookup) en **hard-filtert** hybride search + rerank op die 4 labels, vóór top-k. Een partnerswitch herdraait chat-start en vervangt block + labels. Richting is primair: `toast-to-pms ≠ mews-to-pos`.
+
+**Wat al bestaat (hergebruiken, niet opnieuw bouwen):**
+- Catalogus met `role` (=kind pos/pms/accounting), slugs, aliases én `connection_types`/directions — `knowledge-base/config/product_catalog.json`, geladen/gevalideerd in `backend/app/platform/config/product_catalog.py` (nu alleen door de applicability-laag gebruikt, niet door de gate).
+- De connection-block-render bestaat al grotendeels: `rag_agent/domain/prompt.py::build_integration_context_block` (~r.339) rendert "Host platform / Connected systems / Active connections and directions".
+- Eén filter-chokepoint: `retrieval/infrastructure/search_repo.py::_base_filters` (~193–216) voedt zowel keyword- als dense-search vóór top-k; de `tags && :knowledge_scopes`-overlap (~r.211) is exact het patroon dat we kopiëren.
+- `tags text[]` + partiële GIN `ix_chunk_tags_gin WHERE is_active` op `chunk` — Option A's labelkolom is een directe kopie.
+- Webhook abonneert al `label_added`/`label_deleted`; ruwe labels worden al opgehaald (`gateway.get_labels`, `command_handler.py:128`).
+- **Geen LightRAG/graph-agent aanwezig** — alleen hybride dense+keyword+RRF+rerank. Niets te doen daar.
+- Eval: de `mixed_connection` gold-stage + de rerank-lift before/after-harness bestaan al (`app/features/evaluation`).
+
+#### Pivotale beslissingen — vastleggen in Stage 0 (defaults gegeven; "Decision needed" waar owner tekent)
+- **D0 · Label-als-scope.** De routing-labels vervangen de per-integratie knowledge-scope-tags als content-routing-as; company/source-isolatie (locks 0–2) ongewijzigd. Gevolg: het Confluence-corpus moet omgelabeld (content-taak, Stage 7). *Default: ja.*
+- **D1 · Waar het filter leeft.** Via het bestaande scope/RLS-GUC-pad (**nieuwe `labels`-kolom + RESTRICTIVE RLS-policy gespiegeld op `chunk_scope_read`, gedreven door een nieuwe `app.allowed_labels` GUC**) én de app-laag `_base_filters`-overlap — zodat regel 3 ("geen read losser dan de search") en regel 1 (RLS) gelden. *Default: nieuwe `labels`-kolom + eigen GUC/RLS.* Alternatief (goedkoper, minder schoon): `tags` hergebruiken + bestaande GUC/RLS.
+- **D2 · Ongelabelde pagina.** Chunk zonder routing-labels is onzichtbaar zolang een connectie-filter actief is (lege array overlapt niets). *Default: ja (self-gating).*
+- **D3 · Labelwijziging.** Een label-only change werkt de `labels`-kolom bij via het bestaande **metadata-only restamp-pad** (labels zijn metadata zoals `tags`; géén re-embed). Wijkt bewust af van de handoff-tekst "re-ingest"; gerechtvaardigd want labels veranderen de embedding niet. *Default: metadata-only restamp.*
+- **D4 · Richting-granulariteit.** `{source.slug}-to-{target.kind}` (bron-product → doel-kind). *Default: ja; open: later per partner splitsen (handoff Q3).*
+- **D5 · Accounting wordt first-class target.** O4 "accounting inert" vervalt voor routing (`pms-to-accounting`/`pos-to-accounting` zijn geldig). Launch: route als er content/labels zijn, weiger met reden als de box leeg is (content-gated i.p.v. hard uit). *Default: content-gated.*
+- **D6 · Mews-side setup.** Leest Toast→Mews ook `mews-to-pos`? *Default: nee (alleen de 4 boxes); open (handoff Q1).*
+- **D7 · Eén connectie per gesprek.** Multi-system-klant = één gerichte paar per gesprek; meer = partnerswitch. *Default: ja.*
+
+#### Override-map — elk krijgt een expliciete "SUPERSEDED by Option A (ADR-0020), 2026-10-09"-noot; nooit stil verwijderen
+- `plan.md` §D.1 (drie-slot-token) + §D.13 item 3 (keuzes 1–4) → directed source→target token.
+- `plan.md` §D.2 (vier flow-types) → één gerichte route per gesprek.
+- `plan.md` §D.3 + 8.2.x (vijf-level "Applies to", migratie 0015, `applicability.py`) → vervangen door label-box routing; applicability-stamp wordt dood-voor-routing (kolom/plumbing blijft als data).
+- `plan.md` §D.4 (matcher over slots) → 4-box resolver.
+- `plan.md` §D.5 (eligibility-SQL) → label-overlap in `_base_filters`.
+- `plan.md` §D.6–§D.8 (rerank-enrich, prompt-block, presets) → connection-block variant.
+- `plan.md` §D.11/§D.12 (token-compat, contracts/catalog/migraties).
+- `plan.md` §D.16 items 2 & 5 (O4-allowlist; "integratie LAST").
+- `5-integration-context/decision-memo.md` O1 (open → gesloten door A), O5 (`context.slots`-shape → aangevuld), O4 (allowlist/accounting → vervalt voor routing); `context-contract.md` §5.2 ("geen connection records at launch").
+- `docs/plan/decisions.md:45` (`partner-token-handover`, "not a flat source/target claim").
+- `sync-rules/plan.md` §15 keuzes (~r.1084 "BESLIST" slot-model), §A row 5 context, en r.1381 owner-item (a) "company + integratie/slots + scope" → "company + source/target".
+- **Blijft ongewijzigd:** de 8 sync-regels, RLS-locks 0–2 + §D access-invarianten, regel 8, lock-0 edge-JWT.
+
+#### Stages (één per keer, `/obi-change`, failing test eerst, stop + ledger na elke substep; Stages 0–1 volledig vóór enige code)
+
+**Stage 0 — Governance & beslissingen (geen code).** Schrijf **ADR-0020 "Directed-connection retrieval routing (Option A)"** (`docs/adr/0020-Directed-Connection-Retrieval-Routing.md`; raakt/supersedeert ADR-0011 scope-tagging/filtering, ADR-0004 multi-source tagging+RLS, ADR-0016 scope-state-as-tags; 0014/0017 blijven). Append-only nieuwe rij in `docs/plan/decisions.md` die `partner-token-handover` supersedeert (partners leveren `source_system`+`target_system`+`business_id`). Leg D0–D7 vast. Werk de override-map-doelen bij met de SUPERSEDED-noot.
+
+**Stage 1 — Design-page panels (geen code).** Design-page `docs/Final_docs/obi-rag-system-flow.html` (lees met `python3 backend/tools/panel.py <id>`): werk `mi-gate`/`mi-contract`/`mi-catalog`/`mi-match` bij; voeg NIEUW toe: `mi-route` (4-box resolver + direction), `mi-labels` (ruwe-labels-kolom + GIN), `mi-session` (chat-start-once + connection block), `mi-filter` (harde labelfilter via RLS/GUC). Markeer `mi-applies` deprecated-voor-routing. Regenereer de brief; zet today-lines. Voeg fase-9-substeps toe in `obi-action-plan.html`.
+
+**Stage 2 — System catalog + label resolver (code; hergebruik).** In `product_catalog.py`: `resolve_system(name)` (naam/slug/alias, case-insensitief) + `build_labels(source,target)` → de 4 geordende boxes. Labelvorm-validatie (`obi-general` / `{slug}-general` / `{slug}-to-(pos|pms|accounting)`). Unit-tests in `test_applicability_schema.py`-stijl (`_reason()==`): de 5 voorbeeldconnecties → exact de juiste 4 labels; onbekend systeem → `[obi-general]`; wijst `toast-to-pmss`/`toast-to-hotel` af. Panels: `mi-catalog`, `mi-route`.
+
+**Stage 3 — Ingestion: ruwe labels op chunks (code + migratie 0016).** Migratie **0016** (down_revision `0015_applicability_stamp`): `chunk.labels text[] NOT NULL DEFAULT '{}'` + partiële GIN `ix_chunk_labels_gin WHERE is_active` (kopie `0007_knowledge_scope.py`); spiegel op `page_source`; downgrade dropt beide; plus (D1) `app.allowed_labels` GUC + RESTRICTIVE policy gespiegeld op `chunk_scope_read`. Thread `labels=` (ruwe `get_labels`-output) door `versioning.py` chunk-inserts + het metadata-only restamp-pad (`command_handler.py:365`; D3 `labels_changed`); houd `labels` (ruw) gescheiden van `tags` (resolved scope). Writer-backfill-CLI (kopie `scripts/seed_source_scope.py`), idempotent; of hergebruik `reindex.py`. DB-tests: chunk draagt ruwe labels; restamp werkt labels bij zonder re-embed; backfill tweemaal veilig. Panels: `mi-labels`.
+
+**Stage 4 — Chat-start + sessie (code + migratie).** `chat_session`-tabel **gebonden aan geverifieerde `token_subject`+`company_id`** (niet aan caller-conversation_id alleen; spiegel `_idempotency_cache_key`): business_id, source_slug, target_slug, labels, connection_block, updated_at. Chat-start draait één keer (row-exists check): resolve source/target → `build_labels` → `build_connection_block` (nieuw in `prompt.py`) → opslaan; `llm_client.generate` consumeert het opgeslagen block i.p.v. per request te herbouwen. Tests (DB+unit): once-per-chat (spy: tweede vraag roept de catalogus niet aan); sessierij gebonden aan subject (andere subject kan niet lezen/muteren). Panels: `mi-session`, `mi-gate`.
+
+**Stage 5 — Token + gate + widget (code; contracts + verifier samen).** `packages/contracts/src/token-claims.json`: derde optionele vorm `source_system`+`target_system`+`business_id` (≈ `company_id`); `context.slots` + legacy `integration` blijven geaccepteerd maar routen niet meer. Update REQUIRED_CLAIMS drift-test, `chat.yaml`, `token_verifier.py` samen. Gate: checks 1–2 gelden op source/target; check 4 = "mag deze issuer deze source/target venten"; slot-checks 3–5 + launch-allowlist vervallen voor A-vorm. Widget: voeg `source`/`target` toe aan `TokenScope`/`sameScope` (iframe-bridge) zodat een stille token-renewal-switch de thread reset (anders cross-context bleed); breid test-host token-mint + `businessClaims` uit. Nieuwe `CitationAttribution`-variant voor directed source→target. Tests: unit (gate accepteert A-vorm, weigert onbekende source/target met **400 vóór search**), browser (switch reset de thread). Panels: `mi-contract`, `mi-gate`.
+
+**Stage 6 — Retrieval hard-filter (code).** `_base_filters` krijgt `session_labels` → `AND labels && :session_labels` (bound, niet geïnterpoleerd), op exact de plek van de `tags`-overlap; thread door `keyword_search`, `dense_search` én `fetch_rerank_texts`; **niet achter een flag** (hard). Parent-expansion (`fetch_parent_context`) krijgt géén labelfilter (kind al geautoriseerd). Zet `app.allowed_labels` GUC in hetzelfde pad als `apply_knowledge_scope`. DB-tests (exact include/exclude zoals `test_worked_examples_db.py`): een Toast→Mews-sessie krijgt nooit chunks wiens enige label `toast-to-accounting`/`mews-to-pos` is; rerank-input al gefilterd; lege-labels-chunk doet niet mee. Panels: `mi-filter`, `mi-match`.
+
+**Stage 7 — Content-migratie (owner/content-team, parallel).** Confluence-corpus omlabelen naar `obi-general` / `{slug}-general` / `{slug}-to-{kind}`; `knowledge_scopes.json` herschrijven; backfill (Stage 3) draaien. Handwerk aan de content-kant — staat onder "need from you". Tot dit klaar is draait Option A tegen omgelabelde test-pagina's.
+
+**Stage 8 — Eval before/after (verplicht, regel 11).** Breid `mixed_connection` gold-stage uit met labels (of nieuwe dataset in `_DATASET_FILES`); leg before/after vast via `evaluate_rerank_lift`-stijl (routing uit vs aan) naar `eval-reports/`. Geen retrieval-wijziging zonder voor-en-na-getal op de held-out gold-set. Panels: `mi-match`, `mi-filter`.
+
+**Stage 9 — Triple-check + afronding + partner-replies (afsluiting van dit plan).**
+- **Triple-check:** `make check` groen (boundaries 0 + backend + kb), `make eval` ≥ floor + het before/after-getal, `pnpm test:e2e` groen; security-review met `securing-http-and-llm-endpoints` op elke token/endpoint-wijziging; live isolatie-run (een Toast→Mews-token ziet nooit een andere connectie); migraties reversibel bevestigd; CI coverage-floor (≥625) gehaald, geen onverwachte skips/xfails.
+- **Schrijf dat het gebouwd is:** per substep een ledger-entry (append-only, panel genoemd) + progress-log-entry; flip de design-panel today-lines; update de component-docs onder `docs/Final_docs/ingestion|retrieval`.
+- **Schrijf de tests:** elke regression-test noemt zijn design-panel; de 5 voorbeeldconnecties, de validatie-afwijzingen, de exact-include/exclude DB-proof, de spy-test (geen catalogus-call per vraag), de switch-test (precies één connection block) en het eval before/after staan groen in de coverage-map.
+- **Schrijf de partner-vragen/antwoorden:** werk de **Jasper**- én **Marien**-drafts om naar het **source/target-contract** (`source_system`+`target_system`+`business_id`), met de juiste obi.js-URL (`https://obi-web-production.up.railway.app/obi.js`), en de vraag welke source/target hun hub per klant vent — klaar voor de owner om te versturen (niet verzonden).
+
+---
+
+### Volgende stap — retrieval-routing per klant-connectie (reconciliatie-brief) — **SUPERSEDED 2026-10-09**
+
+> **SUPERSEDED door "Option A: directed-connection retrieval routing" hierboven.** Deze informele brief was de eerste, ongefaseerde versie van dezelfde routing-gedachte. Hij is vervangen door het gefaseerde Option A-plan (met stages, tests, governance/ADR-0020 en override-map) hierboven. Bewaard als herkomst/context; **niet los uitvoeren**.
 
 **Activatie (één zin):** wanneer deze stap wordt geactiveerd, draaien we de onderstaande prompt en vergelijken we 'm regel voor regel tegen wat er nú al gebouwd is (§D / Phase 8, substeps 8.1.1–8.5.1), om conflicten en gaten te vinden en de prompt werkend te maken — níet om blind opnieuw te bouwen.
 

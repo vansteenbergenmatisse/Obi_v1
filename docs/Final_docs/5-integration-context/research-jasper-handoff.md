@@ -1,10 +1,16 @@
 # Research · the Jasper embed handoff — obi.js verification + draft reply — 2026-10-05
 
+> **SUPERSEDED (2026-10-09): the obi.js blocker is cleared.** 8.4.3 deployed the frontend; obi.js
+> is now live at `https://obi-web-production.up.railway.app/obi.js` (frame at `/embed`). §1's
+> "finding of record: there is no deployed obi.js URL" and the "blocker on our side" note in the
+> draft (§ below) are **no longer true** — treat them as history. The embed contract, JWT/JWKS
+> requirements and test matrix below still hold. (`obi.omniboost.com` remains the eventual host and
+> is still not set up.)
+>
 > **Status: research notes + a draft for the owner to edit.** Produced by a read-only
 > verification pass (owner-ordered parallel batch, 2026-10-05) for the §D.9 Jasper handoff
 > item ("verify the actual deployed `obi.js` URL and include it in the reply prepared for
-> Jasper"). Nothing here changed code or Confluence. **The reply must not be sent until the
-> blocker below is cleared and the owner edits the draft.**
+> Jasper"). Nothing here changed code or Confluence.
 
 ## 1. Finding of record: there is no deployed `obi.js` URL
 

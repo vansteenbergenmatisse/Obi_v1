@@ -59,13 +59,43 @@ and Data Hub):
    the embed.
 4. **The integration value(s) the hub vends** — the exact `integration` string(s) your token
    endpoint will assert. We map each to a set of knowledge scopes on our side.
-5. **A token-minting endpoint** (the `tokenUrl` above) that signs a JWT with:
-   - `iss` — your issuer string (item 1)
-   - `aud` — exactly `"obi"`
-   - `sub` — the end user's stable id
-   - `iat` / `exp` — issued-at and expiry, lifetime **60 minutes or less**
-   - `company_id`, `company_name`, `integration` — **all three present, or none.** Partial sets
-     are rejected.
+5. **A token-minting endpoint** (the `tokenUrl` above) that signs a JWT. A property can run both a
+   POS and a PMS, which a single `integration` string cannot express, so the preferred shape is the
+   structured three-slot form:
+
+   ```json
+   // header
+   { "alg": "RS256", "kid": "<their kid>" }
+   // payload
+   {
+     "iss": "https://<their-domain>",
+     "aud": "obi",
+     "sub": "<stable user id>",
+     "company_id": "<customer id>",
+     "context": { "slots": { "pos": "toast", "pms": "mews", "accounting": null } },
+     "iat": <now>, "exp": <now + max 3600>
+   }
+   ```
+
+   - The legacy single-`integration` form (`company_id` + `company_name` + `integration`, all three
+     present or none) is still accepted forever, but it carries only one system — so the slot form
+     is preferred whenever a property has more than one.
+   - Allowed slot values today: `pos`: `toast`; `pms`: `mews` or `opera-cloud`; `accounting`:
+     `quickbooks-online` or `xero`. Any slot may be `null` or omitted. Each slot holds exactly one
+     product id — never a list, never a compound like `toast-opera`.
+   - Launch allowlist: at launch only `pos: toast` and `pms: mews` are served. `opera-cloud` as PMS
+     currently hides the widget, so steer the test customer to **Toast + Mews**.
+   - You do not send role labels. Obi derives the role (POS / PMS / accounting) from the product id
+     itself.
+   - `aud` is exactly `"obi"`, `sub` is the end user's stable id, `iss` is your issuer string
+     (item 1), and `exp` is **60 minutes or less** after `iat`.
+
+**Open question (let's confirm on a call):** would it be simpler on your side to vend a flat
+`source` + `target` pair — the two product ids, e.g. `source: "mews"`, `target: "toast"` — and let
+Obi place them into the right slots? That is a proposal, not the contract today: right now the
+backend expects `context.slots` as shown above. If flat `source`/`target` is easier for you to
+mint, I can look at adapting our side to accept it — let's settle which shape we both build to
+before you wire anything.
 
 That is the whole contract. Once I have those five, I add your entries on our side and we test.
 
