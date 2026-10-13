@@ -326,9 +326,9 @@ def test_d_page_restriction_unchanged_hash_leaves_rows_untouched(gateway, settin
 
     # A label change (not a restriction change) still triggers a metadata-only sync — proving
     # the guard is keyed on access_scope_hash specifically, not on "some metadata changed". Keep a
-    # recognized label (obi-general-test) so the page stays a member (2.2.4) and the change stays
+    # recognized label (obi-general) so the page stays a member (2.2.4) and the change stays
     # metadata-only rather than becoming a purge.
-    gateway.set_labels(2002, ["obi-general-test", "finance", "confidential", "extra-marker"])
+    gateway.set_labels(2002, ["obi-general", "finance", "confidential", "extra-marker"])
     enqueue_sync(2002, 1, key="sync:2002:label-only-restrictions-preserved")
     result = run_once(gateway, settings, owner="test")
 
@@ -471,7 +471,7 @@ def test_i1_handle_and_complete_roll_back_together_on_handler_failure(
 
     monkeypatch.setattr(command_handler, "_replace_restrictions", boom)
 
-    gateway.set_labels(1001, ["obi-general-test"])  # recognized label: page passes the 2.2.4
+    gateway.set_labels(1001, ["obi-general"])  # recognized label: page passes the 2.2.4
     # membership gate so the rebuild branch (and the boom mid-handler) actually runs
     enqueue_sync(1001, 3, key="sync:1001:atomic-fail")
     result = run_once(gateway, settings, owner="test")

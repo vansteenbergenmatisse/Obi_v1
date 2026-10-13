@@ -15,10 +15,13 @@
 
 `build_auth_context` turns a verified platform-signed JWT (`VerifiedClaims`) into the single
 frozen `AuthContext` that drives every reader transaction on the answer path — its
-`allowed_scopes` set the scope GUC for search, rerank text, curated lookup and parent expansion
+`allowed_sources` set the source GUC for search, rerank text, curated lookup and parent expansion
 (never-bend rule 3: one authorization context per request, built at the gate). Since 8.1.3 the
 context also carries the validated integration slots (`slot_pos`/`slot_pms`/`slot_accounting`,
-canonical catalog ids, `None` for empty), ready for the 8.3.x eligibility/attribution work.
+canonical catalog ids, `None` for empty), feeding the 8.3.x eligibility/attribution work; for a
+directed chat it also carries the routing labels (the live content axis). The knowledge-scope axis
+is retired (ADR-0021): `allowed_scopes` is empty everywhere and the scope GUC is opted out to the
+wildcard, so it no longer filters any read.
 
 The verifier extracts both token forms: the structured `context.slots` claim (structural
 garbage → bare `TokenError`, 401; the legacy all-three-or-none business rule is scoped to
@@ -43,11 +46,12 @@ After the active-platform gate (AUTH-1/CIP-A2, unchanged), the five slot checks 
    PMS) → `SlotNotOnAllowlistError` (bare 401). The Accounting slot is never gated here (owner
    decision O4: inert for eligibility); an empty slot never refuses.
 
-Scopes are the union of the filled slots' registry scopes plus general; a filled slot with no
-scope mapping yet (accounting products, O9 open) contributes none and never errors. The body
-`knowledge_scope` stays non-authoritative: an unknown body value is a 400 before any search; a
-recognized value disagreeing with the token is logged (`body_knowledge_scope_ignored`) and
-ignored. All 401 failure modes stay byte-identical on the wire.
+The slot checks still run (they gate the session and feed eligibility), but the gate derives no
+knowledge scopes: `allowed_scopes` is empty for every token (ADR-0021 — the scope axis is retired,
+there is no base scope). The body `knowledge_scope` field is fully non-authoritative and inert: it
+is logged (`body_knowledge_scope_ignored`) and ignored, never a 400 and never a filter (ADR-0021;
+previously an unknown body value was a 400 before any search). All 401 failure modes stay
+byte-identical on the wire.
 
 ### The directed connection form (substep 9.3.1, Option A, ADR-0020)
 
@@ -72,8 +76,8 @@ connection instead of the membership slots:
 
 `business_id` (verified present for this form) becomes the `AuthContext.company_id`
 company-isolation axis; the resolved `source_slug`/`target_slug` ride the context for chat-start
-(9.2.1) to build the four routing labels + connection block. Scopes stay general-only here — the
-label hard filter is the content axis and is wired into retrieval in a later stage (9.4.1). The
+(9.2.1) to build the four routing labels + connection block. No knowledge scopes are derived here
+(ADR-0021) — the label hard filter is the content axis, wired into retrieval at stage 9.4.1. The
 body still never decides the connection (rules 2-3): `build_auth_context` takes no body, and
 `ChatRequestBody` forbids a `source_system`/`target_system` key outright (`extra="forbid"`).
 

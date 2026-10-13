@@ -64,9 +64,6 @@ export function parseChatRequestBody(json: unknown): ParseResult<ChatRequest> {
   if (body.principal !== undefined && typeof body.principal !== "string") {
     return { ok: false, error: "principal must be a string" };
   }
-  if (body.knowledgeScope !== undefined && typeof body.knowledgeScope !== "string") {
-    return { ok: false, error: "knowledgeScope must be a string" };
-  }
   if (body.simulatedContext !== undefined && !isSimulatedContext(body.simulatedContext)) {
     return {
       ok: false,
@@ -96,7 +93,6 @@ export function parseChatRequestBody(json: unknown): ParseResult<ChatRequest> {
       conversationId: body.conversationId as string | undefined,
       history,
       principal: body.principal as string | undefined,
-      knowledgeScope: body.knowledgeScope as string | undefined,
       simulatedContext: body.simulatedContext as SimulatedContext | undefined,
     },
   };

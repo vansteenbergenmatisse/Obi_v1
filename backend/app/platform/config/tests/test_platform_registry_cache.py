@@ -31,7 +31,12 @@ from app.platform.config.platforms import load_platform_registry
 _MEWS_ISS = "https://app.mews.com"
 
 
-def _write_platforms(path: Path, *, mews_active: bool = True) -> Path:
+def _write_platforms(
+    path: Path, *, mews_active: bool = True, integrations: dict | None = None
+) -> Path:
+    # ADR-0021: the integrations map values are empty by default (the knowledge-scope axis is
+    # retired); a test that needs a mapped scope (to prove the dangling-scope revalidation) passes
+    # `integrations` explicitly together with a monkeypatched recognized-scope set.
     path.write_text(
         json.dumps(
             {
@@ -45,7 +50,7 @@ def _write_platforms(path: Path, *, mews_active: bool = True) -> Path:
                         "active": mews_active,
                     }
                 },
-                "integrations": {"mews": ["obi-mews-test"]},
+                "integrations": {"mews": []} if integrations is None else integrations,
             }
         )
     )
@@ -127,13 +132,11 @@ def test_tags_scopes_file_change_revalidates_platforms(
         "load_recognized_knowledge_scopes",
         lambda: load_recognized_knowledge_scopes(scopes_path),
     )
-    p = _write_platforms(tmp_path / "platforms.json")
+    p = _write_platforms(tmp_path / "platforms.json", integrations={"mews": ["obi-mews-test"]})
     s = _settings(p)
-    # loads fine while the scopes file still carries the scope platforms.json maps
-    assert s.platform_registry.allowed_scopes_for("mews") == {
-        "obi-mews-test",
-        "obi-general-test",
-    }
+    # loads fine while the scopes file still carries the scope platforms.json maps. ADR-0021: no
+    # general base scope is injected, so the mapped set is exactly the one slug.
+    assert s.platform_registry.allowed_scopes_for("mews") == {"obi-mews-test"}
 
     # the live edit: the mapped scope vanishes from the scopes file (general + classified remain,
     # so the scopes file itself still validates — only the platforms mapping is now dangling)

@@ -32,25 +32,26 @@ delete and classified paths. `deactivate_page` still exists and is still used by
 sweep for source-scope coverage loss (unchanged by this substep).
 
 **Label-gated membership (rule 2 + never-bend rule 5).** Beyond the four delete surfaces above,
-`handle_sync_page` also gates on the page's **recognized knowledge-scope labels** — those whose
-lowercased name is in `knowledge_scopes.json` (`settings.knowledge_scope_set`). After resolving the
-labels: if the page carries **no** recognized label, then an already-indexed page is **purged** (its
-last recognized label was removed — rule 2, the same all-rows-gone outcome as a delete), and a
-first-seen page is **skipped** — never ingested, no version/chunk/`page_source` row written (rule 5;
-outcome action `skipped`). A page keeping at least one recognized label stays indexed. The gate keys
-on recognized labels *present* (`scope_result.matched_labels`), not the resolved tags. Since §13 step
-3 (decision D4) two or more recognized provider labels is legitimate sharing — the page resolves to
-all of them and `matched_labels` equals the resolved tags — so a multi-scope page stays indexed and
-is visible in each of those scopes, never churned or hidden.
+`handle_sync_page` also gates on the page's **recognized routing labels** — those matching a
+product-catalog routing form (`obi-general`, `{slug}-general`, `{slug}-to-{pos|pms|accounting}`),
+enumerated by `ProductCatalog.all_routing_labels()`. Since ADR-0021 (2026-10-12) these routing
+labels are the membership axis; the retired knowledge-scope `-test` tag set
+(`settings.knowledge_scope_set` / `knowledge_scopes.json`) no longer decides membership. After
+reading the labels: if the page carries **no** recognized routing label, then an already-indexed
+page is **purged** (its last recognized label was removed — rule 2, the same all-rows-gone outcome
+as a delete), and a first-seen page is **skipped** — never ingested, no version/chunk/`page_source`
+row written (rule 5; outcome action `skipped`). A page keeping at least one recognized routing label
+stays indexed. Two or more recognized routing labels is legitimate sharing — the page stays indexed
+and is reachable under each connection that overlaps them, never churned or hidden.
 Folder roots (`source_scope`) no longer decide membership: unrelated Confluence labels are ignored,
-never stored as scopes, and a `source_scope`-root-covered page must still carry a recognized label to
-be indexed (the root's tags union on top).
+and a `source_scope`-root-covered page must still carry a recognized routing label to be indexed.
 
 ## Why it does it
 
 Never-bend rule 1 and the accuracy-first stance: hidden-but-present content is a leak waiting to
-happen. With scope filtering carried only by `tags`, a soft-deactivated chunk keeps its vector and
-text on disk; a bug that ignores `is_active`, a raw table read, or a database dump could surface it.
+happen. With content filtering carried by a column (today the routing `labels`), a soft-deactivated
+chunk keeps its vector and text on disk; a bug that ignores `is_active`, a raw table read, or a
+database dump could surface it.
 Deleting the rows means the content is simply not there. For `classified` this is the whole point —
 the panel `tg-classified` states it plainly: deleting rather than deactivating means a dump or an
 `is_active`-ignoring bug still cannot leak the content.

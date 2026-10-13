@@ -45,19 +45,19 @@ def test_tg_add_label_only_change_updates_tags_without_rebuild(gateway, settings
     its knowledge-scope tags in place without re-embedding: active_doc_version_id is unchanged."""
     # Post-2.2.4 a page is only indexed once it carries a recognized label, so it starts in a
     # scope (general) rather than tag-less; the ADD unions a second scope onto it.
-    gateway.set_labels(1001, ["obi-general-test", "onboarding"])
+    gateway.set_labels(1001, ["obi-general", "onboarding"])
     index_page(gateway, settings, 1001, version=1)
 
     with read() as s:
         page_source = s.get(PageSource, 1001)
         assert page_source is not None
-        assert page_source.tags == ["obi-general-test"]  # its single starting scope
+        assert page_source.tags == ["obi-general"]  # its single starting scope
     version_before_row = active_version(1001)
     assert version_before_row is not None
     version_before = version_before_row.id
 
     # ADD a new label alongside the existing ones; same page content, no version bump.
-    gateway.set_labels(1001, ["obi-general-test", "onboarding", "obi-mews-test"])
+    gateway.set_labels(1001, ["obi-general", "onboarding", "mews-general"])
     enqueue_sync(1001, 1, key="sync:1001:label-add")
     result = run_once(gateway, settings, owner="test")
 
@@ -68,7 +68,7 @@ def test_tg_add_label_only_change_updates_tags_without_rebuild(gateway, settings
     with read() as s:
         page_source = s.get(PageSource, 1001)
         assert page_source is not None
-        assert "obi-mews-test" in page_source.tags  # new tag now present
+        assert "mews-general" in page_source.tags  # new tag now present
     version_after_row = active_version(1001)
     assert version_after_row is not None
     assert version_after_row.id == version_before  # metadata-only: no rebuild
@@ -80,7 +80,6 @@ def _retriever(settings: Settings) -> HybridRetriever:
         build_embedding_provider(settings),
         PrincipalPermissionPolicy(),
         build_reranker(settings),
-        enable_knowledge_scope_filtering=True,
         trace_sessionmaker=get_sessionmaker(),
     )
 
@@ -98,12 +97,15 @@ def test_tg_add_label_only_change_makes_page_appear_in_new_scope_on_next_questio
     retr = _retriever(settings)
 
     # Before the add: no recognized scope tag on the page's chunks, so a query scoped to
-    # obi-mews-test never resolves it (ADR-0011 Decision 1: no tag -> no participation).
-    before = retr.retrieve("Onboarding Guide", "100", k=5, knowledge_scopes=["obi-mews-test"])
-    assert "1001" not in before
+    # mews-general never resolves it (ADR-0011 Decision 1: no tag -> no participation).
+    before = retr.retrieve("Onboarding Guide", "100", k=5, knowledge_scopes=["mews-general"])
+    # ADR-0021: the scope axis is retired, so `knowledge_scopes` no longer gates retrieval — the
+    # indexed page resolves regardless of the scope arg. The label-add mechanics below (tags
+    # stamped, metadata-only, no re-embed) are the live behavior this test still guards.
+    assert "1001" in before
 
     # ADD a new label alongside the existing one; same page content, no version bump.
-    gateway.set_labels(1001, ["onboarding", "obi-mews-test"])
+    gateway.set_labels(1001, ["onboarding", "mews-general"])
     enqueue_sync(1001, 1, key="sync:1001:label-add-retrieval")
     result = run_once(gateway, settings, owner="test")
 
@@ -111,5 +113,5 @@ def test_tg_add_label_only_change_makes_page_appear_in_new_scope_on_next_questio
     outcome = result.outcome
     assert isinstance(outcome, SyncOutcome)
     assert outcome.action == "metadata_only"
-    after = retr.retrieve("Onboarding Guide", "100", k=5, knowledge_scopes=["obi-mews-test"])
+    after = retr.retrieve("Onboarding Guide", "100", k=5, knowledge_scopes=["mews-general"])
     assert "1001" in after  # the page is now searchable in its new scope, on the next question

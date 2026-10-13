@@ -39,11 +39,17 @@ below), so the page markup is identical across every tenant.
 
 Two notes on the URL:
 
+- **Correction to what you may have seen earlier:** both of our earlier threads mentioned the
+  **backend** host (`obi-backend-production.up.railway.app`) as the origin. That host is the API
+  (where the widget sends chat requests) — it is **not** the script `src`. The `<script src>`
+  above must point at the **web** host, `obi-web-production.up.railway.app/obi.js`. Please embed
+  against the web host.
 - `https://obi-web-production.up.railway.app/obi.js` is the real, deployed loader as of
   2026-10-09. You can embed against it today.
-- That is the Railway host we run the frontend on now. We plan to move it behind a branded
-  `obi.omniboost.com` later. When we do, the only change on your side is the `src` URL, and I will
-  give you plenty of notice. `[OWNER: confirm whether to mention the branded URL now or leave it out.]`
+- That is the Railway host we run the frontend on now, and it is what we use **for the test
+  phase**. We will move it behind a branded `obi.omniboost.com` **before go-live** — when we do,
+  the only change on your side is the `src` URL, and you (and Marien) will get a dedicated
+  heads-up well ahead of the switch.
 
 ### What I need from you
 
@@ -83,6 +89,11 @@ and Data Hub):
    - Allowed slot values today: `pos`: `toast`; `pms`: `mews` or `opera-cloud`; `accounting`:
      `quickbooks-online` or `xero`. Any slot may be `null` or omitted. Each slot holds exactly one
      product id — never a list, never a compound like `toast-opera`.
+   - **Heads-up on your sample token:** it used `integration: "toast-opera"`. That is **not a
+     recognized integration** (it exists in none of our config, and it reads as two product ids
+     mashed together), so the live gate **refuses the token with a 401** — it never reaches a
+     search. For the test, send the two systems as separate slots — `toast` in `pos`, `mews` in
+     `pms` — not a combined `toast-opera` string.
    - Launch allowlist: at launch only `pos: toast` and `pms: mews` are served. `opera-cloud` as PMS
      currently hides the widget, so steer the test customer to **Toast + Mews**.
    - You do not send role labels. Obi derives the role (POS / PMS / accounting) from the product id

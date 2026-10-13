@@ -144,7 +144,7 @@ def test_in2_classified_label_removes_rows(gateway, settings):
     assert active_child_chunks(1001)
 
     # classified wins even alongside a valid recognized scope.
-    gateway.set_labels(1001, ["obi-general-test", "classified"])
+    gateway.set_labels(1001, ["obi-general", "classified"])
     enqueue_sync(1001, cf_version=3, key="classify:1001")
     result = run_once(gateway, settings, owner="test")
 

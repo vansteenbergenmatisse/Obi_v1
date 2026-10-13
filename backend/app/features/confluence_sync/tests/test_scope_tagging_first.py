@@ -28,16 +28,16 @@ def test_tg_first_page_indexed_with_tags_already_resolved(gateway, settings):
     active chunks after the one and only sync — not indexed bare and tagged in a later pass.
     """
     # page 3002 ("Mews PMS Sync Setup") is fresh to this test module and carries the Confluence
-    # label "obi-mews-test", which config/knowledge_scopes.json recognizes as a knowledge-scope tag.
+    # label "mews-general", which config/knowledge_scopes.json recognizes as a knowledge-scope tag.
     index_page(gateway, settings, 3002, version=1)
 
     with read() as s:
         page_source = s.get(PageSource, 3002)
         assert page_source is not None
-        assert "obi-mews-test" in page_source.tags
+        assert "mews-general" in page_source.tags
 
     chunks = active_child_chunks(3002)
-    assert chunks and all("obi-mews-test" in c.tags for c in chunks)
+    assert chunks and all("mews-general" in c.tags for c in chunks)
 
 
 def test_tg_first_later_label_after_first_build_is_metadata_only(gateway, settings):
@@ -47,20 +47,20 @@ def test_tg_first_later_label_after_first_build_is_metadata_only(gateway, settin
     change, no version bump) creates no new document_version row and leaves the active version
     pointer unchanged."""
     # page 3004 ("Toast POS Menu Sync") is fresh to this test module and carries the fixture
-    # label "obi-toast-test" on its very first sync.
+    # label "toast-general" on its very first sync.
     index_page(gateway, settings, 3004, version=1)
 
     with read() as s:
         page_source = s.get(PageSource, 3004)
         assert page_source is not None
-        assert "obi-toast-test" in page_source.tags
+        assert "toast-general" in page_source.tags
 
     version_before = active_version(3004)
     assert version_before is not None
     versions_count_before = count_versions(3004)
 
     # A LATER label change on the already-indexed page: same body, same Confluence version.
-    gateway.set_labels(3004, ["obi-general-test"])
+    gateway.set_labels(3004, ["obi-general"])
     enqueue_sync(3004, 1, key="sync:3004:later-label")
     result = run_once(gateway, settings, owner="test")
 
@@ -72,7 +72,7 @@ def test_tg_first_later_label_after_first_build_is_metadata_only(gateway, settin
     with read() as s:
         page_source_after = s.get(PageSource, 3004)
         assert page_source_after is not None
-        assert "obi-general-test" in page_source_after.tags
+        assert "obi-general" in page_source_after.tags
 
     version_after = active_version(3004)
     assert version_after is not None

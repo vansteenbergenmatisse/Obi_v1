@@ -48,8 +48,8 @@ def _registry(tmp_path, allowed_integrations):
                     }
                 },
                 "integrations": {
-                    "mews": ["obi-mews-test"],
-                    "toast": ["obi-toast-test"],
+                    "mews": [],
+                    "toast": [],
                     "opera-cloud": [],
                     "xero": [],
                 },
@@ -82,7 +82,7 @@ def test_rt1_directed_form_accepted(tmp_path):
     assert ctx.target_slug == "mews"
     assert ctx.company_id == "B-3075"
     assert ctx.token_subject is not None
-    assert ctx.allowed_scopes == ("obi-general-test",)
+    assert ctx.allowed_scopes == ()  # ADR-0021: scopes retired
 
 
 def test_rt1_directed_unknown_source_is_400_before_search(tmp_path):

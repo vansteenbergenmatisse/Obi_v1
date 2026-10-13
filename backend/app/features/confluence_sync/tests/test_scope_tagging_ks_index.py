@@ -27,13 +27,13 @@ from ._helpers import active_child_chunks, active_version, enqueue_sync, index_p
 pytestmark = pytest.mark.db
 
 # Page 3002 ("Mews PMS Sync Setup", space 300, unrestricted) carries the real Confluence label
-# "obi-mews-test" in its fixture, which config/knowledge_scopes.json recognizes as a knowledge
+# "mews-general" in its fixture, which config/knowledge_scopes.json recognizes as a knowledge
 # scope — same page `tg-first` uses to prove the label resolves to the chunk tag.
 _MEWS_PAGE = 3002
 _MEWS_SPACE = "300"
 
 # Page 3004 ("Toast POS Menu Sync", space 300, unrestricted) is a separate fixture from the two
-# tests above, carrying the recognized label "obi-toast-test". Used only by the two tests below,
+# tests above, carrying the recognized label "toast-general". Used only by the two tests below,
 # which exercise the queued job itself (enqueue_sync + run_once) rather than the index_page
 # convenience wrapper, so the assertions below are pinned to the queued job driving stages 2-4,
 # not merely to whatever index_page happens to do internally.
@@ -41,14 +41,13 @@ _TOAST_PAGE = 3004
 _TOAST_SPACE = "300"
 
 
-def _retriever(*, enable_knowledge_scope_filtering: bool) -> HybridRetriever:
+def _retriever() -> HybridRetriever:
     settings = Settings()
     return HybridRetriever(
         get_reader_sessionmaker(),
         build_embedding_provider(settings),
         PrincipalPermissionPolicy(),
         build_reranker(settings),
-        enable_knowledge_scope_filtering=enable_knowledge_scope_filtering,
         trace_sessionmaker=get_sessionmaker(),
     )
 
@@ -65,15 +64,15 @@ def test_ks_index_page_tagged_by_real_pipeline_is_searchable_in_its_scope(
 
     # Check (b): the chunk tag came from the real label pipeline, not a manual SQL stamp.
     chunks = active_child_chunks(_MEWS_PAGE)
-    assert chunks and all("obi-mews-test" in c.tags for c in chunks)
+    assert chunks and all("mews-general" in c.tags for c in chunks)
 
     # Check (c): the page is now searchable within its own recognized knowledge scope.
-    retr = _retriever(enable_knowledge_scope_filtering=True)
+    retr = _retriever()
     hits = retr.retrieve(
         "Mews PMS Sync Setup",
         _MEWS_SPACE,
         k=5,
-        knowledge_scopes=["obi-mews-test"],
+        knowledge_scopes=["mews-general"],
     )
     assert str(_MEWS_PAGE) in hits
 
@@ -86,14 +85,17 @@ def test_ks_index_page_not_searchable_outside_its_scope(gateway, settings: Setti
     """
     index_page(gateway, settings, _MEWS_PAGE, version=1)
 
-    retr = _retriever(enable_knowledge_scope_filtering=True)
+    retr = _retriever()
     hits = retr.retrieve(
         "Mews PMS Sync Setup",
         _MEWS_SPACE,
         k=5,
-        knowledge_scopes=["obi-toast-test"],
+        knowledge_scopes=["toast-general"],
     )
-    assert str(_MEWS_PAGE) not in hits
+    # ADR-0021: the scope axis is retired — `knowledge_scopes` no longer excludes a page by its
+    # tags. The mews page now resolves regardless of the scope arg; cross-integration isolation is
+    # the routing-label hard filter (test_label_hardfilter_db.py), not the scope axis.
+    assert str(_MEWS_PAGE) in hits
 
 
 def test_ks_index_queued_job_runs_stages_2_to_4_on_the_page(gateway, settings: Settings) -> None:
@@ -113,7 +115,7 @@ def test_ks_index_queued_job_runs_stages_2_to_4_on_the_page(gateway, settings: S
     with read() as s:
         page_source = s.get(PageSource, _TOAST_PAGE)
         assert page_source is not None
-        assert "obi-toast-test" in page_source.tags
+        assert "toast-general" in page_source.tags
 
     # Stage 3 (chunk/contextualize): active chunks exist for the page.
     chunks = active_child_chunks(_TOAST_PAGE)
@@ -136,4 +138,4 @@ def test_ks_index_chunk_tags_carry_the_recognized_label(gateway, settings: Setti
     assert result.status == "succeeded"
 
     chunks = active_child_chunks(_TOAST_PAGE)
-    assert chunks and all("obi-toast-test" in c.tags for c in chunks)
+    assert chunks and all("toast-general" in c.tags for c in chunks)

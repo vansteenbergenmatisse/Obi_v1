@@ -25,9 +25,7 @@ pytestmark = (
 )  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 
-def _auth(
-    principal: str | None = None, scopes: tuple[str, ...] = ("obi-general-test",)
-) -> AuthContext:
+def _auth(principal: str | None = None, scopes: tuple[str, ...] = ("obi-general",)) -> AuthContext:
     return AuthContext(None, None, None, scopes, ("confluence:default",), principal, None)
 
 

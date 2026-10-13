@@ -26,7 +26,7 @@
 
 One filtered search: when a request carries a verified customer context, the search SQL
 adds an applicability predicate to the same `WHERE` clause that already carries the access
-filters (active/child/current, source list, knowledge-scope overlap, RLS underneath) —
+filters (active/child/current, source list, routing-label overlap, RLS underneath) —
 before `ORDER BY`/`LIMIT`, never an unrestricted shortlist cleaned up later. Eligible =
 chunks with **no** applicability record (both SQL `NULL` and jsonb `null` — absence never
 excludes, the §D.11 default) plus chunks whose stamped record matches the context under the
@@ -51,8 +51,9 @@ pre-8.3.1 shape.
 §D.5 is the design of record: apply access AND applicability conditions inside the
 database/vector-search function, before the final result limit — the database itself only
 hands back pieces this customer's setup may use; the prompt never enforces eligibility.
-Applicability narrows INSIDE what access already allows: RLS, the scope GUCs and page
-permissions are untouched and still apply first (never-bend rule 3), and the request body
+Applicability narrows INSIDE what access already allows: RLS, the source + routing-label GUCs
+and page permissions are untouched and still apply first (never-bend rule 3; the knowledge-scope
+GUC is retired — ADR-0021), and the request body
 never decides — the `CustomerContext` is built from the gate-verified `AuthContext` slots
 and the verified issuer's platform key (8.1.3), threaded through both the first retrieve
 and the CRAG retry. The SQL deliberately MIRRORS `match_applicability` (8.2.3) instead of

@@ -49,12 +49,6 @@ export interface ChatSession {
    * `PanelBody`'s subtree) need the same value. */
   locale: Locale;
   setLocale: (locale: Locale) => void;
-  /** The knowledge scope (ADR-0011 decision 6) applied to every outgoing chat request — seeded
-   * from the embed's `knowledgeScope` prop and, in dev/verification builds, overridable at runtime
-   * by the PLAN 10.8 scope switcher so a tester can prove the four scopes return isolated evidence.
-   * `undefined` means the backend's default/general scope. */
-  knowledgeScope: string | undefined;
-  setKnowledgeScope: (scope: string | undefined) => void;
   /** The standalone/test environment's currently-selected simulated preset (panel mi-presets,
    * substep 8.4.1), or `undefined` when none is picked. `undefined` in a real customer session —
    * the selector only renders in the standalone env. The simulated context never reaches the
@@ -70,27 +64,12 @@ const ChatSessionContext = createContext<ChatSession | null>(null);
 
 export interface ChatSessionProviderProps {
   children: ReactNode;
-  /**
-   * Which third-party platform this deployment/embed is scoped to
-   * (ADR-0011 decision 6) — set once at widget initialization (the
-   * embedding page/deployment declares which platform it is), not
-   * re-derived per message. Omitted means the backend's default/general
-   * scope applies. Seeds the session's initial scope; the PLAN 10.8
-   * switcher can then override it at runtime in dev/verification builds.
-   */
-  knowledgeScope?: string;
 }
 
-export function ChatSessionProvider({
-  children,
-  knowledgeScope: initialKnowledgeScope,
-}: ChatSessionProviderProps) {
+export function ChatSessionProvider({ children }: ChatSessionProviderProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pending, setPending] = useState(false);
   const [locale, setLocale] = useState<Locale>("en");
-  // Seeded from the embed's prop (the deployment declares its scope once); the 10.8 switcher
-  // sets it live so a tester can compare scopes without re-mounting the widget.
-  const [knowledgeScope, setKnowledgeScope] = useState<string | undefined>(initialKnowledgeScope);
   // substep 8.4.1: the standalone env's selected simulated preset. Undefined in a real session.
   const [simulatedPreset, setSimulatedPreset] = useState<StandalonePreset | undefined>(undefined);
   const conversationId = useRef<string | undefined>(undefined);
@@ -164,7 +143,7 @@ export function ChatSessionProvider({
 
     try {
       await streamChat(
-        { conversationId: conversationId.current, history, knowledgeScope, simulatedContext },
+        { conversationId: conversationId.current, history, simulatedContext },
         {
           onStart: (id) => {
             conversationId.current = id;
@@ -232,8 +211,6 @@ export function ChatSessionProvider({
         restart,
         locale,
         setLocale,
-        knowledgeScope,
-        setKnowledgeScope,
         simulatedPreset,
         selectSimulatedPreset,
       }}

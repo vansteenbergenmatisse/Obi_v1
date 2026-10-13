@@ -30,9 +30,7 @@ _EXPENSE_PAGE = 2001  # space 200, unrestricted
 
 # The recognized set is loaded from config in production; tests pin it explicitly so a change to
 # the committed config/knowledge_scopes.json can't silently alter what "tagged" means here.
-_RECOGNIZED = frozenset(
-    {"obi-general-test", "obi-mews-test", "obi-operacloud-test", "obi-toast-test"}
-)
+_RECOGNIZED = frozenset({"obi-general", "mews-general", "opera-cloud-general", "toast-general"})
 
 
 def _set_chunk_tags(page_id: int, tags: list[str]) -> None:
@@ -63,7 +61,7 @@ def _active_chunk_count(page_id: int) -> int:
 
 def test_all_active_chunks_scope_tagged_is_ready(gateway, settings: Settings, session) -> None:
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
-    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-general-test"])
+    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-general"])
 
     cov = _coverage(session)
 
@@ -100,7 +98,7 @@ def test_source_scope_tag_alone_does_not_count(gateway, settings: Settings, sess
 
 
 @pytest.mark.parametrize(
-    "scope", ["obi-general-test", "obi-mews-test", "obi-operacloud-test", "obi-toast-test"]
+    "scope", ["obi-general", "mews-general", "opera-cloud-general", "toast-general"]
 )
 def test_each_recognized_scope_tag_counts(gateway, settings: Settings, session, scope: str) -> None:
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
@@ -115,7 +113,7 @@ def test_each_recognized_scope_tag_counts(gateway, settings: Settings, session, 
 def test_partial_coverage_lists_only_untagged_pages(gateway, settings: Settings, session) -> None:
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
     index_page(gateway, settings, _EXPENSE_PAGE, 4)
-    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-general-test"])
+    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-general"])
     _set_chunk_tags(_EXPENSE_PAGE, [])  # left untagged
 
     cov = _coverage(session)
@@ -132,7 +130,7 @@ def test_inactive_untagged_chunks_are_ignored(gateway, settings: Settings, sessi
     `_base_filters`), so a superseded/inactive untagged chunk must not block the flip."""
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
     index_page(gateway, settings, _EXPENSE_PAGE, 4)
-    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-general-test"])
+    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-general"])
     _set_chunk_tags(_EXPENSE_PAGE, [])
     # deactivate the untagged page's chunks: they no longer participate in retrieval.
     with get_sessionmaker()() as s:

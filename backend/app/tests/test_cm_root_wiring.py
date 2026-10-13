@@ -104,7 +104,7 @@ def test_cm_root_builds_hybrid_retriever_with_embedder_reranker_and_scope_flag(
     Step 3 — the wiring builds HybridRetriever with the embedder, the reranker, and the
     knowledge-scope flag: build_answer_service passes build_embedding_provider(settings),
     build_reranker(settings), and settings.enable_knowledge_scope_filtering straight through."""
-    settings = Settings(enable_knowledge_scope_filtering=True)
+    settings = Settings()
     embedder_sentinel = object()
     reranker_sentinel = object()
     recorded: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
@@ -124,4 +124,6 @@ def test_cm_root_builds_hybrid_retriever_with_embedder_reranker_and_scope_flag(
     # main.py positional order: (session_factory, embedder, policy, reranker, ...)
     assert args[1] is embedder_sentinel
     assert args[3] is reranker_sentinel
-    assert kwargs["enable_knowledge_scope_filtering"] is True
+    # ADR-0021: the enable_knowledge_scope_filtering flag was removed (scope axis retired); the
+    # wiring no longer passes it. The retriever is still built with the embedder + reranker above.
+    assert "enable_knowledge_scope_filtering" not in kwargs

@@ -196,7 +196,7 @@ def test_tags_classified_label_added_delivery_purges_end_to_end(gateway, webhook
     assert page_row_counts(1001)["chunk"] > 0  # indexed with live chunks first
 
     # The page now carries classified alongside a recognized scope (classified wins, rule 7).
-    gateway.set_labels(1001, ["obi-general-test", "classified"])
+    gateway.set_labels(1001, ["obi-general", "classified"])
 
     client = make_client(webhook_settings)
     raw = _label_event_raw("cls-1")  # label_added on page 1001, signed

@@ -37,9 +37,10 @@ pytestmark = pytest.mark.db
 
 # Page 3002 ("Mews PMS Sync Setup", space 300, unrestricted) — the fixture the tags siblings use.
 _PAGE = 3002
-_MEWS = "obi-mews-test"
-_GENERAL = "obi-general-test"
-_EXTRA = "obi-extra-raw-label"  # a real Confluence label that is NOT a recognized knowledge scope
+# ADR-0021: membership/recognition is the routing-label axis.
+_MEWS = "mews-general"
+_GENERAL = "obi-general"
+_EXTRA = "extra-raw-label"  # a real Confluence label that is NOT a recognized routing label
 
 
 def _page_labels(page_id: int) -> list[str]:

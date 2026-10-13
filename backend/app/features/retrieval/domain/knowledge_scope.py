@@ -1,6 +1,9 @@
-"""Resolve a request-shaped knowledge-scope value into the allowed-scopes set (PLAN 10.4,
-ADR-0011). Pure, no I/O — co-located with `permission.classify_scope`, which already plays this
-"interpret an incoming request-shaped value" role for `principal`.
+"""Resolve a request-shaped knowledge-scope value into the allowed-scopes set. Pure, no I/O.
+
+ADR-0021 retired the knowledge-scope axis, so `recognized` is normally empty and this resolver
+returns an empty list (no base scope, no `-test` tag). It is kept as the interpreter of an incoming
+request-shaped value so the router keeps a single place to normalise/degrade one; a recognized
+`requested` or `default` scope (if any are ever reintroduced) is still honoured.
 """
 
 from __future__ import annotations
@@ -9,13 +12,11 @@ from __future__ import annotations
 def resolve_allowed_scopes(
     requested: str | None, recognized: frozenset[str], default: str | None
 ) -> list[str]:
-    """``obi-general-test`` is always allowed (ADR-0011 Decision 1 — always-included, never
-    inferred from an untagged chunk). A recognized ``requested`` scope is added; an unrecognized
-    one degrades silently to the deployment ``default`` (if that is itself recognized), never a
-    hard failure — a stale/misconfigured embed should not break chat entirely. The caller logs
-    the degradation.
+    """Return the recognized subset of ``requested`` (else ``default``), or ``[]``. An unrecognized
+    value degrades silently rather than failing the chat — a stale/misconfigured embed should not
+    break it. With the axis retired, ``recognized`` is empty and this returns ``[]``.
     """
-    scopes = {"obi-general-test"}
+    scopes: set[str] = set()
     if requested and requested.lower() in recognized:
         scopes.add(requested.lower())
     elif default and default.lower() in recognized:

@@ -8,17 +8,31 @@
   (the `labels` column, GIN index and RLS policy), `knowledge-base/schema/schema.py`
   (`apply_chunk_labels_rls`)
 - **Design panel:** `mi-labels`
-- **Status:** Implemented (database-level; live corpus relabel is substep 9.5.1)
+- **Status:** Implemented (database-level; live corpus relabel is substep 9.5.1). Since ADR-0021
+  (2026-10-12) routing labels are **also the index-membership axis**, not only the routing/relevance
+  axis — see "Membership" below.
 
 ## What it does
 
 Every stored piece of a page remembers the exact Confluence labels it was published with. Ingestion
 reads the raw labels Confluence already hands it (`gateway.get_labels`, the unresolved list) and
-stamps them, verbatim, onto a new `labels text[]` column on both `chunk` and `page_source` — once on
+stamps them, verbatim, onto a `labels text[]` column on both `chunk` and `page_source` — once on
 a build and again, with no re-embed, whenever a label-only change arrives over the metadata-only
-path. These raw `labels` are kept strictly separate from the resolved knowledge-scope `tags` (the
-recognized-scope ∩ authorized set): a page labelled `[obi-mews-test, obi-extra-raw-label]` carries
-both strings in `labels` but only `obi-mews-test` in `tags`.
+path. These raw `labels` are the live routing **and** membership axis. (The `tags` column it once
+stood beside — the resolved knowledge-scope ∩ authorized set — is retired by ADR-0021 and left as
+inert data; nothing reads it after migration 0018.)
+
+### Membership (ADR-0021)
+
+Routing labels are now the sole index-membership axis as well as the content/routing axis. A page is
+in the index when it is **published + carries at least one recognized routing label + is not
+`classified`**. "Recognized" means a label matching one of the product-catalog routing forms —
+`obi-general`, `{slug}-general`, `{slug}-to-{pos|pms|accounting}` — enumerated by
+`ProductCatalog.all_routing_labels()`. `ingest_decision` / `sync_service` decide membership on that
+set (removing the last recognized routing label removes the page — empty → `delete`), and the
+`reconciliation` discovery sweep keys its label search on the same set. This replaces the retired
+knowledge-scope `-test` tag axis (`obi-general-test` etc.), which ADR-0011 had used for membership;
+`classified` is unchanged as the overriding delete/exclusion signal (never-bend rule 5).
 
 Migration 0016 adds the column (default `'{}'`), a partial GIN `ix_chunk_labels_gin ... WHERE
 is_active` for the overlap the hard filter will run, and — for the directed-connection routing axis
@@ -31,16 +45,14 @@ column existed; it only writes rows that have drifted, so running it twice is sa
 ## Why it does it
 
 The directed-connection hard filter (ADR-0020) routes each chat on the four label boxes a page
-carries, not on the resolved scope tags — `toast-to-pms` ≠ `mews-to-pos`, a distinction the tag axis
-cannot express. Storing the raw labels is the prerequisite: the 9.4.1 filter reads `labels`, not
-`tags`. Labels restamp without a re-embed (ADR-0020 D3) because a label change never changes an
-embedding, exactly as `tags` already restamp. The policy rides the RLS/GUC layer (D1) so that when
-9.4.1 wires it, no read can run looser than the search (never-bend rule 3). It is landed as a no-op
-now because the retrieval code that sets `app.allowed_labels` is a later substep and the corpus is
-not yet relabelled — and because labels are the routing/relevance axis, not the access boundary:
-source isolation (lock 1) and customer-scope isolation (lock 2) remain the fail-closed fence and are
-untouched. Dropping the column, index and no-op policy on downgrade loosens no isolation (never-bend
-rule 11).
+carries — `toast-to-pms` ≠ `mews-to-pos`, a distinction the retired tag axis could not express.
+Storing the raw labels is the prerequisite: the 9.4.1 filter reads `labels`. Labels restamp without
+a re-embed (ADR-0020 D3) because a label change never changes an embedding. The policy rides the
+RLS/GUC layer (D1) so that no read can run looser than the search (never-bend rule 3). Labels are
+the routing/relevance and (since ADR-0021) membership axis, not the access boundary: source
+isolation (lock 1, `chunk_source_read`) remains the fail-closed fence and is untouched. (The former
+knowledge-scope lock 2 is retired — ADR-0021.) Dropping the column, index and policy on downgrade
+loosens no isolation (never-bend rule 11).
 
 ## How we know it works
 

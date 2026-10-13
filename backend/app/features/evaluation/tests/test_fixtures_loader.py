@@ -114,10 +114,10 @@ def test_tag_fixture_pages_carry_exactly_one_recognized_scope_label() -> None:
     scope's label — loaded through loader.py, not read from disk directly."""
     loader = _loader()
     by_tag = {
-        "3001": "obi-general-test",
-        "3002": "obi-mews-test",
-        "3003": "obi-operacloud-test",
-        "3004": "obi-toast-test",
+        "3001": "obi-general",
+        "3002": "mews-general",
+        "3003": "opera-cloud-general",
+        "3004": "toast-general",
     }
     for page_id, tag in by_tag.items():
         page = loader.load_page(page_id)
@@ -136,7 +136,7 @@ def test_two_label_fixture_page_carries_two_ordinary_labels() -> None:
     assert labels is not None
     names = {lbl["name"] for lbl in labels["results"]}
     assert names == {"changelog", "internal"}
-    recognized = {"obi-general-test", "obi-mews-test", "obi-operacloud-test", "obi-toast-test"}
+    recognized = {"obi-general", "mews-general", "opera-cloud-general", "toast-general"}
     assert names.isdisjoint(recognized)
 
 

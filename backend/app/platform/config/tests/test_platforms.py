@@ -72,15 +72,6 @@ def test_platforms_classified_never_mappable(tmp_path):
     assert "mews" in str(exc.value)
 
 
-def test_platforms_general_never_listed_by_hand(tmp_path):
-    """panel cm-config · substep 1.2.3
-    Hand-listing the general scope stops startup — the loader adds it, it is never written in."""
-    p = _write(tmp_path, _data(integrations={"mews": ["obi-mews-test", "obi-general-test"]}))
-    with pytest.raises(ValueError, match="by hand") as exc:
-        load_platform_registry(p, RECOGNIZED, allow_empty=False)
-    assert "mews" in str(exc.value)
-
-
 def test_platforms_lifetime_minutes_out_of_range_stops_startup(tmp_path):
     """panel cm-config · substep 1.2.3
     lifetime_minutes must sit within 1..1440 inclusive, else startup stops naming the platform."""
@@ -129,16 +120,19 @@ def test_platforms_real_file_loads(tmp_path):
         allow_empty=False,
         offline=True,
     )
-    # did not raise -> at least one active platform is present (datahub).
-    assert reg.allowed_scopes_for("mews") == {"obi-mews-test", "obi-general-test"}
+    # did not raise -> at least one active platform is present. ADR-0021: the integrations map
+    # values are empty (the knowledge-scope axis is retired), so a mapped integration resolves to
+    # the empty scope set — the key stays as the valid integration-claim allow-list.
+    assert reg.allowed_scopes_for("mews") == set()
 
 
-def test_platforms_allowed_scopes_adds_general(tmp_path):
-    """panel cm-config · substep 1.2.3
-    allowed_scopes_for returns the integration's tag plus the always-present general scope."""
+def test_platforms_allowed_scopes_no_longer_adds_general(tmp_path):
+    """panel cm-config · ADR-0021
+    allowed_scopes_for returns exactly the mapped slugs — the loader no longer injects a general
+    base scope (the knowledge-scope axis is retired)."""
     p = _write(tmp_path, _data(integrations={"mews": ["obi-mews-test"]}))
     reg = load_platform_registry(p, RECOGNIZED, allow_empty=False)
-    assert reg.allowed_scopes_for("mews") == {"obi-mews-test", "obi-general-test"}
+    assert reg.allowed_scopes_for("mews") == {"obi-mews-test"}
 
 
 def test_platforms_inactive_not_served(tmp_path):
@@ -173,7 +167,8 @@ def test_platforms_maps_platform_key_to_live_slugs(tmp_path):
     entry = reg.by_issuer("https://app.mews.com")
     assert entry is not None
     assert entry.key == "mews"
-    assert reg.scopes_for("mews") == ["obi-general-test", "obi-mews-test"]
+    # ADR-0021: no general base scope is prepended — the mapped slugs are returned as-is.
+    assert reg.scopes_for("mews") == ["obi-mews-test"]
     assert reg.scopes_for("unknown") is None
     assert reg.active_domains() == ["app.mews.com"]
 
@@ -614,25 +609,14 @@ def test_platforms_local_file_allowed_integrations_match_test_hosts():
         assert entry.allowed_integrations == allowed, issuer
 
 
-def test_platforms_local_file_test_integrations_map_to_scoped_plus_general():
-    """CIP-A1 · the committed platforms.local.json (the localhost embed test's registry —
-    docs/Final_docs/brief/localhost-test.md) resolves each test integration to exactly its own scope
-    plus the always-added general scope, and never another integration's scope. This pins the
-    cross-integration isolation the localhost test demonstrates at the config layer: a mews token
-    can never resolve toast or opera-cloud content, and vice-versa."""
+def test_platforms_local_file_test_integrations_are_known_claims_with_empty_scopes():
+    """CIP-A1 · ADR-0021 · the committed platforms.local.json (the localhost embed test's registry)
+    keeps each test integration as a KNOWN claim value (a key of the integrations map, so the
+    allowed_integrations vend check resolves) but the knowledge-scope axis is retired, so each maps
+    to the EMPTY scope set. Cross-integration content isolation is now enforced by the ADR-0020
+    routing-label axis, not these scopes."""
     local_file = DEFAULT_PLATFORMS_PATH.parent / "platforms.local.json"
     reg = load_platform_registry(local_file, RECOGNIZED, allow_empty=True, offline=True)
-    expected = {
-        "mews": ["obi-general-test", "obi-mews-test"],
-        "toast": ["obi-general-test", "obi-toast-test"],
-        "opera-cloud": ["obi-general-test", "obi-operacloud-test"],
-    }
-    for integration, scopes in expected.items():
-        assert reg.scopes_for(integration) == scopes, integration
-    # cross-integration isolation, negative case: no integration leaks another's product scope.
-    assert "obi-toast-test" not in (reg.scopes_for("mews") or [])
-    assert "obi-operacloud-test" not in (reg.scopes_for("mews") or [])
-    assert "obi-mews-test" not in (reg.scopes_for("toast") or [])
-    assert "obi-operacloud-test" not in (reg.scopes_for("toast") or [])
-    assert "obi-mews-test" not in (reg.scopes_for("opera-cloud") or [])
-    assert "obi-toast-test" not in (reg.scopes_for("opera-cloud") or [])
+    for integration in ("mews", "toast", "opera-cloud"):
+        # the key is known (not None) but maps to no scopes.
+        assert reg.scopes_for(integration) == [], integration

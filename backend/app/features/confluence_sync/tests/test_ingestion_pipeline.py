@@ -209,7 +209,7 @@ def test_schema_bump_triggers_full_reembed_release(gateway, settings: Settings) 
 def test_label_driven_knowledge_scope_stamped_on_page_and_chunks(
     gateway, settings: Settings
 ) -> None:
-    """PLAN 10.2 / trigger split: a page labeled `obi-toast-test` (a recognized POS-provider
+    """PLAN 10.2 / trigger split: a page labeled `toast-general` (a recognized POS-provider
     knowledge scope — the platform, not this repo's `Muse` codename, per ADR-0011's disclosed
     collision) is stamped with exactly that scope on page_source and every active chunk.
 
@@ -221,9 +221,9 @@ def test_label_driven_knowledge_scope_stamped_on_page_and_chunks(
     from schema.engine import session_scope
     from schema.models import PageSource
 
-    # `obi-toast-test` is recognized via the committed config/knowledge_scopes.json, not an env
+    # `toast-general` is recognized via the committed config/knowledge_scopes.json, not an env
     # override — deterministic regardless of the developer's local .env.
-    gateway.set_labels(1001, ["obi-toast-test"])
+    gateway.set_labels(1001, ["toast-general"])
     gateway.set_version(1001, 1)
     with session_scope() as s:
         outcome = handle_sync_page(s, page_id=1001, gateway=gateway, settings=settings)
@@ -232,9 +232,9 @@ def test_label_driven_knowledge_scope_stamped_on_page_and_chunks(
     with read() as s:
         ps = s.get(PageSource, 1001)
         assert ps is not None
-        assert set(ps.tags) == {"obi-toast-test"}
+        assert set(ps.tags) == {"toast-general"}
     children = active_child_chunks(1001)
-    assert children and all(set(c.tags) == {"obi-toast-test"} for c in children)
+    assert children and all(set(c.tags) == {"toast-general"} for c in children)
 
 
 def test_two_provider_labels_share_all_scopes_no_conflict_log(
@@ -252,16 +252,14 @@ def test_two_provider_labels_share_all_scopes_no_conflict_log(
         sync_service.log, "warning", lambda event, **kw: captured.update(event=event, **kw)
     )
 
-    gateway.set_labels(1001, ["obi-mews-test", "obi-toast-test"])
+    gateway.set_labels(1001, ["mews-general", "toast-general"])
     gateway.set_version(1001, 1)
     with session_scope() as s:
-        outcome = sync_service.handle_sync_page(
-            s, page_id=1001, gateway=gateway, settings=settings
-        )
+        outcome = sync_service.handle_sync_page(s, page_id=1001, gateway=gateway, settings=settings)
     assert outcome.action == "indexed"
     assert captured.get("event") != "knowledge_scope_conflict"  # conflict concept retired (D4)
 
     with read() as s:
         ps = s.get(PageSource, 1001)
         assert ps is not None
-        assert set(ps.tags) == {"obi-mews-test", "obi-toast-test"}
+        assert set(ps.tags) == {"mews-general", "toast-general"}

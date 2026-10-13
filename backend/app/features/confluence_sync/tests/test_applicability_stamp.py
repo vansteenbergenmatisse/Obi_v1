@@ -80,7 +80,7 @@ def test_in2_applies_first_index_stamps_record_on_every_chunk(gateway, settings)
     """panel mi-applies · substep 8.2.2
     Sync validates the authored table and stamps the record on page_source and every chunk
     (parents and children); the table itself is metadata, never chunk content."""
-    gateway.set_labels(_PAGE, ["obi-general-test"])
+    gateway.set_labels(_PAGE, ["obi-general"])
     assert _outcome(_sync(gateway, settings, 1, "applies-first:3011")).action == "indexed"
 
     version_id, ps_applies, chunk_applies = _page_state()
@@ -99,7 +99,7 @@ def test_in2_applies_metadata_edit_restamps_same_version_no_reembed(gateway, set
     A metadata edit (only the Applies-to table changed, content identical) restamps the
     existing chunks over the §D.0 restamp route: same document_version id, zero embed
     calls, stale eligibility replaced; a repeat sync is no_change."""
-    gateway.set_labels(_PAGE, ["obi-general-test"])
+    gateway.set_labels(_PAGE, ["obi-general"])
     _sync(gateway, settings, 1, "applies-seed:3011")
     version_before, ps_applies, _ = _page_state()
     assert ps_applies == _V1_SOFTWARE
@@ -126,7 +126,7 @@ def test_in2_applies_record_removed_restamps_back_to_label_only(gateway, setting
     """panel mi-applies · substep 8.2.2
     Removing the Applies-to table restamps every chunk back to NULL — the documented
     label-only default — still metadata-only: same version id, zero embed calls."""
-    gateway.set_labels(_PAGE, ["obi-general-test"])
+    gateway.set_labels(_PAGE, ["obi-general"])
     _sync(gateway, settings, 1, "applies-seed-rm:3011")
     version_before, ps_applies, _ = _page_state()
     assert ps_applies == _V1_SOFTWARE
@@ -146,7 +146,7 @@ def test_in2_applies_invalid_table_fails_the_sync_loudly(gateway, settings, monk
     """panel mi-applies · substep 8.2.2
     An invalid table (unknown product) fails the sync by named reason — never a silent
     fallback to label-only — and the previously indexed state survives untouched."""
-    gateway.set_labels(_PAGE, ["obi-general-test"])
+    gateway.set_labels(_PAGE, ["obi-general"])
     _sync(gateway, settings, 1, "applies-seed-bad:3011")
     version_before, _, _ = _page_state()
 
@@ -171,7 +171,7 @@ def test_in2_applies_record_on_untagged_or_classified_page_grants_nothing(gatewa
     assert _outcome(_sync(gateway, settings, 1, "applies-untagged:3011")).action == "skipped"
     assert page_row_counts(_PAGE) == _ZERO_ROWS
 
-    gateway.set_labels(_PAGE, ["obi-general-test", "classified"])
+    gateway.set_labels(_PAGE, ["obi-general", "classified"])
     outcome = _outcome(_sync(gateway, settings, 1, "applies-classified:3011"))
     assert outcome.action in ("skipped", "purged")
     assert page_row_counts(_PAGE) == _ZERO_ROWS

@@ -50,8 +50,8 @@ def _registry(tmp_path, allowed_integrations):
                     }
                 },
                 "integrations": {
-                    "mews": ["obi-mews-test"],
-                    "toast": ["obi-toast-test"],
+                    "mews": [],
+                    "toast": [],
                     "opera-cloud": [],
                     "xero": [],
                 },
@@ -165,7 +165,7 @@ def test_rt1_empty_pos_with_mews_pms_serves(tmp_path):
     mews scopes, PMS slot filled with the canonical id, the other slots empty."""
     reg = _registry(tmp_path, ["mews"])
     ctx = build_auth_context(_slot_claims(pms="mews"), reg)
-    assert ctx.allowed_scopes == ("obi-general-test", "obi-mews-test")
+    assert ctx.allowed_scopes == ()  # ADR-0021: scopes retired
     assert ctx.slot_pms == "mews"
     assert ctx.slot_pos is None and ctx.slot_accounting is None
     assert ctx.company_id == "c1"
@@ -178,7 +178,7 @@ def test_rt1_accounting_outside_support_is_inert_never_refuses(tmp_path):
     The context serves with the supported slots' scopes and carries the accounting slot."""
     reg = _registry(tmp_path, ["mews", "xero"])
     ctx = build_auth_context(_slot_claims(pms="mews", accounting="xero"), reg)
-    assert ctx.allowed_scopes == ("obi-general-test", "obi-mews-test")
+    assert ctx.allowed_scopes == ()  # ADR-0021: scopes retired
     assert ctx.slot_accounting == "xero"
     assert ctx.slot_pms == "mews"
 
@@ -189,7 +189,7 @@ def test_rt1_all_empty_slots_are_general_only(tmp_path):
     exactly like a legacy note with no business values."""
     reg = _registry(tmp_path, ["mews"])
     ctx = build_auth_context(_slot_claims(), reg)
-    assert ctx.allowed_scopes == ("obi-general-test",)
+    assert ctx.allowed_scopes == ()  # ADR-0021: scopes retired
     assert ctx.slot_pos is None and ctx.slot_pms is None and ctx.slot_accounting is None
 
 

@@ -134,10 +134,13 @@ def _sweep_space(
         live if allowed_page_ids is None else [m for m in live if m.page_id in allowed_page_ids]
     )
 
-    # CQL safety net: union in every recognized-label page, even one no root covers. It surfaces
-    # a freshly-tagged page for the worker to authorize (or reject) — the "Mews Page 2" fix. Only
-    # tagged pages come back, so this adds a small, bounded set, not the whole space.
-    discovered = gateway.list_pages_by_label(space_id, sorted(settings.knowledge_scope_set))
+    # CQL safety net: union in every routing-labelled page, even one no root covers. It surfaces
+    # a freshly-labelled page for the worker to authorize (or reject) — the "Mews Page 2" fix. Only
+    # labelled pages come back, so this adds a small, bounded set, not the whole space. ADR-0021:
+    # discovery is the routing-label axis (the retired knowledge-scope set is empty).
+    discovered = gateway.list_pages_by_label(
+        space_id, sorted(settings.product_catalog.all_routing_labels())
+    )
 
     candidates: dict[int, ConfluencePageMeta] = {}
     for meta in [*scoped_live, *discovered]:

@@ -273,16 +273,10 @@ class Settings(BaseSettings):
     contextualization_version: int = 3
     retrieval_schema_version: int = 1
 
-    # knowledge-scope tagging (PLAN 10.1; ADR-0011) — the recognized set of scope identifiers
-    # itself lives in config/knowledge_scopes.json (see knowledge_scope_set below), not here;
-    # this file only holds the runtime toggles for that feature.
-    # deployment-level fallback scope when a chat request omits knowledge_scope (PLAN 10.5).
-    # Empty -> obi-general-test-only.
-    default_knowledge_scope: str = ""
-    # rollout flag (PLAN 10.4). Off -> zero behavior change: HybridRetriever never applies the
-    # `tags && ...` predicate regardless of what a caller passes, mirroring
-    # enable_clarification_branch's dark-by-default posture.
-    enable_knowledge_scope_filtering: bool = False
+    # knowledge-scope tagging — RETIRED by ADR-0021 (superseding ADR-0011). The axis is gone;
+    # content routing rides the ADR-0020 routing-label axis. The former toggles
+    # (default_knowledge_scope, enable_knowledge_scope_filtering) are removed; knowledge_scope_set
+    # (below) stays only as the `classified` fail-fast + the platforms cross-check.
     # cap on always-present curated entries composed into evidence per answer (PLAN 10.6). Matches
     # rerank_top_k's order of magnitude — curated entries sit ahead of retrieved hits in the
     # numbered evidence block, so an unbounded cap could crowd out real retrieval evidence entirely.
@@ -379,7 +373,7 @@ class Settings(BaseSettings):
         return cached
 
     @model_validator(mode="after")
-    def _require_general_knowledge_scope(self) -> Settings:
+    def _require_valid_knowledge_scopes_file(self) -> Settings:
         _ = self.knowledge_scope_set  # fail fast at startup if the scopes config file is malformed
         return self
 

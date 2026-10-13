@@ -39,32 +39,53 @@ def _set_chunk_tags(page_id: int, tags: list[str]) -> None:
         s.commit()
 
 
-def _retriever(*, enable_knowledge_scope_filtering: bool = False) -> HybridRetriever:
+def _retriever() -> HybridRetriever:
     settings = Settings()
     return HybridRetriever(
         get_reader_sessionmaker(),
         build_embedding_provider(settings),
         PrincipalPermissionPolicy(),
         build_reranker(settings),
-        enable_knowledge_scope_filtering=enable_knowledge_scope_filtering,
         trace_sessionmaker=get_sessionmaker(),
     )
 
 
-def test_flag_off_still_enforces_scope_via_rls_backstop(gateway, settings: Settings) -> None:
-    """Phase 11.1a / ADR-0014: passing `knowledge_scopes` now enforces isolation at the DB (RLS)
-    EVEN with the app-layer flag off. Before the backstop, flag-off returned the mews page to a
-    toast-scoped caller (fail OPEN); the RLS scope GUC is now set from the raw argument regardless
-    of the flag, so the cross-customer page is excluded. The flag only governs the redundant SQL
-    predicate now, not the security boundary.
-    """
+def _set_chunk_labels(page_id: int, labels: list[str]) -> None:
+    with get_sessionmaker()() as s:
+        s.execute(
+            text("UPDATE chunk SET labels = :labels WHERE page_id = :pid"),
+            {"labels": labels, "pid": page_id},
+        )
+        s.commit()
+
+
+def test_label_hard_filter_excludes_a_page_outside_the_connection_boxes(
+    gateway, settings: Settings
+) -> None:
+    """ADR-0021 (supersedes the ADR-0014 knowledge-scope RLS backstop): content isolation is the
+    routing-label hard filter. A page whose only routing label sits outside a chat's four
+    connection boxes is never returned, while a session whose boxes include that label resolves it
+    (so the exclusion is the label boundary, not an unfindable page). The retired scope backstop no
+    longer participates; source/company isolation (chunk_source_read) is unchanged."""
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
-    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-mews-test"])
-    retr = _retriever(enable_knowledge_scope_filtering=False)
+    _set_chunk_labels(_ONBOARDING_PAGE, ["mews-to-pos"])
+    retr = _retriever()
 
-    hits = retr.retrieve("Onboarding Guide", "100", k=5, knowledge_scopes=["obi-toast-test"])
+    # a Toast->Mews connection (boxes: obi-general, toast-general, mews-general, toast-to-pms)
+    # never sees a page whose only label is mews-to-pos (the opposite direction's box)
+    excluded = retr.retrieve(
+        "Onboarding Guide",
+        "100",
+        k=5,
+        session_labels=["obi-general", "toast-general", "mews-general", "toast-to-pms"],
+    )
+    assert str(_ONBOARDING_PAGE) not in excluded
 
-    assert str(_ONBOARDING_PAGE) not in hits  # RLS backstop excludes the cross-customer page
+    # a connection whose boxes include mews-to-pos does resolve it (exclusion is the label boundary)
+    included = retr.retrieve(
+        "Onboarding Guide", "100", k=5, session_labels=["obi-general", "mews-to-pos"]
+    )
+    assert str(_ONBOARDING_PAGE) in included
 
 
 def test_no_knowledge_scopes_argument_is_unrestricted(gateway, settings: Settings) -> None:
@@ -74,33 +95,38 @@ def test_no_knowledge_scopes_argument_is_unrestricted(gateway, settings: Setting
     """
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
     _set_chunk_tags(_ONBOARDING_PAGE, ["obi-mews-test"])
-    retr = _retriever(enable_knowledge_scope_filtering=False)
+    retr = _retriever()
 
     hits = retr.retrieve("Onboarding Guide", "100", k=5)  # no knowledge_scopes
 
     assert str(_ONBOARDING_PAGE) in hits
 
 
-def test_flag_on_excludes_page_tagged_for_a_different_scope(gateway, settings: Settings) -> None:
+def test_scope_filter_retired_knowledge_scopes_no_longer_excludes(
+    gateway, settings: Settings
+) -> None:
+    # ADR-0021: the knowledge-scope filter is RETIRED. Passing `knowledge_scopes` no longer excludes
+    # a page by its `tags` — the arg is ignored (the scope GUC is opted out to wildcard). Content
+    # isolation is now the routing-label axis (see retrieval/test_label_hardfilter_db.py) + source
+    # isolation. This test guards against re-introducing scope-tag exclusion.
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
-    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-mews-test"])
-    retr = _retriever(enable_knowledge_scope_filtering=True)
+    _set_chunk_tags(_ONBOARDING_PAGE, ["mews-general"])
+    retr = _retriever()
 
-    # baseline: no filter at all -> the page resolves normally.
     baseline = retr.retrieve("Onboarding Guide", "100", k=5)
     assert str(_ONBOARDING_PAGE) in baseline
 
-    # requested scopes don't include "mews" -> structurally excluded, not just unranked.
+    # a scope list that does NOT include the page's tag no longer excludes it (scope axis retired).
     filtered = retr.retrieve(
-        "Onboarding Guide", "100", k=5, knowledge_scopes=["obi-general-test", "obi-toast-test"]
+        "Onboarding Guide", "100", k=5, knowledge_scopes=["obi-general", "toast-general"]
     )
-    assert str(_ONBOARDING_PAGE) not in filtered
+    assert str(_ONBOARDING_PAGE) in filtered
 
 
 def test_flag_on_includes_page_when_its_scope_is_allowed(gateway, settings: Settings) -> None:
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
     _set_chunk_tags(_ONBOARDING_PAGE, ["obi-mews-test"])
-    retr = _retriever(enable_knowledge_scope_filtering=True)
+    retr = _retriever()
 
     hits = retr.retrieve(
         "Onboarding Guide", "100", k=5, knowledge_scopes=["obi-general-test", "obi-mews-test"]
@@ -109,52 +135,60 @@ def test_flag_on_includes_page_when_its_scope_is_allowed(gateway, settings: Sett
     assert str(_ONBOARDING_PAGE) in hits
 
 
-def test_flag_on_two_scopes_never_cross_leak(gateway, settings: Settings) -> None:
+def test_scope_filter_retired_no_longer_isolates_by_scope(gateway, settings: Settings) -> None:
+    # ADR-0021: scope tags no longer isolate content. A mews-tagged page is now visible regardless
+    # of the knowledge_scopes passed (the axis is retired); cross-integration isolation is enforced
+    # by the routing-label hard filter (test_label_hardfilter_db.py), not by scope tags.
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
     index_page(gateway, settings, _EXPENSE_PAGE, 4)
-    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-mews-test"])
-    _set_chunk_tags(_EXPENSE_PAGE, ["obi-toast-test"])
-    retr = _retriever(enable_knowledge_scope_filtering=True)
+    _set_chunk_tags(_ONBOARDING_PAGE, ["mews-general"])
+    _set_chunk_tags(_EXPENSE_PAGE, ["toast-general"])
+    retr = _retriever()
 
     mews_view = retr.retrieve(
-        "Onboarding Guide", "100", k=5, knowledge_scopes=["obi-general-test", "obi-mews-test"]
+        "Onboarding Guide", "100", k=5, knowledge_scopes=["obi-general", "mews-general"]
     )
     assert str(_ONBOARDING_PAGE) in mews_view
 
     toast_view = retr.retrieve(
-        "Onboarding Guide", "100", k=5, knowledge_scopes=["obi-general-test", "obi-toast-test"]
+        "Onboarding Guide", "100", k=5, knowledge_scopes=["obi-general", "toast-general"]
     )
-    assert str(_ONBOARDING_PAGE) not in toast_view
+    assert str(_ONBOARDING_PAGE) in toast_view  # scope axis retired -> no longer excluded
 
 
-def test_flag_on_chunk_with_no_knowledge_scope_tag_never_participates(
+def test_scope_filter_retired_untagged_chunk_still_participates(
     gateway, settings: Settings
 ) -> None:
+    # ADR-0021: with the scope axis retired, a chunk's `tags` no longer gate retrieval, so an
+    # untagged chunk participates normally (membership is the routing-label axis at ingestion, and
+    # retrieval filters on source + labels, never `tags`).
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
-    _set_chunk_tags(_ONBOARDING_PAGE, [])  # no scope tag at all, not even "general"
-    retr = _retriever(enable_knowledge_scope_filtering=True)
+    _set_chunk_tags(_ONBOARDING_PAGE, [])  # no scope tag at all
+    retr = _retriever()
 
     baseline = retr.retrieve("Onboarding Guide", "100", k=5)
-    assert str(_ONBOARDING_PAGE) in baseline  # sanity: it's really indexed and findable
+    assert str(_ONBOARDING_PAGE) in baseline
 
-    filtered = retr.retrieve("Onboarding Guide", "100", k=5, knowledge_scopes=["obi-general-test"])
-    assert str(_ONBOARDING_PAGE) not in filtered  # ADR-0011 Decision 1: no tag -> no participation
+    filtered = retr.retrieve("Onboarding Guide", "100", k=5, knowledge_scopes=["obi-general"])
+    assert str(_ONBOARDING_PAGE) in filtered  # scope axis retired -> tags no longer gate
 
 
-def test_query_trace_records_allowed_knowledge_scopes(gateway, settings: Settings) -> None:
+def test_query_trace_records_no_knowledge_scopes_after_retirement(
+    gateway, settings: Settings
+) -> None:
+    # ADR-0021: the scope axis is retired, so the retriever no longer sets a scope list; the trace
+    # records None for allowed_knowledge_scopes (source scope + labels are the live axes).
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
-    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-general-test", "obi-mews-test"])
-    retr = _retriever(enable_knowledge_scope_filtering=True)
+    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-general", "mews-general"])
+    retr = _retriever()
 
-    result = retr.retrieve_with_context(
-        "Onboarding Guide", "100", k=5, knowledge_scopes=["obi-general-test", "obi-mews-test"]
-    )
+    result = retr.retrieve_with_context("Onboarding Guide", "100", k=5)
 
     assert result.trace_id is not None
     with get_sessionmaker()() as s:
         row = s.get(QueryTrace, result.trace_id)
         assert row is not None
-        assert row.allowed_knowledge_scopes == ["obi-general-test", "obi-mews-test"]
+        assert row.allowed_knowledge_scopes is None
 
 
 def _one_child_and_parent(page_id: int) -> tuple[int, int, str]:
@@ -174,38 +208,46 @@ def _one_child_and_parent(page_id: int) -> tuple[int, int, str]:
     return int(row.id), int(row.parent_chunk_id), str(parent_text)
 
 
-def test_auth7_scoped_search_never_retrieves_an_unauthorized_child_so_its_parent_is_never_expanded(
+def test_auth7_label_filtered_search_excludes_out_of_box_child_so_parent_not_expanded(
     gateway, settings: Settings
 ) -> None:
-    """gap AUTH-7 · ADR-0014 — the load-bearing parent-expansion protection.
+    """gap AUTH-7 · ADR-0021 (supersedes the ADR-0014 scope version) — the load-bearing
+    parent-expansion protection, now on the routing-label axis.
 
     Parent expansion (`fetch_parent_texts`) is only ever called on chunk ids that already passed
-    the scoped, permitted search. So the real boundary is upstream: a child tagged for a scope the
-    caller lacks is never returned by the search, meaning its parent is never even requested for
-    expansion. Here the onboarding page is tagged Toast-only; a Mews-scoped search excludes it (its
-    child id is absent from the hits fed to `fetch_parent_texts`), while a wildcard/no-scope search
-    still finds it (so the exclusion is the scope boundary, not an unfindable page)."""
+    the label-filtered search. So the real boundary is upstream: a child whose routing label sits
+    outside the chat's connection boxes is never returned by the search, meaning its parent is
+    never even requested for expansion. Here the onboarding page is labelled `mews-to-pos` only; a
+    Toast->Mews session (boxes: obi-general/toast-general/mews-general/toast-to-pms) excludes it
+    (its child id is absent from the hits fed to `fetch_parent_texts`), while a session whose boxes
+    include that label still finds it (so the exclusion is the label boundary, not an unfindable
+    page)."""
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
-    _set_chunk_tags(_ONBOARDING_PAGE, ["obi-toast-test"])
-    retr = _retriever(enable_knowledge_scope_filtering=False)  # RLS backstop enforces regardless
+    _set_chunk_labels(_ONBOARDING_PAGE, ["mews-to-pos"])
+    retr = _retriever()
 
-    baseline = retr.retrieve_with_context("Onboarding Guide", "100", k=5)  # no scopes -> '*'
-    assert str(_ONBOARDING_PAGE) in baseline.page_ids  # genuinely indexed and findable
-
-    mews = retr.retrieve_with_context(
-        "Onboarding Guide", "100", k=5, knowledge_scopes=["obi-general-test", "obi-mews-test"]
+    baseline = retr.retrieve_with_context(
+        "Onboarding Guide", "100", k=5, session_labels=["obi-general", "mews-to-pos"]
     )
-    assert str(_ONBOARDING_PAGE) not in mews.page_ids  # excluded before any parent expansion
-    # the toast child id is therefore never among the ids handed to parent expansion
+    assert str(_ONBOARDING_PAGE) in baseline.page_ids  # genuinely indexed and findable in-box
+
+    toast_mews = retr.retrieve_with_context(
+        "Onboarding Guide",
+        "100",
+        k=5,
+        session_labels=["obi-general", "toast-general", "mews-general", "toast-to-pms"],
+    )
+    assert str(_ONBOARDING_PAGE) not in toast_mews.page_ids  # excluded before any parent expansion
+    # the out-of-box child id is therefore never among the ids handed to parent expansion
     with get_sessionmaker()() as s:
-        toast_child_ids = {
+        out_of_box_child_ids = {
             int(r[0])
             for r in s.execute(
                 text("SELECT id FROM chunk WHERE page_id = :p AND kind = 1 AND is_active"),
                 {"p": _ONBOARDING_PAGE},
             )
         }
-    assert not (set(h.chunk_id for h in mews.hits) & toast_child_ids)
+    assert not (set(h.chunk_id for h in toast_mews.hits) & out_of_box_child_ids)
 
 
 def test_auth7_parent_text_fetch_opts_out_of_scope_rls_by_design_adr0014(
@@ -233,7 +275,7 @@ def test_auth7_parent_text_fetch_opts_out_of_scope_rls_by_design_adr0014(
             text("UPDATE chunk SET tags = ARRAY['obi-toast-test'] WHERE id = :i"), {"i": parent_id}
         )
         s.commit()
-    retr = _retriever(enable_knowledge_scope_filtering=False)
+    retr = _retriever()
 
     # The child is authorized (mews); its parent carries a different (toast) tag. Because parent
     # fetch opts out of scope RLS ('*'), the parent text is still returned for the authorized child.

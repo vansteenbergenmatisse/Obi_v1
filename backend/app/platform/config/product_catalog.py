@@ -18,8 +18,8 @@ The 8 validation rules (catalog.md §3), enforced in order:
      per role (an expansion can never put two products in one slot);
   6. launch_allowlist lists only existing canonical ids whose role matches the list they
      sit in;
-  7. the reserved names never appear: `classified`, `general`/`obi-general-test`, any
-     `obi-*` scope-tag spelling (scope tags live in knowledge_scopes.json only);
+  7. the reserved names never appear: `classified`, `general`, any `obi-*` spelling
+     (reserved for the routing-label axis — e.g. `obi-general` — never a product id);
   8. cross-check against platforms.json: every key of its `integrations` map resolves to a
      canonical id (or alias) in this catalog.
 
@@ -51,8 +51,9 @@ _SLUG_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 # Flow directions use underscore tokens (§D.2: pos_to_pms, pms_to_accounting, …).
 _DIRECTION_RE = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
 
-# Rule 7: names reserved for the scope-tag registry (knowledge_scopes.json), never products.
-_RESERVED_EXACT = frozenset({"classified", "general", "obi-general-test"})
+# Rule 7: reserved names, never product ids. `obi-*` (the routing-label namespace, e.g.
+# obi-general) is covered by the prefix; `classified`/`general` are reserved exact names.
+_RESERVED_EXACT = frozenset({"classified", "general"})
 _RESERVED_PREFIX = "obi-"
 
 # Option A routing labels (ADR-0020 D0/D4): the content-routing axis. These are
@@ -170,6 +171,19 @@ class ProductCatalog:
             slug, _, kind = label.rpartition(_DIRECTION_SEP)
             return slug in self.products and kind in VALID_PRODUCT_ROLES
         return False
+
+    def all_routing_labels(self) -> frozenset[str]:
+        """Every well-formed routing label this catalog recognizes (ADR-0021) — the ingestion
+        membership set. ``obi-general`` plus, for each product, ``{slug}-general`` and
+        ``{slug}-to-{kind}`` for each valid target kind. A published page is in the index iff it
+        carries at least one of these and is not ``classified`` (replaces the retired
+        knowledge-scope membership set)."""
+        labels: set[str] = {GENERAL_LABEL}
+        for slug in self.products:
+            labels.add(f"{slug}{_GENERAL_SUFFIX}")
+            for kind in VALID_PRODUCT_ROLES:
+                labels.add(f"{slug}{_DIRECTION_SEP}{kind}")
+        return frozenset(labels)
 
 
 def _require_slug(path: Path, kind: str, name: str) -> None:

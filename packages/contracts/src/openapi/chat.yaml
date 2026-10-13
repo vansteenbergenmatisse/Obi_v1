@@ -62,9 +62,8 @@ paths:
             integration value: a verified-token slot (or legacy integration)
             value that resolves to no product in the catalog, a verified-token
             directed `source_system`/`target_system` that resolves to no product
-            (substep 9.3.1), or an unknown body knowledgeScope, is a 400 before
-            any search ever runs (§D.11; token-side enforcement lands at the
-            gate, substeps 8.1.3 / 9.3.1).
+            (substep 9.3.1) is a 400 before any search ever runs (§D.11;
+            token-side enforcement lands at the gate, substeps 8.1.3 / 9.3.1).
           content:
             application/json:
               schema:
@@ -219,14 +218,6 @@ components:
             Caller-self-reported principal id used for page-level ACL scoping.
             Trusted only as far as the deployment trusts the calling web proxy
             (ADR-0004) — absent/unverified never widens access.
-        knowledgeScope:
-          type: string
-          description: >
-            Which third-party platform's documentation this deployment/embed
-            is scoped to (ADR-0011 decision 6), e.g. "mews", "opera-cloud",
-            "toast". Resolved once per request, not inferred from message
-            content. Omitted or unrecognized falls back to the deployment
-            default (or general alone) server-side — never a hard error.
         simulatedContext:
           $ref: "#/components/schemas/SimulatedContext"
           description: >
@@ -237,8 +228,7 @@ components:
             verified token/note is the only authority (never-bend rules 2–3;
             the integration context comes only from the verified token). The
             backend accepts the shape so the dev harness does not 400, then
-            logs and ignores it in favour of the token, exactly like a body
-            knowledgeScope hint.
+            logs and ignores it in favour of the token.
 
     SimulatedContext:
       type: object

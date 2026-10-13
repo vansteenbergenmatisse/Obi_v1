@@ -5,24 +5,27 @@ on a page's **current** state, so the two paths can never disagree — the event
 table in ``docs/plans/confluence-trigger-layer.md`` is this one function applied
 to the state *after* each event, with only ``reason`` differing.
 
-Membership has two independent gates, both required:
+Membership has two independent gates, both required (ADR-0021: the ``recognized``
+set is the ROUTING-label axis — ``obi-general`` / ``{slug}-general`` /
+``{slug}-to-{kind}`` from the product catalog — the retired knowledge-scope
+``-test`` tags no longer exist):
 
-1. **Label gate** (never-bend rule 5, substep 2.2.4): a page is in the index
-   only while it carries at least one recognized knowledge-scope label. The
-   reserved ``classified`` label always removes.
+1. **Label gate** (never-bend rule 5): a page is in the index only while it
+   carries at least one recognized routing label. The reserved ``classified``
+   label always removes.
 2. **Authorization gate** (the allow-list lives in ``source_scope``): a covering
-   ``source_scope`` row must authorize the tag. A row's ``tags`` are the
-   allow-list for its coverage; **empty tags authorize every recognized scope**
+   ``source_scope`` row must authorize the label. A row's ``tags`` are the
+   allow-list for its coverage; **empty tags authorize every recognized label**
    in that coverage (Decision D3 — preserves the existing empty-tag roots).
 
 The stamped ``scopes`` are ``recognized_labels ∩ authorized`` — the intersection,
-not a union. This is what makes an all-scopes space root behave as an allow-list
-(a page labelled ``obi-mews-test`` under a space row authorizing all four scopes
-is stamped only ``obi-mews-test``, not all four), rather than over-sharing the
-page into every scope the root permits.
+not a union (so an all-labels space root behaves as an allow-list rather than
+over-sharing). These stamped values land on the inert ``chunk.tags`` column;
+retrieval routes on the separate ``chunk.labels`` column (raw labels), so the
+exact ``tags`` value no longer affects what a chat can read.
 
 The "unrestricted" fall-through (no ``source_scope`` row for the space at all)
-authorizes every recognized scope, which keeps the common no-scoping case
+authorizes every recognized label, which keeps the common no-scoping case
 behaving exactly as label-only stamping did before roots existed.
 """
 

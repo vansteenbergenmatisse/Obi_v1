@@ -21,13 +21,9 @@ from app.platform.config import settings as settings_module
 
 
 def test_knowledge_scope_set_reads_the_committed_config_file() -> None:
-    assert Settings().knowledge_scope_set == {
-        "obi-general-test",
-        "obi-mews-test",
-        "obi-operacloud-test",
-        "obi-toast-test",
-    }
-    assert "obi-general-test" in Settings().knowledge_scope_set
+    # ADR-0021: the knowledge-scope axis is retired — the committed file holds only `classified`,
+    # so the recognized (offerable) set is empty.
+    assert Settings().knowledge_scope_set == frozenset()
 
 
 def test_construction_fails_fast_when_config_file_is_invalid(
@@ -35,26 +31,20 @@ def test_construction_fails_fast_when_config_file_is_invalid(
 ) -> None:
     def _raise() -> frozenset[str]:
         raise ValueError(
-            "config/knowledge_scopes.json must include a 'obi-general-test' scope (got [])"
+            "config/knowledge_scopes.json must include the 'classified' scope (got [])"
         )
 
     monkeypatch.setattr(settings_module, "load_recognized_knowledge_scopes", _raise)
 
-    with pytest.raises(ValidationError, match="must include a 'obi-general-test' scope"):
+    with pytest.raises(ValidationError, match="must include the 'classified' scope"):
         Settings()
 
 
 # These two assert the CODE default, read straight off the declared field — not a constructed
 # `Settings()`, which loads the root `.env` and would (correctly) reflect an operator's real config.
-# PLAN 10.7 flips ENABLE_KNOWLEDGE_SCOPE_FILTERING=true in that `.env` once the corpus is labeled,
-# so a `.env`-coupled assertion here would fail on the real deployment; the field default is what
-# "X defaults to Y" actually means.
-def test_default_knowledge_scope_defaults_to_empty() -> None:
-    assert Settings.model_fields["default_knowledge_scope"].default == ""
-
-
-def test_enable_knowledge_scope_filtering_defaults_to_false() -> None:
-    assert Settings.model_fields["enable_knowledge_scope_filtering"].default is False
+# ADR-0021 retired the knowledge-scope axis: the `default_knowledge_scope` and
+# `enable_knowledge_scope_filtering` fields were removed, so the former default-value tests here are
+# gone with them.
 
 
 # -- chat image caps: w-composer panel / decision w-composer-images (substep 4.2.7) ---------------

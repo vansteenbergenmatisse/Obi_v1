@@ -222,21 +222,6 @@ describe("handlePostChat", () => {
     sourceController.close();
   });
 
-  it("forwards knowledgeScope unmodified as knowledge_scope", async () => {
-    callAutomationApiMock.mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
-
-    const request = jsonRequest({
-      knowledgeScope: "mews",
-      history: [{ role: "user", content: "hi" }],
-    });
-    await handlePostChat(request);
-
-    expect(callAutomationApiMock).toHaveBeenCalledWith(
-      FAKE_CONFIG,
-      expect.objectContaining({ body: expect.objectContaining({ knowledge_scope: "mews" }) }),
-    );
-  });
-
   it("forwards the backend's error status and body verbatim", async () => {
     callAutomationApiMock.mockResolvedValue(
       new Response(JSON.stringify({ error: "rate limited" }), { status: 429 }),

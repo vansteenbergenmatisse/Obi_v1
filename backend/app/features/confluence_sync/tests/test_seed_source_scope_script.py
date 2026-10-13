@@ -71,13 +71,13 @@ def test_tags_seed_script_upsert_updates_in_place() -> None:
     place (tags, label, is_active) — never a duplicate (``uq_source_scope_root``), so an operator
     can safely re-run the one-off script."""
     first_id = seed_script.seed(
-        root_type="page", root_id="1002", tags=["obi-mews-test"], label="first"
+        root_type="page", root_id="1002", tags=["mews-general"], label="first"
     )
 
     second_id = seed_script.seed(
         root_type="page",
         root_id="1002",
-        tags=["obi-toast-test", "obi-mews-test"],
+        tags=["toast-general", "mews-general"],
         label="second",
     )
 
@@ -86,7 +86,7 @@ def test_tags_seed_script_upsert_updates_in_place() -> None:
     assert len(rows) == 1  # no duplicate for the same root
     row = rows[0]
     assert row["id"] == first_id
-    assert row["tags"] == ["obi-toast-test", "obi-mews-test"]
+    assert row["tags"] == ["toast-general", "mews-general"]
     assert row["label"] == "second"
     assert row["is_active"] is True
 
@@ -96,7 +96,7 @@ def test_tags_seed_script_deactivate_and_delete() -> None:
     purges its coverage); ``--delete`` removes the row entirely. Exercised through ``main()`` so
     the real CLI paths are what is proven."""
     rc = seed_script.main(
-        ["--root-type", "page", "--root-id", "1002", "--tags", "obi-toast-test", "--label", "Run"]
+        ["--root-type", "page", "--root-id", "1002", "--tags", "toast-general", "--label", "Run"]
     )
     assert rc == 0
 
@@ -107,7 +107,7 @@ def test_tags_seed_script_deactivate_and_delete() -> None:
     assert len(rows) == 1
     row = rows[0]
     assert row["is_active"] is False  # the one flipped field
-    assert row["tags"] == ["obi-toast-test"]  # untouched by --deactivate
+    assert row["tags"] == ["toast-general"]  # untouched by --deactivate
     assert row["label"] == "Run"  # untouched by --deactivate
 
     rc = seed_script.main(["--root-type", "page", "--root-id", "1002", "--delete"])

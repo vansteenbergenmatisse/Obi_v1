@@ -33,6 +33,8 @@ _KB_ROOT = Path(__file__).resolve().parents[1]
 
 pytestmark = pytest.mark.db  # substep 0.5.1: real local Postgres, Alembic chain
 _BELOW_0010 = "0009_reconcile_non_chunk_rls"
+# ADR-0021: migration 0018 drops these scope policies at head, so pin to 0010 to test ITS effect.
+_AT_0010 = "0010_customer_scope_rls"
 _CHUNK_SCOPE_POLICY = "chunk_scope_read"
 _CURATED_SCOPE_POLICY = "curated_knowledge_entry_scope_read"
 
@@ -122,7 +124,7 @@ def _rls_enabled(engine: Engine, table: str) -> bool:
 def test_0010_adds_restrictive_scope_policies(migration_engine: Engine) -> None:
     cfg = _alembic_config()
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, _AT_0010)
 
     chunk = _policy_row(migration_engine, "chunk", _CHUNK_SCOPE_POLICY)
     curated = _policy_row(migration_engine, "curated_knowledge_entry", _CURATED_SCOPE_POLICY)
@@ -135,7 +137,7 @@ def test_0010_adds_restrictive_scope_policies(migration_engine: Engine) -> None:
 
 def test_0010_downgrade_then_upgrade_round_trips(migration_engine: Engine) -> None:
     cfg = _alembic_config()
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, _AT_0010)
     assert _policy_row(migration_engine, "chunk", _CHUNK_SCOPE_POLICY) is not None
 
     command.downgrade(cfg, _BELOW_0010)
@@ -145,5 +147,5 @@ def test_0010_downgrade_then_upgrade_round_trips(migration_engine: Engine) -> No
     assert _policy_row(migration_engine, "chunk", "chunk_source_read") is not None
     assert _rls_enabled(migration_engine, "chunk") is True
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, _AT_0010)
     assert _policy_row(migration_engine, "chunk", _CHUNK_SCOPE_POLICY) == ("RESTRICTIVE", "SELECT")

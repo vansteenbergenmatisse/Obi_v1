@@ -49,20 +49,20 @@ def index_page(
 ) -> None:
     """Seed a page into the index at a given version by running the real sync path.
 
-    Label-gated membership (substep 2.2.4): a page indexes only if it carries a recognized
-    knowledge-scope label. Most generic fixtures (1001/1002/2002 …) carry only unrelated labels,
-    so — unless the page already has a recognized label (3001–3004, or one the test set itself) —
-    stamp the base ``obi-general-test`` scope on it first, persistently, so tests that exercise
-    versioning / chunks / gc / restrictions (and don't care about scope tagging) can still seed a
-    page. Tests that assert on tags override them explicitly after seeding, so the injected base
-    label is invisible to them; scope-tagging tests set a recognized label up front and are left
-    untouched. Decided from the gateway's live labels (not the on-disk fixture) so a test's own
-    ``set_labels`` wins.
+    Label-gated membership (ADR-0021): a page indexes only if it carries a recognized ROUTING
+    label (``obi-general`` / ``{slug}-general`` / ``{slug}-to-{kind}``). Most generic fixtures
+    (1001/1002/2002 …) carry only unrelated labels, so — unless the page already has a recognized
+    routing label (or one the test set itself) — stamp the base ``obi-general`` routing label on it
+    first, persistently, so tests that exercise versioning / chunks / gc / restrictions (and don't
+    care about routing) can still seed a page. Tests that assert on labels override them explicitly
+    after seeding, so the injected base label is invisible to them; routing/membership tests set a
+    recognized label up front and are left untouched. Decided from the gateway's live labels (not
+    the on-disk fixture) so a test's own ``set_labels`` wins.
     """
-    recognized = settings.knowledge_scope_set
+    recognized = settings.product_catalog.all_routing_labels()
     current = [str(label) for label in gateway.get_labels(page_id)]
     if not ({label.strip().lower() for label in current} & recognized):
-        gateway.set_labels(page_id, [*current, "obi-general-test"])
+        gateway.set_labels(page_id, [*current, "obi-general"])
     gateway.set_version(page_id, version)
     enqueue_sync(page_id, version, key=f"seed:{page_id}:{version}")
     run_once(gateway, settings, owner="seed")

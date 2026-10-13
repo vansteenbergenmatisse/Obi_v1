@@ -87,9 +87,9 @@ def test_page_root_scopes_reconciliation_to_its_subtree_and_tags_it(gateway, set
     and — since nothing was ever indexed for space 100 before this — proves a brand-new space
     gets its first sweep from scope-implied discovery alone (no explicit space_ids, no prior
     page_source rows)."""
-    _add_scope_root("page", "1002", tags=["obi-toast-test"])  # 1002's only live child is itself
+    _add_scope_root("page", "1002", tags=["toast-general"])  # 1002's only live child is itself
     # (no current descendants in the fixture); 1001 is its parent, in the same space, out of scope.
-    gateway.set_labels(1002, ["obi-toast-test"])  # membership label (2.2.4): the page must carry a
+    gateway.set_labels(1002, ["toast-general"])  # membership label (2.2.4): the page must carry a
     # recognized label to be indexed; post-split source_scope.tags are the recognized-scope
     # allow-list, so the stamped scope is the intersection (recognized_labels ∩ authorized).
 
@@ -106,22 +106,22 @@ def test_page_root_scopes_reconciliation_to_its_subtree_and_tags_it(gateway, set
     assert active_child_chunks(1001) == []
     chunks = active_child_chunks(1002)
     assert chunks
-    assert all(c.tags == ["obi-toast-test"] for c in chunks)
+    assert all(c.tags == ["toast-general"] for c in chunks)
     with session_scope() as s:
         ps = s.get(PageSource, 1002)
         assert ps is not None
-        assert ps.tags == ["obi-toast-test"]
+        assert ps.tags == ["toast-general"]
 
 
 def test_deactivating_root_purges_previously_synced_now_uncovered_pages(gateway, settings):
     """PLAN 3.5.6: removing coverage purges the previously-synced pages — regardless of whether
     they still exist on Confluence. Post-split the sweep enqueues; the worker decides (a scoped
     space with no active root authorizes nothing) and hard-purges."""
-    root_id = _add_scope_root("page", "1001", tags=["obi-general-test"])  # covers {1001, 1002}
+    root_id = _add_scope_root("page", "1001", tags=["obi-general"])  # covers {1001, 1002}
     # Both covered pages carry a recognized label so the membership gate (2.2.4) admits them; the
     # root's tags are the recognized-scope allow-list they intersect with.
-    gateway.set_labels(1001, ["obi-general-test"])
-    gateway.set_labels(1002, ["obi-general-test"])
+    gateway.set_labels(1001, ["obi-general"])
+    gateway.set_labels(1002, ["obi-general"])
 
     with session_scope() as s:
         run_reconciliation(s, gateway=gateway, settings=settings, kind=KIND_COMPLETE)

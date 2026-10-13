@@ -134,7 +134,6 @@ class HybridRetriever:
         hnsw_ef_search: int = 100,
         hnsw_iterative_scan: str = "relaxed_order",
         trace_sessionmaker: Callable[[], Session] | None = None,
-        enable_knowledge_scope_filtering: bool = False,
     ) -> None:
         self._session_factory = session_factory
         self._embedder = embedder
@@ -147,9 +146,6 @@ class HybridRetriever:
         self._hnsw_iterative_scan = hnsw_iterative_scan
         # optional WRITER sessionmaker: when set, each retrieve writes one query_trace row (3.5.4)
         self._trace_sessionmaker = trace_sessionmaker
-        # PLAN 10.4 rollout flag: off -> a caller's `knowledge_scopes` argument is never applied,
-        # regardless of what it passes, so the query stays byte-for-byte unchanged from pre-10.4.
-        self._enable_knowledge_scope_filtering = enable_knowledge_scope_filtering
 
     def _search(
         self,
@@ -163,11 +159,10 @@ class HybridRetriever:
         space_id, principal = classify_scope(scope)
         query_vec = self._embedder.embed([query])[0]
         sources = self._allowed_sources
-        effective_scopes = (
-            list(knowledge_scopes)
-            if self._enable_knowledge_scope_filtering and knowledge_scopes is not None
-            else None
-        )
+        # ADR-0021: the knowledge-scope axis is retired. No app-layer scope predicate is ever
+        # applied (the scope GUC is opted out to wildcard below); `knowledge_scopes` is accepted
+        # for call-shape compatibility but intentionally ignored. Content is routed by the labels.
+        effective_scopes = None
         # Option A Stage 6 / 9.4.1 (panel mi-hardfilter, ADR-0020 D1/D2): the directed-connection
         # label list this chat is bound to. A directed chat carries its four routing boxes; a
         # legacy/slot/tokenless chat carries None, so the hard filter is a no-op (the label axis is
@@ -195,17 +190,18 @@ class HybridRetriever:
         with self._session_factory() as session:
             # Per-txn knobs, same transaction as the searches below:
             #  - HNSW iterative_scan keeps recall honest once a narrow scope prunes rows (3.5.1)
-            #  - the source-scope GUC drives RLS default-deny on the reader role (ADR-0004)
-            #  - the knowledge-scope GUC drives the customer-isolation RLS backstop (ADR-0014):
-            #    set from the raw `knowledge_scopes` arg, NOT `effective_scopes` — the DB enforces
-            #    the customer boundary independent of the scope-filtering flag (fail closed).
+            #  - the source-scope GUC drives RLS default-deny on the reader role (ADR-0004) —
+            #    this is the source/company isolation axis and is UNCHANGED.
+            #  - the knowledge-scope axis is RETIRED (ADR-0021): always opt out (wildcard None) so
+            #    the scope GUC never restricts, independent of whether migration 0018 has dropped
+            #    the chunk_scope_read policy yet. Content is routed by the label axis below.
             apply_hnsw_gucs(
                 session,
                 ef_search=self._hnsw_ef_search,
                 iterative_scan=self._hnsw_iterative_scan,
             )
             apply_source_scope(session, sources)
-            apply_knowledge_scope(session, knowledge_scopes)
+            apply_knowledge_scope(session, None)
             # 9.4.1 (ADR-0020 D1): the labels GUC is set in the SAME txn/path as the scope GUC, so
             # the RESTRICTIVE chunk_labels_read policy and the app-layer `labels && :session_labels`
             # predicate agree (rules 1 and 3). None -> '*' opt-out (legacy/slot chats route none).

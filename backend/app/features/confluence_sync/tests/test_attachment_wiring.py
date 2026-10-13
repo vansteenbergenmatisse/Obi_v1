@@ -71,7 +71,7 @@ def test_placeholder_pdf_and_xlsx_degrade_to_no_chunk_not_a_crash(
     # page 1002's architecture-diagram.pdf / capacity-plan.xlsx are backed by a plain-text
     # placeholder file, not a real binary — native parsing must fail closed to "" (never raise),
     # so attachment_to_blocks contributes nothing for them, not garbage text.
-    gateway.set_labels(1002, ["obi-general-test"])  # recognized label: pass the 2.2.4 gate
+    gateway.set_labels(1002, ["obi-general"])  # recognized label: pass the 2.2.4 gate
     with session_scope() as s:
         outcome = handle_sync_page(s, page_id=1002, gateway=gateway, settings=settings)
     assert outcome.action == "indexed"
@@ -164,7 +164,7 @@ def test_unfetchable_attachment_is_skipped_not_a_sync_failure(
     attachments = gateway.get_attachments(1001)
     checklist = next(a for a in attachments if a["title"] == "welcome-checklist.txt")
     gateway.set_attachment_content(checklist["downloadLink"], None)  # simulate a failed download
-    gateway.set_labels(1001, ["obi-general-test"])  # recognized label: pass the 2.2.4 gate
+    gateway.set_labels(1001, ["obi-general"])  # recognized label: pass the 2.2.4 gate
 
     with session_scope() as s:
         outcome = handle_sync_page(s, page_id=1001, gateway=gateway, settings=settings)

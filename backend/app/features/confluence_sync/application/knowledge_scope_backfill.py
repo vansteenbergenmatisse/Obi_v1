@@ -1,15 +1,12 @@
-"""PLAN 10.7: verify every live chunk carries a recognized knowledge-scope tag before
-``enable_knowledge_scope_filtering`` is flipped on in any environment with real content.
+"""SUPERSEDED by ADR-0021. This was PLAN 10.7's read-only guard: verify every live chunk carried a
+recognized knowledge-scope tag before the (now-retired) knowledge-scope filter was turned on.
 
-Once the flag is on, retrieval filters with ``tags && :allowed_scopes`` (PLAN 10.4) and the allowed
-set always contains ``obi-general-test`` (ADR-0011 Decision 1) but is never inferred for an untagged
-chunk. A live (``is_active``) chunk whose tags overlap *none* of the recognized knowledge scopes
-(``obi-general-test``/``obi-mews-test``/``obi-operacloud-test``/``obi-toast-test``) can therefore
-never be returned once the flag is on — it silently vanishes from every scoped result. That
-silent disappearance is the exact failure 10.7's manual-labeling step guards against; this
-read-only check proves the guard held before the
-flip. It counts only ``is_active`` chunks on purpose: retrieval reads only active chunks
-(``_base_filters``) and superseded rows are GC'd, so historical rows need no backfill.
+ADR-0021 retired the knowledge-scope axis entirely — retrieval no longer filters on ``tags`` and the
+``recognized`` set is empty — so this check no longer gates anything. It is kept only so its callers
+and tests still import, and it now reports every active chunk as "unscoped" against the empty set,
+which is expected. The routing-label membership/backfill equivalent is
+``ingestion/application/backfill_labels.py``. It counts only ``is_active`` chunks: retrieval reads
+only active chunks and superseded rows are GC'd, so historical rows need no backfill.
 """
 
 from __future__ import annotations

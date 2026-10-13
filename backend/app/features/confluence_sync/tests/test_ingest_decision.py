@@ -1,8 +1,9 @@
 """Pure decision tests for the trigger layer — one case per row of the event→command table.
 
 No DB, no gateway: :func:`decide_command` is a pure function of the page's current
-state. Parametrized over every recognized scope in ``knowledge_scopes.json`` so no
-single tag (``obi-mews-test``) is special-cased.
+state. ADR-0021: membership is the ROUTING-label axis (``obi-general`` / ``{slug}-general`` /
+``{slug}-to-{kind}`` from the product catalog), so the cases are parametrized over every recognized
+routing label — no single label (``mews-general``) is special-cased.
 """
 
 from __future__ import annotations
@@ -17,10 +18,12 @@ from app.features.confluence_sync.domain.ingest_decision import (
     should_ingest,
 )
 from app.platform.clients import ConfluencePageMeta
-from app.platform.config.knowledge_scopes import load_recognized_knowledge_scopes
+from app.platform.config.product_catalog import load_product_catalog
 from schema.models import SourceScope
 
-RECOGNIZED = load_recognized_knowledge_scopes()
+# ADR-0021: a page's membership is decided on the routing-label set, not the retired knowledge
+# scopes. The decision function is generic over whatever "recognized" set it is handed.
+RECOGNIZED = load_product_catalog().all_routing_labels()
 SPACE_ID = 701857803
 PAGE_ID = 1712324611
 

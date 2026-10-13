@@ -1,5 +1,5 @@
 {
-  "_readme": "LOCAL-ONLY override of knowledge-base/config/platforms.json for PLAN 11.1c browser testing (docs/embedding/obi-embed-local-test-keys.md). Point BOTH apps at this file via the PLATFORMS_PATH env var (backend: backend/.env or shell; frontend: frontend/.env.local) rather than merging it into the committed real-platform registry. Issuer/jwks keys here are throwaway test-mews/test-toast/test-opera/test-none entries served by this SAME Next.js app's own /api/test-hosts and /.well-known routes -- not real third parties. The 'integrations' map keys are the JWT 'integration' CLAIM VALUES the test-host token routes issue (mews/toast/opera-cloud), NOT the 'platforms' dict keys above them (test-mews/test-toast/test-opera/test-none) -- PlatformRegistry.scopes_for() looks up by the verified claim value, matching the real committed knowledge-base/config/platforms.json's own convention. Each entry's 'allowed_integrations' (gap CIP-A1) matches EXACTLY the integration claim frontend/src/app/api/test-hosts/config.ts mints for that test host: test-mews->[mews], test-toast->[toast], test-opera->[opera-cloud], test-none->[] (that host mints a general-only token with no business values). Keep these in lockstep with config.ts or the local embed test flow will 401. Never commit a real secret here (there is none -- only public test issuer metadata; the matching private keys live in frontend/.env.local, gitignored).",
+  "_readme": "LOCAL-ONLY override of knowledge-base/config/platforms.json for PLAN 11.1c browser testing (docs/embedding/obi-embed-local-test-keys.md). Point BOTH apps at this file via the PLATFORMS_PATH env var (backend: backend/.env or shell; frontend: frontend/.env.local) rather than merging it into the committed real-platform registry. Issuer/jwks keys here are throwaway test-mews/test-toast/test-opera/test-none entries served by this SAME Next.js app's own /api/test-hosts and /.well-known routes -- not real third parties. The 'integrations' map keys are the JWT 'integration' CLAIM VALUES the test-host token routes issue (mews/toast/opera-cloud), NOT the 'platforms' dict keys above them (test-mews/test-toast/test-opera/test-none). Per ADR-0021 the knowledge-scope value lists are retired and empty (content routing rides the ADR-0020 routing-label axis); the keys remain as the valid-claim-value allow-list the allowed_integrations cross-check reads. Each entry's 'allowed_integrations' (gap CIP-A1) matches EXACTLY the integration claim frontend/src/app/api/test-hosts/config.ts mints for that test host: test-mews->[mews], test-toast->[toast], test-opera->[opera-cloud], test-none->[] (that host mints a general-only token with no business values). Keep these in lockstep with config.ts or the local embed test flow will 401. Never commit a real secret here (there is none -- only public test issuer metadata; the matching private keys live in frontend/.env.local, gitignored).",
   "platforms": {
     "test-mews": {
       "allowed_integrations": ["mews"],
@@ -59,14 +59,8 @@
     }
   },
   "integrations": {
-    "mews": [
-      "obi-mews-test"
-    ],
-    "toast": [
-      "obi-toast-test"
-    ],
-    "opera-cloud": [
-      "obi-operacloud-test"
-    ]
+    "mews": [],
+    "toast": [],
+    "opera-cloud": []
   }
 }

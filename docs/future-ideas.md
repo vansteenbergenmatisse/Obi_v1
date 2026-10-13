@@ -433,7 +433,7 @@ Added: 2026-10-09
 
 ---
 
-# DB-password rotation (§D.15) — deferred to the owner's dashboard moment
+# DB-password rotation (§D.15) — deflagged, not needed now (owner 2026-10-12)
 
 **What it is.** Rotate the Supabase database password(s) used by `obi-backend` (owner + `rag_reader`
 DSNs). Inventory, safety analysis and runbook already filed in `docs/Final_docs/plan.md` §D.15.

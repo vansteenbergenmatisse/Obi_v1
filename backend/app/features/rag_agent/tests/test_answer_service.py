@@ -1340,14 +1340,16 @@ def test_subject_hash_persisted_is_the_hash_not_the_raw_subject() -> None:
     assert row.subject_hash != "user-x"
 
 
-def test_omitted_knowledge_scope_with_no_default_is_general_alone() -> None:
+def test_omitted_knowledge_scope_passes_empty_allowed_scopes() -> None:
+    # ADR-0021: the knowledge-scope axis is retired, so general_only_context() carries no scopes
+    # and the retriever is handed an empty allow-list (the scope filter is inert).
     retriever = _FakeRetriever({"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, {501: "text"})
     generator = _FakeGenerator("Answer [1].")
     service, _ = _service(retriever, _FakeRewriter("q"), generator)
 
     service.answer([ChatMessage(role="user", content="q")], general_only_context())
 
-    assert retriever.knowledge_scopes_calls == [["obi-general-test"]]
+    assert retriever.knowledge_scopes_calls == [[]]
 
 
 def test_crag_retry_reuses_the_same_resolved_allowed_scopes() -> None:
@@ -1364,7 +1366,6 @@ def test_crag_retry_reuses_the_same_resolved_allowed_scopes() -> None:
         _FakeRewriter("rewritten q"),
         generator,
         refusal_min_rerank_score=0.10,
-        recognized_knowledge_scopes=frozenset({"obi-general-test", "obi-mews-test"}),
     )
 
     service.answer(
@@ -1464,15 +1465,16 @@ def test_curated_entries_fetched_with_the_same_resolved_allowed_scopes(monkeypat
         _FakeRewriter("q"),
         generator,
         reader_sessionmaker=_DummyReaderSession,
-        recognized_knowledge_scopes=frozenset({"obi-general-test", "obi-mews-test"}),
     )
 
     service.answer(
         [ChatMessage(role="user", content="q")],
-        _auth(scopes=("obi-general-test", "obi-mews-test")),
+        _auth(scopes=("scope-a", "scope-b")),
     )
 
-    assert seen_scopes == [["obi-general-test", "obi-mews-test"]]
+    # ADR-0021: the curated fetch still receives whatever allowed_scopes the auth carries
+    # (threading preserved); the scope axis is retired, so the values are arbitrary.
+    assert seen_scopes == [["scope-a", "scope-b"]]
 
 
 def test_curated_entries_still_compose_on_the_text_empty_image_only_path(monkeypatch) -> None:

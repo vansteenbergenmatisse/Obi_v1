@@ -664,10 +664,10 @@ details.sec[open]>summary .show{display:none}
       <summary><h3>Example: a Mews user asks a question</h3></summary>
     <ol class="atoz">
       <li><span><b>A person at Hotel Example signs in to Mews and opens Obi.</b> Their signed token says <code>company_id = c_8f3a</code>, <code>integration = mews</code>, <code>sub = user_19f2</code>. The chat window holds it in memory. <span class="tag t-new">Planned</span></span></li>
-      <li><span><b>The backend verifies the token and builds one authorization context.</b> Allowed scopes: <code>mews</code> and <code>general</code>, from the integration map. Allowed sources: <code>confluence</code>. Principal: from the trusted identity mapping, or none. <span class="tag t-new">Planned</span></span></li>
-      <li><span><b>The search transaction sets the scope.</b> <code>app.allowed_knowledge_scopes = 'mews,general'</code>. The scope policy shows a piece only when <code>scope_state = 'ok'</code> and its tags overlap that set. A page tagged <code>toast</code> never comes back. A page tagged <code>general</code> does. <span class="tag t-bug">Implemented, needs changing</span></span></li>
+      <li><span><b>The backend verifies the token and builds one authorization context.</b> Allowed sources: <code>confluence</code>. For a directed chat it also carries the routing labels. Principal: from the trusted identity mapping, or none. No knowledge scopes are derived (ADR-0021). <span class="tag t-done">Implemented</span></span></li>
+      <li><span><b>The search transaction sets the content filter.</b> <span class="tag t-done">Implemented (ADR-0021)</span> Content routing is the routing-label hard filter: <code>app.allowed_labels</code> is set from the session's directed-connection labels and <code>chunk_labels_read</code> shows a chunk only when its <code>labels</code> overlap that set (see section 05.2, panel <code>mi-hardfilter</code>). The retired scope filter (<code>app.allowed_knowledge_scopes</code> over <code>chunk.tags</code>) no longer runs — the scope GUC is opted out to the wildcard. Source/company isolation (<code>app.allowed_sources</code> / <code>chunk_source_read</code>) is unchanged.</span></li>
       <li><span><b>Lock 3 checks Confluence page permissions.</b> A Mews page restricted to the finance group is dropped unless the person's principal is in that group. No principal: open pages only. <span class="tag t-done">Implemented</span></span></li>
-      <li><span><b>The answer cites only Mews and general pages.</b> The exact matching pieces are reranked, expanded to parents and checked for coverage and support. The trace row records <code>allowed_knowledge_scopes = mews,general</code> and the token subject. <span class="tag t-bug">Implemented, needs changing</span></span></li>
+      <li><span><b>The answer cites only pages the filters allowed.</b> The exact matching pieces are reranked, expanded to parents and checked for coverage and support. The trace row records <code>allowed_sources</code>, the session routing labels and the token subject. <span class="tag t-done">Implemented (ADR-0021)</span></span></li>
     </ol>
     <table class="wide">
       <tr><th>Page tags</th><th>Page restriction in Confluence</th><th>A Mews user sees it?</th><th>Why</th></tr>
@@ -1386,6 +1386,9 @@ CHILD 2 of parent 1 (overlaps child 1 by about 12 percent)
   <div class="wrap">
     <div class="sec-head"><span class="sec-num">05</span><h2>Knowledge scopes: the tag list, and what a tag does</h2></div>
     <p class="lede">A knowledge scope is a tag. The list of tags lives in one small file, <code>config/knowledge_scopes.json</code>. A Confluence label that matches a name in that file puts the page in the index and decides which widget may see it. Adding or removing a tag is one edit to that file plus a deploy. Everything the tag does after that is automatic.</p>
+    <div class="callout rust">
+      <p><b>RETIRED by ADR-0021 (2026-10-12): the knowledge-scope <code>-test</code> tag axis no longer exists.</b> <span class="tag t-done">Implemented</span> The whole scope-tag mechanism this section describes — <code>config/knowledge_scopes.json</code> as the content/membership control, <code>obi-general-test</code>/<code>obi-mews-test</code>/<code>obi-operacloud-test</code>/<code>obi-toast-test</code>, the <code>chunk.tags</code> filter, the <code>chunk_scope_read</code> / <code>curated_knowledge_entry_scope_read</code> RLS policies and the <code>app.allowed_knowledge_scopes</code> GUC — is retired. <b>Routing labels are now BOTH the index-membership axis AND the content-routing axis.</b> Index membership = published + at least one recognized routing label (<code>obi-general</code>, <code>{slug}-general</code>, <code>{slug}-to-{pos|pms|accounting}</code>, from <code>product_catalog.json</code>, stamped on the <code>chunk.labels</code> column) + not <code>classified</code>. Content routing is the <code>labels &amp;&amp; :session_labels</code> hard filter behind the <code>chunk_labels_read</code> policy (see section 05.2, panel <code>mi-hardfilter</code>). <code>classified</code> is unchanged as the delete/exclusion signal, and source/company isolation (<code>chunk_source_read</code> / <code>app.allowed_sources</code>) is unchanged. Migration <code>0018</code> dropped the two scope RLS policies (reversibly); <code>knowledge_scopes.json</code> now holds only <code>classified</code>; <code>chunk.tags</code> remains as inert data read by nothing. The diagrams, tables and panels below describe the superseded axis and are kept for provenance only — <code>config/knowledge_scopes.json</code> is no longer the control surface.</p>
+    </div>
     <details class="sec">
       <summary><span class="show">Show this section</span><span class="hide">Hide this section</span></summary>
 
@@ -1486,7 +1489,7 @@ CHILD 2 of parent 1 (overlaps child 1 by about 12 percent)
     </div>
 
     <div class="callout">
-      <p><b>Tags are the only membership control.</b> <span class="tag t-new">Planned</span> Today a page is synced only if a folder root in <code>source_scope</code> covers it, and labels add scoping on top. The target drops the folder roots. A page is in the corpus for one reason: it is published and carries a tag from <code>knowledge_scopes.json</code>. The webhook watches <code>label_added</code>, <code>label_deleted</code>, and <code>page_updated</code>. A daily label sweep (a Confluence label search across all spaces) catches anything the webhook missed. <code>source_scope</code> retires as an ingestion input.</p>
+      <p><b>Routing labels are the only membership control.</b> <span class="tag t-done">Implemented</span> <b>(ADR-0021 — supersedes the knowledge-scope version of this rule.)</b> A page is in the corpus for one reason: it is published and carries at least one recognized <b>routing label</b> (<code>obi-general</code>, <code>{slug}-general</code>, <code>{slug}-to-{pos|pms|accounting}</code>, enumerated by <code>ProductCatalog.all_routing_labels()</code>) and is not <code>classified</code>. Folder roots (<code>source_scope</code>) decide nothing. The webhook watches <code>label_added</code>, <code>label_deleted</code>, and <code>page_updated</code>; a daily label sweep (a Confluence label search across all spaces) catches anything the webhook missed. The retired knowledge-scope <code>-test</code> tags from <code>knowledge_scopes.json</code> no longer gate membership.</p>
     </div>
     </details>
     </details>
@@ -1691,7 +1694,7 @@ CHILD 2 of parent 1 (overlaps child 1 by about 12 percent)
       <p class="lead">For leaders: two searches run inside the database, one for meaning and one for words, and only over rows this person may see. The results are merged into one list of the exact passages that matched.</p>
       <table>
         <tr><td>Inputs</td><td>the authorization context; the rewritten question (embedded with the page model); the active child chunks and curated entries</td></tr>
-        <tr><td>Processing rules</td><td>set <code>app.allowed_sources</code> and <code>app.allowed_knowledge_scopes</code> per transaction (locks 1 and 2 in SQL); dense: cosine over HNSW halfvec, top 75; keyword: ts_rank over GIN, top 75; page ACL predicate inside both queries before LIMIT (target); RRF by chunk id; curated entries retrieved by relevance in both branches</td></tr>
+        <tr><td>Processing rules</td><td>set <code>app.allowed_sources</code> (lock 1) and, for a directed chat, <code>app.allowed_labels</code> (lock 2, the routing-label filter — ADR-0021; the retired <code>app.allowed_knowledge_scopes</code> is opted out to the wildcard) per transaction in SQL; dense: cosine over HNSW halfvec, top 75; keyword: ts_rank over GIN, top 75; page ACL predicate inside both queries before LIMIT (target); RRF by chunk id; curated entries retrieved by relevance in both branches</td></tr>
         <tr><td>Outputs</td><td>a candidate list of ≤150 children, each with chunk id, parent id, page id, version id, both ranks, fused score, and <code>(source_type, item_id)</code></td></tr>
         <tr><td>Failure behavior</td><td>scope not set: zero rows, never a leak; embedding API error: the request fails (no silent empty search); image-only turn: empty candidate list by design</td></tr>
         <tr><td>Code locations</td><td><code>retrieval/infrastructure/search_repo.py → dense_search, keyword_search</code>, <code>retrieval/domain/fusion.py → reciprocal_rank_fusion</code>, <code>retrieval/application/retriever.py</code>, <code>rag_agent/infrastructure/curated_knowledge_repo.py</code></td></tr>
@@ -1721,12 +1724,12 @@ CHILD 2 of parent 1 (overlaps child 1 by about 12 percent)
         <g role="button" tabindex="0" data-n="r2-aclsql" class="n am chg"><rect x="164" y="150" width="124" height="52" rx="8"/><text x="226" y="171">Lock 3 in SQL</text><text x="226" y="187" class="s">page ACL, target</text></g>
         <path d="M226 150 L226 96" class="c d" marker-end="url(#a)"/>
       </svg>
-      <p class="cap">Where each filter runs. Locks 1 and 2 (source, scope) are row security policies: they run inside both SQL searches, before the LIMIT 75, today. Lock 3 (page ACL) runs after fusion in the app today. In the target it also runs inside both searches, before the LIMIT, and the app check stays as a second wall.</p>
+      <p class="cap">Where each filter runs. Lock 1 (source/company isolation) is a row security policy inside both SQL searches, before the LIMIT 75. <b>Lock 2 is now the routing-label filter</b> (<code>chunk_labels_read</code> on <code>app.allowed_labels</code>) — the knowledge-scope policy it replaced is retired (ADR-0021, migration 0018). Lock 3 (page ACL) runs after fusion in the app today; in the target it also runs inside both searches, before the LIMIT, and the app check stays as a second wall.</p>
     </div>
 
     <ul class="nodes">
       <li><b>Embed query</b><span>The rewritten question goes through the same embedding model the pages used. A text-empty turn (image only) skips this and builds an empty result instead.</span></li>
-      <li><b>Set locks 1 + 2</b><span><code>SELECT set_config('app.allowed_sources', :s, true)</code> and the same for <code>app.allowed_knowledge_scopes</code>, both bound parameters, both per transaction. Also <code>hnsw.ef_search=100</code> and <code>hnsw.iterative_scan='relaxed_order'</code>.</span></li>
+      <li><b>Set locks 1 + 2</b><span><code>SELECT set_config('app.allowed_sources', :s, true)</code> (lock 1, source/company isolation — unchanged). <b>ADR-0021:</b> lock 2 is no longer the knowledge-scope GUC — that axis is retired and <code>app.allowed_knowledge_scopes</code> is opted out to the wildcard. The live content filter is now the routing-label GUC, <code>app.allowed_labels</code> (set from the session's directed-connection labels; <code>chunk_labels_read</code> policy; see section 05.2, panel <code>mi-hardfilter</code>), bound per transaction at the same spot. Also <code>hnsw.ef_search=100</code> and <code>hnsw.iterative_scan='relaxed_order'</code>.</span></li>
       <li><b>Dense search</b><span>Cosine distance over the HNSW index on active child chunks. Casts to <code>halfvec(3072)</code> because pgvector caps plain vectors at 2000 dims. Ties broken by page id.</span></li>
       <li><b>Keyword search</b><span><code>ts_rank</code> over the GIN index with an OR-joined query, so a question with one rare word still matches. Same filters as dense.</span></li>
       <li><b>Fuse (RRF)</b><span>Score = sum of 1/(60 + rank) across the two lists. <b>Item ranked today:</b> page id. <b>Item ranked in the target:</b> child chunk id, deduplicated by chunk id. Both searches return <code>chunk_id, parent_chunk_id, page_id, doc_version_id</code>. Two sections of one page can both survive. Code: <code>retrieval/domain/fusion.py → reciprocal_rank_fusion</code>, <code>retrieval/application/retriever.py</code> (candidate assembly).</span></li>
@@ -1801,11 +1804,11 @@ CHILD 2 of parent 1 (overlaps child 1 by about 12 percent)
       <p class="lead">For leaders: three locks. Two are rules inside the database that hide rows before they come out. The third checks Confluence page permissions per person.</p>
       <table>
         <tr><td>Inputs</td><td>the candidate list from stage 2; the authorization context; <code>page_restriction</code> rows for the candidate pages</td></tr>
-        <tr><td>Processing rules</td><td>lock 1: <code>chunk_source_read</code> policy on <code>source_id</code>; lock 2: RESTRICTIVE <code>chunk_scope_read</code> on <code>scope_state = 'ok' AND tags && allowed_scopes</code>; lock 3: drop candidates whose page has restriction rows that do not name the principal; groups expanded at sync time</td></tr>
+        <tr><td>Processing rules</td><td>lock 1: <code>chunk_source_read</code> policy on <code>source_id</code>; lock 2 (ADR-0021): RESTRICTIVE <code>chunk_labels_read</code> on <code>labels && app.allowed_labels</code> (the retired <code>chunk_scope_read</code> over <code>tags</code> was dropped by migration 0018); lock 3: drop candidates whose page has restriction rows that do not name the principal; groups expanded at sync time</td></tr>
         <tr><td>Outputs</td><td>only permitted candidates, before any text leaves the database for the reranker</td></tr>
         <tr><td>Failure behavior</td><td>a step forgets a GUC: zero rows; reader URL missing in production: startup fails; unexpandable group: the page fails closed</td></tr>
-        <tr><td>Code locations</td><td><code>alembic/versions/0010_*.py</code> (scope policy), <code>retrieval/domain/permission.py</code>, <code>platform/db/roles.py</code></td></tr>
-        <tr><td>Today</td><td><span class="tag t-unv">Unverified</span> lock 1 live; lock 2 (migration 0010) coded and tested, not applied to Supabase; lock 3 runs in app after fusion</td></tr>
+        <tr><td>Code locations</td><td><code>knowledge-base/migrations/versions/0016_chunk_labels.py</code> (routing-label policy), <code>knowledge-base/migrations/versions/0018_*.py</code> (drops the retired scope policy), <code>retrieval/domain/permission.py</code>, <code>platform/db/roles.py</code></td></tr>
+        <tr><td>Today</td><td><span class="tag t-done">Implemented (ADR-0021)</span> lock 1 live; lock 2 is the routing-label filter (<code>chunk_labels_read</code>) — the knowledge-scope policy is retired (migration 0018 drops it; proven on local pinned pgvector, Supabase apply is an owner step); lock 3 runs in app after fusion</td></tr>
         <tr><td>Target</td><td><span class="tag t-new">Planned</span> apply 0010 and run <code>verify-isolation</code>; empty tags never public; lock 3 also inside the SQL searches</td></tr>
       </table>
     </div>
@@ -2196,6 +2199,8 @@ CREATE INDEX ix_curated_embedding_hnsw ON curated_knowledge_entry
 CREATE INDEX ix_curated_tsv_gin ON curated_knowledge_entry USING gin (tsv) WHERE is_active;
 
 -- 5. the scope policy: state ok and a real tag match, no empty-tags floor
+--    RETIRED by ADR-0021 (migration 0018 drops both policies below; chunk.tags is now inert).
+--    The live content filter is chunk_labels_read on app.allowed_labels (migration 0016).
 DROP POLICY IF EXISTS chunk_scope_read ON chunk;
 CREATE POLICY chunk_scope_read ON chunk AS RESTRICTIVE FOR SELECT
   USING (scope_state = 'ok' AND (
@@ -2285,11 +2290,11 @@ ALTER TABLE query_trace ADD COLUMN decision text;
       <summary><h3>The escalation, step by step</h3></summary>
     <ol class="atoz">
       <li><span><b>Ingestion, the webhook.</b> HMAC signature, rate limit, size cap. Unsigned or oversized: dropped before parsing. Our own writes: dropped, no loop.</span></li>
-      <li><span><b>Ingestion, the page.</b> Only published pages arrive. Only pages with a tag from <code>knowledge_scopes.json</code> are built. <code>classified</code>, or no tag: the page is deactivated. Read restrictions are copied to <code>page_restriction</code> rows; a failed fetch stores "nobody".</span></li>
+      <li><span><b>Ingestion, the page.</b> Only published pages arrive. Only pages carrying at least one recognized <b>routing label</b> (<code>obi-general</code>, <code>{slug}-general</code>, <code>{slug}-to-{pos|pms|accounting}</code>) are built (ADR-0021 — not the retired <code>knowledge_scopes.json</code> tags). <code>classified</code>, or no recognized routing label: the page is removed from the index. Read restrictions are copied to <code>page_restriction</code> rows; a failed fetch stores "nobody".</span></li>
       <li><span><b>The store, the roles.</b> The writer owns the tables and never serves reads. <code>rag_reader</code> can SELECT and nothing else, and cannot bypass row security. Supabase's public roles are held back by row security alone, so it stays on for every table.</span></li>
       <li><span><b>Retrieval, lock 0, the edge.</b> Server key per widget host. Signed user token per person from the host backend or an agreed auth service, handed to the Obi iframe by <code>postMessage</code>. Company, integration and identity come from the token, never the body. Design: <a href="#embed">section 03.2</a>. <span class="tag t-new">Planned</span></span></li>
       <li><span><b>Retrieval, lock 1, source.</b> Row security: a chunk is visible only if its <code>source_id</code> is in the transaction's allowed sources. Not set: zero rows.</span></li>
-      <li><span><b>Retrieval, lock 2, scope.</b> A RESTRICTIVE policy, ANDed with lock 1: <code>scope_state = 'ok' AND tags && allowed_scopes</code>. This is what keeps Mews and Toast apart. Same policy on curated entries. <span class="tag t-unv">Unverified</span> coded in migration 0010, not applied to Supabase</span></li>
+      <li><span><b>Retrieval, lock 2, routing labels.</b> <span class="tag t-done">Implemented (ADR-0021)</span> A RESTRICTIVE policy, ANDed with lock 1: <code>chunk_labels_read</code> — <code>labels && app.allowed_labels</code> (the session's directed-connection labels; <code>'*'</code> opts out for a legacy/tokenless chat). This is the content-routing filter that keeps wrong-connection pages out. The retired knowledge-scope policy (<code>chunk_scope_read</code> on <code>tags</code>) was dropped by migration 0018. Company/source separation is lock 1, not this.</span></li>
       <li><span><b>Retrieval, lock 3, page.</b> The candidate pages' restriction rows are checked against the person. Filtered before the reranker sees any text.</span></li>
       <li><span><b>Retrieval, the answer.</b> Every sentence must cite a numbered source. Uncited sentences are cut in code. A passage cannot change the scope by saying so.</span></li>
       <li><span><b>The audit trail.</b> One <code>query_trace</code> row per question with the scopes that applied, the candidates, and the decision. One <code>event_ledger</code> row per webhook delivery.</span></li>
@@ -2303,7 +2308,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
       <svg viewBox="0 0 900 250" role="img" aria-label="Lock 0 at the edge, lock 1 source row security, lock 2 scope row security, lock 3 page access list, then permitted rows. Below: the writer role is exempt, the reader is policy bound, Supabase's anon role is denied, classified is never served, and query_trace keeps the audit trail.">
         <g role="button" tabindex="0" data-n="s-edge" class="n am chg"><rect x="20" y="40" width="124" height="52" rx="8"/><text x="82" y="61">Lock 0 · Edge</text><text x="82" y="77" class="s">host key + user token</text></g>
         <g role="button" tabindex="0" data-n="s-source" class="n pt"><rect x="164" y="40" width="124" height="52" rx="8"/><text x="226" y="61">Lock 1 · Source</text><text x="226" y="77" class="s">Postgres RLS</text></g>
-        <g role="button" tabindex="0" data-n="s-scope" class="n pt chg"><rect x="308" y="40" width="124" height="52" rx="8"/><text x="370" y="61">Lock 2 · Scope</text><text x="370" y="77" class="s">RESTRICTIVE RLS</text></g>
+        <g role="button" tabindex="0" data-n="s-scope" class="n pt chg"><rect x="308" y="40" width="124" height="52" rx="8"/><text x="370" y="61">Lock 2 · Labels</text><text x="370" y="77" class="s">RESTRICTIVE RLS</text></g>
         <g role="button" tabindex="0" data-n="s-acl" class="n pt"><rect x="452" y="40" width="124" height="52" rx="8"/><text x="514" y="61">Lock 3 · Page</text><text x="514" y="77" class="s">restriction rows</text></g>
         <g role="button" tabindex="0" data-n="s-permitted" class="n"><rect x="596" y="40" width="124" height="52" rx="8"/><text x="658" y="61">Permitted rows</text><text x="658" y="77" class="s">what the model reads</text></g>
         <line x1="144" y1="66" x2="160" y2="66" class="c" marker-end="url(#a)"/>
@@ -2321,12 +2326,12 @@ ALTER TABLE query_trace ADD COLUMN decision text;
     <ul class="nodes">
       <li><b>Lock 0 · Edge</b><span>The proxy holds a server key per widget host. The host backend (or an agreed auth service) signs a token per user with their company, integration and identity. The iframe holds it in memory and the proxy forwards it. The backend verifies both and builds the auth context. Nothing in the body can widen it. Design: <a href="#embed">section 03.2</a>.</span></li>
       <li><b>Lock 1 · Source</b><span><code>chunk_source_read</code>: a row is visible only if its <code>source_id</code> is in the transaction's <code>app.allowed_sources</code>. Unset means zero rows. This is what would separate Confluence from a second source.</span></li>
-      <li><b>Lock 2 · Scope</b><span><code>chunk_scope_read</code>, RESTRICTIVE, ANDed with lock 1. Target predicate: <code>scope_state = 'ok' AND tags && allowed_scopes</code>. The same policy on curated entries. The eval role may set the scope to <code>*</code>; the public path never does.</span></li>
+      <li><b>Lock 2 · Labels</b><span><span class="tag t-done">Implemented (ADR-0021)</span> <code>chunk_labels_read</code>, RESTRICTIVE, ANDed with lock 1. Predicate: <code>labels && app.allowed_labels</code> (the session's directed-connection routing labels). A legacy/slot/tokenless chat sets <code>'*'</code> and the filter is a no-op (labels are the relevance axis, not the access fence; isolation is lock 1). The retired knowledge-scope policy (<code>chunk_scope_read</code> on <code>tags</code>) was dropped by migration 0018; the parallel curated-entry scope policy went with it, so curated entries are now unscoped.</span></li>
       <li><b>Lock 3 · Page</b><span>Confluence read restrictions, persisted as principal rows, applied to the candidate pages before rerank. Groups are expanded to members at sync time.</span></li>
       <li><b>Writer</b><span>Owns the tables. Exempt from row security by ownership because the tables are <code>NO FORCE</code>. Needs no superuser, which is why the same design runs on Supabase.</span></li>
       <li><b>rag_reader</b><span><code>NOSUPERUSER NOBYPASSRLS</code>, SELECT only. Every search transaction runs as this role. On Supabase it also needs USAGE on the <code>extensions</code> schema for pgvector.</span></li>
       <li><b>Supabase anon</b><span>Supabase's public REST roles hold SELECT on every table. Row security is the only thing keeping the corpus private from the public internet. Never disable it on any table.</span></li>
-      <li><b>classified</b><span>A page with this label is deactivated and its chunks deleted. As a second wall, the scope policy hides any row whose state is not <code>ok</code>. Belt and suspenders.</span></li>
+      <li><b>classified</b><span>A page with this label is removed from the index and its chunks deleted (never-bend rule 5) — unchanged by ADR-0021. The <code>classified</code> label is detected on the raw labels before anything is stored, so the content is simply not there to serve.</span></li>
     </ul>
 
     </details>
@@ -2335,9 +2340,9 @@ ALTER TABLE query_trace ADD COLUMN decision text;
     <table class="wide">
       <tr><th>Situation</th><th>Result</th><th>Why</th></tr>
       <tr><td>A step forgets to set <code>app.allowed_sources</code></td><td>zero rows</td><td><code>source_id = ANY(NULL)</code> is never true</td></tr>
-      <tr><td>A step forgets to set <code>app.allowed_knowledge_scopes</code></td><td>zero tagged rows</td><td>RESTRICTIVE policy fails closed</td></tr>
-      <tr><td>The app-layer tag filter flag is off</td><td>still isolated once 0010 is applied; on Supabase today the app predicate is the only scope filter, so the flag must stay on</td><td>the database policy does not read the flag, and it is not live yet</td></tr>
-      <tr><td>A page has two provider labels</td><td>hidden everywhere</td><td><code>scope_state = conflict</code></td></tr>
+      <tr><td>A directed chat forgets to set <code>app.allowed_labels</code></td><td>the label filter opts out (<code>'*'</code>): no content narrowing, but source isolation (lock 1) still holds</td><td>labels are the relevance axis, not the access fence (ADR-0021)</td></tr>
+      <tr><td>The retired knowledge-scope policy</td><td>n/a — dropped by migration 0018</td><td>routing labels replaced the scope axis (ADR-0021); <code>chunk.tags</code> is inert</td></tr>
+      <tr><td>A page has two recognized routing labels</td><td>indexed and reachable under each connection that overlaps them</td><td>legitimate sharing; no conflict/hide state (ADR-0021 / sync-rules D4)</td></tr>
       <tr><td>A request sends another user's principal</td><td>ignored</td><td>principal comes from the verified token</td></tr>
       <tr><td>The reader URL is empty in production</td><td>startup fails</td><td><code>ReaderRoleMisconfiguredError</code></td></tr>
       <tr><td>A retrieved passage contains "ignore your rules"</td><td>no effect on scope</td><td>the scope never comes from text; citations are enforced in code</td></tr>
@@ -5020,16 +5025,20 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 },
 "r2-gucs": {
 "n": "Step",
-"h": "Set the scope for this transaction",
+"h": "Set the source and routing-label filters for this transaction",
 "st": "built",
 "f": [
 [
-"Sources",
+"Sources (lock 1)",
 "SELECT set_config('app.allowed_sources', :s, true)"
 ],
 [
-"Scopes",
-"SELECT set_config('app.allowed_knowledge_scopes', :k, true)"
+"Routing labels (lock 2, ADR-0021)",
+"SELECT set_config('app.allowed_labels', :l, true) — the session's directed labels; '*' for a legacy/tokenless chat"
+],
+[
+"Knowledge scopes (retired)",
+"app.allowed_knowledge_scopes is opted out to the wildcard; read by no policy after migration 0018"
 ],
 [
 "HNSW",
@@ -5043,11 +5052,11 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "files": [
 [
 "retrieval/infrastructure/search_repo.py:21-49",
-"apply_hnsw_gucs, apply_source_scope, apply_knowledge_scope"
+"apply_hnsw_gucs, apply_source_scope, apply_allowed_labels"
 ]
 ],
 "c": "session.execute(\n  text(\"SELECT set_config('app.allowed_sources', :s, true)\"),\n  {\"s\": \",\".join(ctx.allowed_sources)},\n)",
-"simple": "Tells the database which sources and scopes this person may see. From here on the database hides everything else, inside the search itself."
+"simple": "Tells the database which sources (lock 1) and, for a directed chat, which routing labels (lock 2) this session may see. The old knowledge-scope filter is retired (ADR-0021)."
 },
 "r2-dense": {
 "n": "Step",
@@ -5327,47 +5336,47 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 },
 "r3-scope": {
 "n": "Lock 2",
-"h": "Scope row security",
+"h": "Routing-label row security (scope axis retired)",
 "st": "built",
-"today": "Migration 0014 (D3) applied to Supabase on 2026-09-25: chunk_scope_read is now pure '*' OR tags && allowed_scopes, mirrored in schema.py. Verified live as rag_reader — empty tags visible to no scope; mews/toast/operacloud/general each return 2, '*' returns 8. RESTRICTIVE, ANDed with the source policy. App predicate stays flag-gated, off by default (PLAN 10.7).",
+"today": "ADR-0021 (2026-10-12): the knowledge-scope axis is retired. Lock 2 is now the routing-label filter — RESTRICTIVE chunk_labels_read on labels && app.allowed_labels (the session's directed-connection labels; '*' opts out for a legacy/tokenless chat), ANDed with the source policy. Migration 0018 dropped chunk_scope_read / curated_knowledge_entry_scope_read; app.allowed_knowledge_scopes is read by no policy and the retrieval path opts it out to the wildcard; chunk.tags is left as inert data. Proven on local pinned pgvector; the Supabase apply of 0018 is an owner/operator step.",
 "f": [
 [
-"Target predicate",
-"wildcard OR tags && allowed_scopes (scope_state retired, D4; empty tags match nobody, D3)"
+"Live predicate",
+"labels && app.allowed_labels (routing-label hard filter; see panel mi-hardfilter)"
 ],
 [
-"Removed",
-"cardinality(tags) = 0 as a public floor"
+"Retired (ADR-0021)",
+"chunk_scope_read: '*' OR tags && allowed_scopes — dropped by migration 0018, chunk.tags now inert"
 ],
 [
 "RESTRICTIVE",
 "Postgres ANDs it with the source policy; a permissive one would OR and weaken isolation"
 ],
 [
-"Independent of the flag",
-"the policy never reads enable_knowledge_scope_filtering"
+"Isolation unchanged",
+"company/source separation is lock 1 (chunk_source_read), untouched by this change"
 ]
 ],
 "files": [
 [
-"platform/db/schema.py",
-"the 0010 DDL"
+"knowledge-base/migrations/versions/0016_chunk_labels.py",
+"the routing-label policy + GUC"
 ],
 [
-"alembic/versions/0010_customer_scope_rls.py",
-"migration"
+"knowledge-base/migrations/versions/0018_retire_knowledge_scope_rls.py",
+"drops the retired scope policies (reversible)"
 ],
 [
 "retrieval/infrastructure/search_repo.py",
-"apply_knowledge_scope"
+"apply_allowed_labels (apply_knowledge_scope opts out to the wildcard)"
 ]
 ],
 "t": [
-"Flag off, cross-scope query: zero rows.",
-"Two-label page: zero rows in every scope.",
-"classified: zero rows even with the wildcard, because its chunks are deleted."
+"Directed Toast->Mews chat: never a toast-to-accounting or mews-to-pos page, at any similarity.",
+"Legacy/tokenless chat: label filter opts out ('*'); lock 1 still isolates by source.",
+"classified: zero rows — its chunks are deleted at ingest (never-bend rule 5)."
 ],
-"simple": "Lock 2: the database shows only pieces whose tag matches this person's integration (or general). Empty tags match nobody."
+"simple": "Lock 2: for a directed chat, the database shows only pieces whose routing labels match the connection. The old knowledge-scope tag filter is retired (ADR-0021)."
 },
 "r3-acl": {
 "n": "Lock 3",

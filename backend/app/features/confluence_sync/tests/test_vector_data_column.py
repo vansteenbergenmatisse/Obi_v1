@@ -107,7 +107,7 @@ def test_vd_column_embedding_colocated_with_tags_and_tsv_on_same_row(gateway, se
     ``row.tags`` proves both names at once, not two independent surfaces.
 
     Page 1001 carries no recognized label, so its chunks' ``tags`` are empty; page 3001
-    (fixture label ``obi-general-test``) is used here instead, since a non-empty ``tags`` list is
+    (fixture label ``obi-general``) is used here instead, since a non-empty ``tags`` list is
     exactly the claim under test."""
     index_page(gateway, settings, 3001, version=1)
     children = active_child_chunks(3001)

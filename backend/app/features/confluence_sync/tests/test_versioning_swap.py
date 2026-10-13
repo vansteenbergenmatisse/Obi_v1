@@ -64,7 +64,7 @@ def test_i4_swap_pointer_moves_identity_hashes_stamps_and_tags_to_the_new_versio
     field the design panel names moves with it in the same swap — title, url, hashes, the
     pipeline stamps, tags and current_cf_version — not left stale from the superseded build."""
     gateway.set_version(1001, 1)
-    gateway.set_labels(1001, ["obi-general-test"])  # recognized scope on v1; post-split the
+    gateway.set_labels(1001, ["obi-general"])  # recognized scope on v1; post-split the
     # stamped scopes are authoritative (recognized_labels ∩ authorized), so with no source_scope
     # row the label itself is the scope.
     with session_scope() as s:
@@ -78,16 +78,16 @@ def test_i4_swap_pointer_moves_identity_hashes_stamps_and_tags_to_the_new_versio
         assert ps_before is not None
         assert ps_before.active_doc_version_id == v1.id
         assert ps_before.current_cf_version == 1
-        assert set(ps_before.tags) == {"obi-general-test"}
+        assert set(ps_before.tags) == {"obi-general"}
         content_hash_before = ps_before.content_hash
         title_before, url_before = ps_before.title, ps_before.source_url
         last_indexed_before = ps_before.last_indexed_at
         assert last_indexed_before is not None
 
     gateway.set_version(1001, 3)  # v3 adds a Troubleshooting section: a different body hash
-    gateway.set_labels(1001, ["obi-toast-test"])  # a DIFFERENT recognized scope on this build
+    gateway.set_labels(1001, ["toast-general"])  # a DIFFERENT recognized scope on this build
     # proves the new version's tags are exactly this build's authoritative scopes, not a stale
-    # union carried over from the v1 swap ("obi-general-test" is gone, "obi-toast-test" is present)
+    # union carried over from the v1 swap ("obi-general" is gone, "toast-general" is present)
     with session_scope() as s:
         outcome_v3 = handle_sync_page(s, page_id=1001, gateway=gateway, settings=settings)
     assert outcome_v3.action == "indexed"
@@ -121,8 +121,8 @@ def test_i4_swap_pointer_moves_identity_hashes_stamps_and_tags_to_the_new_versio
         assert ps_after.last_indexed_at >= last_indexed_before
 
         # tags: exactly this build's authoritative scopes, not a stale union from the previous
-        # swap ("obi-general-test" is gone, "obi-toast-test" is present)
-        assert set(ps_after.tags) == {"obi-toast-test"}
+        # swap ("obi-general" is gone, "toast-general" is present)
+        assert set(ps_after.tags) == {"toast-general"}
 
         # current_cf_version: the new Confluence revision number, not the old one
         assert ps_after.current_cf_version == 3

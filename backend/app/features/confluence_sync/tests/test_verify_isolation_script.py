@@ -71,7 +71,7 @@ def test_verify_isolation_proves_scope_isolation_on_tagged_corpus(
     corpus (the RESTRICTIVE scope policy denies tagged rows with no scope GUC) and rc was non-zero.
     """
     index_page(gateway, settings, _PAGE, 1)
-    _set_chunk_tags(_PAGE, ["obi-mews-test"])
+    _set_chunk_tags(_PAGE, ["mews-general"])
 
     rc = setup_supabase.verify_isolation()
     out = capsys.readouterr().out

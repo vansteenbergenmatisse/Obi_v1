@@ -51,7 +51,7 @@ def _registry_file(tmp_path):
                         "allowed_integrations": ["mews"],
                     }
                 },
-                "integrations": {"mews": ["obi-mews-test"]},
+                "integrations": {"mews": []},
             }
         )
     )
@@ -89,27 +89,24 @@ def _post(client: TestClient, *, token: str | None = None, **body_extra):
     return client.post("/chat", json=body, headers=headers)
 
 
-def test_rag_knowledge_scope_classified_literal_is_400_before_search(client_and_recorder) -> None:
-    """ADR-0011 — `classified` is reserved: it exists in knowledge_scopes.json but is never
-    selectable by any caller. Today this relies SOLELY on the set-exclusion in
-    knowledge_scopes.py:76 (`frozenset(seen - {RESERVED_CLASSIFIED_SCOPE})`): the literal passes
-    the slug shape check, so if the exclusion were ever dropped, `classified` would become a
-    recognized body scope at this edge. This test pins the HTTP edge itself: a validly-tokened
-    request with body knowledge_scope="classified" is a 400 "unknown knowledge scope", and the
-    answer service is never reached — no search ran. A control request on the same client proves
-    the 400 is the scope's doing, not a broken fixture."""
+def test_rag_knowledge_scope_classified_literal_is_never_selectable(client_and_recorder) -> None:
+    """ADR-0021 — `classified` is reserved and can never be selected as a scope by any caller. The
+    knowledge-scope axis is retired, so a body `knowledge_scope` is always logged and IGNORED (never
+    a 400, never used): the reserved `classified` value therefore reaches retrieval no differently
+    from any other — it is dropped on the floor. It never appears in the served `allowed_scopes`
+    (which is empty), and the reserved label's real effect — removing a page from the index — lives
+    on the ingestion/label axis, not here. A control request proves the client is not broken."""
     client, recorder = client_and_recorder
 
     resp = _post(client, token="MEWS", knowledge_scope="classified")
-    assert resp.status_code == 400
-    assert resp.json()["detail"] == "unknown knowledge scope"
-    assert recorder.last_auth is None  # rejected before the service — no search ran
+    assert resp.status_code == 200  # ignored, not a 400 — the token drives the request
+    assert recorder.last_auth is not None
+    assert "classified" not in recorder.last_auth.allowed_scopes  # never selected
+    assert recorder.last_auth.allowed_scopes == ()  # ADR-0021: no scope is selectable at all
 
-    # tokenless path too: no token form of the request may select the reserved scope either
+    # tokenless path too: the reserved value is equally inert there
     resp_tokenless = _post(client, knowledge_scope="classified")
-    assert resp_tokenless.status_code == 400
-    assert resp_tokenless.json()["detail"] == "unknown knowledge scope"
-    assert recorder.last_auth is None
+    assert resp_tokenless.status_code == 200
 
     # control: the identical request WITHOUT the body scope is served (fixture not broken)
     control = _post(client, token="MEWS")

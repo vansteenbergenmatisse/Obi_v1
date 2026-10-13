@@ -33,8 +33,9 @@ def fetch_curated_entries(
     session: Session, allowed_scopes: Sequence[str], limit: int
 ) -> list[CuratedEntry]:
     """Active entries with empty tags (always included) or overlapping `allowed_scopes`, capped at
-    `limit`, ordered by id for deterministic citation numbering. Sets the customer-scope RLS GUC
-    first (ADR-0014), so a bypassed app predicate cannot leak a cross-customer curated entry."""
-    apply_knowledge_scope(session, list(allowed_scopes))
+    `limit`, ordered by id for deterministic citation numbering. ADR-0021 retired the knowledge
+    scope axis, so the scope GUC is opted out (wildcard None) and the curated query matches on the
+    `allowed_scopes` overlap (empty → entries with empty tags, always included)."""
+    apply_knowledge_scope(session, None)
     rows = session.execute(_QUERY, {"allowed_scopes": list(allowed_scopes), "limit": limit}).all()
     return [CuratedEntry(id=r.id, tags=tuple(r.tags), title=r.title, body=r.body) for r in rows]

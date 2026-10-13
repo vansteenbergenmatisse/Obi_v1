@@ -307,9 +307,6 @@ def test_s_permitted_trace_records_allowed_sources_and_knowledge_scopes(
     query records exactly which sources and which knowledge scopes were allowed for it.
     """
     _index_corpus(gateway, settings)
-    with get_sessionmaker()() as s:
-        s.execute(text("UPDATE chunk SET tags = ARRAY['obi-permitted-test'] WHERE page_id = 1002"))
-        s.commit()
 
     retr = HybridRetriever(
         get_reader_sessionmaker(),
@@ -317,13 +314,11 @@ def test_s_permitted_trace_records_allowed_sources_and_knowledge_scopes(
         _build_policy(gateway),
         build_reranker(settings),
         trace_sessionmaker=get_sessionmaker(),
-        enable_knowledge_scope_filtering=True,
     )
     result = retr.retrieve_with_context(
         "What are the production deploy steps?",
         "acct-alice",
         k=5,
-        knowledge_scopes=["obi-permitted-test"],
     )
     assert result.trace_id is not None
 
@@ -336,7 +331,9 @@ def test_s_permitted_trace_records_allowed_sources_and_knowledge_scopes(
         ).one()
 
     assert list(row.allowed_sources) == ["confluence:default"]
-    assert list(row.allowed_knowledge_scopes) == ["obi-permitted-test"]
+    # ADR-0021: the knowledge-scope axis is retired; the trace records no scope list (None). The
+    # allowed_sources proof (source/company isolation axis) is unchanged.
+    assert row.allowed_knowledge_scopes is None
 
 
 def test_rls_default_deny_on_reader_role(gateway, settings: Settings) -> None:

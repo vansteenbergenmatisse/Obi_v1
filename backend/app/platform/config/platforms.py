@@ -29,7 +29,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
-_GENERAL = "obi-general-test"
 _FORBIDDEN = frozenset({"classified"})
 _ALLOWED_ALGS = frozenset({"RS256", "ES256"})
 _MIN_LIFETIME = 1
@@ -421,6 +420,9 @@ def load_platform_registry(
             if entry.active:
                 _reject_untrusted_active_platform(entry)
 
+    # ADR-0021: the knowledge-scope value lists are retired (empty). The keys remain as the valid
+    # integration-claim allow-list (the allowed_integrations cross-check above). Any residual slug
+    # is still validated so a stray value can never slip back in unnoticed.
     scopes: dict[str, tuple[str, ...]] = {}
     for integration, slugs in integrations.items():
         resolved: set[str] = set()
@@ -428,15 +430,9 @@ def load_platform_registry(
             s = str(slug).strip().lower()
             if s in _FORBIDDEN:
                 raise ValueError(f"integration {integration}: '{s}' is never mappable")
-            if s == _GENERAL:
-                raise ValueError(
-                    f"integration {integration}: '{_GENERAL}' is added by the loader, "
-                    f"never listed by hand"
-                )
             if s not in recognized_scopes:
                 raise ValueError(f"integration {integration}: '{s}' not in knowledge_scopes.json")
             resolved.add(s)
-        resolved.add(_GENERAL)
         scopes[integration] = tuple(sorted(resolved))
 
     return PlatformRegistry(_by_issuer=by_issuer, _scopes=scopes)

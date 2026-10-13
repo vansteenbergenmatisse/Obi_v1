@@ -185,8 +185,6 @@ class AnswerService:
         retrieve_k: int = 5,
         clarification_classifier: AmbiguityClassifier | None = None,
         enable_clarification_branch: bool = False,
-        recognized_knowledge_scopes: frozenset[str] = frozenset({"obi-general-test"}),
-        default_knowledge_scope: str | None = None,
         reader_sessionmaker: Callable[[], Session] | None = None,
         curated_knowledge_max_entries: int = 5,
         product_catalog: ProductCatalog | None = None,
@@ -203,8 +201,6 @@ class AnswerService:
         self._retrieve_k = retrieve_k
         self._clarification_classifier = clarification_classifier
         self._enable_clarification_branch = enable_clarification_branch
-        self._recognized_knowledge_scopes = recognized_knowledge_scopes
-        self._default_knowledge_scope = default_knowledge_scope
         # PLAN 10.6: `None` in any test/deployment that never wires a reader (mirrors
         # `writer_sessionmaker`'s own no-op-when-unset posture at `_persist`, below) — curated
         # entries are then simply never composed into evidence, not an error.
@@ -339,11 +335,11 @@ class AnswerService:
                     image_analysis=image_analysis,
                 )
 
-        # PLAN 11.1c (ADR-0014): scopes come from the verified edge identity, never a caller-
-        # reported string. Resolved once per request (the registry already guarantees
-        # obi-general-test is included) — the CRAG retry below reuses this same allow-list, and the
-        # always-present curated layer needs it on the text-empty/image-only path too. `scope` is
-        # the page-ACL principal (always None for embedded users in v1).
+        # ADR-0021: the knowledge-scope axis is retired, so `auth.allowed_scopes` is empty and the
+        # scope filter is inert (retrieval opts the scope GUC out; content is routed by labels).
+        # This list is still threaded through so the curated layer's app-overlap query keeps its
+        # shape (empty → the always-included empty-tag entries). `scope` is the page-ACL principal
+        # (always None for embedded users in v1).
         allowed_scopes = list(auth.allowed_scopes)
         scope = auth.principal
         # Substep 8.3.1 (panel mi-filter): the VERIFIED slots + host platform become the one

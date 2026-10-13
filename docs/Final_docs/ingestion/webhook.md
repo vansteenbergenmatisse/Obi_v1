@@ -76,6 +76,12 @@ cd backend && uv run python -u scripts/webhook_rules_live.py \
   --scope-a obi-toast-test --scope-b obi-mews-test --yes
 ```
 
+> The `obi-…-test` label names shown above are retired (ADR-0021, 2026-10-12): index membership and
+> routing now run on recognized **routing labels** (`obi-general`, `{slug}-general`,
+> `{slug}-to-{pos|pms|accounting}`), not on the old knowledge-scope `-test` tags. A fresh live run
+> should pass recognized routing labels; the two values are only the pair of labels the script flips
+> to exercise the label-event path.
+
 **The section below is superseded (kept as the record of the pre-Forge state).** The "not
 reachable from Confluence" blocker was closed on 2026-09-30 by the Forge app deployment
 (runbook `docs/runbooks/obi-confluence-sync-deploy.md`); the tunnel plan was never needed. `i1-webhook` is `unverified` for one reason only: the handler is not

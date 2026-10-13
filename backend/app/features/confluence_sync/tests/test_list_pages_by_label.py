@@ -19,24 +19,24 @@ PAGE = 1001
 
 def test_returns_only_pages_carrying_a_requested_label() -> None:
     g = FixtureConfluenceGateway()
-    g.set_labels(PAGE, ["obi-toast-test"])
-    assert [m.page_id for m in g.list_pages_by_label(SPACE, ["obi-toast-test"])] == [PAGE]
+    g.set_labels(PAGE, ["toast-general"])
+    assert [m.page_id for m in g.list_pages_by_label(SPACE, ["toast-general"])] == [PAGE]
 
 
 def test_empty_label_list_returns_nothing() -> None:
     g = FixtureConfluenceGateway()
-    g.set_labels(PAGE, ["obi-toast-test"])
+    g.set_labels(PAGE, ["toast-general"])
     assert g.list_pages_by_label(SPACE, []) == []
 
 
 def test_unmatched_label_returns_nothing() -> None:
     g = FixtureConfluenceGateway()
-    g.set_labels(PAGE, ["obi-toast-test"])
-    assert g.list_pages_by_label(SPACE, ["obi-mews-test"]) == []
+    g.set_labels(PAGE, ["toast-general"])
+    assert g.list_pages_by_label(SPACE, ["mews-general"]) == []
 
 
 def test_hidden_page_is_excluded() -> None:
     g = FixtureConfluenceGateway()
-    g.set_labels(PAGE, ["obi-toast-test"])
+    g.set_labels(PAGE, ["toast-general"])
     g.hide(PAGE)
-    assert g.list_pages_by_label(SPACE, ["obi-toast-test"]) == []
+    assert g.list_pages_by_label(SPACE, ["toast-general"]) == []

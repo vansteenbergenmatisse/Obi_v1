@@ -1,6 +1,6 @@
 {
   "pageId": "3001",
   "results": [
-    { "id": "l-obi-general-test", "name": "obi-general-test", "prefix": "global" }
+    { "id": "l-obi-general", "name": "obi-general", "prefix": "global" }
   ]
 }

@@ -30,9 +30,7 @@ pytestmark = (
 
 
 def _auth(principal: str | None = None) -> AuthContext:
-    return AuthContext(
-        None, None, None, ("obi-general-test",), ("confluence:default",), principal, None
-    )
+    return AuthContext(None, None, None, ("obi-general",), ("confluence:default",), principal, None)
 
 
 _DATASETS = datasets_dir()

@@ -87,7 +87,6 @@ def build_answer_service(settings: Settings) -> AnswerService:
         hnsw_ef_search=settings.hnsw_ef_search,
         hnsw_iterative_scan=settings.hnsw_iterative_scan,
         trace_sessionmaker=get_sessionmaker(),
-        enable_knowledge_scope_filtering=settings.enable_knowledge_scope_filtering,
     )
     client = AnthropicMessagesClient(
         api_key=settings.anthropic_api_key,
@@ -113,8 +112,6 @@ def build_answer_service(settings: Settings) -> AnswerService:
         retrieve_k=settings.rerank_top_k,
         clarification_classifier=AnthropicAmbiguityClassifier(client, settings.routing_model),
         enable_clarification_branch=settings.enable_clarification_branch,
-        recognized_knowledge_scopes=settings.knowledge_scope_set,
-        default_knowledge_scope=settings.default_knowledge_scope or None,
         reader_sessionmaker=get_reader_sessionmaker(),
         curated_knowledge_max_entries=settings.curated_knowledge_max_entries,
         # Substep 8.3.3 (panel mi-prompt): the committed catalog, used only to derive the

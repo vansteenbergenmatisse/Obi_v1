@@ -115,7 +115,6 @@ function toBackendChatBody(request: ChatRequest): Record<string, unknown> {
     conversation_id: request.conversationId,
     history: request.history,
     principal: request.principal,
-    knowledge_scope: request.knowledgeScope,
     // DEV/standalone harness only, non-authoritative (substep 8.4.2). Forwarded in snake_case so the
     // backend accepts the shape (no 400); the backend logs and ignores it in favour of the verified
     // token/note — the body never decides access (never-bend rule 2). Absent in a real session.

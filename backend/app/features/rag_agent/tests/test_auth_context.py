@@ -52,7 +52,7 @@ def _registry(tmp_path):
             "mews": _entry("https://app.mews.com", allowed_integrations=["mews"]),
             "other": _entry("https://other.example.com", allowed_integrations=["mews"]),
         },
-        {"mews": ["obi-mews-test"]},
+        {"mews": []},
         allow_empty=False,
     )
 
@@ -72,7 +72,7 @@ def _claims(**over):
 def test_builds_scoped_context(tmp_path):
     ctx = build_auth_context(_claims(), _registry(tmp_path))
     assert ctx.integration == "mews"
-    assert ctx.allowed_scopes == ("obi-general-test", "obi-mews-test")
+    assert ctx.allowed_scopes == ()  # ADR-0021: scopes retired
     assert ctx.principal is None  # v1: embedded users are principal-less
     assert ctx.allowed_sources == ("confluence:default",)
     # CIP-4: token_subject is issuer-namespaced (NUL-separated), not the bare `sub`
@@ -91,7 +91,7 @@ def test_no_business_values_is_general_only(tmp_path):
     ctx = build_auth_context(
         _claims(company_id=None, company_name=None, integration=None), _registry(tmp_path)
     )
-    assert ctx.allowed_scopes == ("obi-general-test",)
+    assert ctx.allowed_scopes == ()  # ADR-0021: scopes retired
     assert ctx.integration is None
     # CIP-4: still token-identified, and issuer-namespaced
     assert ctx.token_subject == "https://app.mews.com\x00u1"
@@ -117,7 +117,7 @@ def test_inactive_platform_token_is_denied(tmp_path):
                 "https://pos.toasttab.com", active=False, allowed_integrations=["toast"]
             ),
         },
-        {"mews": ["obi-mews-test"], "toast": ["obi-toast-test"]},
+        {"mews": [], "toast": []},
     )
     claims = VerifiedClaims(
         issuer="https://pos.toasttab.com",
@@ -141,7 +141,7 @@ def test_inactive_platform_general_only_token_also_denied(tmp_path):
                 "https://pos.toasttab.com", active=False, allowed_integrations=["toast"]
             ),
         },
-        {"mews": ["obi-mews-test"], "toast": ["obi-toast-test"]},
+        {"mews": [], "toast": []},
     )
     claims = VerifiedClaims(
         issuer="https://pos.toasttab.com",
@@ -160,7 +160,7 @@ def test_active_platform_general_only_is_allowed(tmp_path):
     ctx = build_auth_context(
         _claims(company_id=None, company_name=None, integration=None), _registry(tmp_path)
     )
-    assert ctx.allowed_scopes == ("obi-general-test",)
+    assert ctx.allowed_scopes == ()  # ADR-0021: scopes retired
     assert ctx.integration is None
     assert ctx.token_subject == "https://app.mews.com\x00u1"
 
@@ -178,7 +178,7 @@ def test_cross_issuer_integration_is_rejected(tmp_path):
             "mews": _entry("https://app.mews.com", allowed_integrations=["mews"]),
             "toast": _entry("https://pos.toasttab.com", allowed_integrations=["toast"]),
         },
-        {"mews": ["obi-mews-test"], "toast": ["obi-toast-test"]},
+        {"mews": [], "toast": []},
     )
     claims = VerifiedClaims(
         issuer="https://app.mews.com",
@@ -197,7 +197,7 @@ def test_hub_vends_multiple_product_integrations(tmp_path):
     reg = _build_registry(
         tmp_path,
         {"datahub": _entry("https://hub.example.com", allowed_integrations=["mews", "toast"])},
-        {"mews": ["obi-mews-test"], "toast": ["obi-toast-test"]},
+        {"mews": [], "toast": []},
     )
 
     def _hub_claims(integration):
@@ -209,25 +209,21 @@ def test_hub_vends_multiple_product_integrations(tmp_path):
             integration=integration,
         )
 
-    assert build_auth_context(_hub_claims("mews"), reg).allowed_scopes == (
-        "obi-general-test",
-        "obi-mews-test",
-    )
-    assert build_auth_context(_hub_claims("toast"), reg).allowed_scopes == (
-        "obi-general-test",
-        "obi-toast-test",
-    )
+    # ADR-0021: the hub may still VEND both integrations (no IntegrationNotAllowedError), but the
+    # knowledge-scope axis is retired, so each resolves to the empty scope set.
+    assert build_auth_context(_hub_claims("mews"), reg).allowed_scopes == ()
+    assert build_auth_context(_hub_claims("toast"), reg).allowed_scopes == ()
 
 
 def test_self_serving_platform_asserting_own_integration_is_allowed(tmp_path):
     """CIP-A1: the ordinary case — a self-serving platform asserting its OWN integration works."""
     ctx = build_auth_context(_claims(integration="mews"), _registry(tmp_path))
-    assert ctx.allowed_scopes == ("obi-general-test", "obi-mews-test")
+    assert ctx.allowed_scopes == ()  # ADR-0021: scopes retired
 
 
 def test_general_only_context_helper():
     ctx = general_only_context()
-    assert ctx.allowed_scopes == ("obi-general-test",)
+    assert ctx.allowed_scopes == ()  # ADR-0021: scopes retired
     assert ctx.token_subject is None
     assert ctx.principal is None
     assert ctx.allowed_sources == ("confluence:default",)

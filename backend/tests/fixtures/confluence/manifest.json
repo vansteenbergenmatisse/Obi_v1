@@ -91,8 +91,8 @@
       "hasLabels": true,
       "hasRestrictions": false,
       "hasAttachments": false,
-      "file": "page-3001-obi-general-test.json",
-      "_fixtureCategory": "one page per knowledge-scope tag: obi-general-test (substep 0.5.1)"
+      "file": "page-3001-obi-general.json",
+      "_fixtureCategory": "one page per routing label: obi-general (ADR-0021)"
     },
     {
       "id": "3002",
@@ -105,8 +105,8 @@
       "hasLabels": true,
       "hasRestrictions": false,
       "hasAttachments": false,
-      "file": "page-3002-obi-mews-test.json",
-      "_fixtureCategory": "one page per knowledge-scope tag: obi-mews-test (substep 0.5.1)"
+      "file": "page-3002-mews-general.json",
+      "_fixtureCategory": "one page per routing label: mews-general (ADR-0021)"
     },
     {
       "id": "3003",
@@ -119,8 +119,8 @@
       "hasLabels": true,
       "hasRestrictions": false,
       "hasAttachments": false,
-      "file": "page-3003-obi-operacloud-test.json",
-      "_fixtureCategory": "one page per knowledge-scope tag: obi-operacloud-test (substep 0.5.1)"
+      "file": "page-3003-opera-cloud-general.json",
+      "_fixtureCategory": "one page per routing label: opera-cloud-general (ADR-0021)"
     },
     {
       "id": "3004",
@@ -133,8 +133,8 @@
       "hasLabels": true,
       "hasRestrictions": false,
       "hasAttachments": false,
-      "file": "page-3004-obi-toast-test.json",
-      "_fixtureCategory": "one page per knowledge-scope tag: obi-toast-test (substep 0.5.1)"
+      "file": "page-3004-toast-general.json",
+      "_fixtureCategory": "one page per routing label: toast-general (ADR-0021)"
     },
     {
       "id": "3005",

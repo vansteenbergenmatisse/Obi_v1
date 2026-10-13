@@ -40,18 +40,18 @@ def test_tg_change_label_swap_leaves_no_stale_double_tag(gateway, settings):
     """panel tg-change · substep 0.5.2
     A label swap (mews -> toast) converges to exactly the new tag, with the old tag gone and
     no rebuild (same active document_version)."""
-    gateway.set_labels(1001, ["obi-mews-test"])
+    gateway.set_labels(1001, ["mews-general"])
     index_page(gateway, settings, 1001, version=1)
 
     with read() as s:
         page_source = s.get(PageSource, 1001)
         assert page_source is not None
-        assert page_source.tags == ["obi-mews-test"]
+        assert page_source.tags == ["mews-general"]
     version_before_row = active_version(1001)
     assert version_before_row is not None
     version_before = version_before_row.id
 
-    gateway.set_labels(1001, ["obi-toast-test"])  # label swap; same page content, no version bump
+    gateway.set_labels(1001, ["toast-general"])  # label swap; same page content, no version bump
     enqueue_sync(1001, 1, key="sync:1001:label-swap")
     result = run_once(gateway, settings, owner="test")
 
@@ -62,7 +62,7 @@ def test_tg_change_label_swap_leaves_no_stale_double_tag(gateway, settings):
     with read() as s:
         page_source = s.get(PageSource, 1001)
         assert page_source is not None
-        assert page_source.tags == ["obi-toast-test"]  # old tag gone, no double-tag
+        assert page_source.tags == ["toast-general"]  # old tag gone, no double-tag
     version_after_row = active_version(1001)
     assert version_after_row is not None
     assert version_after_row.id == version_before  # metadata-only: no rebuild
@@ -78,19 +78,19 @@ def test_tg_change_sequential_label_jobs_converge_without_double_tag(gateway, se
     fresh read of the gateway already reflects the swap) does the metadata update; the second is
     a redundant idempotent no-op against the now-already-converged state -- both are non-rebuild
     outcomes (`sync_service.py`'s `_REBUILD_CLASSES` never fires for a labels-only change)."""
-    gateway.set_labels(1001, ["obi-mews-test"])
+    gateway.set_labels(1001, ["mews-general"])
     index_page(gateway, settings, 1001, version=1)
 
     with read() as s:
         page_source = s.get(PageSource, 1001)
         assert page_source is not None
-        assert page_source.tags == ["obi-mews-test"]
+        assert page_source.tags == ["mews-general"]
     version_before_row = active_version(1001)
     assert version_before_row is not None
     version_before = version_before_row.id
 
     # label swap; same page content, no version bump
-    gateway.set_labels(1001, ["obi-toast-test"])
+    gateway.set_labels(1001, ["toast-general"])
 
     # Two separate deliveries -> two separate jobs (as event_service would enqueue for
     # label_deleted then label_added), both immediately available. `claim_job` orders by
@@ -135,7 +135,7 @@ def test_tg_change_sequential_label_jobs_converge_without_double_tag(gateway, se
     with read() as s:
         page_source = s.get(PageSource, 1001)
         assert page_source is not None
-        assert page_source.tags == ["obi-toast-test"]  # converged: old tag gone, no double-tag
+        assert page_source.tags == ["toast-general"]  # converged: old tag gone, no double-tag
     version_after_row = active_version(1001)
     assert version_after_row is not None
     assert version_after_row.id == version_before  # metadata-only: no rebuild

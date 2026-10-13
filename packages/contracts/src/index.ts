@@ -60,14 +60,6 @@ export interface ChatRequest {
    */
   principal?: string;
   /**
-   * Which third-party platform's documentation this deployment/embed is
-   * scoped to (ADR-0011 decision 6), e.g. `"mews"`, `"opera-cloud"`,
-   * `"toast"`. Resolved once per request, not inferred from message
-   * content. Omitted or unrecognized falls back to the deployment default
-   * (or `general` alone) server-side — never a hard error.
-   */
-  knowledgeScope?: string;
-  /**
    * DEV / STANDALONE-HARNESS ONLY, non-authoritative (panel mi-contract,
    * substep 8.4.2). The simulated integration context chosen in the
    * standalone test harness's preset selector — a `company_id` plus the three
@@ -76,9 +68,9 @@ export interface ChatRequest {
    * access: the verified token/note is the only authority (never-bend rules
    * 2–3; the integration context comes only from the verified token —
    * context-contract §4). The backend accepts the shape so the dev harness
-   * does not 400, and treats it exactly as it treats a body `knowledgeScope`
-   * hint — shape-checked, logged, and ignored in favour of the token. Lives
-   * in memory and on the wire only; never persisted (rule 10).
+   * does not 400, and treats it as non-authoritative — logged and ignored in
+   * favour of the token. Lives in memory and on the wire only; never persisted
+   * (rule 10).
    */
   simulatedContext?: SimulatedContext;
 }

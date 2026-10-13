@@ -11,9 +11,15 @@ the reverse needs an ADR.
 Measured from `backend/` with `uv run ruff check .`, `uv run ruff format --check .`,
 `uv run pyright` (pyright 1.1.411 pinned by uv).
 
-- Ruff errors: **18** (15 × E501 line-too-long, 2 × SIM115, 1 × E741)
-- Unformatted files (`ruff format --check`): **1** (`app/features/confluence_sync/tests/test_ingestion_pipeline.py`; 247 already formatted)
-- Pyright errors: **43** (plus 1 warning)
+**Refreshed 2026-10-12** (ADR-0021 — knowledge-scope `-test` axis retirement + the Task-2 cleanup).
+Re-measured on the current working tree; a `git stash` measurement confirmed the pyright count was
+already 46 on this branch *before* any ADR-0021 work (the earlier recorded 43 was stale drift that
+predated this session), so ADR-0021 is net-zero on types. Ruff and ruff-format are unchanged from
+the 2026-10-05 floor.
+
+- Ruff errors: **18** (E501 line-too-long + 2 × SIM115 + 1 × E741; all pre-existing)
+- Unformatted files (`ruff format --check`): **1** (`app/features/confluence_sync/tests/test_ingestion_pipeline.py`; 290 already formatted)
+- Pyright errors: **46** (plus 1 warning) — all in test files (pre-existing test-double / Optional-access patterns); every non-test source file is pyright-clean. Was recorded as 43 on 2026-10-05; corrected to the verified 46 here.
 
 ## Test suite (the `make check` floor, same run)
 

@@ -137,7 +137,6 @@ import asyncio
 import hashlib
 import hmac
 import json
-import re
 import time
 import uuid
 from collections.abc import AsyncIterator, Iterator
@@ -176,12 +175,6 @@ _IDEMPOTENCY_HEADER = "idempotency-key"
 # PLAN 11.1c (ADR-0014): the platform-signed user JWT rides its own header so it never collides
 # with the host `chat_api_key` on `Authorization`. Verified into an AuthContext that drives scope.
 _OBI_TOKEN_HEADER = "x-obi-token"
-
-# PLAN 10.5 (ADR-0011 decision 6): a short lowercase slug shape — not a whitelist.
-# `resolve_allowed_scopes` already degrades an unrecognized-but-well-shaped value to
-# `general`/the deployment default without erroring, so this only blocks a value that could
-# never be a real recognized scope from riding all the way down to the retrieval layer.
-_KNOWLEDGE_SCOPE_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 
 # C3 allowlist (substep 3.6.7, decision w-composer-images): only these image media types are ever
 # forwarded to the vision call — Anthropic's documented supported set. Any other media_type is
@@ -222,6 +215,9 @@ class ChatRequestBody(BaseModel):
     conversation_id: str | None = None
     history: list[ChatMessage] = Field(min_length=1)
     principal: str | None = None
+    # DEPRECATED / accepted-and-ignored (ADR-0021 retired the knowledge-scope axis; ADR-0014 already
+    # stopped it driving scope). The field is kept only so an older client that still sends it does
+    # not hit the `extra="forbid"` 422 — it is read by nothing and never reaches retrieval.
     knowledge_scope: str | None = None
     # DEV/standalone harness only; accepted-and-ignored — see SimulatedContextBody.
     simulated_context: SimulatedContextBody | None = None
@@ -236,17 +232,6 @@ class ChatRequestBody(BaseModel):
         domain policy the eval harness's legitimate numeric space-scoping still depends on."""
         if value is not None and value.isdigit():
             raise ValueError("principal must not be a bare digit string")
-        return value
-
-    @field_validator("knowledge_scope")
-    @classmethod
-    def _reject_malformed_knowledge_scope(cls, value: str | None) -> str | None:
-        """PLAN 10.5, ADR-0011 decision 6: reject an obviously-malformed shape only — not a
-        whitelist (see this module's `_KNOWLEDGE_SCOPE_PATTERN` docstring above)."""
-        if value is not None and not _KNOWLEDGE_SCOPE_PATTERN.match(value.lower()):
-            raise ValueError(
-                "knowledge_scope must be a short lowercase slug (letters, digits, hyphens)"
-            )
         return value
 
 
@@ -304,27 +289,6 @@ def _resolve_auth_context(
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "unknown integration value") from exc
     except (TokenError, AuthContextError) as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token") from exc
-
-
-def _validate_body_knowledge_scope(
-    body: ChatRequestBody, auth: AuthContext, settings: Settings
-) -> None:
-    """PLAN 11.1c: the body `knowledge_scope` is NO LONGER authoritative — the verified token drives
-    scope. A well-shaped body scope that is not even a recognized slug is a 400 (before any search);
-    a recognized slug that simply disagrees with the token's scopes is logged once and ignored (the
-    token always wins). The value never reaches retrieval either way."""
-    requested = body.knowledge_scope
-    if requested is None:
-        return
-    normalized = requested.lower()
-    if normalized not in settings.knowledge_scope_set:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "unknown knowledge scope")
-    if normalized not in auth.allowed_scopes:
-        log.info(
-            "body_knowledge_scope_ignored",
-            requested=normalized,
-            token_scopes=list(auth.allowed_scopes),
-        )
 
 
 def _note_simulated_context_ignored(body: ChatRequestBody) -> None:
@@ -596,7 +560,6 @@ async def post_chat(
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "rate limited")
 
     _validate_history(body, settings)
-    _validate_body_knowledge_scope(body, auth, settings)
     _note_simulated_context_ignored(body)
 
     conversation_id = body.conversation_id or _new_conversation_id()

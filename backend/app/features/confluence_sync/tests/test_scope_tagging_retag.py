@@ -44,7 +44,7 @@ def test_tg_retag_metadata_only_touches_tags_and_scope_state_not_version_or_embe
     On a label-only change, only page_source.tags, chunk.tags, scope_state (the same tags/labels
     state), labels_hash and last_indexed_at change; embeddings, document_version and
     active_doc_version_id stay untouched -- no re-embed, no new version, no pointer swap."""
-    # Page 3002 ("Mews PMS Sync Setup") carries the fixture label "obi-mews-test".
+    # Page 3002 ("Mews PMS Sync Setup") carries the fixture label "mews-general".
     index_page(gateway, settings, 3002, version=1)
 
     with read() as s:
@@ -57,7 +57,7 @@ def test_tg_retag_metadata_only_touches_tags_and_scope_state_not_version_or_embe
         content_hash_before = ps_before.content_hash
         structure_hash_before = ps_before.structure_hash
 
-    assert tags_before == ["obi-mews-test"]
+    assert tags_before == ["mews-general"]
     assert active_doc_version_id_before is not None
 
     version_before = active_version(3002)
@@ -70,10 +70,10 @@ def test_tg_retag_metadata_only_touches_tags_and_scope_state_not_version_or_embe
         c.id: (list(c.embedding) if c.embedding is not None else None) for c in chunks_before
     }
     chunk_ids_before = {c.id for c in chunks_before}
-    assert all(chunk.tags == ["obi-mews-test"] for chunk in chunks_before)
+    assert all(chunk.tags == ["mews-general"] for chunk in chunks_before)
 
     # Label-only change: same body, same version, only the recognized label swaps.
-    gateway.set_labels(3002, ["obi-toast-test"])
+    gateway.set_labels(3002, ["toast-general"])
     enqueue_sync(3002, 1, key="sync:3002:retag")
     result = run_once(gateway, settings, owner="test")
 
@@ -94,7 +94,7 @@ def test_tg_retag_metadata_only_touches_tags_and_scope_state_not_version_or_embe
 
     # --- touched surfaces (panel: page_source.tags, chunk.tags, scope_state, labels_hash,
     # last_indexed_at) ---
-    assert tags_after == ["obi-toast-test"]  # page_source.tags changed to the new resolved value
+    assert tags_after == ["toast-general"]  # page_source.tags changed to the new resolved value
     assert tags_after != tags_before
     assert labels_hash_after != labels_hash_before  # labels_hash changed
     assert last_indexed_at_after is not None
@@ -105,7 +105,7 @@ def test_tg_retag_metadata_only_touches_tags_and_scope_state_not_version_or_embe
     assert chunks_after
     assert {c.id for c in chunks_after} == chunk_ids_before  # same chunk rows, no rebuild
     # scope_state (the tags/labels state materialized on the chunks) reflects the change
-    assert all(chunk.tags == ["obi-toast-test"] for chunk in chunks_after)
+    assert all(chunk.tags == ["toast-general"] for chunk in chunks_after)
 
     # --- untouched surfaces (panel: embeddings, document_version, active_doc_version_id) ---
     assert active_doc_version_id_after == active_doc_version_id_before  # no pointer swap

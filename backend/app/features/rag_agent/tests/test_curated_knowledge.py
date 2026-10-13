@@ -61,14 +61,15 @@ def _guc_call(s: _SpySession) -> tuple[str, dict[str, Any]]:
     return next(c for c in s.calls if "set_config" in c[0])
 
 
-def test_fetch_curated_entries_sets_the_scope_rls_guc_before_reading() -> None:
-    # ADR-0014: the RLS scope GUC is set (bound) before the SELECT, so a bypassed app predicate
-    # cannot leak a cross-customer curated entry; the GUC-set is the first statement.
+def test_fetch_curated_entries_opts_the_scope_guc_out_before_reading() -> None:
+    # ADR-0021: the knowledge-scope axis is retired, so the scope GUC is opted OUT (wildcard '*')
+    # before the SELECT, independent of what allowed_scopes the caller passes. The GUC-set is still
+    # the first statement (it runs before the read).
     s = _SpySession()
-    fetch_curated_entries(s.as_session(), ["obi-general-test", "obi-mews-test"], limit=5)
+    fetch_curated_entries(s.as_session(), ["scope-a", "scope-b"], limit=5)
     guc_sql, guc_params = _guc_call(s)
     assert "app.allowed_knowledge_scopes" in guc_sql
-    assert guc_params["s"] == "obi-general-test,obi-mews-test"
+    assert guc_params["s"] == "*"
     assert "set_config" in s.calls[0][0]  # set BEFORE the read
 
 
@@ -88,10 +89,11 @@ def test_fetch_curated_entries_binds_a_malicious_scope_value_never_reaches_raw_s
     sql, params = _select_call(s)
     assert payload not in sql
     assert params["allowed_scopes"] == [payload]
-    # the same value is bound (never interpolated) into the scope-GUC set_config too
+    # ADR-0021: the scope GUC is opted out ('*'), so the malicious value never reaches the GUC
+    # set_config at all; the app-overlap SELECT still binds it as a parameter (never interpolated).
     guc_sql, guc_params = _guc_call(s)
     assert payload not in guc_sql
-    assert guc_params["s"] == payload
+    assert guc_params["s"] == "*"
 
 
 def test_fetch_curated_entries_includes_the_empty_tags_always_included_clause() -> None:

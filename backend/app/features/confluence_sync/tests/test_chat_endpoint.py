@@ -84,9 +84,9 @@ def _write_test_platforms() -> str:
                     "toast": _p("https://pos.toasttab.com", ["toast"]),
                 },
                 "integrations": {
-                    "mews": ["obi-mews-test"],
-                    "toast": ["obi-toast-test"],
-                    "opera-cloud": ["obi-operacloud-test"],
+                    "mews": [],
+                    "toast": [],
+                    "opera-cloud": [],
                 },
             }
         )
@@ -405,9 +405,7 @@ def test_r1_limits_unsupported_image_media_type_is_rejected_400(
     assert resp.status_code == 400
 
 
-def test_r1_limits_each_allowed_image_media_type_is_accepted(
-    gateway, settings: Settings
-) -> None:
+def test_r1_limits_each_allowed_image_media_type_is_accepted(gateway, settings: Settings) -> None:
     """panel r1-limits · substep p3-s3_6-7
     C3 allowlist (substep 3.6.7): each of png/jpeg/webp/gif passes media-type validation and the
     turn is accepted (200)."""
@@ -437,9 +435,7 @@ def test_r1_limits_each_allowed_image_media_type_is_accepted(
         assert resp.status_code == 200, media_type
 
 
-def test_r1_limits_tenth_image_accepted_eleventh_rejected(
-    gateway, settings: Settings
-) -> None:
+def test_r1_limits_tenth_image_accepted_eleventh_rejected(gateway, settings: Settings) -> None:
     """panel r1-limits · substep p3-s3_6-7
     The per-turn image cap is 10 (raised 3->10, decision w-composer-images): ten images on a turn
     are accepted, an eleventh is rejected with a 400."""
@@ -517,7 +513,7 @@ def test_tokenless_request_forwards_general_only_and_ignores_body_scope(
     )
 
     assert resp.status_code == 200
-    assert spy.calls[0].allowed_scopes == ("obi-general-test",)
+    assert spy.calls[0].allowed_scopes == ()  # ADR-0021
     assert spy.calls[0].token_subject is None
 
 
@@ -536,7 +532,10 @@ def test_malformed_knowledge_scope_is_rejected(gateway, settings: Settings) -> N
         },
         headers=_auth(),
     )
-    assert resp.status_code == 422
+    # ADR-0021: the knowledge-scope axis is retired; the body `knowledge_scope` is a deprecated,
+    # accepted-and-ignored field (kept only so an older client does not hit extra=forbid). Any
+    # value — even malformed — is ignored and never reaches retrieval, so the request succeeds.
+    assert resp.status_code == 200
 
 
 # PLAN 11.1c (ADR-0014): the pre-existing "principal" and "knowledge_scope" cases are gone — body
@@ -820,7 +819,8 @@ def test_r5_stream_trace_row_records_raw_query_candidates_scores_scopes_latency_
         build_embedding_provider(chat_settings),
         _build_policy(gateway),
         build_reranker(chat_settings),
-        enable_knowledge_scope_filtering=True,
+        # ADR-0021: the knowledge-scope filter is retired; leave it off (default) so the empty
+        # allowed_scopes does not exclude everything. Verifies query_trace fields, not scope.
         trace_sessionmaker=get_sessionmaker(),
     )
     service = AnswerService(
@@ -854,7 +854,7 @@ def test_r5_stream_trace_row_records_raw_query_candidates_scores_scopes_latency_
     assert row.retrieved_chunk_ids
     assert row.rerank_scores  # scores
     assert row.allowed_sources == ["confluence:default"]
-    assert row.allowed_knowledge_scopes == ["obi-general-test"]
+    assert row.allowed_knowledge_scopes is None  # ADR-0021: no scope filtering applied
     assert isinstance(row.latency_ms, int) and row.latency_ms >= 0
     assert row.answer == done["answer"]
     assert row.citations["markers"]
@@ -880,7 +880,8 @@ def test_s_audit_query_trace_persists_every_named_field_plus_subject_and_feedbac
         build_embedding_provider(chat_settings),
         _build_policy(gateway),
         build_reranker(chat_settings),
-        enable_knowledge_scope_filtering=True,
+        # ADR-0021: the knowledge-scope filter is retired; leave it off (default) so the empty
+        # allowed_scopes does not exclude everything. Verifies query_trace fields, not scope.
         trace_sessionmaker=get_sessionmaker(),
     )
     service = AnswerService(
@@ -922,7 +923,7 @@ def test_s_audit_query_trace_persists_every_named_field_plus_subject_and_feedbac
     assert row.retrieved_chunk_ids
     assert row.rerank_scores  # scores
     assert row.allowed_sources == ["confluence:default"]
-    assert row.allowed_knowledge_scopes == ["obi-general-test"]
+    assert row.allowed_knowledge_scopes is None  # ADR-0021: no scope filtering applied
     assert row.answer == done["answer"]
     assert row.citations["markers"]
     assert row.feedback == 1
@@ -1395,21 +1396,22 @@ def _active_child_chunk_ids(page_id: int) -> set[int]:
         }
 
 
-def test_auth6_chat_isolates_a_toast_page_from_a_mews_token_end_to_end(
+def test_auth6_chat_membership_and_body_scope_ignore_end_to_end(
     gateway, settings: Settings
 ) -> None:
-    """gap AUTH-6 · ADR-0014 customer-isolation backstop (panels s-source / r3-deny).
+    """gap AUTH-6 · ADR-0021 (panels s-source / r3-deny).
 
-    End-to-end proof through the real `POST /chat` surface (token -> AuthContext -> AnswerService
-    -> reader-role retrieval -> query_trace + citations), not just the retriever unit: a Mews-token
-    request must never surface a Toast-tagged page's id or chunk id in its trace or citations, while
-    the Mews-authorized page IS returned and cited. The Toast control below proves the Toast page is
-    genuinely retrievable for that query — so the Mews-side absence is real isolation, not an empty
-    corpus or an unfindable page (this test cannot pass by returning nothing)."""
-    index_page(gateway, settings, 3002, 1)  # "Mews PMS Sync Setup"
-    index_page(gateway, settings, 3004, 1)  # "Toast POS Menu Sync"
-    _set_chunk_tags(3002, ["obi-mews-test"])
-    _set_chunk_tags(3004, ["obi-toast-test"])
+    This E2E test previously proved the ADR-0014 KNOWLEDGE-SCOPE isolation backstop (a Mews token
+    never saw a Toast-tagged page). ADR-0021 RETIRES that axis: a legacy integration token carries
+    no knowledge scope, so content isolation no longer lives here — it rides the directed-connection
+    ROUTING-LABEL hard filter, proven at the retrieval/DB layer (test_retrieval_knowledge_scope::
+    test_label_hard_filter_excludes_a_page_outside_the_connection_boxes and
+    test_mi_labels_rls / test_label_hardfilter_db). What this test now pins through the real
+    `POST /chat` surface are the RETAINED guarantees: an authorized token gets a grounded, cited
+    answer over the indexed page (membership + reader-role retrieval + query_trace intact), and a
+    body `knowledge_scope` is always IGNORED — never a 400, never a scope selection (never-bend
+    rule 2 / ADR-0021). Source/company isolation (chunk_source_read) is unchanged."""
+    index_page(gateway, settings, 3002, 1)  # "Mews PMS Sync Setup", routing label mews-general
 
     chat_settings = _chat_settings(settings)
     app = create_app(settings=chat_settings, start_scheduler=False)
@@ -1423,49 +1425,27 @@ def test_auth6_chat_isolates_a_toast_page_from_a_mews_token_end_to_end(
                 company_name="Hotel",
                 integration="mews",
             ),
-            "toast-jwt": VerifiedClaims(
-                issuer="https://pos.toasttab.com",
-                subject="u-toast",
-                company_id="c2",
-                company_name="Diner",
-                integration="toast",
-            ),
         }
     )
     client = TestClient(app)
     question = "How does the sync work and what happens when it fails?"
-    toast_chunk_ids = _active_child_chunk_ids(3004)
-    assert toast_chunk_ids  # the toast page really produced searchable child chunks
 
-    # Control: a Toast-authorized caller DOES retrieve and cite the Toast page for this query.
-    toast_done = _parse_sse(
-        client.post(
-            "/chat",
-            json={"history": [{"role": "user", "content": question}]},
-            headers={**_auth(), "x-obi-token": "toast-jwt"},
-        ).text
-    )[-1]
-    toast_pages, _ = _trace_page_and_chunk_ids(int(toast_done["traceId"]))
-    assert 3004 in toast_pages
-    assert any(str(c["pageId"]) == "3004" for c in toast_done["citations"])
-
-    # The Mews caller: the Toast page id/chunk ids never appear in the trace or citations, while the
-    # Mews-authorized page IS present and cited (allowed content returned -> not passing by empty).
+    # A body knowledge_scope — even the reserved `classified` literal — is ignored, never a 400.
     resp = client.post(
         "/chat",
-        json={"history": [{"role": "user", "content": question}]},
+        json={
+            "history": [{"role": "user", "content": question}],
+            "knowledge_scope": "classified",
+        },
         headers={**_auth(), "x-obi-token": "mews-jwt"},
     )
-    assert resp.status_code == 200
+    assert resp.status_code == 200  # body scope ignored, never a 400 (ADR-0021)
     done = _parse_sse(resp.text)[-1]
-    page_ids, chunk_ids = _trace_page_and_chunk_ids(int(done["traceId"]))
+    page_ids, _ = _trace_page_and_chunk_ids(int(done["traceId"]))
 
-    assert 3004 not in page_ids  # toast page id never retrieved for a mews token
-    assert not (set(chunk_ids) & toast_chunk_ids)  # nor any toast chunk id
-    assert 3002 in page_ids  # the mews page IS retrieved
+    assert 3002 in page_ids  # the indexed page IS retrieved (membership + retrieval intact)
     assert done["refused"] is False
     assert done["citations"]  # grounded, non-empty
-    assert all(str(c["pageId"]) != "3004" for c in done["citations"])
     assert any(str(c["pageId"]) == "3002" for c in done["citations"])
 
 
@@ -1508,7 +1488,7 @@ def test_cip1_forwarded_body_principal_is_inert_scope_and_principal_unchanged(
     served = spy.calls[0]
     assert served.principal is None  # body principal never became the read-path principal
     # scope is exactly the verified mews token's scopes (general + mews), unmoved by the body value
-    assert served.allowed_scopes == ("obi-general-test", "obi-mews-test")
+    assert served.allowed_scopes == ()  # ADR-0021
 
 
 # --- substep 4.2 (coverage audit) gap closures: G5/G6/G7, G15, G16, G18 ----------------------
@@ -1532,8 +1512,10 @@ def test_rt1_empty_string_knowledge_scope_is_422_before_the_service(
         headers=_auth(),
     )
 
-    assert resp.status_code == 422
-    assert spy.calls == []  # rejected at the shape validator, before any service call
+    # ADR-0021: the knowledge-scope axis is retired; an empty body `knowledge_scope` is accepted
+    # and ignored (not a 422), and the request proceeds to the service.
+    assert resp.status_code == 200
+    assert len(spy.calls) == 1
 
 
 def test_rt1_wildcard_knowledge_scope_sentinel_is_422(gateway, settings: Settings) -> None:
@@ -1553,8 +1535,11 @@ def test_rt1_wildcard_knowledge_scope_sentinel_is_422(gateway, settings: Setting
         headers=_auth(),
     )
 
-    assert resp.status_code == 422
-    assert spy.calls == []  # the sentinel never travels past body validation
+    # ADR-0021: the knowledge-scope axis is retired; the body value (even the old "*" sentinel) is
+    # accepted and ignored and never reaches retrieval — the scope GUC is opted out server-side
+    # regardless of the body, so there is nothing to smuggle. The request proceeds.
+    assert resp.status_code == 200
+    assert len(spy.calls) == 1
 
 
 def test_rt1_unknown_extra_body_field_is_422(gateway, settings: Settings) -> None:
@@ -1653,8 +1638,8 @@ def _hub_platforms_file(tmp_path) -> str:
                     }
                 },
                 "integrations": {
-                    "mews": ["obi-mews-test"],
-                    "toast": ["obi-toast-test"],
+                    "mews": [],
+                    "toast": [],
                 },
             }
         )
@@ -1662,20 +1647,17 @@ def _hub_platforms_file(tmp_path) -> str:
     return str(p)
 
 
-def test_sec_answer_cache_never_crosses_the_knowledge_scope_boundary_end_to_end(
+def test_sec_answer_cache_never_crosses_the_subject_boundary_end_to_end(
     gateway, settings: Settings, tmp_path
 ) -> None:
-    """panel r3-deny · substep 4.2 (coverage gap G16)
-    Cross-KNOWLEDGE-SCOPE answer-cache isolation through the real HTTP path (the audit found only
-    the cross-subject axis proven end-to-end): `CachingAnswerService` wraps the real grounded
-    service over a scope-tagged corpus (the AUTH-6 corpus); a mews-token answer is cached — the
-    same-token replay IS a hit — and a toast token with the IDENTICAL history (same issuer, same
-    subject, so the cache key differs ONLY in `allowed_scopes`) is never served the mews entry
-    and never sees mews content."""
+    """panel r3-deny · ADR-0021 (coverage gap G16, re-aimed)
+    This E2E test previously proved cross-KNOWLEDGE-SCOPE answer-cache isolation; ADR-0021 retires
+    that axis (two legacy tokens no longer differ by scope). The RETAINED, load-bearing cache
+    boundary is the verified SUBJECT: `CachingAnswerService` keys on the issuer-namespaced token
+    subject, so two DIFFERENT subjects with IDENTICAL history never share a cached answer — one
+    subject's answer is never served to another. A same-subject replay IS a hit (the cache is
+    engaged), so the cross-subject miss is a real boundary, not a disabled cache."""
     index_page(gateway, settings, 3002, 1)  # "Mews PMS Sync Setup"
-    index_page(gateway, settings, 3004, 1)  # "Toast POS Menu Sync"
-    _set_chunk_tags(3002, ["obi-mews-test"])
-    _set_chunk_tags(3004, ["obi-toast-test"])
 
     chat_settings = _chat_settings(settings, platforms_path=_hub_platforms_file(tmp_path))
     cached_service = CachingAnswerService(
@@ -1686,8 +1668,8 @@ def test_sec_answer_cache_never_crosses_the_knowledge_scope_boundary_end_to_end(
     hub = "https://hub.example.com"
     app.state.token_verifier = _StubTokenVerifier(
         {
-            "mews-note": VerifiedClaims(hub, "u-shared", "c1", "Hotel", "mews"),
-            "toast-note": VerifiedClaims(hub, "u-shared", "c1", "Hotel", "toast"),
+            "subject-a": VerifiedClaims(hub, "u-a", "c1", "Hotel", "mews"),
+            "subject-b": VerifiedClaims(hub, "u-b", "c1", "Hotel", "mews"),
         }
     )
     client = TestClient(app)
@@ -1697,23 +1679,21 @@ def test_sec_answer_cache_never_crosses_the_knowledge_scope_boundary_end_to_end(
         ]
     }
 
-    mews_done = _parse_sse(
-        client.post("/chat", json=body, headers={**_auth(), "x-obi-token": "mews-note"}).text
+    a_done = _parse_sse(
+        client.post("/chat", json=body, headers={**_auth(), "x-obi-token": "subject-a"}).text
     )[-1]
-    assert any(str(c["pageId"]) == "3002" for c in mews_done["citations"])  # mews content, cached
 
-    # Control: the cache IS engaged — an identical mews replay returns the cached trace id.
-    mews_replay = _parse_sse(
-        client.post("/chat", json=body, headers={**_auth(), "x-obi-token": "mews-note"}).text
+    # Control: the cache IS engaged — an identical same-subject replay returns the cached trace id.
+    a_replay = _parse_sse(
+        client.post("/chat", json=body, headers={**_auth(), "x-obi-token": "subject-a"}).text
     )[-1]
-    assert mews_replay["traceId"] == mews_done["traceId"]
+    assert a_replay["traceId"] == a_done["traceId"]
 
-    toast_done = _parse_sse(
-        client.post("/chat", json=body, headers={**_auth(), "x-obi-token": "toast-note"}).text
+    # A different subject with identical history is NEVER served subject-a's cached entry.
+    b_done = _parse_sse(
+        client.post("/chat", json=body, headers={**_auth(), "x-obi-token": "subject-b"}).text
     )[-1]
-    assert toast_done["traceId"] != mews_done["traceId"]  # never the mews cached entry
-    assert all(str(c["pageId"]) != "3002" for c in toast_done["citations"])  # no mews content
-    assert any(str(c["pageId"]) == "3004" for c in toast_done["citations"])  # a real toast answer
+    assert b_done["traceId"] != a_done["traceId"]  # cross-subject miss — the retained boundary
 
 
 def test_rt5_cache_hit_leaves_the_query_trace_row_count_unchanged(

@@ -175,10 +175,9 @@ def test_rt3_torerank_fetches_text_in_same_transaction_same_scope(
         PrincipalPermissionPolicy(),
         FakeReranker(),
         allowed_sources=("confluence:default", "confluence:secondary"),
-        enable_knowledge_scope_filtering=True,
     )
 
-    retriever.retrieve_with_context("q", None, k=5, knowledge_scopes=["obi-mews-test"])
+    retriever.retrieve_with_context("q", None, k=5)
 
     # one connection for the whole stage-3 hand-off: the text fetch never opens a second session
     assert session_factory_calls == 1
@@ -187,7 +186,10 @@ def test_rt3_torerank_fetches_text_in_same_transaction_same_scope(
     # the exact same scope the searches ran under is what the text fetch used
     assert scope_by_call["fetch_rerank_texts"] == scope_by_call["keyword_search"]
     assert scope_by_call["fetch_rerank_texts"] == scope_by_call["dense_search"]
+    # ADR-0021: the knowledge-scope axis is retired, so no scope list is threaded (the scope GUC is
+    # opted out to wildcard); the invariant that all three calls share ONE scope in ONE transaction
+    # still holds — now with None. Source scope is unchanged.
     assert scope_by_call["fetch_rerank_texts"] == (
         ("confluence:default", "confluence:secondary"),
-        ["obi-mews-test"],
+        None,
     )

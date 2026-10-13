@@ -35,7 +35,7 @@ _ZERO_ROWS = {
 }
 
 # Fixture pages with a single recognized knowledge-scope label (knowledge_scopes.json).
-_MEWS_PAGE = 3002  # obi-mews-test
+_MEWS_PAGE = 3002  # mews-general
 # Fixture page carrying no label at all (page-3007-unlabeled.json).
 _UNLABELED_PAGE = 3007
 
@@ -105,7 +105,7 @@ def test_in2_first_relevant_tag_full_build(gateway, settings, monkeypatch):
 
     # The editor applies the first recognized label: now it must build in full.
     counter = install_counting_embedder(monkeypatch, settings)
-    gateway.set_labels(_UNLABELED_PAGE, ["obi-mews-test"])
+    gateway.set_labels(_UNLABELED_PAGE, ["mews-general"])
     enqueue_sync(_UNLABELED_PAGE, cf_version=1, key="firsttag:3007")
     run_once(gateway, settings, owner="test")
 
@@ -122,7 +122,7 @@ def test_tags_recognized_label_present_keeps_page(gateway, settings):
     index_page(gateway, settings, _MEWS_PAGE, version=1)
     assert active_child_chunks(_MEWS_PAGE)
 
-    gateway.set_labels(_MEWS_PAGE, ["obi-mews-test", "onboarding", "housekeeping"])
+    gateway.set_labels(_MEWS_PAGE, ["mews-general", "onboarding", "housekeeping"])
     enqueue_sync(_MEWS_PAGE, cf_version=1, key="keep:3002")
     result = run_once(gateway, settings, owner="test")
 

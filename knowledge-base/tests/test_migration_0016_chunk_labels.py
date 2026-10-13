@@ -141,7 +141,7 @@ def _rls_enabled(engine: Engine, table: str) -> bool:
 
 def test_0016_adds_labels_column_index_and_policy(migration_engine: Engine) -> None:
     cfg = _alembic_config()
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "0016_chunk_labels")  # ADR-0021: pin below 0018
 
     assert _column_exists(migration_engine, "chunk", "labels"), "chunk.labels missing at head"
     assert _column_exists(migration_engine, "page_source", "labels"), "page_source.labels missing"
@@ -161,7 +161,7 @@ def test_0016_adds_labels_column_index_and_policy(migration_engine: Engine) -> N
 
 def test_0016_downgrade_drops_everything_then_upgrade_restores(migration_engine: Engine) -> None:
     cfg = _alembic_config()
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "0016_chunk_labels")  # ADR-0021: pin below 0018
     assert _column_exists(migration_engine, "chunk", "labels")
 
     command.downgrade(cfg, _BELOW_0016)
@@ -174,6 +174,6 @@ def test_0016_downgrade_drops_everything_then_upgrade_restores(migration_engine:
     assert _policy(migration_engine, "chunk", "chunk_source_read") is not None
     assert _rls_enabled(migration_engine, "chunk") is True
 
-    command.upgrade(cfg, "head")
+    command.upgrade(cfg, "0016_chunk_labels")  # ADR-0021: pin below 0018
     assert _column_exists(migration_engine, "chunk", "labels")
     assert _policy(migration_engine, "chunk", _LABELS_POLICY) is not None

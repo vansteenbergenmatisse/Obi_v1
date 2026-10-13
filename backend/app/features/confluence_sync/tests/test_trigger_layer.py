@@ -52,7 +52,7 @@ def _add_scope_root(root_type: str, root_id: str, tags: list[str]) -> None:
 
 
 def test_tagged_page_emits_upsert_with_authoritative_scope(gateway, settings):
-    gateway.set_labels(_PAGE, ["obi-toast-test"])
+    gateway.set_labels(_PAGE, ["toast-general"])
     sink = _CapturingSink()
     with session_scope() as s:
         handle_sync_page(
@@ -60,7 +60,7 @@ def test_tagged_page_emits_upsert_with_authoritative_scope(gateway, settings):
         )
     assert len(sink.commands) == 1
     cmd = sink.commands[0]
-    assert (cmd.action, cmd.scopes, cmd.reason) == ("upsert", ("obi-toast-test",), "tag_added")
+    assert (cmd.action, cmd.scopes, cmd.reason) == ("upsert", ("toast-general",), "tag_added")
 
 
 def test_untagged_page_emits_delete(gateway, settings):
@@ -75,8 +75,8 @@ def test_untagged_page_emits_delete(gateway, settings):
 def test_space_row_authorizes_tagged_page_original_bug(gateway, settings):
     """The 'Mews Page 2 never ingested' fix: a tagged page under no page-root is authorized by a
     space-level source_scope row (the operator's live fix) → upsert with its own label's scope."""
-    _add_scope_root("space", "100", ["obi-general-test", "obi-mews-test", "obi-toast-test"])
-    gateway.set_labels(_PAGE, ["obi-mews-test"])
+    _add_scope_root("space", "100", ["obi-general", "mews-general", "toast-general"])
+    gateway.set_labels(_PAGE, ["mews-general"])
     sink = _CapturingSink()
     with session_scope() as s:
         handle_sync_page(
@@ -89,13 +89,13 @@ def test_space_row_authorizes_tagged_page_original_bug(gateway, settings):
         )
     cmd = sink.commands[0]
     assert cmd.action == "upsert"
-    assert cmd.scopes == ("obi-mews-test",)  # intersection: only the page's own label, not all 3
+    assert cmd.scopes == ("mews-general",)  # intersection: only the page's own label, not all 3
 
 
 def test_tagged_page_outside_coverage_in_scoped_space_deletes(gateway, settings):
     # A page-root covering only the child 1002 scopes the space; the parent 1001 is uncovered.
-    _add_scope_root("page", str(_CHILD), ["obi-mews-test"])
-    gateway.set_labels(_PAGE, ["obi-mews-test"])
+    _add_scope_root("page", str(_CHILD), ["mews-general"])
+    gateway.set_labels(_PAGE, ["mews-general"])
     sink = _CapturingSink()
     with session_scope() as s:
         handle_sync_page(s, page_id=_PAGE, gateway=gateway, settings=settings, sink=sink)
@@ -118,14 +118,14 @@ def test_gone_page_emits_delete(gateway, settings):
 def test_apply_upsert_stamps_exactly_the_command_scopes(gateway, settings):
     gateway.set_labels(_PAGE, ["ignored-by-ingestion"])  # ingestion never re-derives membership
     gateway.set_version(_PAGE, 1)
-    cmd = SyncCommand(page_id=_PAGE, action="upsert", scopes=("obi-toast-test",), reason="edited")
+    cmd = SyncCommand(page_id=_PAGE, action="upsert", scopes=("toast-general",), reason="edited")
     with session_scope() as s:
         outcome = apply_sync_command(s, cmd, gateway, settings)
     assert outcome.action == "indexed"
     children = active_child_chunks(_PAGE)
-    assert children and all(set(c.tags) == {"obi-toast-test"} for c in children)
+    assert children and all(set(c.tags) == {"toast-general"} for c in children)
     with read() as s:
-        assert set(s.get(PageSource, _PAGE).tags) == {"obi-toast-test"}
+        assert set(s.get(PageSource, _PAGE).tags) == {"toast-general"}
 
 
 def test_apply_delete_hard_purges(gateway, settings):
@@ -157,8 +157,8 @@ def test_apply_delete_on_unindexed_is_skipped(gateway, settings):
 def test_contract_trigger_command_applied_by_ingestion(gateway, settings):
     """A command produced by the trigger's decision is accepted and applied by ingestion, and the
     scopes stamped equal the scopes the trigger decided."""
-    _add_scope_root("space", "100", ["obi-general-test", "obi-mews-test"])
-    gateway.set_labels(_PAGE, ["obi-mews-test"])
+    _add_scope_root("space", "100", ["obi-general", "mews-general"])
+    gateway.set_labels(_PAGE, ["mews-general"])
     gateway.set_version(_PAGE, 1)
     captured: list[SyncCommand] = []
 
@@ -173,6 +173,6 @@ def test_contract_trigger_command_applied_by_ingestion(gateway, settings):
 
     assert outcome.action == "indexed"
     assert captured[0].action == "upsert"
-    assert captured[0].scopes == ("obi-mews-test",)
+    assert captured[0].scopes == ("mews-general",)
     with read() as s:
         assert set(s.get(PageSource, _PAGE).tags) == set(captured[0].scopes)

@@ -22,12 +22,13 @@
 
 ## What it does
 
-After hybrid search, RRF fusion and the three locks (source-scope RLS, knowledge-scope RLS,
-page ACL) have produced a permitted, de-duplicated page ranking, the retriever slices the
-top `rerank_depth` pages (default 75) and asks `fetch_rerank_texts` for one representative
-child chunk per page — the earliest active child under the exact same pre-model filters as
-search (active / child / current, source list, knowledge-scope overlap, and since 8.3.1 the
-applicability predicate), so a page the filters would exclude can never be reranked back in.
+After hybrid search, RRF fusion and the locks (source-scope RLS and page ACL, plus the
+routing-label RLS/filter that replaced the retired knowledge-scope lock — ADR-0021) have produced a
+permitted, de-duplicated page ranking, the retriever slices the top `rerank_depth` pages (default
+75) and asks `fetch_rerank_texts` for one representative child chunk per page — the earliest active
+child under the exact same pre-model filters as search (active / child / current, source list,
+routing-label overlap, and since 8.3.1 the applicability predicate), so a page the filters would
+exclude can never be reranked back in.
 Each page's document string is `left(title || ' ' || retrieval_content, 4000)` — title plus
 the matched child's content, truncated to 4000 characters in SQL.
 
@@ -97,8 +98,9 @@ deterministic even with a live key in `.env`; in a non-offline env a missing key
 
 Children retrieve, parents ground: the cross-encoder scores the exact child chunk that
 matched (rule 6 — the matched chunk is what the reranker scores and what expands to a
-parent), never a stand-in. Rerank runs *after* the three locks, in the application layer, on
-the fused candidate set — a document the scope or ACL excludes is never scored (ADR-0005),
+parent), never a stand-in. Rerank runs *after* the locks, in the application layer, on
+the fused candidate set — a document the routing-label filter or ACL excludes is never scored
+(ADR-0005),
 and `fetch_rerank_texts` carries the same filters in the same transaction so the reranked set
 is a strict subset of what access and eligibility already permit. ADR-0005 also fixes the
 tool class: a cross-encoder reranker only — never a general chat model asked to reorder —

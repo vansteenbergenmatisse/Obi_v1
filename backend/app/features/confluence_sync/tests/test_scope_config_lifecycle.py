@@ -14,7 +14,6 @@ index for one reason — published and carrying a tag from the tag map.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -52,7 +51,7 @@ _ZERO_ROWS = {
 }
 
 _SPACE = 300
-# Fixture page with the single recognized label "obi-mews-test" (page-3002-obi-mews-test.json).
+# Fixture page with the single recognized label "mews-general" (page-3002-mews-general.json).
 _MEWS_PAGE = 3002
 # Fixture page carrying no label at all (page-3007-unlabeled.json).
 _UNLABELED_PAGE = 3007
@@ -68,30 +67,18 @@ def _isolate_space_to(gateway, page_id: int) -> None:
 
 
 def _set_recognized(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, names: list[str]) -> None:
-    """Simulate the operator editing knowledge-base/config/knowledge_scopes.json.
+    """Simulate the operator changing the recognized membership set.
 
-    Writes a tmp scopes file holding ``names`` (plus the mandatory reserved ``classified``
-    entry) and repoints the loader name that ``Settings.knowledge_scope_set`` resolves on every
-    access, so the shrunk/grown set flows through the real validated loader — the exact path a
-    redeploy with the edited file takes.
+    ADR-0021: membership is the ROUTING-label set the worker and both sweeps read from
+    ``settings.product_catalog.all_routing_labels()`` (the old knowledge_scopes.json axis is
+    retired). A redeploy that adds/removes a product changes that set; here we patch
+    ``ProductCatalog.all_routing_labels`` to return exactly ``names`` so the shrunk/grown set flows
+    through the real membership path (``resolve_scopes`` / discovery) unchanged.
     """
-    payload = {
-        "scopes": [
-            {"name": name, "label": name, "description": "test scope"}
-            for name in [*names, "classified"]
-        ]
-    }
-    path = tmp_path / "knowledge_scopes.json"
-    path.write_text(json.dumps(payload))
+    from app.platform.config.product_catalog import ProductCatalog
 
-    import app.platform.config.settings as settings_mod
-    from app.platform.config.knowledge_scopes import load_recognized_knowledge_scopes
-
-    monkeypatch.setattr(
-        settings_mod,
-        "load_recognized_knowledge_scopes",
-        lambda path=path: load_recognized_knowledge_scopes(path),
-    )
+    recognized = frozenset(names)
+    monkeypatch.setattr(ProductCatalog, "all_routing_labels", lambda self: recognized, raising=True)
 
 
 def _outcome_for(results: list[RunResult], page_id: int) -> SyncOutcome:
@@ -112,13 +99,13 @@ def test_tags_scope_removed_from_config_purges_on_complete_sweep(
     shrunk recognized set."""
     _isolate_space_to(gateway, _MEWS_PAGE)
     index_page(gateway, settings, _MEWS_PAGE, version=1)
-    assert active_child_chunks(_MEWS_PAGE)  # indexed under obi-mews-test first
+    assert active_child_chunks(_MEWS_PAGE)  # indexed under mews-general first
 
-    # The operator removes obi-mews-test from knowledge_scopes.json.
-    _set_recognized(
-        monkeypatch, tmp_path, ["obi-general-test", "obi-operacloud-test", "obi-toast-test"]
-    )
-    assert "obi-mews-test" not in settings.knowledge_scope_set  # the edit took effect
+    # The operator removes mews-general from knowledge_scopes.json.
+    _set_recognized(monkeypatch, tmp_path, ["obi-general", "opera-cloud-general", "toast-general"])
+    assert (
+        "mews-general" not in settings.product_catalog.all_routing_labels()
+    )  # the edit took effect
 
     with session_scope() as s:
         run = run_reconciliation(
@@ -148,10 +135,8 @@ def test_tags_scope_removed_lightweight_sweep_does_not_catch_it(
     assert rows_before["page_source"] == 1
     assert rows_before["chunk"] > 0
 
-    _set_recognized(
-        monkeypatch, tmp_path, ["obi-general-test", "obi-operacloud-test", "obi-toast-test"]
-    )
-    assert "obi-mews-test" not in settings.knowledge_scope_set
+    _set_recognized(monkeypatch, tmp_path, ["obi-general", "opera-cloud-general", "toast-general"])
+    assert "mews-general" not in settings.product_catalog.all_routing_labels()
 
     with session_scope() as s:
         run = run_reconciliation(
@@ -175,21 +160,21 @@ def test_tags_scope_added_already_indexed_page_restamped_by_complete_sweep(
     fires on a config-only edit — that window remains and is pinned by the scope-removed test
     above). A second complete sweep after the restamp is ``no_change`` (no churn)."""
     _isolate_space_to(gateway, _MEWS_PAGE)
-    # Phase 1: only obi-mews-test is recognized; the page carries mews + toast labels.
-    _set_recognized(monkeypatch, tmp_path, ["obi-general-test", "obi-mews-test"])
-    gateway.set_labels(_MEWS_PAGE, ["obi-mews-test", "obi-toast-test"])
+    # Phase 1: only mews-general is recognized; the page carries mews + toast labels.
+    _set_recognized(monkeypatch, tmp_path, ["obi-general", "mews-general"])
+    gateway.set_labels(_MEWS_PAGE, ["mews-general", "toast-general"])
     index_page(gateway, settings, _MEWS_PAGE, version=1)
 
     with read() as s:
         ps = s.get(PageSource, _MEWS_PAGE)
         assert ps is not None
-        assert ps.tags == ["obi-mews-test"]  # toast not recognized yet -> not stamped
+        assert ps.tags == ["mews-general"]  # toast not recognized yet -> not stamped
         doc_version_before = ps.active_doc_version_id
     assert doc_version_before is not None
 
-    # Phase 2: the operator adds obi-toast-test to the tag map.
-    _set_recognized(monkeypatch, tmp_path, ["obi-general-test", "obi-mews-test", "obi-toast-test"])
-    assert "obi-toast-test" in settings.knowledge_scope_set
+    # Phase 2: the operator adds toast-general to the tag map.
+    _set_recognized(monkeypatch, tmp_path, ["obi-general", "mews-general", "toast-general"])
+    assert "toast-general" in settings.product_catalog.all_routing_labels()
     counter = install_counting_embedder(monkeypatch, settings)
 
     # Lightweight sweep: no drift signal -> page untouched (this window stays).
@@ -202,7 +187,7 @@ def test_tags_scope_added_already_indexed_page_restamped_by_complete_sweep(
     with read() as s:
         ps = s.get(PageSource, _MEWS_PAGE)
         assert ps is not None
-        assert ps.tags == ["obi-mews-test"]
+        assert ps.tags == ["mews-general"]
 
     # Complete sweep: labels_hash is unchanged but cmd.scopes now includes toast -> restamp.
     with session_scope() as s:
@@ -216,11 +201,11 @@ def test_tags_scope_added_already_indexed_page_restamped_by_complete_sweep(
     with read() as s:
         ps = s.get(PageSource, _MEWS_PAGE)
         assert ps is not None
-        assert ps.tags == ["obi-mews-test", "obi-toast-test"]  # restamped to both scopes
+        assert ps.tags == ["mews-general", "toast-general"]  # restamped to both scopes
         assert ps.active_doc_version_id == doc_version_before  # same version, no rebuild
     chunks = active_child_chunks(_MEWS_PAGE)
     assert chunks
-    assert all(c.tags == ["obi-mews-test", "obi-toast-test"] for c in chunks)
+    assert all(c.tags == ["mews-general", "toast-general"] for c in chunks)
     assert counter.calls == 0  # a restamp is metadata-only: no re-embed by either sweep
 
     # Idempotence: a second complete sweep finds tags already matching -> no_change, no churn.
@@ -248,7 +233,7 @@ def test_tags_classified_removed_reindexes_as_first_build(gateway, settings, mon
     assert page_row_counts(_MEWS_PAGE)["chunk"] > 0
 
     # classified added -> sync rule 7: the reserved label always removes, rows go to zero.
-    gateway.set_labels(_MEWS_PAGE, ["obi-mews-test", "classified"])
+    gateway.set_labels(_MEWS_PAGE, ["mews-general", "classified"])
     enqueue_sync(_MEWS_PAGE, cf_version=1, key="classified-add:3002")
     result = run_once(gateway, settings, owner="test")
     assert result is not None and isinstance(result.outcome, SyncOutcome)
@@ -257,7 +242,7 @@ def test_tags_classified_removed_reindexes_as_first_build(gateway, settings, mon
 
     # classified removed (recognized label still present) -> full first build, NEW version id.
     counter = install_counting_embedder(monkeypatch, settings)
-    gateway.set_labels(_MEWS_PAGE, ["obi-mews-test"])
+    gateway.set_labels(_MEWS_PAGE, ["mews-general"])
     enqueue_sync(_MEWS_PAGE, cf_version=1, key="classified-removed:3002")
     result = run_once(gateway, settings, owner="test")
     assert result is not None and isinstance(result.outcome, SyncOutcome)
@@ -274,10 +259,10 @@ def test_tags_classified_removed_reindexes_as_first_build(gateway, settings, mon
 
 def test_tags_mixed_case_label_normalized_end_to_end(gateway, settings):
     """panel ks-index / tg-add · rule 5
-    A label arriving from the gateway with stray case and whitespace ("  OBI-General-TEST ")
+    A label arriving from the gateway with stray case and whitespace ("  OBI-General ")
     is normalized by the real worker path — the page indexes, and both page_source.tags and
-    every chunk's tags are stamped with the canonical lowercase 'obi-general-test'."""
-    gateway.set_labels(_UNLABELED_PAGE, ["  OBI-General-TEST "])
+    every chunk's tags are stamped with the canonical lowercase 'obi-general'."""
+    gateway.set_labels(_UNLABELED_PAGE, ["  OBI-General "])
     gateway.set_version(_UNLABELED_PAGE, 1)
     enqueue_sync(_UNLABELED_PAGE, cf_version=1, key="mixedcase:3007")
     result = run_once(gateway, settings, owner="test")
@@ -287,7 +272,7 @@ def test_tags_mixed_case_label_normalized_end_to_end(gateway, settings):
     with read() as s:
         ps = s.get(PageSource, _UNLABELED_PAGE)
         assert ps is not None
-        assert ps.tags == ["obi-general-test"]  # stamped canonical, not the raw gateway string
+        assert ps.tags == ["obi-general"]  # stamped canonical, not the raw gateway string
     chunks = active_child_chunks(_UNLABELED_PAGE)
     assert chunks
-    assert all(chunk.tags == ["obi-general-test"] for chunk in chunks)
+    assert all(chunk.tags == ["obi-general"] for chunk in chunks)

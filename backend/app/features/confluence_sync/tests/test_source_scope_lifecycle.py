@@ -42,8 +42,8 @@ pytestmark = pytest.mark.db  # substep 0.5.1: real local Postgres via this dir's
 
 _PAGE = 1001  # space 100, parentless root page of the generic fixture space
 _SPACE = 100
-_TAG_A = "obi-mews-test"
-_TAG_B = "obi-toast-test"
+_TAG_A = "mews-general"
+_TAG_B = "toast-general"
 
 
 def _add_root(root_type: str, root_id: str, *, tags: list[str]) -> int:

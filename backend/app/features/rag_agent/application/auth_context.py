@@ -68,7 +68,6 @@ if TYPE_CHECKING:
     # build_auth_context only ever touches attributes on the passed object at runtime.
     from app.features.rag_agent.server.token_verifier import VerifiedClaims
 
-_GENERAL = "obi-general-test"
 # v1: every platform reads the same source; AuthContext carries it for the future source axis, but
 # the retriever keeps setting the source GUC from its construction-time default (see the plan).
 _DEFAULT_SOURCES = ("confluence:default",)
@@ -150,7 +149,7 @@ def general_only_context() -> AuthContext:
         company_id=None,
         company_name=None,
         integration=None,
-        allowed_scopes=(_GENERAL,),
+        allowed_scopes=(),
         allowed_sources=_DEFAULT_SOURCES,
         principal=None,
         token_subject=None,
@@ -221,7 +220,7 @@ def _build_directed_context(
         company_id=claims.business_id,
         company_name=None,
         integration=None,
-        allowed_scopes=(_GENERAL,),
+        allowed_scopes=(),
         allowed_sources=_DEFAULT_SOURCES,
         principal=None,  # v1: embedded users have no per-person Confluence ACL
         token_subject=_identity_key(claims),
@@ -265,7 +264,7 @@ def build_auth_context(
             company_id=claims.company_id,
             company_name=claims.company_name,
             integration=None,
-            allowed_scopes=(_GENERAL,),
+            allowed_scopes=(),
             allowed_sources=_DEFAULT_SOURCES,
             principal=None,
             token_subject=_identity_key(claims),
@@ -328,23 +327,14 @@ def build_auth_context(
                 f"{role} slot '{canonical}' is outside the launch allowlist"
             )
 
-    # One authorization context (never-bend rule 3): general + the filled slots' scopes, in
-    # fixed slot order, deduplicated. A filled slot with no scope mapping yet (no Confluence
-    # tag exists for accounting products — O9 open) contributes no scopes and never errors.
-    ordered_scopes: list[str] = [_GENERAL]
-    for role in _SLOT_ROLES:
-        canonical = filled.get(role)
-        if canonical is None:
-            continue
-        for scope in registry.scopes_for(canonical) or []:
-            if scope not in ordered_scopes:
-                ordered_scopes.append(scope)
-
+    # ADR-0021: the knowledge-scope axis is retired. The slot checks above still gate WHICH
+    # integration a token may assert (shape/membership/role/vend/allowlist — access, not content),
+    # but no knowledge scope is derived; content is routed by the ADR-0020 label axis. No base tag.
     return AuthContext(
         company_id=claims.company_id,
         company_name=claims.company_name,
         integration=None if structured else claims.integration,
-        allowed_scopes=tuple(ordered_scopes),
+        allowed_scopes=(),
         allowed_sources=_DEFAULT_SOURCES,
         principal=None,  # v1: embedded users have no per-person Confluence ACL
         token_subject=_identity_key(claims),

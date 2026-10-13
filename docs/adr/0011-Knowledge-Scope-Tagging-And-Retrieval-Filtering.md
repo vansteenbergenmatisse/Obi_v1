@@ -1,7 +1,15 @@
 # 0011 — Confluence-Label-Driven Knowledge-Scope Tagging and Retrieval Filtering
 
-Status: Accepted
+Status: Superseded by ADR-0021 (2026-10-12)
 Date: 2026-08-21
+
+> **SUPERSEDED (2026-10-12) by ADR-0021.** The knowledge-scope `-test` axis this ADR established —
+> the `obi-general-test` / `obi-mews-test` / `obi-operacloud-test` / `obi-toast-test` tags, the
+> `chunk.tags` retrieval filter, the `app.allowed_knowledge_scopes` GUC and the `chunk_scope_read`
+> RESTRICTIVE policy — is **retired in full**. Index membership and content routing now ride the
+> ADR-0020 routing-label axis alone (`chunk.labels` / `app.allowed_labels`); `classified` is kept
+> as the delete signal; source/company isolation is unchanged. The text below is kept for
+> provenance only. The curated-knowledge table and prompt layer (Decision 7) survive, now unscoped.
 Governs: apps/automation (confluence_sync, ingestion, retrieval, rag_agent, platform/db, platform/config,
 alembic), apps/web (chat feature, contracts)
 

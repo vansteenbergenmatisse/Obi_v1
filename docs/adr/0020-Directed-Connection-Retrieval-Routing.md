@@ -54,6 +54,12 @@ parameters; it does not itself land code (implementation is staged and gated by 
      are retired for routing. Company/source isolation (ADR-0004 source RLS, ADR-0014 scope backstop,
      `source_scope`, locks 0–2) is unchanged. Consequence: the Confluence corpus is relabelled to
      `obi-general` / `{slug}-general` / `{slug}-to-{kind}` (owner/content task).
+     > **Updated 2026-10-12 by ADR-0021.** D0 originally kept the knowledge-scope tags as a
+     > membership tag (a page still needed `obi-general-test` to index). ADR-0021 retires that axis
+     > **outright**: index membership is now "published + ≥1 recognized routing label + not
+     > `classified`", with no base `-test` tag. The routing-label axis (`chunk.labels`,
+     > `app.allowed_labels`, `chunk_labels_read`) is the sole content axis; `chunk_source_read`
+     > (source/company isolation) is still unchanged.
    - **D1 — Filter enforced at the RLS/GUC layer, not only in SQL text.** A new `labels text[]`
      column on `chunk` (+ partial GIN `WHERE is_active`), a new `app.allowed_labels` GUC, and a
      RESTRICTIVE RLS policy mirroring `chunk_scope_read`, plus the app-layer `labels && :session_labels`

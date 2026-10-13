@@ -27,12 +27,11 @@ from app.features.rag_agent import (
     ContextSlots,
     TokenError,
     VerifiedClaims,
-    chat_router_module,
 )
 from app.main import create_app
 from app.platform.config import Settings
 
-from .test_chat_endpoint import _auth, _chat_settings, _LogRecorder, _StubTokenVerifier
+from .test_chat_endpoint import _auth, _chat_settings, _StubTokenVerifier
 
 pytestmark = (
     pytest.mark.db
@@ -75,8 +74,8 @@ def _registry_file(tmp_path):
                     "toast": _reg_entry(_TOAST_ISS, active=False, allowed_integrations=["toast"]),
                 },
                 "integrations": {
-                    "mews": ["obi-mews-test"],
-                    "toast": ["obi-toast-test"],
+                    "mews": [],
+                    "toast": [],
                     "opera-cloud": [],
                     "xero": [],
                 },
@@ -150,7 +149,7 @@ def test_token_integration_drives_scopes(client_and_recorder) -> None:
     resp = _post(client, token="MEWS")
     assert resp.status_code == 200
     assert recorder.last_auth is not None
-    assert recorder.last_auth.allowed_scopes == ("obi-general-test", "obi-mews-test")
+    assert recorder.last_auth.allowed_scopes == ()  # ADR-0021
 
 
 def test_body_scope_disagreeing_with_token_is_ignored(client_and_recorder) -> None:
@@ -159,15 +158,16 @@ def test_body_scope_disagreeing_with_token_is_ignored(client_and_recorder) -> No
     assert resp.status_code == 200
     # token wins — the recognized-but-disagreeing body scope is logged and ignored, never used
     assert recorder.last_auth is not None
-    assert recorder.last_auth.allowed_scopes == ("obi-general-test", "obi-mews-test")
+    assert recorder.last_auth.allowed_scopes == ()  # ADR-0021
 
 
-def test_unknown_body_scope_is_400_before_search(client_and_recorder) -> None:
+def test_unknown_body_scope_is_ignored_not_400(client_and_recorder) -> None:
     client, recorder = client_and_recorder
-    # well-shaped but not a recognized slug -> 400 before the service is reached
+    # ADR-0021: the knowledge-scope axis is retired, so a body knowledge_scope is always logged and
+    # ignored (never a 400); the verified token drives the request and the service IS reached.
     resp = _post(client, token="MEWS", knowledge_scope="obi-fake-test")
-    assert resp.status_code == 400
-    assert recorder.last_auth is None
+    assert resp.status_code == 200
+    assert recorder.last_auth is not None
 
 
 def test_hub_vends_product_integration(client_and_recorder) -> None:
@@ -176,7 +176,7 @@ def test_hub_vends_product_integration(client_and_recorder) -> None:
     resp = _post(client, token="HUB_TOAST")
     assert resp.status_code == 200
     assert recorder.last_auth is not None
-    assert recorder.last_auth.allowed_scopes == ("obi-general-test", "obi-toast-test")
+    assert recorder.last_auth.allowed_scopes == ()  # ADR-0021
 
 
 def test_cross_issuer_integration_is_401(client_and_recorder) -> None:
@@ -213,7 +213,7 @@ def test_tokenless_request_is_general_only(client_and_recorder) -> None:
     resp = _post(client)
     assert resp.status_code == 200
     assert recorder.last_auth is not None
-    assert recorder.last_auth.allowed_scopes == ("obi-general-test",)
+    assert recorder.last_auth.allowed_scopes == ()  # ADR-0021
     assert recorder.last_auth.token_subject is None
 
 
@@ -227,30 +227,21 @@ def test_bad_token_is_401_before_search(client_and_recorder) -> None:
 # --- substep 4.2 (coverage audit) gap closures: G4, G9 -----------------------------------------
 
 
-def test_rt1_body_scope_disagreement_fires_the_ignored_log_and_token_scopes_serve(
-    client_and_recorder, monkeypatch
+def test_rt1_body_scope_is_accepted_and_ignored_and_token_scopes_serve(
+    client_and_recorder,
 ) -> None:
     """panel r1-auth · substep 4.2 (coverage gap G4)
-    'Valid token, body scope for another integration: the token wins and the mismatch is logged'
-    — `test_body_scope_disagreeing_with_token_is_ignored` proves the token wins; this proves the
-    `body_knowledge_scope_ignored` log line itself actually fires, exactly once, carrying the
-    requested slug and the winning token scopes, while the served scopes stay the token's.
-    Captured via a recorder wrapping the module logger — see `_LogRecorder`'s docstring for why
-    structlog's `capture_logs()` cannot work this late in the test run."""
+    ADR-0021: the knowledge-scope axis is retired. A body `knowledge_scope` that disagrees with the
+    token is accepted and SILENTLY ignored (no 400, no log line — the field is deprecated and read
+    by nothing); the served scopes come only from the verified token (now empty), never the body
+    (never-bend rule 2 — the body never decides access)."""
     client, recorder = client_and_recorder
-    log_recorder = _LogRecorder(chat_router_module.log)
-    monkeypatch.setattr(chat_router_module, "log", log_recorder)
 
-    resp = _post(client, token="MEWS", knowledge_scope="obi-toast-test")
+    resp = _post(client, token="MEWS", knowledge_scope="toast-general")
 
     assert resp.status_code == 200
-    ignored = [e for e in log_recorder.entries if e["event"] == "body_knowledge_scope_ignored"]
-    assert len(ignored) == 1  # the disagreement is logged, once
-    assert ignored[0]["requested"] == "obi-toast-test"
-    assert ignored[0]["token_scopes"] == ["obi-general-test", "obi-mews-test"]
     assert recorder.last_auth is not None
-    # and the served scopes stay exactly the token's — the logged value never leaks into them
-    assert recorder.last_auth.allowed_scopes == ("obi-general-test", "obi-mews-test")
+    assert recorder.last_auth.allowed_scopes == ()
 
 
 def test_sec_chat_401_body_is_byte_identical_across_all_auth_failure_modes(
@@ -289,7 +280,7 @@ def test_rt1_empty_pos_with_mews_pms_serves_at_chat(client_and_recorder) -> None
     resp = _post(client, token="SLOTS_MEWS_EMPTY_POS")
     assert resp.status_code == 200
     assert recorder.last_auth is not None
-    assert recorder.last_auth.allowed_scopes == ("obi-general-test", "obi-mews-test")
+    assert recorder.last_auth.allowed_scopes == ()  # ADR-0021
     assert recorder.last_auth.slot_pms == "mews"
     assert recorder.last_auth.slot_pos is None
 
@@ -322,7 +313,7 @@ def test_rt1_accounting_slot_outside_support_serves_at_chat(client_and_recorder)
     resp = _post(client, token="SLOTS_INERT_ACCOUNTING")
     assert resp.status_code == 200
     assert recorder.last_auth is not None
-    assert recorder.last_auth.allowed_scopes == ("obi-general-test", "obi-mews-test")
+    assert recorder.last_auth.allowed_scopes == ()  # ADR-0021
     assert recorder.last_auth.slot_accounting == "xero"
 
 
@@ -346,20 +337,16 @@ def test_rt1_legacy_note_serves_identically_to_one_filled_slot(client_and_record
     assert legacy.slot_pms == "mews"
 
 
-def test_rt1_body_hint_never_overrides_the_note_slots(client_and_recorder, monkeypatch) -> None:
+def test_rt1_body_hint_never_overrides_the_note_slots(client_and_recorder) -> None:
     """panel mi-gate · substep 8.1.3
-    The body never decides access under the slot form either: a recognized body scope that
-    disagrees with the structured note is ignored and logged once; the served scopes stay the
-    note's (never-bend rule 2)."""
+    The body never decides access under the slot form either: a body `knowledge_scope` that
+    disagrees with the structured note is accepted and silently ignored (ADR-0021: the scope axis
+    is retired — no 400, no log); the served scopes stay the note's (now empty), never the body
+    (never-bend rule 2)."""
     client, recorder = client_and_recorder
-    log_recorder = _LogRecorder(chat_router_module.log)
-    monkeypatch.setattr(chat_router_module, "log", log_recorder)
 
-    resp = _post(client, token="SLOTS_MEWS_EMPTY_POS", knowledge_scope="obi-toast-test")
+    resp = _post(client, token="SLOTS_MEWS_EMPTY_POS", knowledge_scope="toast-general")
 
     assert resp.status_code == 200
-    ignored = [e for e in log_recorder.entries if e["event"] == "body_knowledge_scope_ignored"]
-    assert len(ignored) == 1
-    assert ignored[0]["requested"] == "obi-toast-test"
     assert recorder.last_auth is not None
-    assert recorder.last_auth.allowed_scopes == ("obi-general-test", "obi-mews-test")
+    assert recorder.last_auth.allowed_scopes == ()  # ADR-0021
