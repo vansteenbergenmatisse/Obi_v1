@@ -1,18 +1,30 @@
-"""MIG-02 / ADR-0014: ``setup_supabase.check_deploy_readiness`` must gate the reader path.
+"""ADR-0021 Path B: ``setup_supabase.check_deploy_readiness`` must gate the reader path.
 
-Migration 0010 installs the RESTRICTIVE customer-scope RLS policies (``chunk_scope_read`` on
-``chunk``, ``curated_knowledge_entry_scope_read`` on ``curated_knowledge_entry``) that are Obi's
-fail-closed tenant backstop. ``alembic upgrade head`` applies them, but nothing otherwise blocks a
-deploy where head < 0010 or a downgrade left them dropped — the customer axis then silently fails
-OPEN (GAP MIG-02). This check reads the catalog and refuses the deploy unless both policies are
-present (AS RESTRICTIVE, FOR SELECT) and RLS is ENABLEd on each table; these tests are the
-deterministic proof of that gate, mapping to the same live isolation panel as the source-axis
-verify-isolation checks.
+Under Path B (migration 0018 ``retire_knowledge_scope_rls``) the fail-closed tenant fence is NOT the
+retired knowledge-scope RESTRICTIVE policies — it is the PERMISSIVE source policy plus RLS ENABLEd:
 
-Both tests run inside a single connection's transaction and roll back, so no committed schema change
-touches the session-scoped harness (this dir's conftest applies ``chunk_scope_read`` at session
-scope, but not the curated analogue). ``check_deploy_readiness`` takes that open connection so the
-whole set-up + assertion + rollback stays in one transaction (the db-test rollback rule).
+* ``chunk.chunk_source_read`` — PERMISSIVE, FOR SELECT, keyed on ``app.allowed_sources`` (lock 1,
+  source/company isolation, never-bend rule 1). A single PERMISSIVE SELECT policy on an RLS-enabled
+  table is deny-by-default: the non-owner ``rag_reader`` sees only rows the policy admits, and an
+  unset GUC admits none.
+* ``curated_knowledge_entry.curated_knowledge_entry_reader_read`` — PERMISSIVE, FOR SELECT TO
+  ``rag_reader`` (created by ``schema.apply_reader_rls``; applied in production by
+  ``setup_supabase.py provision-reader``).
+
+``alembic upgrade head`` + ``provision-reader`` put this fence in place, but nothing otherwise
+blocks a deploy where the source policy is missing or RLS is disabled — the tenant axis then
+silently fails OPEN. This check reads the catalog and refuses the deploy unless both policies are
+present (PERMISSIVE, FOR SELECT) and RLS is ENABLEd on each table; these tests are the deterministic
+proof of that gate. The retired ``chunk_scope_read`` / ``curated_knowledge_entry_scope_read``
+policies are NOT asserted (0018 dropped them, ADR-0021); the ``chunk_labels_read`` routing axis is
+reported but, being fail-OPEN by design, never blocks the deploy.
+
+Each test runs inside a single connection's transaction and rolls back, so no committed schema
+change touches the session-scoped harness. The harness (``app.tests.db_harness``) applies
+``apply_chunk_rls`` (``chunk_source_read``) at session scope but deliberately not
+``apply_reader_rls`` — so each test that needs the curated reader policy applies it in-transaction
+and rolls it back. ``check_deploy_readiness`` takes that open connection so the whole set-up +
+assertion + rollback stays in one transaction (the db-test rollback rule).
 """
 
 from __future__ import annotations
@@ -21,124 +33,114 @@ import pytest
 from sqlalchemy import text
 
 import scripts.setup_supabase as setup_supabase
-from app.platform.config import Settings
 from schema import engine as engine_mod
 from schema import schema
-from schema.engine import session_scope
-
-from ._helpers import index_page
 
 pytestmark = (
     pytest.mark.db
 )  # substep 0.5.1: real local Postgres via this dir's session-scoped conftest
 
 
-def test_deploy_readiness_reports_ready_when_scope_rls_present(capsys) -> None:
-    """MIG-02 / ADR-0014 — with both 0010 scope policies in place the gate reports READY (rc 0).
+def test_deploy_readiness_reports_ready_under_path_b(capsys) -> None:
+    """ADR-0021 Path B — source fence + curated reader policy in place -> gate is READY (rc 0).
 
-    Protects the live-isolation panel's deploy gate: ``chunk_scope_read`` is applied session-wide by
-    the harness; the curated analogue is applied here in this transaction so the full post-0010
-    posture holds, then rolled back. The check must see both policies (RESTRICTIVE/SELECT, RLS on).
+    Protects the live-isolation panel's deploy gate on a correctly-migrated Path B store (0018
+    applied): ``chunk_source_read`` is applied session-wide by the harness; the curated reader
+    policy is applied here in-transaction (as ``provision-reader`` does in production), then rolled
+    back. The check must see both policies (PERMISSIVE/SELECT, RLS ENABLEd) and pass.
     """
     conn = engine_mod.get_engine().connect()
     try:
-        # chunk_scope_read is applied + committed by the conftest; add the curated analogue so the
-        # full migration-0010 posture holds in this transaction (apply_* also ENABLEs curated RLS).
-        schema.apply_curated_scope_rls(conn)
+        # apply_reader_rls ENABLEs RLS on curated_knowledge_entry and creates the PERMISSIVE
+        # curated_knowledge_entry_reader_read policy (TO rag_reader) — the Path B curated posture.
+        schema.apply_reader_rls(conn)
 
         rc = setup_supabase.check_deploy_readiness(conn=conn)
         out = capsys.readouterr().out
 
         assert rc == 0, out
-        assert "chunk.chunk_scope_read: present=True" in out
-        assert "curated_knowledge_entry.curated_knowledge_entry_scope_read: present=True" in out
-        assert "restrictive_select=True" in out and "rls_enabled=True" in out
+        assert (
+            "chunk.chunk_source_read: present=True permissive_select=True rls_enabled=True" in out
+        )
+        assert (
+            "curated_knowledge_entry.curated_knowledge_entry_reader_read: present=True "
+            "permissive_select=True rls_enabled=True" in out
+        )
         assert "reader path safe to expose" in out
     finally:
-        conn.rollback()  # discard the curated policy — harness left exactly as the conftest set it
+        conn.rollback()  # discard the reader policies — harness left exactly as the conftest set it
         conn.close()
 
 
-def test_deploy_readiness_fails_closed_when_scope_rls_absent(capsys) -> None:
-    """MIG-02 / ADR-0014 — a missing scope policy MUST block the deploy (non-zero + names the gap).
+def test_deploy_readiness_fails_when_source_policy_absent(capsys) -> None:
+    """ADR-0021 Path B — a missing ``chunk_source_read`` MUST block the deploy (non-zero + names).
 
-    Reproduces head < 0010 / a downgrade that dropped the backstop by dropping both scope policies
-    inside this transaction, then rolls back so ``chunk_scope_read`` (the conftest's committed
-    policy) is restored intact. Without this gate the customer/tenant axis fails OPEN.
+    Reproduces a store whose lock-1 source/company fence was never applied or was dropped: with the
+    curated reader policy present (so curated is NOT the gap), ``drop_chunk_rls`` removes
+    ``chunk_source_read`` and disables chunk RLS inside this transaction, then rolls back. The gate
+    must refuse — without the source policy the tenant axis fails OPEN (never-bend rule 1).
     """
     conn = engine_mod.get_engine().connect()
     try:
-        # Both uncommitted; rolled back below. drop_curated is idempotent (the harness never
-        # applied the curated scope policy, so this is a no-op there).
-        schema.drop_chunk_scope_rls(conn)
-        schema.drop_curated_scope_rls(conn)
+        schema.apply_reader_rls(conn)  # curated half passes; isolate the chunk-fence gap
+        schema.drop_chunk_rls(conn)  # drop chunk_source_read AND disable chunk RLS
 
         rc = setup_supabase.check_deploy_readiness(conn=conn)
         captured = capsys.readouterr()
 
         assert rc != 0, captured.out
-        # The failure names what is missing and refuses to expose the reader path.
-        assert "chunk_scope_read' on 'chunk' is ABSENT" in captured.err
-        assert (
-            "curated_knowledge_entry_scope_read' on 'curated_knowledge_entry' is ABSENT"
-            in captured.err
-        )
+        assert "chunk_source_read' on 'chunk' is ABSENT" in captured.err
+        assert "row security is NOT enabled on 'chunk'" in captured.err
         assert "Do NOT expose the reader path" in captured.err
     finally:
-        conn.rollback()  # restores chunk_scope_read (the DROP was never committed) — harness intact
+        conn.rollback()  # restores chunk_source_read (DROP never committed) — harness intact
         conn.close()
 
 
-def test_deploy_readiness_fails_loudly_on_untagged_active_chunks(
-    gateway, settings: Settings, capsys
-) -> None:
-    """X2 (4.2 audit, owner-accepted 2026-10-05) — an untagged ACTIVE chunk must BLOCK the deploy.
+def test_deploy_readiness_fails_when_chunk_rls_disabled(capsys) -> None:
+    """ADR-0021 Path B — chunk RLS DISABLED MUST block the deploy even when the policy still exists.
 
-    Post-0014 an active chunk with ``tags = {}`` is not a leak (fail-closed: visible to no scope)
-    but it IS content silently dark to every customer — post-membership-gate it indicates a
-    regression. The gate must fail non-zero and name the page instead of the old skip-as-pass.
-    Data is committed via the real sync path then mutated by SQL; the dir's autouse truncation
-    cleans it up.
+    A PERMISSIVE policy is inert if row security is off (every row is returned), so the gate asserts
+    ``relrowsecurity`` independently of policy presence. Here ``chunk_source_read`` stays present
+    but RLS is turned off on ``chunk``; the gate must still refuse. Rolled back.
     """
-    index_page(gateway, settings, 1001, 1)  # commits real chunk rows for page 1001
-    with session_scope() as s:
-        s.execute(text("UPDATE chunk SET tags = '{}' WHERE page_id = 1001"))
-
     conn = engine_mod.get_engine().connect()
     try:
-        schema.apply_curated_scope_rls(conn)  # policy half of the gate passes; only X2 can fail
+        schema.apply_reader_rls(conn)  # curated half passes; isolate the RLS-disabled signal
+        conn.execute(text("ALTER TABLE chunk DISABLE ROW LEVEL SECURITY"))
 
         rc = setup_supabase.check_deploy_readiness(conn=conn)
         captured = capsys.readouterr()
 
         assert rc != 0, captured.out
-        assert "untagged ACTIVE chunk" in captured.err
-        assert "1001" in captured.err  # the failure names the dark page
+        assert "row security is NOT enabled on 'chunk'" in captured.err
+        # The policy itself is still present — the failure is the disabled RLS, not a gone policy.
+        assert "chunk.chunk_source_read: present=True" in captured.out
+        assert "Do NOT expose the reader path" in captured.err
     finally:
         conn.rollback()
         conn.close()
 
 
-def test_deploy_readiness_ignores_untagged_inactive_chunks(
-    gateway, settings: Settings, capsys
-) -> None:
-    """X2 guard — untagged INACTIVE chunks (GC remnants) do not block the deploy.
+def test_deploy_readiness_fails_when_curated_reader_policy_absent(capsys) -> None:
+    """ADR-0021 Path B — a missing curated reader policy MUST block the deploy (non-zero + names).
 
-    Only ACTIVE rows can be silently dark content; inactive rows never reach retrieval at all.
+    The harness never applies ``apply_reader_rls``, so without it ``curated_knowledge_entry`` has
+    no reader policy and RLS off — the exact state of a store where ``provision-reader`` never ran.
+    The gate must refuse: the curated layer is part of the reader path and must be fenced first.
     """
-    index_page(gateway, settings, 1001, 1)
-    with session_scope() as s:
-        s.execute(text("UPDATE chunk SET tags = '{}', is_active = false WHERE page_id = 1001"))
-
     conn = engine_mod.get_engine().connect()
     try:
-        schema.apply_curated_scope_rls(conn)
-
+        # Deliberately do NOT apply_reader_rls — curated reader policy absent, curated RLS off.
         rc = setup_supabase.check_deploy_readiness(conn=conn)
-        out = capsys.readouterr().out
+        captured = capsys.readouterr()
 
-        assert rc == 0, out
-        assert "untagged ACTIVE chunks: 0" in out
+        assert rc != 0, captured.out
+        assert (
+            "curated_knowledge_entry_reader_read' on 'curated_knowledge_entry' is ABSENT"
+            in captured.err
+        )
+        assert "Do NOT expose the reader path" in captured.err
     finally:
         conn.rollback()
         conn.close()

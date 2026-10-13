@@ -118,6 +118,45 @@ rollback, retain 0), not a divergence to fix. `docs/plan/decisions.md`'s `live-0
 closed on this pick. Step 6 (Phase B automated-test expansion) still starts **only after Phase A
 human-validation evidence is in** (§D.17 item 6). This file stays the eight-rule record.
 
+**Update 2026-10-13 — ADR-0021 Path B went LIVE, and the audit follow-up is done; this file stays the
+record.** Two things happened today, both captured in detail in §0's `Production cutover 2026-10-13`
+block and in the ledger/progress-log. **(1) Production cutover.** With owner go-ahead + a confirmed
+Supabase backup, Path B shipped: committed as `3178553`, prod migrated `0014 → 0018` (the two
+RESTRICTIVE knowledge-scope policies dropped; `chunk_source_read` + `chunk_labels_read` + RLS
+retained — rule 1 intact), and `obi-backend` redeployed on Railway (`/health` → `knowledge_scopes:
+[]`, worker draining every 5s). A COMPLETE reconciliation sweep is re-indexing the corpus — it
+correctly enqueued the whole `omnidoc` space (1069 pages; `source_scope` row 23 scopes the entire
+space) and the deployed, sink-bound worker drains in job-id order, so the nine routing-labelled pages
+(the tail jobs) index last. **(2) Audit follow-up (`sync-rules/path-b-audit.md`).** The audit found
+no hard code gaps but two test-proof gaps (rules 3 & 4) and ~5 stale operator files; both are now
+closed in the working tree. Sync rules **3 & 4** gained end-to-end proof — `test_sync_rules_routing.py`
+drives a routing-label change through the real sync path and asserts `chunk.labels` grows/shrinks AND
+that retrieval routing flips per connection (proven real by the 0.2.8 revert method). The stale
+operator files (`verify_sync_rules.py` / `webhook_rules_live.py` / `smoke_webhook.py` defaults →
+routing labels; `verify_directed_routing_live.py` `GATE_SCOPE` → `()`; `verify_knowledge_scope_live.py`
+SUPERSEDED banner; `routing-test-labels.md` / `manual-tests.md` / the phase-9 runbook → the
+routing-label membership model) are fixed. `make check` green (boundaries 0 · backend 1542 + 1 xfail ·
+kb 53). **Owner/worker-owned tail (NOT agent-closable):** the re-sync must finish and the live
+isolation proof (`verify_directed_routing_live.py`) must run — once the tail jobs drain, confirm
+chunks appear; if they stay 0 the nine pages lack a recognized routing label. **One flagged, not
+fixed:** `setup_supabase.py check-deploy-readiness` still asserts the retired `chunk_scope_read`
+(fails SAFE); re-speccing it for Path B is its own security substep (banner added meanwhile). The
+eight sync rules this file documents were not modified by any of this.
+
+**Update 2026-10-13 (roadmap + routing knowledge, owner-confirmed).** Two clarifications recorded in
+the closing **"Laatste items (owner)"** section below. **(1) Phase order:** Phase A human testing
+comes first, and **immediately after** it comes the full A-Z platform integration into **Base
+(Marien)** and **Data Hub (Jasper)** — stand everything up end to end, which explicitly includes
+contacting both partners and collecting the five facts Obi needs (issuer, JWKS URL, exact embed
+domains, each customer's source+target ids, and a token endpoint). The send-ready directed-contract
+emails already exist in `5-integration-context/phase-9-partner-replies.md`. **(2) Source/target
+routing axis:** the source systems Obi accepts are exactly `mews`, `opera-cloud`, `toast` (a chat
+starts from one of these); targets are tagged too and the target *narrows* the results (the source's
+whole eligible set is fetched, then the target picks the relevant directional slice, e.g.
+`toast-to-pms`); accounting products (`quickbooks-online`, `xero`) are targets only. Partners send
+ids, not role labels — Obi derives POS/PMS/accounting from the id; a compound like `toast-opera` is
+refused. Launch allowlist today is Toast (POS) + Mews (PMS); Opera Cloud later.
+
 **§14 (Execution appendix)** inlines the exact test harness, the current + target RLS DDL, the
 counting embedder, the naming/docstring/coverage/proof formats, and the CI xfail mechanics — so a
 fresh-context agent can execute from this file alone, without re-deriving them from the tree.
@@ -1220,6 +1259,51 @@ Werkwijze per golf: één golf per keer, /obi-change-procedure, ledger-entry bij
 
 > **Build status (bijgewerkt 2026-10-12).** **Stage 0 ✅** (commit `0209579` — ADR-0020 + decisions.md + override-map). **Stage 1 ✅** (commit `42448cb` — 4 nieuwe panels `mi-route`/`mi-labels`/`mi-session`/`mi-hardfilter`, 6 bijgewerkt, brief 203→207; action-plan **Phase 9** toegevoegd, substeps `9.1.1`–`9.6.1`; `make check` groen). **Stage 2 ✅** (substep `9.1.1`, commit `099caef` — catalogus-resolver `resolve_system`/`build_labels`/`is_valid_label`; `make check` groen: backend 1265+1xfail · kb 51 · boundaries 0). **Stage 3 ✅** (substep `9.1.2`, commit `8746e71` — ruwe `labels`-kolom + migratie 0016 + restamp-threading; de labels-RLS blijft inert tot 9.4.1 om de retrieval niet te breken; `make check` groen: backend 1270+1xfail · kb 53 · boundaries 0). **Stage 4 ✅** (substep `9.2.1` — `chat_session`-tabel + migratie `0017` gebonden aan geverifieerde `token_subject`+`company_id`; `start_chat_session` lost op + slaat één keer op, `load_chat_session` hergebruikt de rij zonder catalogus-call (regel 8); `build_connection_block` nieuw in `prompt.py`; `make check` groen: backend 1275+1xfail · kb 53 · boundaries 0; `make eval` ongewijzigd). **Stage 5 ✅** (substep `9.3.1` — gerichte `source_system`+`target_system`+`business_id` token-vorm in `token-claims.json`/`token_verifier.py`/`chat.yaml` + drift-tests; gate `_build_directed_context` (resolve source/target, onbekend → 400 vóór search, vend-rechten, slot-role + allowlist vervallen D4/D5; `business_id` → `company_id`, `source_slug`/`target_slug` gedragen); widget-bridge `TokenScope`/`sameScope` krijgen source/target zodat een stille connectie-switch de thread reset; nieuwe `connection` `CitationAttribution`-variant; test-host mint `?form=directed` + nieuwe `connection-switch` test-host-pagina. Levels: backend unit 899+1xfail · kb 29 · DB (`make test-db`) 385+1xfail + kb 24 · `pnpm test:e2e` 7/7 · `make eval` ongewijzigd. `start_chat_session` wiring in `POST /chat` is uitgesteld naar 9.4.1 (daar waar labels/block geconsumeerd worden).) **Stage 6 ✅** (substep `9.4.1`, commit `8ce2098` — `_base_filters` krijgt `AND labels && :session_labels` (bound) door `keyword_search`/`dense_search`/`fetch_rerank_texts`; `app.allowed_labels` GUC in hetzelfde pad als `apply_knowledge_scope` zodat de 0016 RESTRICTIVE policy live wordt; parent-expansie label-exempt; `answer_service._resolve_directed_routing` voedt `session_labels` + `connection_block` uit de chat-sessie, één keer per gesprek; D0-reconciliatie bleek geen code nodig (routing-label + `obi-general-test` indexeert + routet al). Levels: DB 390+1xfail + kb 24 · `make eval` vloer ongewijzigd. mi-hardfilter → unverified.) **Stage 8 ✅** (substep `9.5.2`, commit `534b967` — `connection_routing` gelabelde gold-stage + `evaluate_routing_lift`: routing-off-vs-on recall 1.000→1.000, served_precision 0.167→0.333, served_count 6→3 naar `eval-reports/routing_lift.{json,md}`, geprint door `make eval`.) **Stage 9 ✅** (substep `9.6.1`, commit `6548fc1` — triple-check groen (boundaries 0 · unit 912+kb 29 · DB 392+1xfail+kb 24 · eval vloer+routing-gate · `pnpm test:e2e` 7/7); securing-http-and-llm-endpoints review + isolatie/reversibiliteit op bestand (`5-integration-context/phase-9-*`); Jasper+Marien partner-replies herschreven naar het gerichte contract. De live-tegen-prod isolatierun is **owner-geblokkeerd** (prod leeg + op 0014; 9.5.1 relabel + prod-migrate + re-sync open).) **DE AGENT-DOENBARE ROUTING-ENGINE IS KLAAR (9.3.1–9.6.1 allemaal gecommit).** Tail vóór testen — wat de agent wél/niet kan afmaken: (1) `alembic upgrade head` op Supabase — *productiemutatie; de agent kan dit alleen met expliciete owner-go-ahead + bevestigde recente backup* (0015/0016/0017 zijn additief + veilig: de 0016 label-RLS is inert tot een connectie de GUC zet, 0017 voegt alleen `chat_session` toe; upgrade-only, never-bend regel 1); (2) 9.5.1 relabel = **owner Confluence-werk** (labels owner-attested aanwezig), re-sync geblokkeerd op (1) — agent kan de label→pagina-mapping + backfill (`backfill_labels` CLI bestaat) voorbereiden; (3) live isolatie-spotcheck — geblokkeerd op (1)+(2); agent kan het script klaarzetten; (4) partner-replies versturen = **owner-only** (drafts klaar in `5-integration-context/phase-9-partner-replies.md`); (5) Phase A human-validatie = **human**. Kortom: de engine is af; de tail is een deploy-/content-/sign-off-ketting die bij de owner hoort — het enige dat de agent kan overnemen is (1), en dan (2)-backfill + (3) zodra de relabel staat.
 >
+> **Production cutover 2026-10-13 (ADR-0021 Path B — DB + backend LIVE; re-sync in progress).** The
+> owner authorized the full cutover and confirmed a recent Supabase backup. Done + verified:
+> - **Committed:** Path B = `3178553` (110 modified + 4 new incl. migration `0018`, ADR-0021, its
+>   runbook). Gates green on this commit: boundaries 0 · unit 1148 (backend) + 29 (kb) · DB 392 + 1
+>   xfail (backend) + 24 (kb) · eval floor intact (routing lift served_precision 0.167→0.333,
+>   served_count 6→3) · lint/types at baseline (ruff 18, pyright 46+1).
+> - **Prod migrated `0014 → 0018`** (explicit `DATABASE_URL`, not `make migrate`). Preflight confirmed
+>   `0014` before + `0018` after, pgvector 0.8.2. Permissions verified by direct `pg_policies` read:
+>   `chunk` has `chunk_source_read` (PERMISSIVE) + `chunk_labels_read` (RESTRICTIVE), `chunk_scope_read`
+>   **dropped**, RLS ENABLEd; `curated_knowledge_entry` scope policy dropped, reader policy kept. Store
+>   was empty (0 chunks) at migrate time. NB `scripts/setup_supabase.py check-deploy-readiness` now
+>   FAILs because it still asserts the retired `chunk_scope_read` — stale gate, not a real isolation
+>   gap (to fix for Path B).
+> - **Backend redeployed to Path B** on Railway (`obi-backend`, Dockerfile service) via `railway up`
+>   (owner-approved the harness production-deploy guard). `/health` → `knowledge_scopes: []` (was the
+>   four `-test` scopes = old image). Background jobs confirmed running (`worker_tick` every 5s), so
+>   webhook + sweep now auto-sync going forward.
+> - **8-sync-rules audit vs the new tags:** `sync-rules/path-b-audit.md`. All 8 work in code; no hard
+>   gaps. Rules 3 & 4 (remove-one-tag / add-a-tag) are **test-proof gaps** — nothing asserts
+>   `chunk.labels` shrinks/grows or that routing flips. DB layer consistent (0016/0018).
+>
+> **Still open at time of writing (unverified — do NOT claim done):**
+> - **Re-sync of the nine pages IN PROGRESS.** `run_reconciliation_once.py` ran a COMPLETE sweep that
+>   enqueued the **whole `omnidoc` space (1069 pages)** — correct: `source_scope` row 23 scopes the
+>   entire space, so every page syncs and only routing-labelled ones index. The deployed `worker_tick`
+>   drains in job-id order; the nine labelled pages are jobs **1249–1261** (enqueued last) so they
+>   index at the tail (chunks still 0 until the worker reaches them). The one-off script's OWN
+>   `drain()` fails `ingestion sink not bound` (no sink outside `app/main.py`) — it was stopped; the
+>   deployed worker owns draining. Use webhook/sweep or the deployed worker, not the local script's
+>   drain.
+> - **Live isolation check PENDING** on the re-sync. `verify_directed_routing_live.py` still hard-codes
+>   `GATE_SCOPE = ("obi-general-test",)` — harmless post-0018 (that scope GUC is now a dead no-op; the
+>   routing happens on `app.allowed_labels`) but its docstring is stale and should be cleaned.
+> - **Stale `-test` references** remain in ~5 operational files (the two verify scripts +
+>   `routing-test-labels.md` + `manual-tests.md` + the phase-9 live-test runbook).
+>
+> **→ Closed 2026-10-13 (audit follow-up).** The two agent-doable items above are done in the working
+> tree: (a) the ~5 stale operator files + `verify_directed_routing_live.py`'s `GATE_SCOPE`/docstring
+> are fixed, and (b) sync rules 3 & 4 now have the `chunk.labels`/routing-flip test proof
+> (`test_sync_rules_routing.py`, 2 tests, proven real by revert). `make check` green (boundaries 0 ·
+> backend 1542 + 1 xfail · kb 53). Detail: ledger/progress-log entry "ADR-0021 Path B audit
+> follow-up" + the Follow-up section of `sync-rules/path-b-audit.md`. Still owner/worker-owned: the
+> re-sync tail + the live isolation run; and `check-deploy-readiness` is flagged (stale banner) but
+> its Path B re-spec is a separate security substep.
+>
 > **Lokale test — poging 2026-10-12 (geblokkeerd op een Confluence-label, owner-fix).** Doel: de
 > hele engine lokaal bewijzen zonder prod (reingest van de echte gelabelde Confluence-pagina's naar
 > lokale pgvector + de isolatie-check). Nieuw gereedschap gecommit: het één-commando-isolatiescript
@@ -1533,6 +1617,67 @@ This fires once per switch. Never per question.
 
 ### Laatste items (owner) — deze sluiten de plan af
 
-1. **Fase 4.x — platform-integratie voor Base + Data Hub (maakt een écht gesprek in productie mogelijk).** De embed-widget opent wel, maar authenticeert niet zonder een vertrouwd token per platform. Nodig, per platform: (a) een issuer die een kort levend JWT per gebruiker ondertekent met de juiste claims (company + integratie/slots + scope); (b) een publieke JWKS-URL zodat Obi de handtekening verifieert; (c) registratie in `knowledge-base/config/platforms.json` — issuer + jwks_url + domein + `active: true` (voor Data Hub de bestaande `datahub`-entry invullen; voor Base een nieuwe `base`-entry aanmaken); (d) een token-endpoint op de hostpagina dat obi.js' `tokenUrl` bedient. Bevestigde embed-hosts: **Base = `base.omniboost.io`**, **Data Hub = `datahub.omniboost.io`**. Owner levert de publieke sleutels/issuer per platform. Bij afronding: haal de tijdelijke test-allow-list (`obi-test.domains` = de Railway-host) uit `platforms.json`.
+> **Order (owner-confirmed 2026-10-13).** **Phase A human testing comes FIRST** (the engine is proven
+> hermetically + live-isolation; Phase A is the human validation of real content/answers, cases in
+> `docs/Final_docs/5-integration-context/phase-a-validation-cases.md`). **Immediately after Phase A**
+> comes the full **A-Z platform integration** below: stand everything up to put Obi into the **Base**
+> and **Data Hub** test environments, end to end — and that explicitly includes **contacting Jasper
+> and Marien** and getting the facts Obi needs from them. Platform integration does NOT run ahead of
+> human testing, but it is the very next thing after it.
 
-2. **Eigen domein `obi.omniboost.com` (optioneel, cosmetisch).** Nu draait de frontend op de Railway-host `obi-web-production.up.railway.app`. Een merk-URL `obi.omniboost.com` vereist een DNS-wijziging (CNAME naar de Railway-service) die iemand met DNS-toegang moet zetten. Niet functioneel blokkerend; de Railway-URL werkt. Owner-actie.
+1. **Phase 4.x / Phase B — platform integration for Base + Data Hub (makes a real production chat
+   possible), A-Z.** The embed widget opens but will not authenticate without a trusted per-platform
+   token. **Platform ownership:** **Marien owns Base, Jasper owns Data Hub** (one partner, one hub).
+   The send-ready contract + the exact emails to Jasper and Marien live in
+   `docs/Final_docs/5-integration-context/phase-9-partner-replies.md` (directed `source_system` →
+   `target_system` + `business_id` form, ADR-0020/0021 — it supersedes the earlier single-`integration`
+   handover the partners already received). Run it in this order:
+
+   **(0) Contact the partners** — send each the directed-contract email (resolve the remaining
+   `[OWNER: …]` placeholders first: your name, and the test-JWKS option A/B). The one answer that
+   drives routing is **per customer, which product is the source and which is the target**.
+
+   **What Jasper & Marien must each provide (the five facts):**
+   - (a) **Issuer string** (`iss`) — their token issuer, an HTTPS URL.
+   - (b) **A reachable JWKS URL** — their public keys as JWKS, keyed by `kid`, **RS256 or ES256**
+     (never HS256), so Obi verifies the signature. Must stay reachable.
+   - (c) **The exact embed domain(s)** — the origins the widget loads on (these lock the iframe's
+     `frame-ancestors`; a missing one blocks the embed). Jasper's handover used `www.datahub.be` for
+     Data Hub — confirm the real test-env origins per platform rather than assume; the earlier
+     `base.omniboost.io` / `datahub.omniboost.io` guesses are UNCONFIRMED.
+   - (d) **Each customer's separate `source_system` and `target_system`** (canonical catalog ids).
+     This drives routing. `company_id` = their customer id (confirmed OK = `business_id`).
+   - (e) **A token-minting endpoint** (obi.js' `tokenUrl`, same origin as the page) that signs the
+     directed JWT.
+
+   **Our side, once a platform's five facts are in** (full detail: the "What happens after they
+   reply" steps 1-7 in `phase-9-partner-replies.md`): add a `platforms.json` entry (issuer, JWKS URL,
+   embed domains, the source/target ids the hub may vend) with **`active: false`**; verify the JWKS is
+   reachable and the endpoint mints a conforming directed JWT; confirm vend rights (the issuer may
+   assert only the agreed ids); flip **`active: true`**; redeploy backend (registry) + rebuild/redeploy
+   frontend (the `frame-ancestors` CSP derives from the active embed domains); remove the temporary
+   `obi-test` issuer + its embed allow-list (`obi-test.domains` = the Railway host); run the test
+   matrix against the deployed origin and save the output. Entries go active only after verification,
+   never on receipt of the email.
+
+   **Source/target knowledge (owner-confirmed 2026-10-13 — the routing axis):** the **source systems**
+   Obi accepts today are exactly **`mews`, `opera-cloud`, `toast`** (a chat always starts from one of
+   these). **Target systems are also tagged**, and the target is what **narrows the vector results**:
+   for a source (say `toast`) Obi's eligible set is all of that source's content (`obi-general` +
+   `toast-general` + the `toast-to-{kind}` boxes), and the **actual target** picks the most relevant
+   directional slice (`toast-to-pms` for a PMS target, `toast-to-accounting` for an accounting
+   target). Accounting products (`quickbooks-online`, `xero`) are **targets only** — never a source.
+   Partners send **ids, not role labels**; Obi derives each system's role (POS/PMS/accounting) from
+   the id, so the "(POS)/(PMS)/(accounting)" annotation the partners asked about is for human clarity
+   only, not a token field. The current launch allowlist is **POS = Toast, PMS = Mews**; Opera Cloud
+   is catalog-valid but gate-refused until allowlisted. A property with both a POS and a PMS sends the
+   two as a **source + target pair** (never a compound like `toast-opera`, which resolves to nothing
+   and is refused 401). For a partner whose user switches customer/integration mid-session (Marien's
+   case), the token is session-scoped and the widget refreshes it on a connection switch, which resets
+   the chat thread (built in Stage 5).
+
+2. **Own domain `obi.omniboost.com` (optional, cosmetic).** The frontend runs on the Railway host
+   `obi-web-production.up.railway.app`; a branded `obi.omniboost.com` needs a DNS change (CNAME to the
+   Railway service) by someone with DNS access. Not functionally blocking — the Railway URL works. The
+   `obi.js` `src` the partners embed is this web host for the test phase and switches to
+   `obi.omniboost.com` before go-live (the only change on their side is that one `src` line).

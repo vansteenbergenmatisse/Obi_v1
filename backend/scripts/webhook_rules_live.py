@@ -45,7 +45,10 @@ re-index). Output is pasteable into the PR per the CLAUDE.md live-level rule.
 Usage (from ``backend``; typically ~20 s per leg, minutes if Forge delivery is slow):
 
     uv run python scripts/webhook_rules_live.py --page-id 1670873122 --other-page-id 1670971395 \
-        --scope-a obi-toast-test --scope-b obi-mews-test --yes
+        --scope-a toast-general --scope-b mews-general --yes
+
+``--scope-a`` / ``--scope-b`` are recognized ROUTING labels (ADR-0021 Path B — the knowledge-scope
+``-test`` axis is retired; membership = published + >=1 recognized routing label).
 
 Exits 0 iff every check that ran passed and the original labels + body were restored.
 """
@@ -489,8 +492,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Witness page for rule 8 — byte-fingerprinted before/after, must be identical.",
     )
-    parser.add_argument("--scope-a", default="obi-mews-test", help="The page's recognized label.")
-    parser.add_argument("--scope-b", default="obi-toast-test", help="Second recognized label.")
+    parser.add_argument(
+        "--scope-a", default="mews-general", help="The page's recognized routing label (ADR-0021)."
+    )
+    parser.add_argument(
+        "--scope-b", default="toast-general", help="Second recognized routing label (ADR-0021)."
+    )
     parser.add_argument(
         "--marker",
         default=None,

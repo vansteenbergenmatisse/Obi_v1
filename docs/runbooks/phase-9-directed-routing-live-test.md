@@ -37,8 +37,10 @@ DATABASE_URL=postgresql+psycopg://rag:rag@localhost:5434/omniboost_rag \
   uv run python scripts/run_reconciliation_once.py
 ```
 
-This sweeps Confluence and ingests every published page carrying a recognized scope tag
-(`obi-general-test`) — which is every one of your routing test pages. Then check one:
+This sweeps Confluence and ingests every published page carrying a recognized **routing label**
+(`obi-general` / `{slug}-general` / `{slug}-to-{kind}`, ADR-0021 Path B — the `obi-general-test`
+knowledge-scope tag is retired and no longer required) — which is every one of your routing test
+pages. Then check one:
 
 ```
 DATABASE_URL=postgresql+psycopg://rag:rag@localhost:5434/omniboost_rag \
@@ -48,7 +50,8 @@ DATABASE_URL=postgresql+psycopg://rag:rag@localhost:5434/omniboost_rag \
 **Good result:**
 - The five core pages (and any extension pages) are indexed — each has a `page_source` row,
   `page_status=current`, one active doc version, and active child chunks.
-- `page_source.tags` is `['obi-general-test']` on every test page.
+- `page_source.tags` carries the page's recognized routing label(s) (e.g. `['toast-general']`) —
+  under Path B `tags` holds the recognized routing labels, not a separate `obi-general-test` tag.
 - The active chunks carry the page's one routing label in their `labels` column
   (`obi-general`, `toast-general`, `mews-general`, `toast-to-pms`, `mews-to-pos`, …).
 - If a page indexed but its `labels` is empty, run the backfill once:

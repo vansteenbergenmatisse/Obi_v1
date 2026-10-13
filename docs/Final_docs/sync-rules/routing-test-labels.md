@@ -16,18 +16,18 @@ four label "boxes": `obi-general`, `{source.slug}-general`, `{target.slug}-gener
 `{source.slug}-to-{target.role}` (the role is the **target's** kind: pos/pms/accounting). Direction
 is primary: `toast-to-pms ≠ mews-to-pos`.
 
-## Two labels per page
+## One label per page (ADR-0021 Path B)
 
-Each test page gets **both**:
+Each test page gets **exactly one routing label** from the table below — nothing else.
 
-1. **Membership tag — the same on every page:** `obi-general-test`. This keeps the page in the index
-   and inside locks 0–2 (ADR-0020 D0 leaves company/source isolation unchanged). These are general
-   guidance pages, not customer-isolated data, so the base scope is correct.
-2. **Exactly one routing label** from the table below. This is what Option A hard-filters on.
-
-> Note the two near-identical strings are deliberately different: `obi-general-test` is the
-> knowledge-**scope** tag (membership/isolation axis); `obi-general` is the **routing** label
-> (content-routing axis).
+> **Updated 2026-10-12 (ADR-0021 Path B).** An earlier version of this handover asked for a second,
+> base `obi-general-test` **membership tag** on every page. That is **no longer required and must not
+> be added**: ADR-0021 retired the knowledge-scope `-test` axis entirely (migration 0018 dropped
+> `chunk_scope_read`). Under Path B a page is a member of the index iff it is **published and carries
+> ≥1 recognized routing label** (`obi-general` / `{slug}-general` / `{slug}-to-{kind}`) and is
+> not `classified`. The routing label is now **both** the membership axis and the content-routing
+> axis, so one label is all a page needs. Company/source isolation (locks 0–2) is unchanged (ADR-0020
+> D0) and does not depend on any content tag.
 
 ## Core set — required (launch: Toast ⇄ Mews; proves general / system / direction / isolation)
 
@@ -74,6 +74,11 @@ stays **empty** at launch (content-gated, ADR-0020 D5); the connection still rou
 
 - **Products** (canonical id · role): `toast`·pos, `mews`·pms, `opera-cloud`·pms,
   `quickbooks-online`·accounting, `xero`·accounting.
+- **Sources vs targets** (owner-confirmed 2026-10-13): a chat's **source** is always one of
+  `mews`, `opera-cloud`, `toast` (a PMS or a POS). Accounting products are **targets only** — a chat
+  never starts from one. The **target narrows** the results: Obi fetches the source's whole eligible
+  set (`obi-general` + `{source}-general` + the `{source}-to-{kind}` boxes) and the actual target
+  picks the relevant directional slice. Partners send ids; Obi derives POS/PMS/accounting from the id.
 - **`{slug}-general`** is valid for every product above.
 - **`{slug}-to-{kind}`** valid kinds are `pos` / `pms` / `accounting`, e.g. `toast-to-pms`,
   `mews-to-pos`, `opera-cloud-to-pos`, `toast-to-accounting`, `mews-to-accounting`,

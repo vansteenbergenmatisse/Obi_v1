@@ -4,7 +4,8 @@ This is the go-live canary for the deployed backend. It does NOT touch Confluenc
 nothing — it is the *polling + assertion* half of the smoke test. The operator supplies the event
 (the half a script cannot fake convincingly):
 
-    1. In Confluence, add the label ``obi-toast-test`` to a known published page (or edit its body).
+    1. In Confluence, add a recognized routing label (e.g. ``toast-general``, ADR-0021) to a known
+       published page (or edit its body).
        Confluence delivers a webhook to the deployed ``POST /confluence/events``; the endpoint
        enqueues a job; the in-process worker drains it and (re)ingests the page.
     2. Run this script pointed at the SAME database the deployed backend writes to. It polls the
@@ -19,9 +20,9 @@ Usage (from ``backend``, DATABASE_URL pointed at the store the deployed backend 
     DATABASE_URL=postgresql+psycopg://...supabase... \
         uv run python scripts/smoke_webhook.py 28934165
 
-    # require a specific scope tag and a marker word from an edit (MT-6 style edit proof):
+    # require a specific routing label and a marker word from an edit (MT-6 style edit proof):
     uv run python scripts/smoke_webhook.py 28934165 \
-        --require-tag obi-toast-test --marker "camcorder" --timeout 180
+        --require-tag toast-general --marker "camcorder" --timeout 180
 
 Exit codes: 0 = active chunks (and any required tag/marker) observed within the window; 2 = timed
 out with no active chunks; 3 = active chunks present but a required tag/marker never appeared.
@@ -148,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--require-tag",
         default=None,
-        help="Optional scope tag that must appear on the active chunks (e.g. obi-toast-test).",
+        help="Optional routing label that must appear on the active chunks (e.g. toast-general).",
     )
     parser.add_argument(
         "--marker",

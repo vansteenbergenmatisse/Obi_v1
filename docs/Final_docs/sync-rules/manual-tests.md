@@ -67,22 +67,35 @@ failure; re-read after the window.
   tg-remove). **Live-script covers it:** yes.
 
 ### MT-3 — Remove one recognized label, another stays (rule 3)
-- **Do.** On a page tagged with two recognized scopes (e.g. `obi-mews-test`, `obi-toast-test`),
-  remove one. Note the active `document_version` id first. Wait, read.
-- **Expect.** Same `document_version` id (no rebuild), the remaining scope still on `tags`, and no
-  re-embed (metadata-only). The page stays searchable in the surviving scope only.
+> ADR-0021 Path B: "recognized label" means a ROUTING label (`{slug}-general` / `{slug}-to-{kind}` /
+> `obi-general`). The directed boxes make the routing flip visible: a page labelled `toast-to-pms`
+> + `mews-to-pos` is served to a Toast→Mews chat (via `toast-to-pms`) and to a Mews→Toast chat (via
+> `mews-to-pos`).
+- **Do.** On a page carrying two recognized routing labels (e.g. `toast-to-pms`, `mews-to-pos`),
+  remove one (drop `toast-to-pms`, keep `mews-to-pos`). Note the active `document_version` id first.
+  Wait, read.
+- **Expect.** Same `document_version` id (no rebuild), only the surviving label on `chunk.labels`
+  (it **shrinks**), and no re-embed (metadata-only). Routing flips: the Toast→Mews chat no longer
+  retrieves the page; the Mews→Toast chat still does.
 - **Automated mirror.** `test_tags_remove_one_tag_keeps_page_updates_tags_no_reembed`
-  (`test_sync_rules_visibility.py`, panel i2-labels). **Live-script covers it:** yes.
+  (`test_sync_rules_visibility.py`, tags+version) and
+  `test_tags_remove_routing_label_flips_routing_off_for_that_connection`
+  (`test_sync_rules_routing.py`, panel i2-labels — chunk.labels shrinks + routing flips off).
+  **Live-script covers it:** yes.
 
 ### MT-4 — Add a second recognized label (rule 4, sharing)
-- **Do.** On a page tagged `obi-mews-test`, add `obi-toast-test`. Note the version id first. Wait,
-  read; then query as a Mews user and as a Toast user, and as an Opera Cloud user.
-- **Expect.** Same `document_version` id, both tags on `tags`, no re-embed. Found under Mews **and**
-  Toast, **not** under Opera Cloud (legitimate sharing by overlap, never public). A page tagged
-  `obi-general-test` + anything is found under every scope.
-- **Automated mirror.** `test_tags_add_second_tag_updates_tags_no_reembed`,
-  `test_tags_shared_page_visible_in_both_scopes`, `test_tags_general_tag_visible_everywhere`
-  (`test_sync_rules_visibility.py`, panels tg-two/i2-labels). **Live-script covers it:** yes.
+- **Do.** On a page carrying one recognized routing label (e.g. `mews-to-pos`), add a second
+  (`toast-to-pms`). Note the version id first. Wait, read; then query from a Toast→Mews chat and a
+  Mews→Toast chat.
+- **Expect.** Same `document_version` id, both labels on `chunk.labels` (it **grows**), no re-embed.
+  Routing flips **on**: the Toast→Mews chat (which did not overlap `mews-to-pos`) now retrieves the
+  page via the added `toast-to-pms`; the Mews→Toast chat still does. Multiple routing labels =
+  legitimate sharing across connections, never public — "public" is the explicit `obi-general` label.
+- **Automated mirror.** `test_tags_add_second_tag_updates_tags_no_reembed`
+  (`test_sync_rules_visibility.py`, tags+version) and
+  `test_tags_add_routing_label_routes_page_into_new_connection`
+  (`test_sync_rules_routing.py`, panel tg-two — chunk.labels grows + routing flips on).
+  **Live-script covers it:** yes.
 
 ### MT-5 — First recognized label on an untagged page (rule 5)
 - **Do.** Publish a page with **no** recognized label; wait, read (nothing should exist). Add one

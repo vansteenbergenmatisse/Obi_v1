@@ -13,7 +13,9 @@ part of pytest (it needs real network + real credentials + it mutates live Confl
     └─────────────────────────────────────────────────────────────────────────────────────────┘
 
 What it drives on ONE already-synced page you name with ``--page-id`` (carrying exactly one
-recognized scope label to start, e.g. ``obi-mews-test``):
+recognized ROUTING label to start, e.g. ``mews-general``). Under ADR-0021 Path B "recognized label"
+means a routing label (``obi-general`` / ``{slug}-general`` / ``{slug}-to-{kind}``); the knowledge-
+scope ``-test`` axis is retired. Membership = published + >=1 recognized routing label.
 
   * Rule 4 — add a second recognized label -> shared, same version id, no re-embed.       [auto]
   * Rule 3 — remove one of the two -> the other stays, same version id, no re-embed.       [auto]
@@ -44,7 +46,7 @@ Usage (from ``backend``, DB reachable + Confluence configured):
 
     uv run python scripts/verify_sync_rules.py --page-id 28934165 --yes
     uv run python scripts/verify_sync_rules.py --page-id 28934165 --other-page-id 28934166 \
-        --scope-a obi-mews-test --scope-b obi-toast-test --yes
+        --scope-a mews-general --scope-b toast-general --yes
 
 Add ``--no-manual`` to skip the two manual rules (1, 6) and run only the label-driven checks.
 Exits 0 iff every check that ran passed and the original labels were restored.
@@ -347,8 +349,12 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="A second untouched indexed page — rule 8 side-check (must stay byte-identical).",
     )
-    parser.add_argument("--scope-a", default="obi-mews-test", help="First recognized scope label.")
-    parser.add_argument("--scope-b", default="obi-toast-test", help="Second recognized scope.")
+    parser.add_argument(
+        "--scope-a", default="mews-general", help="First recognized routing label (ADR-0021)."
+    )
+    parser.add_argument(
+        "--scope-b", default="toast-general", help="Second recognized routing label (ADR-0021)."
+    )
     parser.add_argument(
         "--marker", default="verifymarker", help="Word to add in the rule-6 body edit."
     )

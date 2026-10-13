@@ -360,35 +360,65 @@ def verify_isolation() -> int:
     return 0
 
 
-# --- MIG-02 / ADR-0014: deploy-readiness gate for the customer-scope RLS backstop --------------
-# Migration 0010 installs the RESTRICTIVE customer-scope policies (schema.apply_chunk_scope_rls /
-# apply_curated_scope_rls) that are Obi's fail-closed tenant backstop. `alembic upgrade head`
-# applies them, but nothing otherwise blocks a deploy where head < 0010, or where a downgrade left
-# them dropped — in which case the customer/tenant axis silently fails OPEN. These are the exact
-# policy + table names those functions create (mirrored here as literals, as the tests do).
-_SCOPE_RLS_POLICIES = (
-    ("chunk", "chunk_scope_read"),
-    ("curated_knowledge_entry", "curated_knowledge_entry_scope_read"),
+# --- ADR-0021 Path B: deploy-readiness gate for the fail-closed tenant backstop ----------------
+# Under Path B (migration 0018 retire_knowledge_scope_rls) the fail-closed tenant fence is the
+# PERMISSIVE source policy plus RLS ENABLEd — NOT the retired knowledge-scope RESTRICTIVE policies.
+# A single PERMISSIVE SELECT policy on an RLS-enabled table is deny-by-default: the non-owner
+# rag_reader sees only rows the policy admits, and an unset GUC admits none. The gate asserts, from
+# the catalog, that this fence is in place on BOTH reader-path tables before the reader path is
+# exposed:
+#   * chunk.chunk_source_read                                    — PERMISSIVE/SELECT, keyed on
+#       app.allowed_sources (lock 1, source/company isolation, never-bend rule 1).
+#   * curated_knowledge_entry.curated_knowledge_entry_reader_read — PERMISSIVE/SELECT TO rag_reader
+#       (schema.apply_reader_rls; applied in production by `setup_supabase.py provision-reader`).
+# These are the exact policy + table names those helpers create (mirrored here as literals, as the
+# tests do). The retired chunk_scope_read / curated_knowledge_entry_scope_read policies are NOT
+# asserted — migration 0018 DROPPED them (ADR-0021), so asserting them would be a false-fail.
+_READINESS_POLICIES = (
+    ("chunk", "chunk_source_read"),
+    ("curated_knowledge_entry", "curated_knowledge_entry_reader_read"),
 )
+# The routing/relevance axis (ADR-0020/0021 Path B): reported for the operator but NEVER asserted.
+# chunk_labels_read is RESTRICTIVE and fail-OPEN by design (an unset app.allowed_labels GUC opts
+# out), so its absence is not a tenant-isolation gap — only a loss of label routing
+# (serve-to-legacy, not cross-tenant leak). Blocking the deploy on it would re-introduce the
+# false-fail this gate was re-specified to remove.
+_ROUTING_POLICY = ("chunk", "chunk_labels_read")
 
 
 def check_deploy_readiness(conn: Connection | None = None) -> int:
-    """Gate before the reader path is exposed in production (MIG-02 / ADR-0014).
+    """Gate before the reader path is exposed in production (ADR-0021 Path B).
 
-    Migration 0010 installs the RESTRICTIVE customer-scope RLS policies that are Obi's fail-closed
-    tenant backstop. ``alembic upgrade head`` applies them, but nothing otherwise blocks a deploy
-    where head < 0010 or a downgrade left them dropped — the customer axis then silently fails OPEN.
+    Under Path B (migration 0018 retire_knowledge_scope_rls) the fail-closed tenant fence is the
+    PERMISSIVE source policy plus RLS ENABLEd — NOT the retired knowledge-scope RESTRICTIVE
+    policies. A single PERMISSIVE SELECT policy on an RLS-enabled table is deny-by-default (the
+    non-owner ``rag_reader`` sees only rows it admits; an unset GUC admits none), so this is a valid
+    tenant fence. ``alembic upgrade head`` + ``setup_supabase.py provision-reader`` put it in place,
+    but nothing otherwise blocks a deploy where the source policy is missing or RLS was disabled —
+    in which case the source/company tenant axis silently fails OPEN (never-bend rule 1).
+
     Reading straight from the catalog (``pg_policies`` + ``pg_class.relrowsecurity``), this asserts
-    BOTH scope-RLS SELECT policies exist ``AS RESTRICTIVE`` on their tables AND row security is
-    ENABLEd there. Any gap -> the deploy is refused (non-zero, naming what is missing). Read-only;
-    the local pgvector store (0010 applied) passes. Pass an open ``conn`` to check inside a caller's
-    transaction (tests); otherwise a connection is opened on the settings/env DSN, like every phase.
+    BOTH reader-path policies exist as ``PERMISSIVE`` ``FOR SELECT`` on their tables AND row
+    security is ENABLEd there:
 
-    X2 (4.2 audit, owner-accepted 2026-10-05): the gate ALSO fails loudly on any ACTIVE chunk with
-    an empty tag set. Post-0014 such a chunk is not a leak (fail-closed: visible to no scope) but
-    it is content silently dark to every customer — post-membership-gate it indicates a regression.
-    The old posture (``verify_isolation`` skip-as-pass) hid exactly that; now the deploy is refused
-    (rc 11) naming each dark page. Inactive untagged rows are ignored (never retrievable anyway).
+    * ``chunk.chunk_source_read`` — lock 1, source/company isolation (``app.allowed_sources``).
+    * ``curated_knowledge_entry.curated_knowledge_entry_reader_read`` — the curated reader fence
+      (``TO rag_reader``).
+
+    Any gap -> the deploy is refused (rc 10, naming what is missing). The ``chunk_labels_read``
+    routing axis is REPORTED for the operator but never asserted: it is RESTRICTIVE and fail-OPEN
+    by design (an unset ``app.allowed_labels`` GUC opts out), so its absence is a loss of label
+    routing, not a tenant-isolation gap — failing on it would re-introduce the false-fail this gate
+    was re-specified to remove.
+
+    The retired ``chunk_scope_read`` / ``curated_knowledge_entry_scope_read`` policies are NOT
+    asserted (0018 dropped them, ADR-0021). The former X2 empty-``tags`` census is GONE: under
+    Path B ``chunk.tags`` is inert for retrieval (routing rides ``chunk.labels``), so an
+    empty-``tags`` active chunk is no longer "dark content" and the census is meaningless.
+
+    Read-only; a correctly-migrated Path B store (0018 applied, reader provisioned) passes. Pass an
+    open ``conn`` to check inside a caller's transaction (tests); otherwise a connection is opened
+    on the settings/env DSN, like every phase.
     """
     if conn is None:
         with engine_mod.get_engine().connect() as owned:
@@ -397,7 +427,7 @@ def check_deploy_readiness(conn: Connection | None = None) -> int:
     missing: list[str] = []
     db = conn.execute(text("SELECT current_database()")).scalar_one()
     print(f"target db : {db!r}  host {_mask(get_settings().database_url)}")
-    for table, policy in _SCOPE_RLS_POLICIES:
+    for table, policy in _READINESS_POLICIES:
         if conn.execute(text("SELECT to_regclass(:t)"), {"t": table}).scalar() is None:
             missing.append(f"table {table!r} is absent (schema not migrated?)")
             print(f"  {table}.{policy}: table MISSING")
@@ -413,69 +443,58 @@ def check_deploy_readiness(conn: Connection | None = None) -> int:
             text("SELECT relrowsecurity FROM pg_class WHERE oid = to_regclass(:t)"),
             {"t": table},
         ).scalar_one()
-        restrictive_select = bool(
-            row is not None and row[0] == "RESTRICTIVE" and row[1] == "SELECT"
-        )
+        permissive_select = bool(row is not None and row[0] == "PERMISSIVE" and row[1] == "SELECT")
         if row is None:
             missing.append(f"policy {policy!r} on {table!r} is ABSENT")
-        elif not restrictive_select:
+        elif not permissive_select:
             missing.append(
-                f"policy {policy!r} on {table!r} is not RESTRICTIVE/SELECT "
+                f"policy {policy!r} on {table!r} is not PERMISSIVE/SELECT "
                 f"(permissive={row[0]}, cmd={row[1]})"
             )
         if not enabled:
             missing.append(f"row security is NOT enabled on {table!r}")
         print(
             f"  {table}.{policy}: present={row is not None} "
-            f"restrictive_select={restrictive_select} rls_enabled={bool(enabled)}"
+            f"permissive_select={permissive_select} rls_enabled={bool(enabled)}"
         )
 
-    # X2: census of ACTIVE chunks with empty tags — fail-closed makes them invisible to every
-    # scope, so each one is content silently dark to all customers (a regression signal).
-    untagged: list[tuple[int, int]] = []
-    if conn.execute(text("SELECT to_regclass('chunk')")).scalar() is not None:
-        untagged = [
-            (int(pid), int(n))
-            for pid, n in conn.execute(
+    # Routing axis — reported only, never asserted (fail-OPEN by design; see _ROUTING_POLICY).
+    r_table, r_policy = _ROUTING_POLICY
+    routing_present = False
+    if conn.execute(text("SELECT to_regclass(:t)"), {"t": r_table}).scalar() is not None:
+        routing_present = (
+            conn.execute(
                 text(
-                    "SELECT page_id, count(*) FROM chunk "
-                    "WHERE is_active AND cardinality(tags) = 0 "
-                    "GROUP BY page_id ORDER BY page_id"
-                )
-            ).all()
-        ]
-    print(f"  untagged ACTIVE chunks: {sum(n for _, n in untagged)}")
+                    "SELECT count(*) FROM pg_policies "
+                    "WHERE schemaname = 'public' AND tablename = :t AND policyname = :p"
+                ),
+                {"t": r_table, "p": r_policy},
+            ).scalar_one()
+            > 0
+        )
+    print(
+        f"  {r_table}.{r_policy} (routing axis, fail-open, reported only): "
+        f"present={routing_present}"
+    )
 
     if missing:
         print(
-            "FAIL: the customer-scope RLS backstop (migration 0010 / ADR-0014) is NOT in place:",
+            "FAIL: the Path B tenant backstop (chunk_source_read PERMISSIVE/SELECT + RLS ENABLED "
+            "on chunk, plus the curated reader policy) is NOT in place:",
             file=sys.stderr,
         )
         for m in missing:
             print(f"  - {m}", file=sys.stderr)
         print(
-            "Do NOT expose the reader path until `alembic upgrade head` (>= 0010) is applied — the "
-            "customer/tenant axis fails OPEN without these policies.",
+            "Do NOT expose the reader path until `alembic upgrade head` is applied and "
+            "`setup_supabase.py provision-reader` has created the reader policies — the "
+            "source/company tenant fence (never-bend rule 1) fails OPEN without them.",
             file=sys.stderr,
         )
         return 10
-    if untagged:
-        print(
-            "FAIL (X2): active chunks with an EMPTY tag set exist — fail-closed RLS makes them "
-            "visible to NO scope, so this content is silently dark to every customer:",
-            file=sys.stderr,
-        )
-        for pid, n in untagged:
-            print(f"  - page {pid}: {n} untagged ACTIVE chunk(s)", file=sys.stderr)
-        print(
-            "Re-tag the pages in Confluence (a recognized scope label, or 'general' for "
-            "everyone) and re-sync, or purge them, before deploying.",
-            file=sys.stderr,
-        )
-        return 11
     print(
-        "OK: both customer-scope RLS policies present (RESTRICTIVE/SELECT, RLS enabled) and no "
-        "untagged active chunks — reader path safe to expose."
+        "OK: the Path B tenant backstop is in place (chunk_source_read PERMISSIVE/SELECT + RLS "
+        "ENABLED on chunk, curated reader policy present) — reader path safe to expose."
     )
     return 0
 

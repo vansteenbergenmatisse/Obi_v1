@@ -1,6 +1,16 @@
 """Live self-test: a real Confluence label change propagates into the RAG DB with no manual step
 (PLAN 10.8).
 
+    ┌───────────────────────────────────────────────────────────────────────────────────────────┐
+    │  SUPERSEDED (ADR-0021 Path B, 2026-10-12). This script verifies the knowledge-SCOPE axis    │
+    │  (ADR-0011: the ``obi-*-test`` tags + the ``chunk_scope_read`` RLS policy). That axis is    │
+    │  RETIRED — migration 0018 dropped ``chunk_scope_read`` and membership now runs on routing   │
+    │  labels. Its scope-add/swap/remove assertions no longer describe live behaviour. Kept as a  │
+    │  historical record; do NOT run it to validate Path B. The live equivalents are              │
+    │  ``verify_sync_rules.py`` / ``webhook_rules_live.py`` (the eight sync rules on routing      │
+    │  labels) and ``verify_directed_routing_live.py`` (connection isolation).                    │
+    └───────────────────────────────────────────────────────────────────────────────────────────┘
+
 10.1-10.7 build and unit-test the knowledge-scope mechanism; this proves it against the *real*
 Confluence API and a *real* Postgres, the way the rest of the ledger insists ("verified live, not
 just asserted"). It is a one-off verification tool, NOT part of pytest (it needs real network + real

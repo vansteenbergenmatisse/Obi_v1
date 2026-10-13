@@ -7,8 +7,11 @@ boxes, and never another connection's pages. It reproduces the gate+retriever se
   * the NON-OWNER ``rag_reader`` role (so the RLS policies actually bite — the writer/owner bypasses
     RLS, ADR-0004/0013), via ``get_reader_sessionmaker``;
   * ``app.allowed_sources   = 'confluence:default'`` (the directed gate's _DEFAULT_SOURCES);
-  * ``app.allowed_knowledge_scopes = 'obi-general-test'`` (the directed gate's _GENERAL);
-  * ``app.allowed_labels    = build_labels(source, target)`` (the four routing boxes).
+  * ``app.allowed_knowledge_scopes = ''`` (empty — the directed gate sets ``allowed_scopes=()``).
+    The knowledge-scope axis is RETIRED (ADR-0021 Path B): migration 0018 dropped
+    ``chunk_scope_read``, so this GUC is now a dead no-op; it is still set, empty, to mirror the
+    real gate exactly.
+  * ``app.allowed_labels = build_labels(source, target)`` (the four routing boxes, the live axis).
 
 Then a plain ``SELECT ... FROM chunk WHERE is_active`` — whatever comes back is exactly what a
 Toast->Mews (etc.) chat could retrieve, because the three RLS policies (source, customer-scope,
@@ -44,11 +47,13 @@ from sqlalchemy.orm import Session, sessionmaker
 from app.platform.config.product_catalog import ProductCatalog, load_product_catalog
 from schema.engine import get_reader_sessionmaker, get_sessionmaker
 
-# The directed gate's fixed outputs (auth_context._DEFAULT_SOURCES
-# and _GENERAL). Hard-coded here, not imported, because a script lives outside the feature boundary
-# and the gate resolves these from a verified token; the values are config-stable.
+# The directed gate's fixed outputs (auth_context._DEFAULT_SOURCES and the knowledge-scope set).
+# Hard-coded here, not imported, because a script lives outside the feature boundary and the gate
+# resolves these from a verified token; the values are config-stable. Post-ADR-0021 the gate sets
+# ``allowed_scopes=()`` (the scope axis is retired, migration 0018 dropped chunk_scope_read), so the
+# scope GUC is empty and inert — routing happens entirely on ``app.allowed_labels``.
 GATE_SOURCES = ("confluence:default",)
-GATE_SCOPE = ("obi-general-test",)
+GATE_SCOPE: tuple[str, ...] = ()
 _READER_ROLE = "rag_reader"
 
 

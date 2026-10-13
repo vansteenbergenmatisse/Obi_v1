@@ -71,9 +71,10 @@ Your token endpoint signs a JWT like this:
 - One directed connection per chat. A different connection is a new token, which starts a fresh
   chat on its own.
 - Known ids today: POS `toast`; PMS `mews`, `opera-cloud`; accounting `quickbooks-online`, `xero`.
-  Accounting is a full target — `mews → quickbooks-online` is valid. We route a connection when it
-  has pages and refuse with a reason when its box is empty, so send the real pair and we will tell
-  you what is covered.
+  The **source** of a connection is always one of `mews`, `opera-cloud`, `toast` (a chat starts from
+  a PMS or a POS). Accounting is a **target only** — `mews → quickbooks-online` is valid, but a chat
+  never starts from an accounting product. We route a connection when it has pages and refuse with a
+  reason when its box is empty, so send the real pair and we will tell you what is covered.
 - Send two ids, never a compound. A value like `toast-opera` is not a system — it reads as two ids
   mashed together, resolves to nothing, and the gate refuses the token with a 401 before any
   search. Send `toast` as the source and the PMS id as the target.
@@ -127,8 +128,8 @@ To test before your production endpoints are ready, we need a JWKS we can both r
 
 Hi Jasper,
 
-Here is the full contract for embedding Obi on `[OWNER: Base / Data Hub — confirm which Jasper
-owns]`, plus the few facts I need back to wire it up.
+Here is the full contract for embedding Obi on **Data Hub**, plus the few facts I need back to wire
+it up.
 
 Everything is in the shared contract above: the two-tag snippet, the directed token, the five
 things I need, and the test plan. The one point to settle on a call is item 4 — **for each
@@ -158,9 +159,8 @@ go-live, and the only change on your side is that one `src` line — you will he
 
 Hi Marien,
 
-Same contract as the one going to Jasper, for `[OWNER: Base / Data Hub — confirm which Marien
-owns]`. The snippet, the directed token, the five facts, and the test plan are all in the shared
-contract above.
+Same contract as the one going to Jasper, for **Base**. The snippet, the directed token, the five
+facts, and the test plan are all in the shared contract above.
 
 The one answer that drives everything is item 4 — **per customer, which product is the source and
 which is the target.** Your hub joins two systems per customer; name the source and the target and
