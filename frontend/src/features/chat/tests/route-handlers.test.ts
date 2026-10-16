@@ -16,20 +16,23 @@ vi.mock("@/platform/automation-api", () => ({
 // for real) keeps this a pure wiring assertion. The routes import `@/features/chat/server` (not the
 // client root), so the secret-carrying proxy never enters a client bundle — see the /embed
 // server-only regression in client-root-no-server-imports.test.ts.
-const { handlePostChatSpy, handlePatchFeedbackSpy } = vi.hoisted(() => ({
+const { handlePostChatSpy, handlePatchFeedbackSpy, handleGetVisibilitySpy } = vi.hoisted(() => ({
   handlePostChatSpy: vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 })),
   handlePatchFeedbackSpy: vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 })),
+  handleGetVisibilitySpy: vi.fn(async () => new Response(JSON.stringify({ visible: true }), { status: 200 })),
 }));
 
 vi.mock("@/features/chat/server", () => ({
   handlePostChat: handlePostChatSpy,
   handlePatchFeedback: handlePatchFeedbackSpy,
+  handleGetVisibility: handleGetVisibilitySpy,
 }));
 
 import { AutomationApiConfigError } from "@/platform/automation-api";
-import { handlePatchFeedback, handlePostChat } from "../server/route-handlers";
+import { handleGetVisibility, handlePatchFeedback, handlePostChat } from "../server/route-handlers";
 import { POST as postChatRoute } from "@/app/api/chat/route";
 import { PATCH as patchFeedbackRoute } from "@/app/api/chat/[traceId]/feedback/route";
+import { GET as getVisibilityRoute } from "@/app/api/chat/visibility/route";
 
 const FAKE_CONFIG = { baseUrl: "http://backend.internal", apiKey: "secret", timeoutMs: 1000 };
 
@@ -61,6 +64,7 @@ beforeEach(() => {
   readAutomationApiConfigMock.mockReturnValue(FAKE_CONFIG);
   handlePostChatSpy.mockClear();
   handlePatchFeedbackSpy.mockClear();
+  handleGetVisibilitySpy.mockClear();
 });
 
 describe("proxy route wiring (panel w-proxy · substep p0-s0_5-reg-the-widget)", () => {
@@ -89,6 +93,18 @@ describe("proxy route wiring (panel w-proxy · substep p0-s0_5-reg-the-widget)",
 
     expect(handlePatchFeedbackSpy).toHaveBeenCalledTimes(1);
     expect(handlePatchFeedbackSpy).toHaveBeenCalledWith(request, "trace-99");
+    expect(response.status).toBe(200);
+  });
+
+  // panel mi-gate · ADR-0022 — the thin GET /api/chat/visibility entry composes the feature's
+  // handleGetVisibility, same pattern as the POST /chat entry.
+  it("mi_gate_visibility_route_wires_to_handle_get_visibility", async () => {
+    const request = new Request("http://localhost/api/chat/visibility", { method: "GET" });
+
+    const response = await getVisibilityRoute(request);
+
+    expect(handleGetVisibilitySpy).toHaveBeenCalledTimes(1);
+    expect(handleGetVisibilitySpy).toHaveBeenCalledWith(request);
     expect(response.status).toBe(200);
   });
 });
@@ -406,5 +422,79 @@ describe("handlePatchFeedback", () => {
       { ...FAKE_CONFIG, timeoutMs: 15_000 },
       { path: "/chat/trace%2F1/feedback", method: "PATCH", body: { feedback: 1 } },
     );
+  });
+});
+
+describe("handleGetVisibility (panel mi-gate · ADR-0022)", () => {
+  function visibilityRequest(headers: Record<string, string> = {}): Request {
+    return new Request("http://localhost/api/chat/visibility", { method: "GET", headers });
+  }
+
+  // panel mi-gate · ADR-0022 — the proxy issues a GET to the backend's /chat/visibility through the
+  // server-side client that carries the host key, threading the incoming user JWT as the X-Obi-Token
+  // (userToken), and forwards the 200 body verbatim. No request body.
+  it("mi_gate_visibility_injects_host_key_and_threads_user_token", async () => {
+    callAutomationApiMock.mockResolvedValue(new Response(JSON.stringify({ visible: true }), { status: 200 }));
+
+    const response = await handleGetVisibility(visibilityRequest({ authorization: "Bearer JWT123" }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ visible: true });
+    expect(callAutomationApiMock).toHaveBeenCalledWith(
+      expect.objectContaining({ baseUrl: FAKE_CONFIG.baseUrl, apiKey: FAKE_CONFIG.apiKey }),
+      expect.objectContaining({ path: "/chat/visibility", method: "GET", userToken: "JWT123" }),
+    );
+    // No body is sent on the probe.
+    const [, callArgs] = callAutomationApiMock.mock.calls[0] as [unknown, { body?: unknown }];
+    expect(callArgs.body).toBeUndefined();
+  });
+
+  // panel mi-gate · ADR-0022 — a backend 403 (the authoritative not-enabled answer on POST /chat)
+  // or any hard failure is forwarded verbatim, never reshaped.
+  it("mi_gate_visibility_forwards_backend_hidden_and_hard_failures_verbatim", async () => {
+    callAutomationApiMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ visible: false, reason: "target_not_enabled" }), { status: 200 }),
+    );
+    let response = await handleGetVisibility(visibilityRequest());
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ visible: false, reason: "target_not_enabled" });
+
+    for (const status of [400, 401]) {
+      callAutomationApiMock.mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "nope" }), { status }),
+      );
+      response = await handleGetVisibility(visibilityRequest());
+      expect(response.status).toBe(status);
+    }
+  });
+
+  it("mi_gate_visibility_fails_closed_503_when_unconfigured", async () => {
+    readAutomationApiConfigMock.mockImplementation(() => {
+      throw new AutomationApiConfigError("CHAT_API_KEY is not configured");
+    });
+
+    const response = await handleGetVisibility(visibilityRequest());
+
+    expect(response.status).toBe(503);
+    expect(callAutomationApiMock).not.toHaveBeenCalled();
+  });
+
+  it("mi_gate_visibility_returns_502_when_the_upstream_call_fails", async () => {
+    callAutomationApiMock.mockRejectedValue(new Error("connection refused"));
+
+    const response = await handleGetVisibility(visibilityRequest());
+
+    expect(response.status).toBe(502);
+  });
+
+  it("mi_gate_visibility_never_exposes_the_host_key_to_the_browser", async () => {
+    callAutomationApiMock.mockResolvedValue(new Response(JSON.stringify({ visible: true }), { status: 200 }));
+
+    const response = await handleGetVisibility(visibilityRequest({ authorization: "Bearer JWT123" }));
+
+    expect(response.headers.get("authorization")).toBeNull();
+    const serializedHeaders = JSON.stringify([...response.headers.entries()]);
+    expect(serializedHeaders).not.toContain(FAKE_CONFIG.apiKey);
+    expect(await response.clone().text()).not.toContain(FAKE_CONFIG.apiKey);
   });
 });

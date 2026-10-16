@@ -45,6 +45,27 @@
  *   Same C3/C4/C9 mechanisms as above, scaled down; C2/C10 opted out for the same
  *   inherited-from-backend reason. This surface never reads the user JWT — feedback is a
  *   trace-id-keyed update, not a scoped read.
+ *
+ * security_baseline (surface: GET /api/chat/visibility, tier AUTHENTICATED-READ — sync-rules
+ * Task 5 / ADR-0022, the target-enablement visibility probe):
+ *   C1_auth:        covered   - identical to POST /api/chat: the incoming per-user JWT
+ *                               (`Authorization: Bearer`) is threaded to the backend as
+ *                               `X-Obi-Token` (the scope authority, verified by `TokenVerifier`);
+ *                               the host `CHAT_API_KEY` is injected server-side as the outbound
+ *                               `Authorization` and never reaches the browser. A tokenless context
+ *                               is general-only and always visible.
+ *   C2_rate_limit:  opted_out - the backend enforces C2 authoritatively (same note as POST /chat);
+ *                               a second, driftable limiter here would be redundant. The 429 is
+ *                               forwarded verbatim.
+ *   C3_input:       covered   - no request body and no caller-supplied parameters at all; there is
+ *                               nothing to validate beyond the Bearer header shape
+ *                               (`extractUserToken`), which is checked. The backend re-validates the
+ *                               verified token and 400s an unknown/malformed value fail-closed.
+ *   C4_timeout:     covered   - `AbortSignal.timeout` on the outbound fetch (10s, tighter than the
+ *                               chat path); single attempt, no proxy-level retry (same rationale).
+ *   C9_audit:       covered   - one structured log line (status only — never the JWT value).
+ *   C5/C6/C7/C8/C10 opted_out - read-only, no LLM, no state mutation, no shared-resource write in
+ *                               this process; abuse/cost are inherited from the backend (C2 note).
  */
 
 import type { ChatRequest, FeedbackRequest } from "@omniboost/contracts";
@@ -81,6 +102,9 @@ const IDEMPOTENCY_HEADER = "idempotency-key";
 // added image attachments, so it 413'd almost every real screenshot/photo before reaching the backend).
 const MAX_BODY_BYTES = 40_000_000;
 const FEEDBACK_TIMEOUT_MS = 15_000;
+// The visibility probe is a quick read; keep its timeout well under the chat path so a slow
+// backend can't stall the widget's load-time cross-check (C4).
+const VISIBILITY_TIMEOUT_MS = 10_000;
 
 function errorResponse(status: number, error: string): Response {
   return Response.json({ error }, { status });
@@ -195,6 +219,45 @@ export async function handlePostChat(request: Request): Promise<Response> {
       connection: "keep-alive",
     },
   });
+}
+
+/**
+ * GET /api/chat/visibility (sync-rules Task 5, ADR-0022) — the target-enablement visibility probe.
+ * Read-only, no request body: extracts the per-user JWT, injects the host key server-side (via
+ * `callAutomationApi`), and forwards the backend's `/chat/visibility` body + status verbatim. A
+ * `{"visible":false,"reason":"target_not_enabled"}` 200 and any hard failure (400/401/429/503) are
+ * both passed through unchanged — the frame never coerces a hard failure into "hidden".
+ */
+export async function handleGetVisibility(request: Request): Promise<Response> {
+  const userToken = extractUserToken(request);
+
+  let config;
+  try {
+    config = readAutomationApiConfig();
+  } catch (error) {
+    if (error instanceof AutomationApiConfigError) {
+      console.error("chat_visibility_proxy_unconfigured", { error: error.message });
+      return errorResponse(503, "chat is not configured");
+    }
+    throw error;
+  }
+
+  let backendResponse: Response;
+  try {
+    backendResponse = await callAutomationApi(
+      { ...config, timeoutMs: VISIBILITY_TIMEOUT_MS },
+      { path: "/chat/visibility", method: "GET", userToken },
+    );
+  } catch (error) {
+    console.error("chat_visibility_proxy_upstream_failed", {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return errorResponse(502, "chat backend unreachable");
+  }
+
+  console.info("chat_visibility_proxy_request", { status: backendResponse.status });
+
+  return forwardBackendJson(backendResponse);
 }
 
 export async function handlePatchFeedback(request: Request, traceId: string): Promise<Response> {

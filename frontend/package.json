@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "pnpm run build:obi && next build",
-    "build:obi": "esbuild src/features/embed/loader.ts --bundle --minify --format=iife --define:__OBI_ORIGIN__=\"'${OBI_ORIGIN:-}'\" --outfile=public/obi.js",
+    "build:obi": "esbuild src/features/embed/loader.ts --bundle --minify --format=iife --define:__OBI_ORIGIN__=\"'${OBI_ORIGIN:-}'\" --define:__OBI_ENABLED_TARGETS__=\"'$(node -e 'process.stdout.write(JSON.stringify(require(\"../knowledge-base/config/product_catalog.json\").enabled_targets))')'\" --outfile=public/obi.js",
     "start": "next start",
     "lint": "next lint --dir src",
     "test": "vitest run",

@@ -14,8 +14,15 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChatSessionProvider, FloatingFrame, PanelBody, onUnauthorized, useChatSession } from "@/features/chat";
-import { initIframeBridge } from "@/features/embed";
+import {
+  ChatSessionProvider,
+  FloatingFrame,
+  PanelBody,
+  checkVisibility,
+  onUnauthorized,
+  useChatSession,
+} from "@/features/chat";
+import { OBI_HIDDEN_MESSAGE_TYPE, initIframeBridge } from "@/features/embed";
 
 export interface EmbedFrameProps {
   /** Exact host-page origins allowed to drive this frame, computed server-side (`page.tsx`) from
@@ -43,11 +50,42 @@ function EmbedBridge({ allowedOrigins }: EmbedFrameProps) {
   const restartRef = useRef(restart);
   restartRef.current = restart;
 
+  // Target-enablement cross-check (sync-rules Task 5, ADR-0022). On every token receipt, ask the
+  // server-authoritative `/chat/visibility` probe whether Obi should be shown for the verified
+  // directed context. ONLY an explicit `visible:false` hides — a hard failure (thrown) is swallowed
+  // and never treated as hidden, so a transient outage can't blank the widget for everyone. The
+  // hide is signalled to the host loader with the one frame→host message, `obi:hidden`, posted to
+  // each configured host origin (never "*"); only the true parent's origin matches and delivers,
+  // the rest are dropped by the browser.
+  const runVisibilityCheck = async (): Promise<void> => {
+    let result;
+    try {
+      result = await checkVisibility();
+    } catch {
+      return; // hard failure / network error — do not hide
+    }
+    if (result.visible) return;
+    for (const origin of allowedOrigins) {
+      try {
+        window.parent?.postMessage({ type: OBI_HIDDEN_MESSAGE_TYPE }, origin);
+      } catch {
+        // A bad targetOrigin throws synchronously; ignore and try the next configured origin.
+      }
+    }
+  };
+  const runVisibilityCheckRef = useRef(runVisibilityCheck);
+  runVisibilityCheckRef.current = runVisibilityCheck;
+
   useEffect(() => {
     return initIframeBridge({
       allowedOrigins,
       // Host launcher clicked → show the panel.
       onOpen: () => setOpen(true),
+      // A freshly-handed token: run the server-authoritative visibility cross-check. Held in a ref
+      // so the bridge effect depends only on `allowedOrigins` (it must not re-run every render).
+      onToken: () => {
+        void runVisibilityCheckRef.current();
+      },
       // `obi:clear` (logout/session end): the bridge forgets the token AND the conversation is
       // torn down — restart() aborts any in-flight stream (so a late answer generated under the
       // pre-logout token can never land) and clears messages + conversationId, then the panel

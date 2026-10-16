@@ -9,7 +9,7 @@ vi.mock("@/features/embed", () => ({
   getToken: getTokenMock,
 }));
 
-import { onUnauthorized, sendFeedback, streamChat } from "../api/chat-client";
+import { checkVisibility, onUnauthorized, sendFeedback, streamChat } from "../api/chat-client";
 
 function sse(event: ChatStreamEvent): string {
   return `data: ${JSON.stringify(event)}\n\n`;
@@ -263,5 +263,73 @@ describe("sendFeedback", () => {
       message: "rate limited",
       status: 429,
     });
+  });
+});
+
+describe("checkVisibility (panel mi-gate · ADR-0022)", () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    getTokenMock.mockReset();
+    getTokenMock.mockReturnValue(null);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  // panel mi-gate · ADR-0022 — the probe GETs the widget's OWN same-origin proxy route (which adds
+  // the host key), never the backend directly, and threads the user token as a Bearer header.
+  it("test_visibility_gets_own_proxy_route_with_bearer_token", async () => {
+    getTokenMock.mockReturnValue("jwt-abc123");
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ visible: true }), { status: 200 }));
+
+    await checkVisibility();
+
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe("/api/chat/visibility");
+    expect(String(url)).not.toMatch(/^https?:\/\//);
+    expect((init as RequestInit).method).toBe("GET");
+    expect((init.headers as Record<string, string>).authorization).toBe("Bearer jwt-abc123");
+  });
+
+  it("test_visibility_reports_visible_true", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ visible: true }), { status: 200 }));
+    await expect(checkVisibility()).resolves.toEqual({ visible: true });
+  });
+
+  it("test_visibility_reports_hidden_with_reason", async () => {
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ visible: false, reason: "target_not_enabled" }), { status: 200 }),
+    );
+    await expect(checkVisibility()).resolves.toEqual({ visible: false, reason: "target_not_enabled" });
+  });
+
+  // panel mi-gate · ADR-0022 — a hard failure (400/401/429/503) throws; it is NEVER coerced to
+  // `visible:false`, so an outage can't blank the widget for everyone.
+  it("test_visibility_hard_failure_throws_never_masked_as_hidden", async () => {
+    for (const status of [400, 401, 429, 503]) {
+      fetchMock.mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "nope" }), { status }),
+      );
+      await expect(checkVisibility()).rejects.toMatchObject({ status });
+    }
+  });
+
+  it("test_visibility_401_notifies_onUnauthorized", async () => {
+    const listener = vi.fn();
+    const unsubscribe = onUnauthorized(listener);
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ error: "bad token" }), { status: 401 }));
+
+    await expect(checkVisibility()).rejects.toThrow();
+    expect(listener).toHaveBeenCalledTimes(1);
+    unsubscribe();
+  });
+
+  it("test_visibility_malformed_body_throws", async () => {
+    fetchMock.mockResolvedValue(new Response(JSON.stringify({ nope: 1 }), { status: 200 }));
+    await expect(checkVisibility()).rejects.toThrow();
   });
 });

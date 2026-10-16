@@ -164,7 +164,12 @@ describe("EmbedFrame lifecycle", () => {
 
   it("LC-F1: a scope-changing obi:token renewal resets the active conversation (onScopeChange → restart)", async () => {
     const requestBodies: Array<{ conversationId?: string }> = [];
-    fetchMock.mockImplementation((_url: string, init?: RequestInit) => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      // The visibility probe (fired on every obi:token) rides the same fetch mock; answer it
+      // `visible:true` and keep it out of the POST /chat body tally.
+      if (String(url).includes("/visibility")) {
+        return Promise.resolve(new Response(JSON.stringify({ visible: true }), { status: 200 }));
+      }
       requestBodies.push(init?.body ? JSON.parse(init.body as string) : {});
       return Promise.resolve(
         okStreamResponse([
@@ -205,6 +210,56 @@ describe("EmbedFrame lifecycle", () => {
     await sendMessage("toast question");
     await waitFor(() => expect(requestBodies).toHaveLength(2));
     expect(requestBodies[1].conversationId).toBeUndefined();
+  });
+
+  // panel mi-gate · ADR-0022 — on token receipt the frame runs the server-authoritative visibility
+  // probe; a `visible:false` answer posts the NEW 4th frame→host `obi:hidden` message to the host
+  // (the loader then destroy()s the widget). Posted to the exact allowed host origin, never "*".
+  it("test_embed_posts_obi_hidden_when_visibility_reports_hidden", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes("/visibility")) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ visible: false, reason: "target_not_enabled" }), { status: 200 }),
+        );
+      }
+      return Promise.resolve(okStreamResponse([]));
+    });
+    const parentPostMessage = vi.spyOn(window.parent, "postMessage");
+
+    render(<EmbedFrame allowedOrigins={[ORIGIN]} />);
+    postFromHost({ type: "obi:open" });
+    postFromHost({ type: "obi:token", token: jwtWithClaims({ target_system: "quickbooks-online" }) });
+
+    await waitFor(() =>
+      expect(parentPostMessage).toHaveBeenCalledWith({ type: "obi:hidden" }, ORIGIN),
+    );
+    for (const call of parentPostMessage.mock.calls) {
+      expect(call[1]).not.toBe("*");
+    }
+    parentPostMessage.mockRestore();
+  });
+
+  // panel mi-gate · ADR-0022 — a HARD failure of the probe (here 503) is never treated as hidden:
+  // no obi:hidden is posted, so an outage can't blank the widget for everyone.
+  it("test_embed_does_not_hide_on_visibility_hard_failure", async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes("/visibility")) {
+        return Promise.resolve(new Response(JSON.stringify({ error: "down" }), { status: 503 }));
+      }
+      return Promise.resolve(okStreamResponse([]));
+    });
+    const parentPostMessage = vi.spyOn(window.parent, "postMessage");
+
+    render(<EmbedFrame allowedOrigins={[ORIGIN]} />);
+    postFromHost({ type: "obi:open" });
+    postFromHost({ type: "obi:token", token: jwtWithClaims({ target_system: "quickbooks-online" }) });
+
+    // Give the probe time to resolve and (wrongly) fire, if the guard were missing.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    for (const call of parentPostMessage.mock.calls) {
+      expect(call[0]).not.toMatchObject({ type: "obi:hidden" });
+    }
+    parentPostMessage.mockRestore();
   });
 
   it("LC-6: a backend 401 drives the subscribed onUnauthorized handler, clearing stale UI", async () => {

@@ -48,13 +48,15 @@ const unauthorizedListeners = new Set<UnauthorizedListener>();
 
 /**
  * Subscribe to be notified once whenever the backend rejects the current token (401) — the
- * closest thing to "signal the loader to renew" this module can offer honestly: the fixed
- * three-message `ObiMessage` postMessage contract (`@omniboost/contracts`) is host->frame only,
- * so this frame has no defined channel to directly *request* a fresh token from `obi.js` in the
- * host page (a real round trip would need a fourth message type, out of scope here — left for a
- * future phase behind its own ADR if needed). This hook exists so embed-side code (e.g. the
- * `/embed` page) can still react locally — clear stale UI state, prompt a manual retry, etc. —
- * without this module needing to know who's listening. Returns an unsubscribe function.
+ * closest thing to "signal the loader to renew" this module can offer honestly: the host->frame
+ * `ObiMessage` postMessage types (`@omniboost/contracts`) do not include a frame->host "please
+ * renew" request, so this frame has no defined channel to directly *ask* `obi.js` for a fresh
+ * token (that would need its own message type and ADR). The ONE frame->host message that now
+ * exists is `obi:hidden` (sync-rules Task 5, ADR-0022), posted by the `/embed` frame after the
+ * `checkVisibility` probe below reports `visible:false`; it is a one-way hide signal, not a token
+ * round trip. This hook exists so embed-side code (e.g. the `/embed` page) can still react locally
+ * to a 401 — clear stale UI state, prompt a manual retry, etc. — without this module needing to
+ * know who's listening. Returns an unsubscribe function.
  */
 export function onUnauthorized(listener: UnauthorizedListener): () => void {
   unauthorizedListeners.add(listener);
@@ -151,6 +153,51 @@ function dispatchSseEvent(rawEvent: string, handlers: ChatStreamHandlers): void 
       handlers.onError?.(event.error);
       return;
   }
+}
+
+/** The server-authoritative visibility decision (sync-rules Task 5, ADR-0022). `visible:false`
+ * carries a machine-readable `reason` (today only `target_not_enabled`); the shape mirrors the
+ * `VisibilityResponse` in `packages/contracts/src/openapi/chat.yaml`. */
+export interface VisibilityResult {
+  visible: boolean;
+  reason?: string;
+}
+
+/**
+ * Probes `GET /api/chat/visibility` (the same-origin proxy that injects the host key) with the
+ * embed's platform-signed user JWT, so the `/embed` frame can decide whether Obi should be shown
+ * for the verified directed context (target-enablement hide, sync-rules Task 5 / ADR-0022).
+ *
+ * Returns the decision on a 200. A HARD failure (400/401/429/503, or a network/parse error) THROWS
+ * `ChatRequestError` — it is never coerced to `visible:false`, so a transient outage can't blank
+ * the widget for everyone (the caller treats only an explicit `visible:false` as "hide"). A 401
+ * also notifies `onUnauthorized`, matching `streamChat`.
+ */
+export async function checkVisibility(): Promise<VisibilityResult> {
+  let response: Response;
+  try {
+    response = await fetch(`${CHAT_ENDPOINT}/visibility`, {
+      method: "GET",
+      headers: { ...authHeaders() },
+    });
+  } catch (cause) {
+    throw new ChatRequestError(cause instanceof Error ? cause.message : "network error", 0);
+  }
+
+  if (!response.ok) {
+    if (response.status === 401) notifyUnauthorized();
+    const body = (await response.json().catch(() => null)) as { error?: string } | null;
+    throw new ChatRequestError(
+      body?.error ?? `visibility failed (${response.status})`,
+      response.status,
+    );
+  }
+
+  const body = (await response.json().catch(() => null)) as VisibilityResult | null;
+  if (!body || typeof body.visible !== "boolean") {
+    throw new ChatRequestError("malformed visibility response", response.status);
+  }
+  return body;
 }
 
 export async function sendFeedback(

@@ -39,8 +39,10 @@ export function readAutomationApiConfig(): AutomationApiConfig {
 
 export interface AutomationApiRequest {
   path: string;
-  method: "POST" | "PATCH";
-  body: unknown;
+  method: "GET" | "POST" | "PATCH";
+  /** JSON-serialized and sent as the request body. Omit for `GET` (e.g. the read-only
+   * `/chat/visibility` probe), which must carry no body. */
+  body?: unknown;
   idempotencyKey?: string;
   /**
    * The platform-signed user JWT (PLAN 11.1c, ADR-0014), forwarded on its own header —
@@ -68,10 +70,14 @@ export async function callAutomationApi(
   if (request.userToken) {
     headers["x-obi-token"] = request.userToken;
   }
-  return fetch(`${config.baseUrl}${request.path}`, {
+  const init: RequestInit = {
     method: request.method,
     headers,
-    body: JSON.stringify(request.body),
     signal: AbortSignal.timeout(config.timeoutMs),
-  });
+  };
+  // A GET carries no body (the visibility probe); only serialize one when present.
+  if (request.body !== undefined) {
+    init.body = JSON.stringify(request.body);
+  }
+  return fetch(`${config.baseUrl}${request.path}`, init);
 }

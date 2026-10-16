@@ -24,5 +24,6 @@ export type {
   ObiOpenMessage,
   ObiTokenMessage,
   ObiClearMessage,
+  ObiHiddenMessage,
 } from "@omniboost/contracts";
-export { OBI_MESSAGE_TYPES } from "@omniboost/contracts";
+export { OBI_MESSAGE_TYPES, OBI_HIDDEN_MESSAGE_TYPE } from "@omniboost/contracts";

@@ -8,9 +8,18 @@
  * exactly the three `ObiMessage` types (`@omniboost/contracts`) — `obi:open`, `obi:token`,
  * `obi:clear` — and only ever TO the iframe with `OBI_ORIGIN` as the exact `targetOrigin`, never
  * `"*"`. This module never imports `@omniboost/contracts` directly (a standalone esbuild IIFE
- * bundle, not part of the Next module graph) — the three literal type strings are inlined below
- * and kept in lockstep with that file by `packages/contracts/src/iframe-messages.ts`'s own
- * "exactly three" contract note; do not add a fourth without updating both.
+ * bundle, not part of the Next module graph) — the message-type strings are inlined below and kept
+ * in lockstep with `packages/contracts/src/iframe-messages.ts`. The loader additionally LISTENS for
+ * the one FRAME → HOST message, `obi:hidden` (sync-rules Task 5, ADR-0022), accepting it only from
+ * its own iframe's `contentWindow` at the exact Obi origin and then tearing the widget down.
+ *
+ * Target-enablement hide (sync-rules Task 5, ADR-0022): BEFORE mounting, `init()` fetches the token
+ * once and decodes its directed `target_system` claim (display-only, same non-trust posture as
+ * `decodeExpMs`). If that target is not in the build-injected `__OBI_ENABLED_TARGETS__` set, the
+ * widget never mounts — no launcher, no iframe, no flash. The set absent/empty means "all enabled"
+ * (fail-open); a failed eligibility fetch also mounts — the server-authoritative `/chat/visibility`
+ * cross-check is the real gate. The trust-bearing token fetch still happens fresh at click; this is
+ * one extra eligibility-only fetch at init.
  *
  * Token handling (non-negotiable): the JWT is fetched fresh at button click (not at page load or
  * login), decoded client-side ONLY for its `exp` (display/renewal timing — never trust-bearing;
@@ -33,9 +42,31 @@ declare const __OBI_ORIGIN__: string | undefined;
 const OBI_ORIGIN: string =
   typeof __OBI_ORIGIN__ !== "undefined" && __OBI_ORIGIN__ ? __OBI_ORIGIN__ : window.location.origin;
 
+// Replaced at build time by esbuild's `--define:__OBI_ENABLED_TARGETS__=...` (package.json
+// `build:obi`), sourced from `knowledge-base/config/product_catalog.json`'s `enabled_targets` —
+// EXACTLY how `__OBI_ORIGIN__` above is injected. A JSON array string, e.g.
+// `'["mews","toast","opera-cloud"]'`. Never defined under vitest (nor in any build that omits it):
+// then `ENABLED_TARGETS` is null and every target is treated as enabled (fail-open default).
+declare const __OBI_ENABLED_TARGETS__: string | undefined;
+function parseEnabledTargets(): ReadonlySet<string> | null {
+  try {
+    if (typeof __OBI_ENABLED_TARGETS__ === "undefined" || !__OBI_ENABLED_TARGETS__) return null;
+    const list = JSON.parse(__OBI_ENABLED_TARGETS__) as unknown;
+    if (!Array.isArray(list) || list.length === 0) return null;
+    const targets = list.filter((t): t is string => typeof t === "string");
+    return targets.length ? new Set(targets) : null;
+  } catch {
+    return null;
+  }
+}
+const ENABLED_TARGETS: ReadonlySet<string> | null = parseEnabledTargets();
+
 const MSG_OPEN = "obi:open";
 const MSG_TOKEN = "obi:token";
 const MSG_CLEAR = "obi:clear";
+// Frame → host (the one inbound message this loader accepts): the server-authoritative visibility
+// probe reported the directed target is not enabled (sync-rules Task 5, ADR-0022).
+const MSG_HIDDEN = "obi:hidden";
 
 // Renew this long before the decoded `exp` so a click never races an about-to-expire token.
 const RENEW_BEFORE_EXPIRY_MS = 60_000;
@@ -79,6 +110,22 @@ function decodeExpMs(token: string): number | null {
     const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
     const json = JSON.parse(atob(base64)) as { exp?: number };
     return typeof json.exp === "number" ? json.exp * 1000 : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Display-only, non-trust decode of the directed `target_system` claim (same posture as
+ * `decodeExpMs`; the backend `TokenVerifier` + `/chat/visibility` probe are the real authority).
+ * null when the claim is absent or the token is unparseable — a legacy single-integration note
+ * carries no `target_system`, so it is never hidden by the load-time gate. */
+function decodeTargetSystem(token: string): string | null {
+  try {
+    const payload = token.split(".")[1];
+    if (!payload) return null;
+    const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
+    const json = JSON.parse(atob(base64)) as { target_system?: unknown };
+    return typeof json.target_system === "string" ? json.target_system : null;
   } catch {
     return null;
   }
@@ -245,6 +292,43 @@ function toggleWidget(tokenUrl: string): void {
   else showWidget(tokenUrl);
 }
 
+function mount(tokenUrl: string): void {
+  iframeEl = injectIframe(tokenUrl);
+  launcherEl = injectLauncherButton(() => toggleWidget(tokenUrl));
+}
+
+/** Load-time target-enablement gate (sync-rules Task 5, ADR-0022). When an enabled set is known,
+ * fetch the note once and decode its (display-only) `target_system`; if that target is not enabled,
+ * return without mounting — no launcher, no iframe, no flash. A missing enabled set, a failed
+ * fetch, or a note with no `target_system` all fail OPEN (mount): the server-authoritative
+ * `/chat/visibility` probe in the frame is the real gate. Epoch-guarded (LC-5): a `clear()`/
+ * `destroy()`/re-`init()` while the eligibility fetch is in flight cancels the mount.
+ *
+ * NOTE: when `ENABLED_TARGETS` is null (the default, and always under vitest) this function reaches
+ * `mount()` with no `await` in between, so mounting stays synchronous for every existing caller/test. */
+async function gateAndMount(options: ObiInitOptions): Promise<void> {
+  const capturedEpoch = epoch;
+  if (ENABLED_TARGETS !== null) {
+    let token: string | null = null;
+    try {
+      const response = await fetch(options.tokenUrl, { credentials: "same-origin" });
+      if (response.ok) {
+        const body = (await response.json().catch(() => null)) as { token?: string } | null;
+        token = body?.token ?? null;
+      }
+    } catch {
+      token = null;
+    }
+    if (epoch !== capturedEpoch) return;
+    const target = token ? decodeTargetSystem(token) : null;
+    // Hide ONLY on a concretely-decoded, not-enabled target. null (no claim / unparseable / fetch
+    // failed) mounts — the visibility probe decides authoritatively.
+    if (target !== null && !ENABLED_TARGETS.has(target)) return;
+  }
+  if (epoch !== capturedEpoch) return;
+  mount(options.tokenUrl);
+}
+
 function init(options: ObiInitOptions): void {
   // Idempotent: tear down any existing widget first so a host can re-point Obi at a new tokenUrl
   // (e.g. the `/test-hosts/multi` page switching the signed-in user) without accumulating a second
@@ -253,8 +337,20 @@ function init(options: ObiInitOptions): void {
   if (iframeEl || launcherEl) destroy();
   // New lifecycle: any token fetch still in flight from a prior init/session is now stale (LC-5).
   epoch += 1;
-  iframeEl = injectIframe(options.tokenUrl);
-  launcherEl = injectLauncherButton(() => toggleWidget(options.tokenUrl));
+  void gateAndMount(options);
+}
+
+/** Frame → host listener: the `/embed` frame posts `obi:hidden` after the server-authoritative
+ * `/chat/visibility` probe reports the directed target is not enabled (sync-rules Task 5,
+ * ADR-0022). Accept it ONLY from our own iframe's `contentWindow` AND the exact Obi origin — never
+ * a wildcard, never another frame — then tear the widget down. A hostile/misconfigured sender is
+ * ignored silently (no throw), matching the frame bridge's posture. */
+function handleFrameMessage(event: MessageEvent): void {
+  if (!iframeEl || event.source !== iframeEl.contentWindow) return;
+  if (event.origin !== OBI_ORIGIN) return;
+  const data = event.data as { type?: unknown } | null;
+  if (!data || typeof data !== "object" || data.type !== MSG_HIDDEN) return;
+  destroy();
 }
 
 function clear(): void {
@@ -294,3 +390,6 @@ declare global {
 }
 
 window.Obi = { init, clear, destroy };
+// Always listening for the one inbound `obi:hidden` message; `handleFrameMessage` self-guards on
+// the current iframe + origin, so a stray message before mount or after destroy is a no-op.
+window.addEventListener("message", handleFrameMessage);

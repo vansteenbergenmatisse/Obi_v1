@@ -12,4 +12,4 @@
  */
 import "server-only";
 
-export { handlePostChat, handlePatchFeedback } from "./server/route-handlers";
+export { handlePostChat, handlePatchFeedback, handleGetVisibility } from "./server/route-handlers";

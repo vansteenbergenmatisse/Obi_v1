@@ -7,8 +7,13 @@
  * rewrite target), never imported by product code.
  */
 
-export type TestHostName = "none" | "mews" | "toast" | "opera-cloud";
-export type TestIssuerKey = "test-none" | "test-mews" | "test-toast" | "test-opera";
+export type TestHostName = "none" | "mews" | "toast" | "opera-cloud" | "quickbooks";
+export type TestIssuerKey =
+  | "test-none"
+  | "test-mews"
+  | "test-toast"
+  | "test-opera"
+  | "test-quickbooks";
 
 export interface TestHostConfig {
   name: TestHostName;
@@ -78,6 +83,28 @@ export const TEST_HOSTS: readonly TestHostConfig[] = [
     // Directed demo in the OTHER direction: Opera Cloud (PMS) → Toast (POS) — a direction swap
     // relative to the toast host, so a connection-switch renewal visibly changes the connection.
     directedClaims: { source_system: "opera-cloud", target_system: "toast", business_id: "B-3075" },
+  },
+  {
+    // DISABLED-target demo (sync-rules Task 5, ADR-0022): a directed connection whose TARGET is an
+    // accounting product (quickbooks-online) that is NOT in product_catalog.json's enabled_targets.
+    // The widget must stay hidden. Only exercised by `widget-hidden-when-target-disabled.spec.ts`
+    // and only when TEST_OBI_PRIVATE_KEY_QUICKBOOKS is present locally (same signed-key caveat as
+    // the other test hosts); the matching platforms.local.json issuer is only needed for the
+    // backend-verified visibility probe, not for the loader's client-side target_system decode.
+    name: "quickbooks",
+    issuerKey: "test-quickbooks",
+    issuer: "https://test-quickbooks.local",
+    kid: "test-quickbooks-1",
+    privateKeyEnv: "TEST_OBI_PRIVATE_KEY_QUICKBOOKS",
+    publicKeyEnv: "TEST_OBI_PUBLIC_KEY_QUICKBOOKS",
+    businessClaims: null,
+    // Mews (PMS) → QuickBooks Online (accounting, NOT enabled) — the directed target the loader
+    // decodes and rejects.
+    directedClaims: {
+      source_system: "mews",
+      target_system: "quickbooks-online",
+      business_id: "B-3075",
+    },
   },
 ];
 
