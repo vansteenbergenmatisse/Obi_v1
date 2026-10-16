@@ -308,6 +308,169 @@ eligibility (§D.3 storage/sync, riding the §D.0 restamp route).
 
 ---
 
+## Integration cases — the directed-connection token path (added 2026-10-13, §D.18 item 7)
+
+Cases 1–10 validate retrieval behaviour against seeded/preset corpora. Cases 11–18 validate the
+**token boundary** that a real Base / Data Hub session rides on: signature, issuer, audience, expiry,
+directed routing, customer switch, embed origin, and eligibility. They exercise the gate and the
+widget, not the preset selector.
+
+**Where expected results come from:** the token claim schema
+(`packages/contracts/src/token-claims.json`), the verification order (`token_verifier.py:146-217`),
+the gate (`auth_context.py:173-230`), ADR-0020 (directed routing), the partner contract
+(`phase-9-partner-replies.md`), and owner decision round 4 (`plan.md` §D.18).
+
+**How to run — two environments, recorded separately (never merged):**
+
+- **Local harness (runs now).** The test-host pages (`frontend/src/app/test-hosts/*`) mint RS256
+  directed tokens against `test-*.local` issuers (`platforms.local.json`) via
+  `/api/test-hosts/[name]/obi-token?form=directed`. `/test-hosts/toast` sends `toast → mews`,
+  `/test-hosts/opera-cloud` sends `opera-cloud → toast`, and `/test-hosts/connection-switch` drives a
+  switch. Use these for Cases 11–18 today.
+- **Partner staging (runs when a partner's issuer/JWKS/token endpoint exist).** Re-run every case
+  against that partner's own keys, login session and selected customer, with the widget loading on
+  their real staging origin. **A local-harness PASS does not count as a partner-staging PASS** —
+  record each in its own column.
+
+**Where to look:** the chat response carries `trace_id` (`rag_agent/schemas.py`); a refusal returns
+an HTTP status (400/401) with no detail (`router.py:285-291`). Inspect the Network tab for the status
+and the token request, the browser console for widget state, and the trace row for the routing labels
+and the candidate/excluded sets.
+
+### Case 11 — A valid directed token routes to exactly its connection
+
+Covers: the happy path — a conforming `source → target` token is accepted and answers come only from
+that connection's pages; an empty connection box refuses with a reason.
+
+- **Setup:** local harness `/test-hosts/toast` (`toast → mews`, `business_id: B-3075`), `?form=directed`.
+  Seed a corpus with pages labelled `obi-general`, `toast-general`, `mews-general`, `toast-to-pms`,
+  plus at least one `mews-to-pos` and one unrelated connection page.
+- **Action:** open Obi, ask "Why are Toast room charges missing in Mews?"
+- **Expected:** the gate accepts the token; the request's routing labels are exactly
+  `[obi-general, toast-general, mews-general, toast-to-pms]` (`product_catalog.build_labels`);
+  the answer cites only pages carrying one of those labels; no `mews-to-pos` or unrelated-connection
+  page appears. If the connection's box has **no** pages, Obi refuses with a reason (content-gated,
+  never-bend rule 7), not a wrong-connection answer.
+- **Verify:** trace row shows the four labels and the eligible/excluded sets; citations all map to
+  eligible pages.
+
+### Case 12 — Token integrity: bad signature, unknown key, expired, wrong audience, wrong issuer
+
+Covers: every token-verification failure returns a bare **401** and no answer (`token_verifier.py`
+collapses all failures to `TokenError`; `router.py:290-291`). Expiry stays enforced — the point
+flagged for Jasper's expired sample.
+
+- **Setup:** local harness; mint a valid directed token, then produce five variants.
+- **Action + Expected (each a row):**
+  1. **Tampered signature** (flip a payload byte, keep the signature) → **401**, no search, no answer.
+  2. **Unknown `kid`** (sign with a key absent from the JWKS) → **401** (key resolution fails).
+  3. **Expired** (`exp` in the past beyond the 60 s leeway) → **401**. Confirm a token 30 s past
+     `exp` is still refused.
+  4. **Wrong `aud`** (not `"obi"`) → **401**.
+  5. **Unknown `iss`** (an issuer not in `platforms.json`) → **401**.
+- **Verify:** Network tab shows 401 with no body detail for each; no `trace_id` is issued; the widget
+  surfaces its generic error, not an answer.
+
+### Case 13 — Direction is primary: source→target ≠ target→source
+
+Covers: `toast → mews` and `mews → toast` are different connections and the swap resets the chat
+(ADR-0020; `iframe-bridge` scope-change; `answer_service._resolve_directed_routing` re-start).
+
+- **Setup:** `/test-hosts/connection-switch` (drives TOKEN_A `toast → mews`, TOKEN_B
+  `opera-cloud → toast`), or mint `toast → mews` then `mews → toast`.
+- **Action:** ask a question under direction A; note the labels; switch to direction B mid-session.
+- **Expected:** A's labels include `toast-to-pms`; B's labels flip (`mews`/`opera-cloud` general +
+  the other direction's `{source}-to-{target.kind}`); the switch **restarts the thread** (messages
+  cleared, new `conversationId`); no answer from A carries into B.
+- **Verify:** two trace rows with different label sets; the widget thread visibly resets on the swap.
+
+### Case 14 — Compound or unknown system is refused before any search
+
+Covers: the `toast-opera` class of error (Jasper's sample) and any non-catalog id — a **400 before
+search**, never a wrong answer.
+
+- **Setup:** local harness; mint a directed token with `source_system: "toast-opera"` (compound),
+  then one with `target_system: "not-a-system"`.
+- **Action:** open Obi.
+- **Expected:** each is **400** ("unknown integration value") *before* any retrieval
+  (`auth_context.py:202-207` → `router.py:287-289`). The compound resolves to nothing
+  (`legacy_aliases` is `{}`); the unknown id resolves to nothing. No search runs, no answer.
+- **Verify:** Network tab 400; no `trace_id`.
+
+### Case 15 — Vend rights and inactive registration
+
+Covers: an issuer may assert only the source/target ids agreed in its `allowed_integrations`, and an
+`active: false` platform is denied all scoped access even though its token verifies.
+
+- **Setup:** local harness with a test issuer whose `allowed_integrations` is, say, `["toast"]`.
+- **Action + Expected:**
+  1. Mint a token asserting a system **not** in that issuer's vend set (e.g. `target_system: "xero"`
+     when only `toast` is vended) → **401** (vend-rights violation, CIP-A1, `auth_context.py:209-217`).
+  2. Point the harness at an issuer whose registry entry is `active: false` → the token **verifies**
+     (step 1 uses `by_issuer`) but the gate denies with `InactivePlatformError` → **401**
+     (`auth_context.py:240-242`). This is the backstop that keeps an unverified partner inert until
+     the owner flips `active: true`.
+- **Verify:** Network tab 401 for both; no answer.
+
+### Case 16 — Customer / connection switch without logging out (Marien's requirement)
+
+Covers: one user, multiple customers; the selection changes without a page reload and the chat resets
+so nothing carries across customers (`plan.md` §D.18 item 5; `partner-facts.md` Base section).
+
+- **Setup:** `/test-hosts/multi` (switches the signed-in identity / re-points `Obi.init`), or a page
+  that posts a replacement `obi:token` with a different `business_id`.
+- **Action:** ask a question as customer A (`business_id: B-A`); without reloading, switch to customer
+  B (`business_id: B-B`) and ask again.
+- **Expected:** on the switch, Obi **resets the thread** (scope change detected on the changed
+  `business_id` → `restart()`); customer B's answer never references customer A's conversation; the
+  backend chat-session row is keyed on `(sha256(sub), company_id)`, so B gets its own session.
+- **Verify:** the widget thread clears on the switch; two trace rows under two `company_id`s; no A
+  content in B's answer. **Record the host trigger used** (re-init vs token-replacement) — this is the
+  behaviour to agree with Marien.
+
+### Case 17 — Embed-origin lock (frame-ancestors)
+
+Covers: Obi loads only on a platform's registered embed origins; an unregistered origin is blocked by
+the `/embed` `frame-ancestors` CSP (`middleware.ts:51-56` from `activeDomains()`).
+
+- **Setup:** a registered test origin and an unregistered one.
+- **Action:** embed the `/obi.js` snippet on each and open the chat.
+- **Expected:** the widget iframe loads and functions on the **registered** origin; on the
+  **unregistered** origin the browser blocks the frame (CSP `frame-ancestors` violation in the
+  console) and the chat does not load.
+- **Verify:** console shows the CSP block on the unregistered origin; the response CSP header lists
+  only `active: true` platforms' domains. (Only the temporary `obi-test` origin is active today, so a
+  partner's origin must be added to its `active` entry before its page can embed.)
+
+### Case 18 — Target-enablement widget eligibility (live pass/fail gate — §D.18 item 4, ADR-0022)
+
+Covers: the owner decision "the selected target's enablement controls widget eligibility." **Status:
+LIVE GATE.** The eligibility refinement shipped (Task 5, ADR-0022 "Target-Enablement Widget
+Eligibility in the Directed Path", amends ADR-0020 D4/D5): a product-global `enabled_targets` list in
+`product_catalog.json`, a `TargetNotEnabledError` → **403** after vend rights in the directed gate
+(`auth_context.py`, `_build_directed_context`), a read-only `GET /chat/visibility` probe, and the
+frontend hide (loader init fetch + the `obi:hidden` frame→host message). This case is now a pass/fail
+gate for Phase A. Retrieval routing (ADR-0020 D5 four-label filter) is unchanged.
+
+- **Setup:** a directed token whose **target** is a product *not* in `enabled_targets` (e.g.
+  `mews → quickbooks-online` while the shipped list is `["mews","toast","opera-cloud"]`). The token
+  otherwise verifies and vends.
+- **Action:** open Obi.
+- **Expected (PASS):** the widget is **hidden** — `GET /chat/visibility` returns
+  `{"visible":false,"reason":"target_not_enabled"}`, the loader hides before/at mount (via
+  `obi:hidden`), and `POST /chat` for the same connection is refused **403** with body
+  `{"error":"integration not available","reason":"target_not_enabled"}` (no product id in the body).
+  Mirrors how a filled off-allowlist slot hides Obi in the slot form.
+- **Expected (FAIL):** widget mounts / is visible, or `POST /chat` is served (or returns a status
+  other than 403 for the not-enabled target), or the body leaks the product id.
+- **Control (must also hold):** an **enabled** target (e.g. `toast → mews`) is `visible:true` and the
+  session is served — the gate does not over-hide. Unknown target still **400** before any search;
+  un-vended still **401** (precedence: 400 → 401 → 403).
+- **Verify:** record the observed `GET /chat/visibility` body, the `POST /chat` status + body, and
+  whether the launcher mounted. **PASS/FAIL gates Phase A** (no longer decision-dependent).
+
+---
+
 ## Evidence capture (fill in per case — leave blank until a human runs it)
 
 Copy this block once per case (Cases 1–10). Record the actual observation and a reference to the
@@ -329,9 +492,25 @@ below it labelled "RE-RUN after fix".
 
 **Case verdict:** ☐ PASS  ☐ FAIL  → if FAIL: problem / fix / re-run reference: ______________
 
+### Integration cases 11–18 — capture per environment (local harness AND partner staging, separately)
+
+Copy this block once per integration case. Each case is recorded **twice**: once on the local harness
+(runs now) and once against each partner's staging (when it exists). A local PASS never stands in for
+a partner-staging PASS.
+
+| Env | Setup / token variant | Expected (status / labels / behaviour) | Observed | PASS/FAIL | Network / trace / console ref | Notes |
+|---|---|---|---|---|---|---|
+| Local harness | | | | | | |
+| Partner staging — Base | | | | | | |
+| Partner staging — Data Hub | | | | | | |
+
+**Case verdict (per env):** Local ☐ PASS ☐ FAIL · Base-staging ☐ PASS ☐ FAIL ☐ N/A · DataHub-staging ☐ PASS ☐ FAIL ☐ N/A
+
 When all cases pass with evidence, file this document with the step (as the 4.4 browser checks were
 filed) and only then may the owner tick 8.5.2. Recording the evidence here does **not** by itself
-flip the panel or write the ledger — those are separate, owner-gated steps.
+flip the panel or write the ledger — those are separate, owner-gated steps. Case 18 is now a
+**live pass/fail gate** (§D.18 item 4, ADR-0022 — the eligibility refinement shipped in Task 5) and
+gates 8.5.2 like any other case.
 
 ---
 
@@ -353,6 +532,14 @@ flip the panel or write the ledger — those are separate, owner-gated steps.
 | Metadata updates | 10 |
 | §D.9 examples 1–5 | 4, 2, 3, 6, 7 |
 | Cross-match guard (Toast/OperaCloud + Mews/QuickBooks ≠ Toast/Mews) | 7 |
+| Directed token accepted + routed to its connection | 11 |
+| Token integrity (bad signature / unknown key / expired / wrong aud / wrong iss) | 12 |
+| Direction is primary (source→target ≠ target→source) | 13 |
+| Compound / unknown system refused before search | 14 |
+| Vend rights + inactive registration denied | 15 |
+| Customer/connection switch without logout (Marien) | 16 |
+| Embed-origin lock (frame-ancestors) | 17 |
+| Target-enablement widget eligibility (live gate — ADR-0022) | 18 |
 
 ## Gaps and assumptions (honest)
 
@@ -381,3 +568,14 @@ flip the panel or write the ledger — those are separate, owner-gated steps.
    etc.) are the current widget strings (`message-bubble.tsx`); if the UI copy changes, the expected
    badge text in the cases must be updated to match, but the underlying enum
    (`general|pos|pms|accounting|pair`) is the design-of-record oracle.
+7. **Integration cases 11–18 prove our side on the local harness now; the real end-to-end leg waits
+   on partner staging.** The local harness uses our own test keys and `test-*.local` issuers, so a
+   local PASS proves the gate/widget behave correctly — not that Base or Data Hub authentication
+   works. The partner-staging leg of each case runs only once that partner confirms its issuer, JWKS
+   and token endpoint (`partner-facts.md`: 0/5 confirmed for both today). Record the two legs
+   separately; do not call a case fully passed on the local leg alone.
+8. **Case 18 is now a live gate (ADR-0022, 2026-10-13).** The "target-enablement controls widget
+   eligibility" half of §D.18 item 4 shipped in Task 5 (ADR-0022 amends ADR-0020 D4/D5): the directed
+   path now refuses a not-enabled target with a **403** and hides the widget via `GET /chat/visibility`
+   + the `obi:hidden` message. Case 18 is a pass/fail gate for Phase A — a disabled target that mounts
+   the widget or is served fails the case. Retrieval routing (ADR-0020 D5) is unchanged.

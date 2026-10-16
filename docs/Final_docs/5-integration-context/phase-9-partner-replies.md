@@ -200,3 +200,95 @@ For each platform, once the five facts are in, on our side in order:
 7. Run the test matrix against the deployed origin and save the output where the plan says.
 
 Entries go active only after verification, never on receipt of the email.
+
+---
+
+## Follow-up (2026-10-13) — focused fact requests
+
+> **DRAFTS — the owner edits and sends these.** Both partners have shared partial information; neither
+> is complete enough to activate (status + per-field gaps: `partner-facts.md`). These are short,
+> targeted asks for the specific facts still missing, not the full contract again. JWKS approach:
+> **Option A** below (their staging), while we verify our side on the local harness in parallel.
+> Signer: Matisse.
+
+### 3. Follow-up to Marien (Base)
+
+**Subject:** Obi on Base — the five facts I still need to wire it up
+
+Hi Marien,
+
+Thanks for the earlier details. To register Base and start testing, I still need five things:
+
+1. **Issuer** — the exact `iss` string your tokens will carry. (A hostname isn't the issuer, so I
+   need the literal value.)
+2. **JWKS URL** — a reachable HTTPS URL serving your public keys as JWKS, keyed by `kid`, signed
+   **RS256 or ES256**. We fetch and cache it, so it needs to stay up.
+3. **Embed origins** — the exact HTTPS origins where Obi will appear. You mentioned
+   `app.omniboost.io` (live) and `base.development.omniboost.io` (dev) earlier — please confirm those
+   are right for this integration, or send the correct ones. A missing origin blocks the embed.
+4. **One example token** in the directed form — for one real customer, the canonical **source** id
+   and **target** id (e.g. `source_system: "toast"`, `target_system: "mews"`), plus `business_id`
+   and the user `sub`. Two separate ids, never a compound.
+5. **Token endpoint** — the deployed URL that mints that token (the `tokenUrl` the page passes to
+   `Obi.init`).
+
+For testing before your production endpoints exist: if you can stand up a **staging** issuer + JWKS +
+token endpoint, we verify against that. We'll be proving our own wiring on a local test harness in
+the meantime, so we're ready the moment your staging is up.
+
+One thing to settle on a call: you flagged that a single user can reach **multiple customers and
+connections and switch without logging out**. Good news — the widget already handles that. When your
+page re-fetches (or re-mints) the token for the newly-selected customer and hands it to Obi, Obi sees
+the changed customer and starts a fresh chat, so nothing carries over between customers. What I'd like
+to agree is the trigger on your side: which UI event re-fetches the token, and whether you'd rather
+re-point the widget or just hand it the new token.
+
+Embed against the **web** host — `https://obi-web-production.up.railway.app/obi.js` — not the backend
+API host. It moves to a branded `obi.omniboost.com` before go-live, and the only change on your side
+will be that one `src` line (with plenty of notice).
+
+Send me the five and I'll add Base on our side and we test.
+
+Best,
+Matisse
+
+### 4. Follow-up to Jasper (Data Hub)
+
+**Subject:** Obi on Data Hub — the directed token, and the five facts I still need
+
+Hi Jasper,
+
+Thanks for the sample — I've kept it as a reference. It's a local, expired test token, so it doesn't
+tell me staging is working yet; when staging is ready, please send a **fresh** one. To register Data
+Hub I need five things:
+
+1. **Staging issuer** — the real `iss`. The sample used `https://pos-pms-laravel.test`, which is a
+   local fixture; I need the deployed staging value.
+2. **Staging JWKS URL** — you proposed `https://<staging-domain>/.well-known/jwks.json`, which is
+   exactly right; I just need the actual staging domain and the live URL (RS256 is fine).
+3. **Embed origin** — the exact HTTPS staging origin where Obi will load. `www.datahub.be` showed up
+   in our earlier example, but I don't want to assume it — confirm the real one.
+4. **The directed pair** — one point to nail down. The sample carried `integration: "toast-opera"`.
+   Our gate refuses a compound like that with a 401: it reads as two ids stuck together and resolves
+   to nothing. Please send the two systems as **separate canonical ids with a direction** — e.g.
+   `source_system: "toast"`, `target_system: "opera-cloud"` — and confirm which is the source and
+   which is the target, per customer. A connection is directional: `toast → opera-cloud` is not the
+   same as `opera-cloud → toast`.
+5. **Token endpoint** — the deployed staging URL that mints the directed JWT (`iss`, `aud: "obi"`,
+   `sub`, `iat`, `exp`, `business_id`, `source_system`, `target_system`).
+
+From your sample I've got: RS256, `aud: obi`, 600 s lifetime (within our 60-minute cap), and customer
+id `8` — which works as the `business_id`. Keep normal expiry checking on your side; I keep it on too.
+
+For testing before production: standing up that staging issuer + JWKS + token endpoint is what unblocks
+a real end-to-end test. We'll verify our own side on a local harness in parallel, so we're ready as
+soon as your staging is up.
+
+Embed against the **web** host — `https://obi-web-production.up.railway.app/obi.js` — not the backend
+API host (an earlier thread gave the backend host; that's the chat API, not the script source). It
+moves to `obi.omniboost.com` before go-live, one `src`-line change with notice.
+
+Send the five and I'll wire Data Hub up and we test.
+
+Best,
+Matisse

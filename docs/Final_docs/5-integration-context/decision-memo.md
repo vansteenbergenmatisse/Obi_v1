@@ -145,10 +145,70 @@ property/instance context records stay open in O1/O2.
 | O4 | ✅ **CLOSED (decision round 2, 2026-10-05, owner-delegated):** the allowlist gates **POS/PMS only**. A filled accounting slot outside support never hides Obi — it is inert for eligibility (no accounting guides/pairs; general + supported slots still serve; accounting-specific questions refuse with a reason). Rationale: the customer's primary supported integration decides visibility; punishing a Mews hotel for an unsupported accounting package serves nobody. Unknown values still 400 at membership. Full wording in §4 rule 4 | closed |
 | O5 | ✅ **CLOSED (substep 8.1.2, 2026-10-05):** contract §8's proposed shape adopted unchanged — top-level `company_id` + `context.slots.{pos,pms,accounting}` (each one canonical catalog id or `null`; `context` requires `company_id`; the legacy all-three-or-none rule scoped to context-less tokens), and `Citation.attribution` with enum `general/pos/pms/accounting/pair` (TS: `CitationAttribution`). Why: the proposal matched §D.13's decided content exactly, the slot names reuse the catalog loader's one role vocabulary (`VALID_PRODUCT_ROLES`, no second spelling to drift), and the attribution values are §D.13 keuze 3 verbatim. Details in §3 | closed |
 | O6 | ✅ **CLOSED (substep 8.1.2, 2026-10-05):** `knowledgeScope` **keeps the single-string shape unchanged**. Why: it is non-authoritative either way (never-bend rule 2 — only the verified token decides), so a slots-shaped body hint adds no capability while forcing a migration; the conservative no-behavior-change default wins | closed |
-| O7 | **Base + Data Hub platform-registry entries** — `platforms.json` has datahub with TODO issuer/JWKS placeholders (`knowledge-base/config/platforms.json:5`) and **no Base entry at all**; issuers, JWKS URLs and vend sets are owner/platform-supplied facts (never-bend rule 12 — never invented). **Owner ordered (decision round 2, 2026-10-05): deliberately LAST** — everything is fixed and validated (through Phase A) before any integration into Base/Data Hub; the Jasper handoff and these registry entries close Step 5's tail, not its middle | owner + platform teams, **after Phase A** (§D.9/§D.10) |
+| O7 | **Base + Data Hub platform-registry entries** — `platforms.json` has datahub with TODO issuer/JWKS placeholders (`knowledge-base/config/platforms.json:5`) and **no Base entry at all**; issuers, JWKS URLs and vend sets are owner/platform-supplied facts (never-bend rule 12 — never invented). ~~**Owner ordered (decision round 2, 2026-10-05): deliberately LAST**~~ → **AMENDED (decision round 4, 2026-10-13, `plan.md` §D.18 item 1): integration prep runs NOW, in parallel with Phase A** — contact both partners, collect the five facts, stand the wiring up to activation; the ordering guard that remains is "no registration goes `active:true` until its issuer/JWKS/token endpoint verify." **Status: partial facts in from both, 0/5 confirmed each; neither activatable** — per-field status + ready-to-paste entries in `partner-facts.md`. | owner + platform teams; in progress — **tracked in `partner-facts.md`** |
 | O8 | ✅ **CLOSED (decision round 2, 2026-10-05):** `toast-opera` **does not exist** — whole-repo search finds it in no config, code, token, or tag; it was plan.md's own illustrative example ("e.g. legacy values like `toast-opera`") carried from §D.1 into §D.11, a placeholder describing the alias mechanism, never an observed datum. Removed from the catalog; `legacy_aliases` is `{}` (mechanism kept, values only with named evidence). Full reasoning in `catalog.md` §4 | closed |
 | O9 | **Accounting products ↔ knowledge scopes** — no Confluence scope tag exists today for QuickBooks Online or Xero (`knowledge_scopes.json` has mews/operacloud/toast only); how accounting-product guides are tagged and scoped | §D.3 (applicability metadata) + the tag-map substep that adds the scopes |
 | O10 | **Standalone preset definitions** — §D.8 requires backend-validated presets covering the four flow types + the three-system workflow; their concrete contents | the §D.8 substep |
 
 Each O-item is tracked here until a §D substep closes it; closing one updates this memo (same
 change), per the component-doc rule in the root `CLAUDE.md`.
+
+## 6 · Routing/visibility clarification (2026-10-13 — serves §D directed-routing R2/R5)
+
+Captured for the sync-rules active work block (Task 4, `docs/Final_docs/sync-rules/plan.md`
+lines 119–123). Serves the directed-routing requirements **R2** (the target decides whether the
+widget appears) and **R5** (the backend validates the real customer connection and target
+enablement) in `sync-rules/plan.md` §D (R-items at lines 2052–2104), and resolves the open §D
+intent "QuickBooks target ⇒ widget hidden" (§D.2's Toast→QuickBooks clause; §D.18 item 4 — "no
+target-enablement eligibility gate today, widget hiding is frontend UX over the backend 401").
+Append-only; nothing above is changed.
+
+**Confirmed label model (verified against code, `sync-rules/plan.md` lines 49–69).**
+`product_catalog.build_labels(source, target)`
+(`backend/app/platform/config/product_catalog.py:137-157`) yields **exactly four labels**:
+`[obi-general, {source}-general, {target}-general, {source}-to-{target.role}]`. The connection
+label is **source-product → target-*role*** (e.g. `toast-to-pms`), **not** source→target-product;
+the target product's own software docs ride the separate product-level `{target}-general` label.
+
+- `toast → mews` → `[obi-general, toast-general, mews-general, toast-to-pms]`
+- `toast → opera-cloud` → `[obi-general, toast-general, opera-cloud-general, toast-to-pms]` —
+  reuses the **same** `toast-to-pms` connection pages as toast→mews.
+- `mews → quickbooks-online` →
+  `[obi-general, mews-general, quickbooks-online-general, mews-to-accounting]`.
+
+**Content-coverage consequence.** The content long-pole is **small for a same-role target**: a new
+PMS target such as opera-cloud reuses the existing `toast-to-pms` connection pages, so the only new
+content needed is its own `opera-cloud-general` software docs. It is **real only for a brand-new
+target role**: an accounting target (e.g. `mews → quickbooks-online`) needs **both** new
+`{target}-general` docs **and** new `{source}-to-accounting` connection pages, and **no
+`*-to-accounting` pages exist today**. This bears on O9 (accounting products ↔ scopes) above but
+does not close it.
+
+**Target-enablement hide is being built (Task 5 / ADR-0022).** The resolution of the open §D intent
+is under construction as Task 5 of this work block: a **configurable, backend-enforced
+target-enablement gate on the directed path** with a matching frontend eligibility signal, so a
+token whose target is not enabled (e.g. QuickBooks at launch) yields **no widget** rather than
+today's bare 401 on an already-mounted launcher. Config is a product-global `enabled_targets` list
+in `knowledge-base/config/product_catalog.json` (absent ⇒ all enabled, reversible); the backend
+adds a `TargetNotEnabledError` → **403** after the vend-rights check, plus a read-only
+`GET /chat/visibility` probe; the frontend hides at load time. Retrieval routing (the four-label
+hard-filter, ADR-0020 D5) is **unchanged** — this gate controls widget *eligibility* only. It is
+ratified in **ADR-0022 "Target-Enablement Widget Eligibility in the Directed Path"** (amends
+ADR-0020 D4/D5). Per-platform enablement (R3/R4) is kept as the documented extension beyond the
+product-global default.
+
+## 7 · Sync note — ADR-0022 ratified and shipped (2026-10-13, Task 5e)
+
+Append-only; nothing above is changed. Task 5 (backend + frontend) is built and green and
+**ADR-0022 is now Accepted** (`docs/adr/0022-Target-Enablement-Widget-Eligibility-In-The-Directed-Path.md`),
+so §6's "being built" is now **done**. As shipped: optional flat `enabled_targets`
+(`["mews","toast","opera-cloud"]`) in `product_catalog.json` (loader rule 6b; absent ⇒ all
+enabled; reversible, no migration); `TargetNotEnabledError` after vend rights → **403** with body
+`{"error":"integration not available","reason":"target_not_enabled"}` (product id never leaked —
+rule 10); new optional `Error.reason` in `chat.yaml`; read-only `GET /chat/visibility`; frontend
+loader init fetch + the 4th `obi:hidden` frame→host message (both bent conventions authorized by
+ADR-0022). Retrieval routing (ADR-0020 D5 four-label hard filter) is **unchanged** — the gate is
+widget-eligibility only, so rule 11's gold-set before/after does not apply. `context-contract.md`
+§4/§8.4 and `catalog.md` are synced, and `phase-a-validation-cases.md` Case 18 is flipped from
+decision-dependent to a live pass/fail gate (disabled target ⇒ widget hidden + 403). The §D.18
+item-4 intent is now resolved in code and of record.
