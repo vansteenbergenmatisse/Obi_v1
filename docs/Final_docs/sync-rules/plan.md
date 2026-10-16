@@ -1,5 +1,242 @@
 # Sync rules — make the vector store match the eight rules
 
+> **REOPENED 2026-10-13** — the "CLOSED / fully done" status below is superseded by the active-work
+> block immediately following (target-enablement gate + consolidated integration verification). The
+> historical CLOSED record is kept intact beneath it. Start here.
+
+---
+
+## Active work block — target-enablement gate + consolidated integration verification (2026-10-13)
+
+> **EXECUTION STATUS 2026-10-13 — Tasks 0–5 code+docs SHIPPED; only the human pass remains.**
+> Driven as four parallel agents (Tasks 2/3/4 + Task 5 backend) then two sequential (Task 5 frontend,
+> Task 5e). Done: **Task 0** (plan recorded); **Task 2** `phase-a-run-sheet.md` (Cases 1–18);
+> **Task 3** `partner-activation-patch.md` (both partners, 5 blanks each, verify sequence);
+> **Task 4** `decision-memo.md` §6 routing/visibility capture; **Task 5** the target-enablement gate —
+> `enabled_targets` config + loader rule 6b, `TargetNotEnabledError`→**403** (precedence 400→401→403),
+> read-only `GET /chat/visibility`, frontend load-time hide (`__OBI_ENABLED_TARGETS__` decode) +
+> `/chat/visibility` probe + the 4th `obi:hidden` message, 13 backend + 19 frontend unit tests, the
+> `widget-hidden-when-target-disabled` e2e spec (signed-key-gated, proven locally with a throwaway key),
+> the `securing-http-and-llm-endpoints` review (no gaps), and **ADR-0022** amending ADR-0020 D4/D5 +
+> doc sync (`context-contract.md` §4/§8.4, `catalog.md`, `decision-memo.md` §7, Case 18 flipped to a
+> live gate). `make check` green (boundaries 0 · backend 1555 +1 xfail · kb 53); retrieval routing
+> UNCHANGED so rule 11 owes no gold-set number; no migration; reversible (empty/absent `enabled_targets`
+> ⇒ inert). **NOT done (per owner "not the testing"):** Task 1 (Option B local-harness verification,
+> both legs) and the **single consolidated human-validation pass** (Phase A Cases 1–10 + integration
+> 11–18 local-leg incl. the now-live Case 18). Those are the human/manual legs; the build that makes
+> Case 18 a live gate is in place, so the pass can now run once. Ledger + progress-log carry one entry
+> per task.
+
+### Context
+
+Obi is code-complete and live in production (ADR-0021 Path B, directed `source → target` routing). The
+remaining tail is human/partner: Phase A human validation, then Base + Data Hub partner integration
+(0/5 facts confirmed from each partner today).
+
+This block does four things the owner asked for, plus one build the owner decided to pull forward:
+
+1. **Option B local-harness verification** — prove our embed → token → directed-routing → isolation
+   path works end-to-end on our own side, so that when a partner's staging comes up any failure is
+   unambiguously theirs. Owner chose **both** legs: automated Playwright smoke *and* the manual
+   real-gate leg.
+2. **Phase A run-sheet** — turn `phase-a-validation-cases.md` (Cases 1–18) into a standalone
+   fill-in checklist so the owner can work the gating step top to bottom.
+3. **Pre-staged `platforms.json` activation patch** — a paste-and-go diff per partner (filled as far
+   as the facts allow, five blanks marked) + the verify sequence, so activation is minutes not fresh
+   work when a partner replies.
+4. **Capture the routing/visibility clarification** the owner gave into the decisions record, because
+   it resolves open §D intent and one of its assertions ("QuickBooks target → widget hidden") is not
+   yet built.
+5. **Build the target-enablement visibility gate** (owner decided to scope now) — the selected
+   connection's target (and source) product must be in a configurable *enabled* set, else the widget
+   hides and the gate refuses, mirroring the legacy slot-form allowlist hide. This flips Phase A
+   Case 18 from "decision-dependent, not a gate" into a real gate and amends ADR-0020 D4/D5.
+
+#### Owner instructions governing this block (2026-10-13)
+- **Recorded here as the authoritative plan**, word for word (this block is Task 0's output).
+- **Implement in full, 100%, word for word** — the whole of Tasks 0–5 ships; nothing is deferred except
+  the parts physically blocked on partner facts (the Cases 11–18 *partner-staging* legs; 0/5 facts from
+  each today).
+- **Consolidate the human testing into a single pass.** Some human validation (Phase A) was always
+  required; the new Case 18 gate adds more. Do it **once, after Task 5 ships** — Phase A Cases 1–10 plus
+  the real-gate integration Cases 11–18 (now including the live Case 18 gate) in one sitting — so no
+  case is run twice. See "Human testing — one consolidated pass" below.
+- Work the CLAUDE.md loop (one substep, failing-test-first, ledger + progress-log, `make check`), but
+  proceed through the plan without stopping for a go-ahead between every substep ("rock and roll");
+  still pause at the §13 compaction points (every 2 substeps) and before the Task 5 security review.
+
+#### Routing model — confirmed against code (the owner's description is correct)
+
+`product_catalog.build_labels(source, target)` (`backend/app/platform/config/product_catalog.py:137-157`)
+yields exactly four labels:
+`[obi-general, {source}-general, {target}-general, {source}-to-{target.role}]`.
+
+The connection label is **source-product → target-*role*** (`toast-to-pms`), not source→target-product;
+the target product's own docs ride the separate product-level `{target}-general` label. Consequences
+for content coverage:
+
+- `toast → mews` → `[obi-general, toast-general, mews-general, toast-to-pms]`
+- `toast → opera-cloud` → `[obi-general, toast-general, opera-cloud-general, **toast-to-pms**]` — reuses
+  the **same** `toast-to-pms` connection pages as toast→mews. Only **new** content needed:
+  `opera-cloud-general` (Opera's own software docs).
+- `mews → quickbooks-online` → `[obi-general, mews-general, quickbooks-online-general, **mews-to-accounting**]`
+  — needs **both** new `quickbooks-online-general` docs **and** `mews-to-accounting` connection pages
+  (no `*-to-accounting` pages exist yet).
+
+So the "content long-pole" is small for a same-role target (opera-cloud as PMS reuses toast-to-pms) and
+real only for (a) each target product's own `-general` docs and (b) a brand-new target *role*
+(accounting), whose `{source}-to-accounting` connection pages don't exist.
+
+### Task 0 — Record this plan in the authoritative sync-rules plan
+Done by this block: this plan is written verbatim into `docs/Final_docs/sync-rules/plan.md` with the
+REOPENED pointer above. Discoverable from the top of the file. No ledger entry for Task 0 itself; ledger
+entries begin with the first code/doc deliverable (Tasks 2+).
+
+### Task 1 — Option B local-harness verification (both legs)
+Runs **fully local** (not against prod). Two legs, recorded separately per the cases doc.
+
+**1a. Automated smoke (fast).** `pnpm test:e2e` in `frontend/` (`package.json:13` → `build:obi &&
+playwright test`; webserver `next dev --port 3100`). Covers, all with a **mocked** `/api/chat`:
+`widget-mounts.spec.ts`, `connection-switch.spec.ts`, `citation-attribution.spec.ts`,
+`standalone-presets.spec.ts`. Proves the widget, switch-reset, attribution rendering. Does **not** touch
+the real token gate.
+
+**1b. Real-gate manual leg (Cases 11–18 local).**
+- Prereq — local RS256 test keys (gitignored, per `docs/embedding/obi-embed-local-test-keys.md`):
+  generate `TEST_OBI_PRIVATE_KEY_{NONE,MEWS,TOAST,OPERA}` via openssl into `frontend/.env.local`, or
+  the mint route returns 503. Public keys serve from `/api/test-hosts/jwks/[issuer]`.
+- Stack: `make up` → `make migrate` → seed a corpus carrying the labels each case needs (locate the
+  seed path during execution) → `make web-dev`. Point both apps at
+  `knowledge-base/config/platforms.local.json` via `PLATFORMS_PATH` (test issuers
+  `test-{mews,toast,opera,none}`, all `active: true`, RS256).
+- Walk Cases 11–18 through the real gate via `/test-hosts/toast` (`toast→mews`),
+  `/test-hosts/opera-cloud` (`opera-cloud→toast`), `/test-hosts/connection-switch`, `/test-hosts/multi`,
+  `/test-hosts/none`; mint API `/api/test-hosts/[name]/obi-token?form=directed`.
+- Record evidence (Network status, `trace_id`, console) in the run-sheet's Cases 11–18 "Local harness"
+  column. A local PASS is not a partner-staging PASS — leave partner columns N/A.
+- Case 18 becomes a real pass/fail gate after Task 5 — run it in the consolidated pass.
+
+### Task 2 — Phase A run-sheet
+Create `docs/Final_docs/5-integration-context/phase-a-run-sheet.md` (none exists; the cases doc only
+embeds a blank template at `phase-a-validation-cases.md:466-504`). One section per case (1–18): exact
+question(s), preset / directed token, connection under test, expected include/exclude + attribution
+badges, and the §D.10 seven-step evidence table with empty PASS/FAIL + trace-ref cells. Cases 11–18 get
+the per-environment (local / Base / Data Hub) table. Pure transcription from the cases doc + a one-line
+"how to reach this context" per case. Carries the doc's honest gaps (Case 7 not preset-expressible, 9b
+gate-only, 8/10 need corpus+sync).
+
+### Task 3 — `platforms.json` activation patch (pre-staged, not applied)
+Do **not** write placeholder entries into `knowledge-base/config/platforms.json` — a registry entry
+needs a real `issuer`+`jwks_url` or the backend fails to load. Produce
+`docs/Final_docs/5-integration-context/partner-activation-patch.md`: the exact per-partner JSONC block
+(from `partner-facts.md`), five blanks marked, plus (a) the **accounting-integrations-map** note (a hub
+that vends `quickbooks-online`/`xero` needs that id added to the top-level `integrations` map or the
+registry won't load), (b) the verify sequence (JWKS reachable → endpoint mints a conforming directed JWT
+→ vend rights → flip `active:true` → redeploy BE+FE → drop the temporary `obi-test` issuer → run Cases
+11–18 partner-staging leg).
+
+### Task 4 — Capture the routing/visibility clarification
+Append to `docs/Final_docs/5-integration-context/decision-memo.md` (cross-link `plan.md` §D R2/R5): the
+confirmed label model, the content-coverage consequence above, and that target-enablement hide is being
+built (Task 5), citing this as the resolution of the open §D intent. Append-only; names the design
+panel / §D item it serves.
+
+### Task 5 — Target-enablement visibility gate (BUILD)
+**Headline finding:** there is **no existing frontend hide to reuse**. `loader.ts init()` (L248-258)
+mounts the launcher + iframe unconditionally; an off-allowlist token today yields a bare 401 that
+`restart()`s the open thread — launcher stays visible, user opens it and gets a refused turn. `plan.md`
+§D.18 item 4 confirms "no target-enablement eligibility gate today — widget hiding is frontend UX over
+the backend 401." The backend gate shape is reusable (mirror slot-form `SlotNotOnAllowlistError`); the
+**frontend hide is net-new**.
+
+**5a. Config (recommended).** New global flat field in `knowledge-base/config/product_catalog.json`:
+`"enabled_targets": ["mews", "toast", "opera-cloud"]`. Enabled iff listed; QuickBooks goes live by not
+being listed. **Absent ⇒ all enabled** (backward-compatible, reversible, load-bearing default). Loader:
+add validation rule "6b" in `product_catalog.py` `load_product_catalog` (mirror the rule-6 allowlist
+loop L336-350): every id a real canonical product; store `enabled_targets: frozenset[str]`, materialize
+"absent ⇒ all ids". Flat (not role-keyed) because a directed target can be PMS or accounting. Rejected:
+extending `launch_allowlist` (slot-era, role-keyed); per-platform `enabled_targets` (exceeds owner's
+product-global intent — kept as the §D R3/R4 extension). `enabled_sources` omitted by default.
+
+**5b. Backend gate (`auth_context.py`, `router.py`).** New `TargetNotEnabledError(AuthContextError)`
+(after `SlotNotOnAllowlistError`, ~L103); message never leaks the product id (rule 10). New check in
+`_build_directed_context` **after check 4 (vend rights, L209-217)**, so precedence stays: unknown target
+→ 400 before search (checks 1-2) → vend violation → 401 (check 4) → not-enabled → 403 (new); update the
+docstring's "allowlist (5) LAPSES" absolute. Router `_resolve_auth_context` (L284-291): add a
+`TargetNotEnabledError` branch **before** the generic `AuthContextError` catch → HTTP 403 body
+`{"error": "integration not available", "reason": "target_not_enabled"}` (403 keeps it off the 401 renew
+path and distinct from the 400 fail-closed family; proxy forwards status+body verbatim,
+`route-handlers.ts` L130-136); add optional `reason` to the `Error` schema in
+`packages/contracts/src/openapi/chat.yaml`. New read-only `GET /chat/visibility` on `router.py`, auth by
+the same `X-Obi-Token` via `_resolve_auth_context`: `{"visible": true}` or `{"visible": false, "reason":
+"target_not_enabled"}`; 400/401 hard failures propagate as today; document in `chat.yaml`.
+
+**5c. Frontend hide (recommended: load-time, no flash).** `loader.ts`: inject `__OBI_ENABLED_TARGETS__`
+at build via esbuild `--define` from `product_catalog.json` (exactly how `__OBI_ORIGIN__` works, L29-34,
+in `build:obi`). In `init()`, before mounting, fetch the token once and **decode `target_system`**
+(display-only, same non-trust posture as `decodeExpMs` L75-85); if the decoded target isn't enabled,
+return without mounting (no launcher, no iframe). The trust-bearing fetch still happens fresh at click.
+Server-authoritative cross-check: `embed-frame.tsx` calls `GET /chat/visibility` on token receipt; if
+`visible:false`, it posts a **new 4th frame→host `obi:hidden` message** and the loader `destroy()`s.
+Conventions this bends (authorize in ADR-0022): (1) one eligibility-only token fetch at `init` in
+addition to the click fetch; (2) a 4th `ObiMessage` type (`chat-client.ts` L49-57 and
+`packages/contracts/src/iframe-messages.ts` flag it as needing its own ADR). Fallback (named, not
+chosen): click-time destroy — simpler, flashes then vanishes.
+
+**5d. Tests (`test_<stage>_<behavior>`; each names its panel) — no DB/migration, no gold-set number.**
+Retrieval untouched (label hard-filter / ADR-0020 D5 unchanged), so rule 11's before/after-number clause
+does not trigger — state in ADR + ledger. Catalog loader unit (`test_product_catalog.py`): parses
+`enabled_targets`; rejects unknown id; absent ⇒ all. Gate unit (new `test_mi_gate_directed.py`): refuses
+disabled target; allows enabled; precedence guards (unknown target still 400; vend violation still 401 —
+both before enablement). Router unit: disabled → 403 + `reason` + no product id in body (rule 10);
+visibility probe reports hidden. Frontend unit (`features/embed/tests/`): hides when decoded target not
+enabled; mounts when enabled. e2e (new `widget-hidden-when-target-disabled.spec.ts`): disabled-target
+host stub ⇒ launcher count 0 (needs a `/test-hosts/*` stub minting a `target_system:
+"quickbooks-online"` token; same signed-key caveat as `widget-mounts.spec.ts`).
+
+**5e. ADR + doc sync.** New **ADR-0022 "Target-Enablement Widget Eligibility in the Directed Path"**
+amending ADR-0020 D4/D5: partially reverses the allowlist lapse for *widget eligibility only*; retrieval
+routing unchanged; backend 403 is authority, frontend hide is UX; authorizes the init fetch + the 4th
+`obi:hidden` message. Sync `context-contract.md` §4/§8.4, `decision-memo.md`, `catalog.md`; flip
+`phase-a-validation-cases.md` Case 18 to a live pass/fail gate.
+
+**5f. No migrations.** Pure config + gate + router + one GET + frontend loader. Reversibility (rule 11):
+remove/empty `enabled_targets` ⇒ feature inert ⇒ today's behavior, no code revert.
+
+### Human testing — one consolidated pass (no case run twice)
+All human validation runs **once, after Task 5 ships**, driven by the Task 2 run-sheet: Phase A Cases
+1–10 (retrieval/eligibility against the seeded/preset corpus) **plus** integration Cases 11–18
+local-harness leg **including the now-live Case 18 gate** (disabled target ⇒ widget hidden + 403).
+Record every case's evidence; a case is PASS only with human evidence on file (panel `mi-validate`,
+§D.10). The **only** human testing that cannot fold in now is each partner's **staging leg of Cases
+11–18** (needs that partner's issuer/JWKS/token endpoint — 0/5 facts today); those columns stay N/A
+until a partner replies.
+
+### Execution order (CLAUDE.md loop; proceed without a go-ahead between substeps; pause at §13 compaction points)
+**0 (record plan) → 2 (run-sheet) → 3 (activation patch) → 4 (decision capture) → 1a (automated smoke)
+→ 5 (build the gate, with its security review) → consolidated human-testing pass (Phase A 1–10 +
+integration 11–18 local, Case 18 live).** Doing the build before the human pass is what lets the pass
+cover Case 18 live and run only once. Partner-staging legs follow whenever facts arrive.
+
+### Verification (whole block)
+- `make check` green (boundaries 0 · backend suite · kb suite); ruff + pyright clean on touched files
+  (whole-repo counts never rise above baseline, ADR-0003 D1).
+- Task 1a: `pnpm test:e2e` green. Task 1b: Cases 11–18 local-leg evidence recorded in the run-sheet.
+- Task 5 is an **endpoint + gate change** → run the `securing-http-and-llm-endpoints` review and the
+  `obi-secure-phase`/security-review step before done; new unit/e2e tests green; **no** gold-set number
+  (retrieval untouched — state in ADR); no migration.
+- Each finished substep: failing-test-first, panel/`today` flip, component docs where touched, ledger +
+  progress-log entries. Proceed without a go-ahead between substeps; pause at §13 compaction points,
+  before the Task 5 security review, and before anything outward-facing/hard-to-reverse.
+
+### Open sequencing note
+Task 5 pulls §D work **ahead** of Phase A, which the plan otherwise sequences last. Accepted by owner.
+Phase A Case 18 re-runs as a gate once Task 5 ships, and ADR-0020 is amended.
+
+---
+
+## Historical record — the CLOSED sync-rules plan (pre-2026-10-13)
+
 Status: **code + tests complete (approved); tag behaviour verified live; Supabase at migration head
 (0014) as of 2026-09-25** — §13 **all 6 steps done and green**; `make check` green (backend 940 + 1
 xfailed, kb 43, boundaries 0). The two live scripts are **written** (`page_state.py` tested by
@@ -156,6 +393,54 @@ whole eligible set is fetched, then the target picks the relevant directional sl
 `toast-to-pms`); accounting products (`quickbooks-online`, `xero`) are targets only. Partners send
 ids, not role labels — Obi derives POS/PMS/accounting from the id; a compound like `toast-opera` is
 refused. Launch allowlist today is Toast (POS) + Mews (PMS); Opera Cloud later.
+
+**Update 2026-10-13 (later) — the technical verify tail is PROVEN LIVE; two lines in the cutover
+block above are superseded.** Following owner go-ahead, all five remaining technical verify items
+were run **read-only against production Supabase on 2026-10-13** and all passed. This supersedes the
+2026-10-13 cutover block's "**Owner/worker-owned tail (NOT agent-closable)**" and "**One flagged,
+not fixed**" lines.
+
+- **Re-sync tail drained (item 1).** Jobs `1249–1261` (13 × `sync_page`) are all `succeeded`,
+  attempts 1, zero errors / dead-letter. The nine routing-labelled pages each now carry **2 active
+  chunks**, one routing label each: `1713176590` toast-general · `1748238338` mews-general ·
+  `1748434948` toast-to-pms · `1748434956` opera-cloud-general · `1748664352` toast-to-accounting ·
+  `1748697100` mews-to-accounting · `1749123082` obi-general · `1749319690` mews-to-pos ·
+  `1749352478` opera-cloud-to-pos. (Four other pages in the same batch — `1725005829`,
+  `1725792258`, `1730838570`, `1741619205` — succeeded with 0 chunks because they carry none of the
+  nine routing labels; they are not members, not part of the nine.)
+- **Live isolation proof PASS (item 2).** `verify_directed_routing_live.py --source toast --target
+  mews --mirror` → exit `0`, both directions, connected as the non-owner **`rag_reader`** role (RLS
+  enforced, not an owner bypass), non-vacuous (5 other-connection pages correctly hidden each way),
+  zero mismatches. `toast→mews` sees {toast-general, mews-general, toast-to-pms, obi-general};
+  `mews→toast` flips (`mews-to-pos` visible, `toast-to-pms` hidden). §D Stage 9 Task 4's live-proof
+  leg is satisfied.
+- **Readiness gate — re-spec already shipped + live READY (item 3) — CORRECTION.** The cutover
+  line "One flagged, not fixed … still asserts the retired `chunk_scope_read`" is **wrong for HEAD**.
+  The re-spec is committed in `8025d24`: `check_deploy_readiness` no longer asserts the retired
+  `chunk_scope_read` / `curated_knowledge_entry_scope_read`; it asserts the Path B backstop
+  (`chunk_source_read` PERMISSIVE/SELECT + chunk RLS enabled + the curated reader policy) and only
+  *reports* the fail-open `chunk_labels_read` routing axis, with a 4-case test
+  (`test_deploy_readiness_check.py`) green in `make check`. Run live 2026-10-13:
+  `setup_supabase.py check-deploy-readiness` → rc `0` READY ("the Path B tenant backstop is in
+  place … reader path safe to expose"; host password masked `***`, no secret leaked).
+- **source_scope allow-list SAFE (item 4).** All 5 active rows carry empty `tags=[]` — ids 10
+  (`1671069719`), 11 (`1670971395`), 12 (`1672314881`), 13 (`1670873122`), 23 (space `701857803`).
+  None authorizes zero routing labels, so no wrongful-deletion risk. Extends the earlier
+  id=23-only check to all five active rows.
+- **Sweep CQL length SAFE (item 5).** The reconciliation label-discovery CQL over the current
+  catalog (`all_routing_labels()` = 21 labels) builds a **464-character** `label in (...)` clause
+  (`confluence_client.py:259-260`) — far under Confluence Cloud's multi-thousand-char limit. The
+  historical 400 was the invalid `space.id` field, not length (already fixed to a label-only CQL).
+  Live-corroborated: the sweep that enqueued jobs `1249–1261` ran this exact CQL and all 13 jobs
+  succeeded, no 400.
+
+**Net:** the whole **technical verify tail (items 1–5) is closed and proven live**. What remains is
+the **human / partner tail only** — Phase A human validation first, then the A-Z Base + Data Hub
+integration (the five facts from Marien + Jasper; the directed-contract emails are send-ready in
+`5-integration-context/phase-9-partner-replies.md`, pending only the `[OWNER: name]` and the
+pick-one JWKS-test-option placeholders), and the optional `obi.omniboost.com` DNS switch. `make
+check` green (boundaries 0 · backend 1542 + 1 xfail · kb 53). These checks were run by an agent in
+this session, read-only, with owner authorization; no writes, no labels created, no secrets printed.
 
 **§14 (Execution appendix)** inlines the exact test harness, the current + target RLS DDL, the
 counting embedder, the naming/docstring/coverage/proof formats, and the CI xfail mechanics — so a
@@ -1681,3 +1966,180 @@ This fires once per switch. Never per question.
    Railway service) by someone with DNS access. Not functionally blocking — the Railway URL works. The
    `obi.js` `src` the partners embed is this web host for the test phase and switches to
    `obi.omniboost.com` before go-live (the only change on their side is that one `src` line).
+
+---
+
+## Integration pre-flight & test phase (owner-side) — added 2026-10-13
+
+> **Why this section exists.** Everything about standing Obi up inside Base + Data Hub used to live
+> only in chat. This is the durable home for it: the owner runbook, the failure modes we must prove
+> green *before* a partner sends anything, and the accounting-source architecture decision. Scope of
+> this write is **plan only** — no code, no agents yet. Statuses marked "per cross-check" come from
+> the 2026-10-13 code read (`token_verifier.py` / `auth_context.py` / `product_catalog.py` /
+> `platforms.json` / `loader.ts`); they are claims to **re-confirm with file:line in the coverage
+> audit** before any are trusted as done.
+
+### A. The three preconditions (a chat only works when all three line up)
+
+1. **Partner-side wiring** — the directed token (`source_system` + `target_system` + `business_id`,
+   RS256/ES256, `aud:"obi"`, `exp ≤ 60 min`), the JWKS, and the `<script src>` on the **web** host.
+   Covered by the send-ready contract + the two Slack messages.
+2. **Our registration + deploy** — nothing a partner sends works until their issuer/JWKS/embed-domains
+   are registered in `platforms.json` and the service is redeployed. Until then the gate returns 401
+   ("unknown issuer" / inactive) and the widget refuses to load.
+3. **Content for the exact connection** — Obi answers only for a `source→target` pair that has
+   ingested, routing-labelled pages. An empty box **refuses with a reason** (correct, not an answer).
+   `toast↔mews` is proven to have content (see the 2026-10-13 live block); `opera-cloud` and any
+   accounting pairs need their pages written, labelled and ingested first.
+
+"100%" needs all three — and even then only per-connection, for pairs that have content.
+
+### B. Owner runbook — per partner, in order
+
+1. Collect the **five facts** (issuer, JWKS URL, embed domains, per-customer source+target ids,
+   token endpoint) **+ one test customer with a logged-in test user per connection**.
+2. Add a `platforms.json` entry (issuer, `jwks_url`, embed domains, the source/target ids the hub may
+   vend) with **`active: false`**.
+3. Verify: JWKS reachable (RS256/ES256), the token endpoint mints a conforming directed JWT, and
+   **vend rights** match (the issuer may assert only the agreed ids).
+4. Flip **`active: true`**, then **redeploy the backend** (new registry entry) **and
+   rebuild/redeploy the frontend** (the iframe's `frame-ancestors` CSP is computed from the active
+   embed domains — a missing domain blocks the embed).
+5. Remove the temporary **`obi-test`** issuer + its embed allow-list from `platforms.json`.
+6. Confirm **content exists** for every pair they will test (pages labelled + ingested). Beyond
+   `toast↔mews`, check this before the demo or it correctly refuses.
+7. Run the **test matrix** against the deployed origin and save the output.
+8. *(Optional, later)* `obi.omniboost.com` DNS (CNAME to Railway) + swap the `obi.js` `src`.
+
+**Caveats.** (i) The plan's stated order is **Phase A human validation first** (answer quality);
+integration wiring can proceed in parallel but that is the order. (ii) The "accounting is
+target-only / source must be PMS-or-POS" rule is **not a hard code check** in the directed gate today
+— it is content- and vend-list-enforced. Section D changes how this is handled (configurable, not a
+category ban).
+
+### C. Pre-flight stub-partner test matrix (prove green before a real token arrives)
+
+We own the pieces to fake a partner **entirely locally** — a test RS256 keypair, the temporary
+`obi-test` issuer, and the `/test-hosts/multi` embed page. The pre-flight phase formalizes a **stub
+partner** (fake issuer → stub JWKS → stub token endpoint → stub embed host) and drives the real
+`/chat` + embed path with it. **All local/test-only — never prod `platforms.json`, never a deploy.**
+This proves *our* side end to end; it cannot prove a partner's real JWKS/domains or content for
+pairs that have none.
+
+| # | Failure mode to prove | Status (per cross-check — confirm in audit) |
+|---|---|---|
+| 1 | Directed happy path (`toast→mews`) returns cited, connection-scoped answers | likely covered |
+| 2 | `toast-opera` compound → **400 before search** (as `source_system` and as legacy `integration`) | covered; lock the code + status |
+| 3 | Legacy `integration`/`company_id` token → general content only, never routes | covered (`token_verifier.py:120`) |
+| 4 | Direction flip (`toast→mews` ≠ `mews→toast`) | proven live 2026-10-13 |
+| 5 | Empty connection box → refuse-with-reason, not a wrong answer | confirm at /chat level |
+| 6 | Unknown issuer / inactive platform → 401, widget refuses to load | covered |
+| 7 | HS256 / off-allow-list alg → rejected | covered (`token_verifier.py:158`) |
+| 8 | `exp − iat > 60 min` → rejected | covered (`token_verifier.py:176`) |
+| 9 | Embed `frame-ancestors`: disallowed host blocked, allowed host loads | browser e2e — confirm/extend |
+| 10 | Vend-rights: issuer asserting a non-vended source/target id → refused | **likely new** |
+| 11 | Multi-tenant switch: re-point/`clear` → fresh token → fresh chat on new connection | **likely new** (e2e) |
+| 12 | End-to-end stub-partner test tying 1–11 together | **new** (the pre-flight test) |
+
+**How it gets built (when scope expands past plan-only):** Agent 1 (read-only) fills the status
+column with file:line and flags true gaps; then each missing test and each code fix is **one
+`/obi-change` substep** — failing test first, `securing-http-and-llm-endpoints` for anything touching
+the gate, `make check` green, ledger + progress-log entry, stop and check in. Nothing touches prod
+config or a deploy.
+
+### D. Architecture decision — target-driven visibility, configurable source roles (DESIGN, plan-only)
+
+**Decision (to ratify as an ADR, e.g. ADR-0022, when implemented):** *Obi widget eligibility is
+determined by the selected target's enablement on the registered platform, subject to authentication
+and access checks. Connection authorization and knowledge routing are enforced separately. Product
+categories do not permanently prohibit source roles; supported products and directions are
+configurable.*
+
+This supersedes the earlier "hard-reject any accounting-category source" idea. **Do not** add a
+permanent ban on `category == accounting` as a source — a future authorized `quickbooks-online →
+toast` must be possible by **configuration**, not an architecture rewrite.
+
+**Separate three concerns (today they are conflated):**
+
+- **Widget visibility** — *should Obi appear for this target?* Driven by the target's enablement on
+  the registered platform (configurable, per platform).
+- **Connection authorization** — *is this user allowed this customer's selected source→target?* From
+  the verified token + trusted partner-side data; browser-provided values alone never authorize.
+- **Knowledge routing** — *which docs may Obi use?* The directed boxes only
+  (`obi-general` + `{source}-general` + `{target}-general` + `{source}-to-{target.kind}`).
+
+**Requirements (R1–R10, from the owner directive 2026-10-13):**
+
+- **R1 · Accounting must be able to become a source.** No permanent category ban. Category
+  (PMS/POS/accounting) describes the product; whether it may participate in a connection comes from
+  config + the actual authorized integration.
+- **R2 · The target determines whether the widget appears** — for the **currently selected
+  connection**, not every system the user can reach. A target enabled for Obi on that platform ⇒
+  widget appears; an unknown/disabled target ⇒ it does not. An accounting **source** must not by
+  itself hide a widget whose **target** is enabled. Registration must distinguish roles: known as a
+  product, or supported as a source, does **not** imply enabled as a target.
+- **R3 · Keep product support configurable.** Reuse/extend `product_catalog.json` + `platforms.json`
+  — do **not** create a competing registry. Represent: canonical product id · display name ·
+  category · whether enabled as an Obi **target** on the platform · any source/connection
+  restrictions. Adding a future accounting source = registering/enabling a product + connection, not
+  deleting a hardcoded ban. Validate/route on **canonical ids**; "QuickBooks Online (accounting)" is
+  presentation only.
+- **R4 · Base and Data Hub stay independently configurable.** A target enabled on one platform is not
+  enabled on the other. Preserve each platform's current support, but do not encode today's offering
+  as irreversible. Never infer the platform from the product category — use the registered platform.
+- **R5 · Validate the real customer connection on the backend.** Target-visibility is a product
+  **availability** rule, not access. The backend must still verify: registered platform · user
+  authenticated · the selected customer + connection authorized for that user · source and target
+  belong to that connection · target enabled for Obi on that platform · explicit connection
+  restrictions satisfied. Customer/source/target come from trusted partner-side data via the token.
+  Enforce availability + authorization on the **backend** too, so bypassing the widget's visibility
+  logic bypasses nothing.
+- **R6 · Retrieval stays tied to the exact `source→target`.** Only {source-general, target-general,
+  the explicit `source→target` pair} + all existing customer/access restrictions. Enabling a target
+  must not expose every page mentioning it; a future `quickbooks-online → toast` must **not** pull
+  `mews→toast` or `toast→mews`. Direction matters. Apply the same restriction through **every**
+  retrieval stage, including any graph retrieval.
+- **R7 · Missing docs ≠ invalid connection.** A valid, authorized, target-enabled connection with no
+  pair-specific pages stays visible and answers from permitted **general** docs; if those can't
+  answer, it says so — it must **not** widen to other connections. Handle an **unrecognized source
+  id** explicitly: no guessing, no silent substitution, no unrestricted retrieval. A
+  target-general-only fallback, if we support one, must be explicit and limited to permitted
+  target-general content; otherwise return a clear configuration error until context resolves.
+- **R8 · Customer/integration switches.** On a switch: refresh/replace the trusted connection
+  context, re-evaluate widget eligibility for the new target, apply the new customer/source/target to
+  later requests, and **prevent carry-over** of the previous connection's retrieved content or
+  conversation. Supported→unsupported target ⇒ widget becomes unavailable for that connection;
+  switching back ⇒ available again once the new context validates.
+- **R9 · Tests** (extend existing): supported+enabled target ⇒ eligible; unknown/disabled target ⇒
+  hidden; source-only product ≠ auto-enabled target; a valid explicitly-enabled accounting-**source**
+  connection accepted; an unsupported accounting-source follows the configured restriction (not a
+  category ban); a supported target does not authorize an unrelated customer or fabricated
+  connection; retrieval = only permitted general + exact directed pair; reverse/unrelated pairs
+  excluded; missing pair docs do not trigger unrestricted retrieval; a customer/integration switch
+  updates **both** availability and retrieval context with no carry-over.
+- **R10 · Record + report.** This decision is recorded here (ratify as ADR when built). After
+  implementation, report: what controls widget visibility · what validates the customer connection ·
+  what restricts retrieval · which config change enables a future accounting source · what more is
+  needed to add a new target · any remaining limitations.
+
+**Current-state → target-state delta (must be resolved during implementation — flagged, not assumed):**
+
+- **Widget visibility is NOT target-enablement-driven today.** The directed gate **lapses** the
+  slot-role check and the launch allowlist for the directed form (`auth_context.py:190-192`); the
+  allowlist (POS=Toast, PMS=Mews) gates the legacy/slot path, not the directed one. R2/R5 require a
+  new, **configurable target-enablement check per platform** on the directed path (backend-enforced,
+  with a matching frontend eligibility signal). This is net-new behavior.
+- **There is NO "context-update mechanism" (R8).** The widget bridge is exactly `obi:open` /
+  `obi:token` / `obi:clear` (`loader.ts`); a switch today is **new-token → re-init/clear → fresh
+  chat** (ADR-0020 D7). R8's "existing context-update mechanism" does **not** exist. Decision needed:
+  implement the new-token/re-init path as the context refresh (matches current design) **or** build a
+  real `obi:context-update` message. Recorded as a blocker to settle before R8 is built.
+- **Source-role support is implicit.** `product_catalog.json` has id/name/category but **no**
+  per-product "enabled as target on platform X" or "allowed as source" fields, and `platforms.json`
+  has no per-platform target-enablement/vend-restriction map beyond the embed/issuer data. R3/R4 need
+  these config fields added (extending the existing files, not a new registry).
+- **Vend-rights enforcement** exists at the gate but its test coverage is unconfirmed (matrix row 10).
+
+This section is **design + decision only**. Implementation is a later, separate pass — one
+`/obi-change` substep at a time, security-reviewed, each with its test and a before/after gold number
+for any retrieval change, ratified as an ADR. Nothing here has been coded.

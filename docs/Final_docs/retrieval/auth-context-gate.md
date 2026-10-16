@@ -8,8 +8,10 @@
   directed source-target validation) · `mi-contract` (the company + three-slots / directed
   connection claim shapes)
 - **Status:** Implemented (substep 8.1.3 — the gate accepts slots). Amended by substep 9.3.1
-  (Option A, ADR-0020 — the gate also accepts the directed source → target form); both tested at
-  unit + database levels, not yet proven against a live platform-signed token.
+  (Option A, ADR-0020 — the gate also accepts the directed source → target form), and by Task 5
+  (the target-enablement visibility gate — a directed target must be in the catalog's
+  `enabled_targets`, else a 403). All tested at unit (Task 5) / unit + database (8.1.3, 9.3.1)
+  levels, not yet proven against a live platform-signed token.
 
 ## What it does
 
@@ -73,6 +75,36 @@ connection instead of the membership slots:
 3. The slot **role check (3)** and the **launch allowlist (5)** LAPSE for the directed form
    (ADR-0020 D4/D5: direction is primary — `toast → mews ≠ mews → toast`; accounting is a
    first-class target; launch is content-gated by the label boxes, not an allowlist).
+4. **Target enablement (check 5t, Task 5)** — placed **after vend rights**, the resolved TARGET
+   product must be in the catalog's `enabled_targets` set, else `TargetNotEnabledError`. Only the
+   target gates (the source's enablement is ignored). Precedence is therefore: unknown target →
+   **400** (membership), un-vended → **401** (vend), not-enabled → **403**. This is a separate,
+   flat/global axis from the (lapsed) launch allowlist.
+
+#### The target-enablement visibility gate (Task 5)
+
+`knowledge-base/config/product_catalog.json` carries an optional flat top-level
+`enabled_targets` list of canonical product ids (loader rule 6b in
+`backend/app/platform/config/product_catalog.py` — every id must be a real product; stored as
+`ProductCatalog.enabled_targets: frozenset[str]`). A directed **target** is enabled iff it is in
+the set. **Absent ⇒ every product enabled** (backward compatible — the check never fires), so
+removing or emptying the field makes the feature inert with no code change (reversibility). The
+shipped value is `["mews", "toast", "opera-cloud"]`; the accounting products (xero,
+quickbooks-online) are deliberately not listed, so a directed connection whose target is one of
+them is refused until it goes live.
+
+`router._resolve_auth_context` maps `TargetNotEnabledError` to **HTTP 403** with a top-level body
+`{"error": "integration not available", "reason": "target_not_enabled"}` — a 403 (off the 401
+renew path; distinct from the 400 fail-closed family), rendered top-level (not FastAPI's default
+`{"detail": ...}`) by `render_target_not_enabled`, wired on the app in `main.create_app`, so it
+matches chat.yaml's `Error` schema and the frontend proxy forwards a `reason` the widget reads.
+The body **never names the product id** (never-bend rule 10).
+
+A new read-only **`GET /chat/visibility`** (same host-key + `X-Obi-Token` auth as `POST /chat`,
+no body) lets the frontend hide Obi *before* any chat round-trip: it runs the same gate via
+`_visibility_payload` and returns `{"visible": true}`, or `{"visible": false, "reason":
+"target_not_enabled"}` on the enablement 403. A 400/401 hard failure propagates exactly as
+`POST /chat` would — the probe never masks a malformed/forbidden connection as merely hidden.
 
 `business_id` (verified present for this form) becomes the `AuthContext.company_id`
 company-isolation axis; the resolved `source_slug`/`target_slug` ride the context for chat-start
@@ -129,8 +161,24 @@ filled slot (§D.13 keuze 4).
   `test_rt1_directed_unknown_source_is_400_before_search`,
   `test_rt1_directed_unknown_target_is_400_before_search`,
   `test_rt1_directed_vend_rights_bind_both_systems`,
-  `test_rt1_directed_accounting_target_is_first_class`, and
-  `test_sec_body_can_never_carry_the_connection` (the body model forbids source/target).
+  `test_rt1_directed_accounting_target_is_first_class` (now pins an all-enabled catalog so it
+  isolates the allowlist-lapse claim from the Task 5 enablement axis), and
+  `test_sec_body_can_never_carry_the_connection` (the body model forbids source/target). Task 5
+  added `test_mi_gate_directed_refuses_disabled_target`,
+  `test_mi_gate_directed_allows_enabled_target`,
+  `test_mi_gate_directed_unknown_target_is_400_before_enablement`,
+  `test_mi_gate_directed_vend_violation_is_401_before_enablement` (precedence guards).
+- `backend/app/platform/config/tests/test_product_catalog.py` (unit, panel `mi-gate`, Task 5):
+  `test_enabled_targets_parses_the_listed_ids`,
+  `test_enabled_targets_unknown_id_fails_and_names_it`,
+  `test_enabled_targets_absent_means_all_products_enabled`,
+  `test_enabled_targets_committed_value_is_mews_toast_opera_cloud`.
+- `backend/app/features/rag_agent/tests/test_mi_gate_visibility.py` (unit, panels `mi-gate` /
+  `mi-contract`, Task 5): `test_mi_gate_disabled_target_maps_to_403_with_reason_and_no_product_id`,
+  `test_mi_gate_visibility_probe_reports_hidden_for_disabled_target`,
+  `test_mi_gate_visibility_probe_reports_visible_for_enabled_target`,
+  `test_mi_gate_visibility_probe_propagates_400_unknown_target`,
+  `test_mi_gate_403_body_is_rendered_top_level_not_wrapped_in_detail`.
 - `backend/app/features/rag_agent/tests/test_token_verifier.py` (unit, panel `mi-contract`,
   substep 9.3.1): `test_rt1_verifier_extracts_directed_connection`,
   `test_rt1_malformed_directed_connection_rejected`.

@@ -136,3 +136,30 @@ audit of commit 3178553; this section records what changed since.
 
 Gate after this pass: `make check` green — boundaries 0 · backend 1542 passed + 1 xfailed · kb 53
 passed; ruff + pyright clean on all touched files.
+
+## Follow-up 2 — the "Still open" bullet is CLOSED 2026-10-13 (later)
+
+The five items the bullet above left open were run **read-only against production Supabase on
+2026-10-13** (owner-authorized) and all passed. The bullet stays as the point-in-time record; this
+corrects it.
+
+- **Readiness gate — CORRECTION, it WAS re-implemented.** The bullet's "deliberately NOT
+  re-implemented … still asserts the retired `chunk_scope_read`" is **wrong for HEAD `8025d24`**.
+  `check_deploy_readiness` is fully re-specced for Path B (asserts `chunk_source_read`
+  PERMISSIVE/SELECT + chunk RLS enabled + the curated reader policy; `chunk_scope_read` appears only
+  in comments saying it is NOT asserted; `chunk_labels_read` is reported-only, fail-open), with a
+  4-case test `test_deploy_readiness_check.py` green in `make check`. Run live: rc `0` READY. The
+  re-spec and the audit prose shipped in the same commit; the prose simply wasn't updated.
+- **Live re-sync + isolation proof — done.** The nine labelled pages are no longer pending: jobs
+  `1249–1261` all `succeeded`, each page has 2 active chunks, and
+  `verify_directed_routing_live.py --source toast --target mews --mirror` returned exit `0` PASS as
+  `rag_reader` (RLS enforced, non-vacuous, zero mismatches), both directions.
+- **source_scope allow-list — SAFE.** All 5 active rows (ids 10/11/12/13/23) carry empty `tags=[]`;
+  none authorizes zero routing labels.
+- **Sweep-CQL length — SAFE.** 21-label catalog → a 464-char `label in (...)` clause, far under the
+  limit; the historical 400 was the `space.id` field, not length. Live-corroborated by the
+  succeeding sweep.
+
+Full detail and numbers: `plan.md` "Update 2026-10-13 (later)" block. The remaining tail is
+human/partner only (Phase A, then Base + Data Hub integration) plus the optional `obi.omniboost.com`
+DNS switch.
