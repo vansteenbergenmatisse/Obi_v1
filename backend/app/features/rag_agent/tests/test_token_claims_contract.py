@@ -58,6 +58,9 @@ def test_directed_connection_form_is_published_and_optional() -> None:
     props = schema["properties"]
     for field in ("source_system", "target_system", "business_id"):
         assert field in props, f"{field} must be a published token claim"
-        assert props[field]["type"] == "string"
+    assert props["source_system"]["type"] == "string"
+    assert props["target_system"]["type"] == "string"
+    # substep 8.5.3: Base signs business_id as a number; the verifier normalizes it to a string.
+    assert props["business_id"]["type"] == ["string", "integer"]
     # optional: never promoted into the security-authoritative REQUIRED set.
     assert not ({"source_system", "target_system", "business_id"} & set(schema["required"]))

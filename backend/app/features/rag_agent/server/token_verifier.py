@@ -92,13 +92,18 @@ class ContextSlots:
 def _parse_directed(payload: dict) -> tuple[str, str, str]:
     """Structural validation of the directed-connection form (substep 9.3.1, ADR-0020): a token
     carrying `source_system` + `target_system` + `business_id`, all three non-empty strings.
-    A partner system missing its counterpart, or a missing/empty/non-string business_id, is a
+    A partner system missing its counterpart, or a missing/empty/non-string business_id (an integer
+    id is accepted and normalized to its decimal string — Base signs it as a number), is a
     malformed token -> bare TokenError (401), the same no-detail posture as a malformed context.
     The VALUES are not judged here — catalog membership of a well-shaped source/target is the
     gate's check (`build_auth_context`), which fails an unknown system with a 400 before search."""
     source = payload.get("source_system")
     target = payload.get("target_system")
     business = payload.get("business_id")
+    # Base signs business_id as a JSON integer; normalize it to its decimal string so every
+    # downstream consumer sees one shape. bool is an int subclass and is never an id.
+    if isinstance(business, int) and not isinstance(business, bool):
+        business = str(business)
     for value in (source, target, business):
         if not isinstance(value, str) or not value:
             raise TokenError("malformed directed connection")

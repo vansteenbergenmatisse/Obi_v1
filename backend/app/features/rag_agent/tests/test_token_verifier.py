@@ -221,6 +221,20 @@ def test_rt1_verifier_extracts_directed_connection(registry, keypair):
     assert vc.company_id is None
 
 
+def test_rt1_verifier_accepts_numeric_business_id(registry, keypair):
+    """panel mi-contract · substep 8.5.3 (Base partner token)
+    Base signs `business_id` as a JSON integer (e.g. 2108). An integer id is accepted and
+    normalized to its decimal string, so the gate and the company-isolation axis see the same
+    value a string id would give. A boolean is not an id and stays malformed."""
+    tok = _sign(keypair, source_system="toast", target_system="mews", business_id=2108)
+    vc = _verifier(registry, keypair).verify(tok)
+    assert vc.business_id == "2108"
+
+    tok = _sign(keypair, source_system="toast", target_system="mews", business_id=True)
+    with pytest.raises(TokenError):
+        _verifier(registry, keypair).verify(tok)
+
+
 def test_rt1_malformed_directed_connection_rejected(registry, keypair):
     """panel mi-contract · substep 9.3.1
     A directed token missing its partner system or its business_id, or carrying a non-string

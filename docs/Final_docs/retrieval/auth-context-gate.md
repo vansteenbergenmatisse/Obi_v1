@@ -60,7 +60,9 @@ byte-identical on the wire.
 When the verified token carries the directed form — `source_system` + `target_system` +
 `business_id` (`VerifiedClaims.source_system`/`target_system`/`business_id`, parsed by
 `token_verifier._parse_directed`; a partner system missing its counterpart or a missing/empty
-`business_id` is a malformed token → bare `TokenError`, 401) — `build_auth_context` takes a
+`business_id` is a malformed token → bare `TokenError`, 401; an integer `business_id` such as Base's
+`2108` is accepted and normalized to the string `"2108"`, a boolean is not, since 2026-10-16
+(`test_rt1_verifier_accepts_numeric_business_id`)) — `build_auth_context` takes a
 separate branch (`_build_directed_context`) **before** the slot chain and routes on the directed
 connection instead of the membership slots:
 
