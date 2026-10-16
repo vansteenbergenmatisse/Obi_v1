@@ -74,6 +74,70 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          description: >
+            Target not enabled (Task 5, target-enablement visibility gate). The
+            verified directed token resolves to a real, vendable target whose
+            integration is not yet enabled, so the session is refused and Obi
+            stays hidden for that company. The body is `{"error": "integration
+            not available", "reason": "target_not_enabled"}` — a top-level
+            `Error` with `reason` set, never naming the product id (never-bend
+            rule 10). Distinct from the 400 fail-closed family (unknown value)
+            and the 401 renew family (bad token / vend violation). Clients SHOULD
+            probe `GET /chat/visibility` first to avoid this round-trip.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Rate limited.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Chat API key not configured server-side (fail-closed).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /chat/visibility:
+    get:
+      operationId: getChatVisibility
+      summary: Probe whether Obi should be shown for the caller's verified context.
+      description: >
+        Read-only visibility probe (Task 5, target-enablement visibility gate).
+        Authed by the same host `CHAT_API_KEY` (server-to-server) and per-user
+        `X-Obi-Token` as `POST /chat`; no request body. Returns 200 with
+        `{"visible": true}` when the verified context is servable, or
+        `{"visible": false, "reason": "target_not_enabled"}` when the verified
+        directed token's target integration is not enabled — so the frontend can
+        hide Obi before any chat round-trip. A tokenless/general-only context is
+        always visible. A 400 (unknown/malformed value) or 401 (bad token) hard
+        failure propagates exactly as it would on `POST /chat`; it is never
+        masked as `visible: false`.
+      responses:
+        "200":
+          description: The visibility decision for the verified context.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VisibilityResponse"
+        "400":
+          description: >
+            Fail-closed for an unknown/malformed verified-token value (same
+            posture as `POST /chat`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Missing/invalid API key or an invalid/forbidden user token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "429":
           description: Rate limited.
           content:
@@ -439,6 +503,21 @@ components:
           enum: [-1, 1]
           description: Thumbs down (-1) or thumbs up (1).
 
+    VisibilityResponse:
+      type: object
+      required:
+        - visible
+      properties:
+        visible:
+          type: boolean
+          description: True when Obi should be shown for the verified context.
+        reason:
+          type: string
+          description: >
+            Present only when `visible` is false. Today the sole value is
+            `target_not_enabled` (Task 5). Never carries a product id or any
+            other context detail (never-bend rule 10).
+
     FeedbackResponse:
       type: object
       required:
@@ -454,3 +533,13 @@ components:
       properties:
         error:
           type: string
+        reason:
+          type: string
+          description: >
+            Optional machine-readable reason code, present only on responses that
+            carry one. Today the sole value is `target_not_enabled`, on the 403
+            returned by `POST /chat` (and surfaced as `visible: false` by
+            `GET /chat/visibility`) when the verified directed token's target
+            integration is not yet enabled (Task 5, target-enablement visibility
+            gate). The field never carries a product id or any other detail about
+            the customer's context (never-bend rule 10).

@@ -286,5 +286,6 @@ export type {
   ObiOpenMessage,
   ObiTokenMessage,
   ObiClearMessage,
+  ObiHiddenMessage,
 } from "./iframe-messages";
-export { OBI_MESSAGE_TYPES } from "./iframe-messages";
+export { OBI_MESSAGE_TYPES, OBI_HIDDEN_MESSAGE_TYPE } from "./iframe-messages";
