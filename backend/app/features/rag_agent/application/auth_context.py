@@ -107,6 +107,14 @@ class SlotNotOnAllowlistError(AuthContextError):
     the boundary."""
 
 
+class TargetNotEnabledError(AuthContextError):
+    """Task 5 (target-enablement visibility gate): a verified, vendable directed TARGET whose
+    product is not in the catalog's `enabled_targets` — the integration is not yet live, so the
+    session is refused and the router returns a 403 (off the 401 renew path, distinct from the
+    400 fail-closed family). The message NEVER names the product id (never-bend rule 10): the
+    error body is a fixed string; which product was disabled is not leaked to the caller."""
+
+
 @dataclass(frozen=True, slots=True)
 class AuthContext:
     company_id: str | None
@@ -187,9 +195,14 @@ def _build_directed_context(
       4   · vend rights (CIP-A1 generalized) — the issuing platform may assert only systems its
             `allowed_integrations` resolve to; a connection it may not vend is IntegrationNotAllowed
             (401), the same cross-issuer boundary as the slot form.
+      5t  · target enablement (Task 5) — AFTER vend rights, the TARGET product must be in the
+            catalog's `enabled_targets`, else TargetNotEnabledError (403) so Obi stays hidden for a
+            not-yet-live integration. `enabled_targets` absent ⇒ all products enabled ⇒ this never
+            fires (backward compatible). Only the target gates; the source's enablement is ignored.
     The slot role check (3) and the launch allowlist (5) LAPSE for the directed form (ADR-0020
     D4/D5: direction is primary, accounting is a first-class target, launch is content-gated by the
-    label boxes, not an allowlist).
+    label boxes, not an allowlist) — the launch allowlist lapses, but the Task 5 enablement check
+    (5t) above is a separate, global axis that does apply to the directed target.
 
     `business_id` (verified present for this form) becomes `company_id` — the company-isolation
     axis the chat-session key and the audit trail already consume (never a scope axis by itself).
@@ -215,6 +228,12 @@ def _build_directed_context(
             raise IntegrationNotAllowedError(
                 f"platform {entry.key} may not assert '{product.id}' as the {role} system"
             )
+
+    # -- check 5t · target enablement (Task 5) — AFTER vend rights so precedence is: unknown
+    # target → 400 (membership), vend violation → 401, not-enabled → 403. Only the target gates.
+    # Rule 10: the error message carries NO product id — which target was disabled is not leaked.
+    if target.id not in catalog.enabled_targets:
+        raise TargetNotEnabledError("target system is not enabled")
 
     return AuthContext(
         company_id=claims.business_id,

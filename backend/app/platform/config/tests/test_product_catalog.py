@@ -207,3 +207,52 @@ def test_catalog_every_platforms_integration_key_resolves() -> None:
 
     for key in integrations:
         assert catalog.resolve(key), f"integration key {key!r} resolves to no catalog id"
+
+
+# --- Task 5 (target-enablement visibility gate): the `enabled_targets` field (rule 6b) ---
+
+
+def test_enabled_targets_parses_the_listed_ids(tmp_path: Path) -> None:
+    """panel mi-gate · Task 5
+    Rule 6b: a flat `enabled_targets` list of real canonical ids parses into a frozenset of
+    exactly those ids — the enablement axis is global (not role-keyed) and independent of
+    launch_allowlist."""
+    data = _catalog(enabled_targets=["mews", "toast"])
+
+    catalog = load_product_catalog(_write_catalog(tmp_path, data))
+
+    assert catalog.enabled_targets == frozenset({"mews", "toast"})
+
+
+def test_enabled_targets_unknown_id_fails_and_names_it(tmp_path: Path) -> None:
+    """panel mi-gate · Task 5
+    Rule 6b: an `enabled_targets` entry that is not a real canonical product id
+    ("not-a-product") stops startup and the message names the offending entry — mirrors the
+    rule-6 allowlist loop."""
+    data = _catalog(enabled_targets=["mews", "not-a-product"])
+
+    with pytest.raises(ValueError, match="not-a-product"):
+        load_product_catalog(_write_catalog(tmp_path, data))
+
+
+def test_enabled_targets_absent_means_all_products_enabled(tmp_path: Path) -> None:
+    """panel mi-gate · Task 5
+    Backward-compatible default: when `enabled_targets` is absent, EVERY catalog product is
+    enabled (the field materializes to the full id set), so the gate's enablement check never
+    fires and today's behavior is preserved — removing/emptying the field makes it inert (5f)."""
+    data = _catalog()
+    data.pop("enabled_targets", None)
+
+    catalog = load_product_catalog(_write_catalog(tmp_path, data))
+
+    assert catalog.enabled_targets == frozenset(catalog.products)
+
+
+def test_enabled_targets_committed_value_is_mews_toast_opera_cloud() -> None:
+    """panel mi-gate · Task 5
+    The shipped catalog enables mews, toast and opera-cloud as targets; the accounting products
+    (xero, quickbooks-online) are deliberately NOT listed, so Obi stays hidden for a directed
+    connection whose TARGET is one of them until they go live."""
+    catalog = load_product_catalog()
+
+    assert catalog.enabled_targets == frozenset({"mews", "toast", "opera-cloud"})

@@ -21,14 +21,31 @@ import pytest
 from app.features.rag_agent.application.auth_context import (
     IntegrationNotAllowedError,
     InvalidSlotValueError,
+    TargetNotEnabledError,
     UnknownIntegrationError,
     build_auth_context,
 )
 from app.features.rag_agent.server.token_verifier import VerifiedClaims
 from app.platform.config.platforms import load_platform_registry
+from app.platform.config.product_catalog import (
+    DEFAULT_PRODUCT_CATALOG_PATH,
+    load_product_catalog,
+)
 
 _RECOGNIZED = frozenset({"obi-general-test", "obi-mews-test", "obi-toast-test"})
 _HUB_ISS = "https://hub.example.com"
+
+
+def _all_enabled_catalog(tmp_path):
+    """The committed catalog with `enabled_targets` removed → absent ⇒ ALL products enabled.
+    These role/vend tests pass it so they isolate the directed gate's shape/membership/vend
+    behavior from the Task 5 enablement axis (which has its own tests below); otherwise the
+    shipped `enabled_targets` (mews/toast/opera-cloud) would entangle an accounting target."""
+    data = json.loads(DEFAULT_PRODUCT_CATALOG_PATH.read_text())
+    data.pop("enabled_targets", None)
+    p = tmp_path / "catalog_all_enabled.json"
+    p.write_text(json.dumps(data))
+    return load_product_catalog(p)
 
 
 def _registry(tmp_path, allowed_integrations):
@@ -116,12 +133,60 @@ def test_rt1_directed_vend_rights_bind_both_systems(tmp_path):
 
 def test_rt1_directed_accounting_target_is_first_class(tmp_path):
     """panel mi-gate · substep 9.3.1
-    ADR-0020 D5: accounting is a first-class target with no launch-allowlist gate — a
-    mews → xero (PMS → accounting) connection is accepted when the issuer vends both."""
+    ADR-0020 D5: accounting is a first-class target with no launch-ALLOWLIST gate — a
+    mews → xero (PMS → accounting) connection is accepted when the issuer vends both. Uses an
+    all-enabled catalog so this isolates the allowlist-lapse claim from the Task 5 enablement
+    axis (the shipped catalog does not enable xero — see the enablement tests below)."""
     reg = _registry(tmp_path, ["mews", "xero"])
-    ctx = build_auth_context(_directed(source="mews", target="xero"), reg)
+    ctx = build_auth_context(
+        _directed(source="mews", target="xero"), reg, catalog=_all_enabled_catalog(tmp_path)
+    )
     assert ctx.source_slug == "mews"
     assert ctx.target_slug == "xero"
+
+
+# --- Task 5 (panel mi-gate): the target-enablement visibility gate (after vend rights) ---
+
+
+def test_mi_gate_directed_refuses_disabled_target(tmp_path):
+    """panel mi-gate · Task 5
+    A verified, vendable directed connection whose TARGET product is not in the catalog's
+    `enabled_targets` (the shipped catalog omits xero) is refused with TargetNotEnabledError —
+    the 403 family that keeps Obi hidden for a not-yet-live integration. The source's enablement
+    is irrelevant: only the target gates."""
+    reg = _registry(tmp_path, ["mews", "xero"])  # issuer vends both → vend rights pass
+    with pytest.raises(TargetNotEnabledError):
+        build_auth_context(_directed(source="mews", target="xero"), reg)
+
+
+def test_mi_gate_directed_allows_enabled_target(tmp_path):
+    """panel mi-gate · Task 5
+    A directed connection whose target IS enabled (mews, in the shipped `enabled_targets`) is
+    accepted — the enablement gate never fires for a live target."""
+    reg = _registry(tmp_path, ["toast", "mews"])
+    ctx = build_auth_context(_directed(source="toast", target="mews"), reg)
+    assert ctx.target_slug == "mews"
+
+
+def test_mi_gate_directed_unknown_target_is_400_before_enablement(tmp_path):
+    """panel mi-gate · Task 5 (precedence)
+    An unknown target fails membership (UnknownIntegrationError, the 400-before-search family)
+    BEFORE the enablement check ever runs — precedence: unknown → 400, not a 403."""
+    reg = _registry(tmp_path, ["mews", "xero"])
+    with pytest.raises(UnknownIntegrationError):
+        build_auth_context(_directed(source="mews", target="not-a-real-system"), reg)
+
+
+def test_mi_gate_directed_vend_violation_is_401_before_enablement(tmp_path):
+    """panel mi-gate · Task 5 (precedence)
+    A target the issuer may not vend is IntegrationNotAllowedError (401) — raised at check 4,
+    BEFORE the enablement check placed after it. So a disabled-AND-unvendable target refuses as
+    the 401 vend family, never the 403 enablement family: unknown → 400, vend → 401, not-enabled
+    → 403, in that order."""
+    reg = _registry(tmp_path, ["mews"])  # does NOT vend xero
+    with pytest.raises(IntegrationNotAllowedError):
+        build_auth_context(_directed(source="mews", target="xero"), reg)
+    assert not issubclass(TargetNotEnabledError, IntegrationNotAllowedError)
 
 
 def test_sec_body_can_never_carry_the_connection(tmp_path):

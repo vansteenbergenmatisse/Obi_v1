@@ -1,9 +1,11 @@
 import sys
 
 from app.features.rag_agent.server.router import (
+    TargetNotEnabledHTTPError,
     get_answer_service_dep,
     get_settings_dep,
     get_writer_db,
+    render_target_not_enabled,
     router,
 )
 
@@ -22,4 +24,6 @@ __all__ = [
     "get_answer_service_dep",
     "get_writer_db",
     "chat_router_module",
+    "TargetNotEnabledHTTPError",
+    "render_target_not_enabled",
 ]

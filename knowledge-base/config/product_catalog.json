@@ -16,5 +16,6 @@
   "launch_allowlist": {
     "pos": ["toast"],
     "pms": ["mews"]
-  }
+  },
+  "enabled_targets": ["mews", "toast", "opera-cloud"]
 }
