@@ -34,16 +34,18 @@ routing identity in `auth_context.py:173-230`.
 
 ## Base — Marien
 
-**Status: not activatable. 0 of 5 facts confirmed.** Earlier embed hostnames seen but unconfirmed
-for this integration; everything else outstanding.
+**Status (2026-10-16): entry written to `platforms.json` as `base`, still `active: false`. Facts 1 and 3
+received; 2 received but not yet working; 4 and 5 partly.** Marien replied on 2026-10-16. Base and
+Data Hub are two separate integrations on two different sites (owner, 2026-10-16), so Base has its
+own entry rather than sharing `datahub`.
 
 | Fact | State | What we have | What we still need |
 |---|---|---|---|
-| 1 · Issuer | **MISSING** | — | the exact `iss` string Base's tokens will carry. A hostname is not an issuer. |
-| 2 · JWKS URL | **MISSING** | — | a reachable https JWKS URL (RS256/ES256), keyed by `kid`. |
-| 3 · Embed domains | **unconfirmed** | earlier: `app.omniboost.io` (live), `base.development.omniboost.io` (dev) | reconfirm the exact HTTPS origins where Obi will actually appear for this integration. |
-| 4 · Source/target ids | **MISSING** | we asked for separate source + target + category | the canonical source id and target id per customer, and one complete example payload. |
-| 5 · Token endpoint | **MISSING** | `/obi/token` was our suggested path; Marien discussed implementing it | the confirmed deployed endpoint URL. |
+| 1 · Issuer | **received (dev)** | `https://base.development.omniboost.io`, now the `base` entry's `issuer` | the token from the deployed dev environment must carry exactly this `iss` (Marien's example token carried `http://app.omniboost.io.test`, his local machine). The **live** issuer for `app.omniboost.io` is still to come. |
+| 2 · JWKS URL | **received, not working** | `https://base.development.omniboost.io/obi/jwks`, RS256, keyed by `kid` | it returned **HTTP 500 (HTML)** on 2026-10-16. It must serve JSON `keys` before `base` can go active. |
+| 3 · Embed domains | **confirmed** | `base.development.omniboost.io` (dev) and `app.omniboost.io` (live), both https. The CSP works per origin, so every page on those hosts (e.g. `/integrations/integration-settings?...`) is covered. | none. Both hosts are live on the `/embed` CSP today through `obi-test` (general-only chat). |
+| 4 · Source/target ids | **format confirmed, values partly unknown** | example payload: `aud:"obi"`, `sub:"5"`, 5-minute lifetime, `source_system:"PEP PMS"`, `target_system:"NetSuite"`, `business_id: 2108` (an integer). Base sends display names; the gate resolves names case-insensitively (`auth_context.py:215-218`). An integer `business_id` is accepted since 2026-10-16 (normalized to `"2108"`). | **PEP PMS and NetSuite are not in `product_catalog.json`**, so this example token is refused with a 400 before search. Owner to decide: add them to the catalog (PEP PMS = PMS, NetSuite = accounting), or have Base only vend supported systems. |
+| 5 · Token endpoint | **received for local only** | `https://app.omniboost.io.test/obi/token?property_id=…&source_software_name=…&destination_software_name=…` | `.test` is Marien's local machine and is not reachable. We need the deployed dev URL. |
 
 **Special requirement — multi-customer context switch (Marien, confirmed).** One Base user can reach
 multiple customers and integrations, and the selected customer/connection can change **without
@@ -71,14 +73,14 @@ token) and whether they prefer re-init or token-replacement. See Phase A Case 17
 
 ## Data Hub — Jasper
 
-**Status: not activatable. 0 of 5 facts confirmed** (a local fixture exists, but a local test issuer
+**Status: not activatable. 1 of 5 facts received (embed domain, from the owner)** (a local fixture exists, but a local test issuer
 and an expired, locally-signed token establish nothing about staging).
 
 | Fact | State | What we have | What we still need |
 |---|---|---|---|
 | 1 · Issuer | **MISSING** | local example `https://pos-pms-laravel.test` (fixture only) | the real staging `iss`. |
 | 2 · JWKS URL | **MISSING** | inline public JWKS with `kid: datahub-local-1`; proposed `https://<staging-domain>/.well-known/jwks.json` | the deployed staging JWKS URL. |
-| 3 · Embed domains | **MISSING** | `https://www.datahub.be` appeared in our own example — not confirmed as a staging origin | the exact HTTPS staging origin(s) Obi will load on. |
+| 3 · Embed domains | **received (owner, 2026-10-16)** | `datahub.omniboost.io`, on the `datahub` entry and live on the `/embed` CSP through `obi-test` | Jasper to confirm it is the origin Obi loads on (and whether staging uses another host). |
 | 4 · Source/target ids | **MISSING, do not infer** | sample carried legacy `integration: toast-opera`; Jasper confirmed separate source/target/category is possible | an explicit directed example: canonical **source** id → **target** id + category, per customer. **Do not** auto-map `toast-opera` — have Jasper confirm the direction and both canonical ids. |
 | 5 · Token endpoint | **MISSING** | `/obi/token` example only | the confirmed deployed staging endpoint URL. |
 
@@ -98,11 +100,15 @@ search (`auth_context.py:202-207`). It is two ids mashed together, not a system.
 
 ## Our-side preparation (ready to execute when facts arrive — nothing active yet)
 
-Neither entry is written to `knowledge-base/config/platforms.json` yet, because a registry entry
-needs at minimum a real `issuer` and `jwks_url`, and neither partner has confirmed those. The current
-file keeps the inactive `datahub` placeholder (`issuer`/`jwks_url` = `"TODO until 4.x"`, `active:
-false`) and has **no Base entry**. When the facts land, paste the matching block below and run the
-activation sequence (`phase-9-partner-replies.md` §"What happens after they reply").
+**Base is written** to `knowledge-base/config/platforms.json` as its own `base` entry (2026-10-16,
+inactive): issuer + JWKS from Marien, `algs: ["RS256"]`, domains `base.development.omniboost.io` +
+`app.omniboost.io`, vend set `[mews, toast, opera-cloud]` (mirrors datahub, owner trust decision).
+Validated under production settings on a copy with `active: true` → loads cleanly. To activate: once
+the JWKS serves keys and a fresh token from the deployed dev endpoint verifies, flip `active` to
+`true`, remove the two Base hosts from `obi-test`, redeploy both services.
+**Data Hub** keeps its inactive placeholder (`issuer`/`jwks_url` = `"TODO until 4.x"`) with domain
+`datahub.omniboost.io`. When Jasper's facts land, fill the block below and run the activation
+sequence (`phase-9-partner-replies.md` §"What happens after they reply").
 
 **Data Hub (update the existing `datahub` placeholder):**
 
@@ -110,25 +116,11 @@ activation sequence (`phase-9-partner-replies.md` §"What happens after they rep
 "datahub": {
   "issuer": "<Jasper: staging iss>",
   "jwks_url": "<Jasper: https staging JWKS URL>",
-  "domains": ["<Jasper: staging embed host, no scheme>"],
+  "domains": ["datahub.omniboost.io"],   // owner-supplied 2026-10-16; Jasper to confirm
   "lifetime_minutes": 60,          // sample used 600 s — within 60 min, fine
   "algs": ["RS256"],               // sample is RS256; add "ES256" only if they sign with it
   "active": false,                 // flip true only after JWKS + token endpoint + vend rights verify
   "allowed_integrations": ["toast", "mews", "opera-cloud"]  // the vend set — confirm the real source/target ids per customer
-}
-```
-
-**Base (new entry — add once Marien confirms issuer + JWKS):**
-
-```jsonc
-"base": {
-  "issuer": "<Marien: iss>",
-  "jwks_url": "<Marien: https JWKS URL>",
-  "domains": ["app.omniboost.io", "base.development.omniboost.io"],  // RECONFIRM the exact origins
-  "lifetime_minutes": 60,
-  "algs": ["RS256", "ES256"],      // confirm which they sign with
-  "active": false,
-  "allowed_integrations": []       // set to the canonical source/target ids Base vends, per customer
 }
 ```
 
