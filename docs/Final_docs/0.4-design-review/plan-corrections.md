@@ -238,7 +238,7 @@ bundles) that extend an existing substep's scope without altering what that subs
 | retrieval | `application/retriever.py:222,234` — `retrieve()` vs `retrieve_with_context()` as two distinct public methods (retrieval.md:127). | p3-s3_1-1 | retrieve() vs retrieve_with_context() is the provenance/context-threading work of 3.1.1 |
 | retrieval | `application/retriever.py:9-10` — the `RankFn` eval-harness seam (retrieval.md:128). | p3-s3_0-2 | RankFn eval-harness seam feeds the gold-set/eval substep |
 | retrieval | `infrastructure/search_repo.py:52-55` — `KNOWLEDGE_SCOPE_WILDCARD = "*"` sentinel (retrieval.md:129). | p2-s2_5-3 | KNOWLEDGE_SCOPE_WILDCARD sentinel is part of the scope-state/label-gated filter work |
-| retrieval | `__init__.py:15-16` — the feature-root import-boundary rule (ADR-0003 machinery, not a design claim) (retrieval.md:130). | p1-s1_1-2 | feature-root import-boundary rule is the one-dependency-direction machinery |
+| retrieval | `__init__.py:15-16` — the feature-root import-boundary rule (ADR-features-import-only-through-public-root machinery, not a design claim) (retrieval.md:130). | p1-s1_1-2 | feature-root import-boundary rule is the one-dependency-direction machinery |
 | retrieval | `infrastructure/search_repo.py:130-131` — `_vector_literal` helper (retrieval.md:131). | p3-s3_1-2 | _vector_literal is dense-search plumbing under the fusion-by-piece substep |
 | rag_agent | `domain/identity.py:1-91`, `application/answer_service.py:207-214`, `infrastructure/llm_client.py:97-103,221-241`, `domain/prompt.py:136-186` — the entire per-user identity short-circuit, a third short-circuit alongside small-talk and clarification (rag_agent.md:102). | p1-s1_1-1 | per-user identity short-circuit; the code-map move substep (cm-agent target: add identity.py/auth_context.py/token_verifier.py) already names these files |
 | rag_agent | `domain/refusal.py:24-34,42,79-80`, `settings.py:119-127`, `answer_service.py:113-116,296-302` — the `off_topic` refusal reason and its own threshold (rag_agent.md:103). | p3-s3_5-2 | off_topic refusal reason — folded directly into this substep's corrected reason list (see changed-substep edit above) |
@@ -421,7 +421,7 @@ consumer) — confirmed by grep across `backend/` and `knowledge-base/`; every p
 mention was a test docstring/comment stating "state is the tag set on `tags`", or design/plan prose.
 So retirement is a plan/design-level act, not a schema migration: the design targets an unbuilt
 `scope_state` enum, and D4 removes the only non-`ok` value that mattered (conflict). State remains
-materialized as `tags` (ADR-0016).
+materialized as `tags` (ADR-scope-state-materialized-as-tags).
 
 Mirroring steps 1–2, the design-page **status** flips are batched to §13 step 6; this pass records
 the corrections and updates the affected panels' `today` lines only.
@@ -504,7 +504,7 @@ carried-forward-by-content, not vector reuse). Retired: `test_pipeline_reuse.py`
 `test_versioning_rollback.py`, `test_ingestion_pipeline.py::test_reuse_guard_disables_on_config_change`.
 
 **Whole-repo pyright net-decreased** (47 → 44) — removing `rollback_to`/`reusable_active_children`
-dropped their Optional-access errors; ADR-0003 D1 holds. `make check` green (backend 935 passed +
+dropped their Optional-access errors; ADR-features-import-only-through-public-root D1 holds. `make check` green (backend 935 passed +
 1 xfailed, kb 43, boundaries 0).
 
 ## §13 step 6 — rule 5 positive guard + rule 8 invariant + finalise (2026-09-24)

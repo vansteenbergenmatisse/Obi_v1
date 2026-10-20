@@ -69,7 +69,7 @@ def build_gateway(settings: Settings) -> ConfluenceGateway:
 def build_answer_service(settings: Settings) -> AnswerService:
     """The `rag_agent` answer runtime (PLAN 4.4), composed from settings.
 
-    Reads run against the non-owner `rag_reader` engine (RLS actually enforced, ADR-0004); the
+    Reads run against the non-owner `rag_reader` engine (RLS actually enforced, ADR-source-id-row-security-with-reader-writer-roles); the
     policy is constructed empty — PLAN 4.3 made its injected data unused for the `allowed()`
     decision, which is now built fresh per search from live `page_source`/`page_restriction` data
     (see `retriever.py`). Merely constructing this (including the `AnthropicMessagesClient`) makes
@@ -218,7 +218,7 @@ def create_app(*, settings: Settings | None = None, start_scheduler: bool | None
         ttl_seconds=settings.chat_answer_cache_ttl_seconds,
         max_entries=settings.chat_answer_cache_max_entries,
     )
-    # PLAN 11.1c (ADR-0014): the /chat token verifier, built once from the platform registry.
+    # PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): the /chat token verifier, built once from the platform registry.
     # Touching settings.platform_registry here is also the fail-fast startup check (bad
     # platforms.json -> boot fails, never fails open to an unverified caller).
     platform_registry = settings.platform_registry

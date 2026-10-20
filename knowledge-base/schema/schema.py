@@ -43,7 +43,7 @@ def drop_all(conn: Connection) -> None:
     drop_enum_types(conn)
 
 
-# --- Row-Level Security + reader role (ADR-0004) ---------------------------------------------
+# --- Row-Level Security + reader role (ADR-source-id-row-security-with-reader-writer-roles) ---------------------------------------------
 # RLS policies and roles are not expressible in ORM metadata, so this raw DDL is shared by the
 # real migration and the test harness (mirroring create_all's "same shape everywhere" contract).
 
@@ -54,7 +54,7 @@ def apply_chunk_rls(conn: Connection) -> None:
     """Enable (not FORCE) source-keyed RLS on ``chunk`` with a default-deny policy. Idempotent.
 
     An unset ``app.allowed_sources`` GUC -> ``string_to_array(NULL, ',')`` -> ``= ANY(NULL)`` is
-    never true -> zero rows. RLS is ``ENABLE``d but deliberately **not** ``FORCE``d (ADR-0013): the
+    never true -> zero rows. RLS is ``ENABLE``d but deliberately **not** ``FORCE``d (ADR-supabase-postgres-store-without-force-rls): the
     table owner (the writer) is exempt by virtue of ownership alone, while the non-owner
     ``rag_reader`` role stays subject to the policy — which is why retrieval must run as that role.
 
@@ -64,8 +64,8 @@ def apply_chunk_rls(conn: Connection) -> None:
     unchanged — it never depended on ``FORCE``, only on ``rag_reader`` being a non-owner.
     """
     conn.execute(text("ALTER TABLE chunk ENABLE ROW LEVEL SECURITY"))
-    # No FORCE: the owner (writer) must read its own rows without SUPERUSER (ADR-0013). Assert
-    # NO FORCE so a DB migrated before ADR-0013 is corrected when this idempotent helper reruns.
+    # No FORCE: the owner (writer) must read its own rows without SUPERUSER (ADR-supabase-postgres-store-without-force-rls). Assert
+    # NO FORCE so a DB migrated before ADR-supabase-postgres-store-without-force-rls is corrected when this idempotent helper reruns.
     conn.execute(text("ALTER TABLE chunk NO FORCE ROW LEVEL SECURITY"))
     conn.execute(text(f"DROP POLICY IF EXISTS {_RLS_POLICY} ON chunk"))
     conn.execute(
@@ -84,7 +84,7 @@ def drop_chunk_rls(conn: Connection) -> None:
     conn.execute(text("ALTER TABLE chunk DISABLE ROW LEVEL SECURITY"))
 
 
-# --- Phase 11.1a: customer/knowledge-scope isolation backstop (ADR-0014) ----------------------
+# --- Phase 11.1a: customer/knowledge-scope isolation backstop (ADR-db-level-customer-scope-isolation-backstop) ----------------------
 # A second axis on top of the source policy above. The mews/opera/toast/general boundary used to be
 # an app-layer ``tags && :scopes`` predicate gated by a fail-OPEN feature flag; this makes the DB
 # enforce it. The policy is ``AS RESTRICTIVE`` so it **ANDs** with ``chunk_source_read`` (a second
@@ -98,7 +98,7 @@ _CURATED_SCOPE_POLICY = "curated_knowledge_entry_scope_read"
 
 
 def apply_chunk_scope_rls(conn: Connection) -> None:
-    """Add the RESTRICTIVE knowledge-scope policy to ``chunk`` (ADR-0014, mig 0014). Idempotent.
+    """Add the RESTRICTIVE knowledge-scope policy to ``chunk`` (ADR-db-level-customer-scope-isolation-backstop, mig 0014). Idempotent.
 
     Composes with ``apply_chunk_rls``'s source policy via AND. Requires that policy to already exist
     (``chunk`` RLS ``ENABLE``d); this only adds the second, restrictive predicate.
@@ -129,7 +129,7 @@ def drop_chunk_scope_rls(conn: Connection) -> None:
     conn.execute(text(f"DROP POLICY IF EXISTS {_CHUNK_SCOPE_POLICY} ON chunk"))
 
 
-# --- Option A / ADR-0020 D1: directed-connection routing label policy on ``chunk`` ------------
+# --- Option A / ADR-directed-source-target-routing-labels D1: directed-connection routing label policy on ``chunk`` ------------
 # The raw-labels axis (migration 0016). A RESTRICTIVE policy keyed on ``app.allowed_labels`` that
 # mirrors ``chunk_scope_read`` in SHAPE but is deliberately a **no-op until the GUC is set** — the
 # retrieval path that sets ``app.allowed_labels`` lands in a later substep (9.4.1 / Stage 6). Unlike
@@ -143,7 +143,7 @@ _CHUNK_LABELS_POLICY = "chunk_labels_read"
 
 
 def apply_chunk_labels_rls(conn: Connection) -> None:
-    """Add the RESTRICTIVE directed-connection labels policy to ``chunk`` (ADR-0020 D1, mig 0016).
+    """Add the RESTRICTIVE directed-connection labels policy to ``chunk`` (ADR-directed-source-target-routing-labels D1, mig 0016).
 
     Composes (ANDs) with ``chunk_source_read`` + ``chunk_scope_read``; requires chunk RLS enabled.
     No-op until ``app.allowed_labels`` is set (9.4.1): unset/empty -> opt out; ``'*'`` -> opt out;
@@ -170,10 +170,10 @@ def drop_chunk_labels_rls(conn: Connection) -> None:
 
 
 def apply_curated_scope_rls(conn: Connection) -> None:
-    """Add the RESTRICTIVE knowledge-scope policy to ``curated_knowledge_entry`` (ADR-0014).
+    """Add the RESTRICTIVE knowledge-scope policy to ``curated_knowledge_entry`` (ADR-db-level-customer-scope-isolation-backstop).
 
     Same GUC as ``chunk``, plus ``cardinality(tags) = 0`` — an empty-tags curated entry is global
-    ("every scope", ADR-0011) and stays visible under any real scope list; only a *tagged* curated
+    ("every scope", ADR-knowledge-scope-tagging-and-filtering) and stays visible under any real scope list; only a *tagged* curated
     entry is isolated. ``'*'`` and unset behave as on ``chunk``. Composes (AND) with 0009's
     permissive ``*_reader_read`` policy, so this only *subtracts* visibility; it never grants a new
     role access. Idempotent.
@@ -236,7 +236,7 @@ def enable_non_chunk_rls(conn: Connection) -> None:
 
     Idempotent, and safe-by-default on a fresh managed deploy: with no policy an RLS-enabled table
     yields zero rows to any non-owner, non-BYPASSRLS role (the Supabase PostgREST roles). The owner
-    (writer) bypasses RLS by ownership (ADR-0013); rag_reader is let back in only where needed, by
+    (writer) bypasses RLS by ownership (ADR-supabase-postgres-store-without-force-rls); rag_reader is let back in only where needed, by
     ``apply_reader_rls``. Skips a not-yet-created table (see ``_table_exists``).
     """
     for table in _non_chunk_tables():
@@ -335,7 +335,7 @@ def _grant_extensions_access(conn: Connection, *, role: str) -> None:
     ``USAGE`` there and ``extensions`` is off its ``search_path``, so every dense query
     (``embedding::halfvec(dim)``) fails as the reader with ``type "halfvec" does not exist`` /
     ``permission denied for schema extensions``. Because retrieval MUST run as the non-owner reader
-    (ADR-0004), that breaks live semantic search. We only act when an ``extensions`` schema exists —
+    (ADR-source-id-row-security-with-reader-writer-roles), that breaks live semantic search. We only act when an ``extensions`` schema exists —
     a local/RDS install puts pgvector in ``public``, where the reader is already covered by the
     ``GRANT USAGE ON SCHEMA public`` above.
 

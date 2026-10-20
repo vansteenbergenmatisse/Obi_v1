@@ -6,7 +6,7 @@ principals; absence means unrestricted — the same contract the pure policy alr
 Written by ``confluence_sync``'s ``handle_sync_page`` whenever a page's restriction list changes
 (the existing ``classify()`` ``permissions_changed`` class already detects this); read by
 ``retrieval``'s ``HybridRetriever._search`` alongside RLS as the second, page-level security layer
-(ADR-0004 §page-level ACL / ADR-0005 §9). ``rag_reader``'s ``GRANT SELECT ON ALL TABLES`` +
+(ADR-source-id-row-security-with-reader-writer-roles §page-level ACL / ADR-rerank-then-verify-cited-answers §9). ``rag_reader``'s ``GRANT SELECT ON ALL TABLES`` +
 ``ALTER DEFAULT PRIVILEGES`` (01-roles.sql) already cover this new table — no separate grant
 needed.
 

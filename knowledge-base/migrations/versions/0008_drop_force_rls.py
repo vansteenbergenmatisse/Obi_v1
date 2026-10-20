@@ -1,4 +1,4 @@
-"""drop FORCE on chunk RLS so the writer needs no SUPERUSER (ADR-0013)
+"""drop FORCE on chunk RLS so the writer needs no SUPERUSER (ADR-supabase-postgres-store-without-force-rls)
 
 ``chunk`` was under ``FORCE ROW LEVEL SECURITY``, where even the table owner is subject to the
 default-deny policy — so on the local cluster the writer only escaped it by being a SUPERUSER.
@@ -8,11 +8,11 @@ reconciliation reads would break on cutover (Phase 6).
 
 Fix: keep RLS ``ENABLE``d, drop ``FORCE``. A non-superuser *owner* is then exempt by ownership
 alone, while the non-owner ``rag_reader`` role stays fully policy-bound — read-path isolation
-(ADR-0004) is unchanged, because it never depended on ``FORCE``, only on the reader being a
-non-owner. See ADR-0013.
+(ADR-source-id-row-security-with-reader-writer-roles) is unchanged, because it never depended on ``FORCE``, only on the reader being a
+non-owner. See ADR-supabase-postgres-store-without-force-rls.
 
 Idempotent: ``NO FORCE`` is a no-op when FORCE is already absent, and the 0001 baseline builds the
-current ORM metadata via create_all + ``schema.apply_chunk_rls`` (which as of ADR-0013 no longer
+current ORM metadata via create_all + ``schema.apply_chunk_rls`` (which as of ADR-supabase-postgres-store-without-force-rls no longer
 FORCEs), so a fresh ``alembic upgrade head`` re-asserts the intended state either way.
 
 Revision ID: 0008_drop_force_rls
@@ -38,6 +38,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Restore the pre-ADR-0013 state. Reversible, but re-forcing RLS requires the writer to be a
+    # Restore the pre-ADR-supabase-postgres-store-without-force-rls state. Reversible, but re-forcing RLS requires the writer to be a
     # SUPERUSER again (i.e. the local cluster, not managed Postgres) or ingestion reads will break.
     op.execute("ALTER TABLE chunk FORCE ROW LEVEL SECURITY")

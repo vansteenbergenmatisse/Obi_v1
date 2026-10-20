@@ -1,6 +1,6 @@
 """Background worker: claim a queued job, run its handler, complete or fail it.
 
-Transaction discipline (ADR-0002 / decision D5) — three separate transactions per job:
+Transaction discipline (ADR-hybrid-retrieval-over-versioned-chunk-store / decision D5) — three separate transactions per job:
 
 1. **Claim** in its own committed transaction, so the lease + attempts increment are durable
    before any work runs. A crash after this point leaves a leased job the reaper reclaims.

@@ -2,17 +2,17 @@
 
 The runtime refuses rather than hallucinate when retrieval is too weak to ground an
 answer: either nothing came back, or the top cross-encoder rerank score is below
-``refusal_min_rerank_score`` (ADR-0005 §7). The threshold is passed in — this function
+``refusal_min_rerank_score`` (ADR-rerank-then-verify-cited-answers §7). The threshold is passed in — this function
 reads no settings and no clock, so it is trivially testable and the same rule drives both
 the workflow and its eval cases.
 
-``has_image`` (PLAN 7.3, ADR-0009 decision 3): a turn whose text retrieval found nothing, or
+``has_image`` (PLAN 7.3, ADR-vision-grounded-image-analysis decision 3): a turn whose text retrieval found nothing, or
 scored below threshold, can still produce a real answer from an attached image alone — refusing
 it here would be wrong, not a safe default. This does not touch the separate ``no_citations``
 refusal `AnswerService` decides after generation (citation enforcement stripped every claim) —
 that one stays unaffected by an image being present, per the ADR.
 
-``RefusalReason`` (PLAN 9.4, ADR-0008 decision 4; extended 2026-09-12) is the closed taxonomy —
+``RefusalReason`` (PLAN 9.4, ADR-ambiguity-clarification-then-fallback-answer decision 4; extended 2026-09-12) is the closed taxonomy —
 ``no_candidates``, ``off_topic`` and ``weak_score`` are decided here; ``no_citations`` is decided by
 `AnswerService` after generation (citation enforcement) and reuses this same type rather than
 inventing a second one. This is deliberately a stable category, not the old free-text diagnostic
@@ -57,7 +57,7 @@ def decide_refusal(
     offtopic_threshold: float,
 ) -> RefusalDecision:
     """Refuse when there is no candidate, or the best rerank score is below ``threshold`` —
-    unless ``has_image`` is true, in which case this never refuses (ADR-0009 decision 3).
+    unless ``has_image`` is true, in which case this never refuses (ADR-vision-grounded-image-analysis decision 3).
 
     ``top_score`` is the highest cross-encoder score among the reranked, permitted pages
     (``None`` when retrieval returned nothing).

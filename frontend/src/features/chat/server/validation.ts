@@ -40,7 +40,7 @@ function isChatTurn(value: unknown): value is ChatTurn {
   if (typeof value !== "object" || value === null) return false;
   const turn = value as Record<string, unknown>;
   // No minimum content length — the backend has none either (only a max, `_validate_history` in
-  // router.py). An image-only turn (ADR-0009 decision 4 / PLAN 7.5) sends content: "" while it's
+  // router.py). An image-only turn (ADR-vision-grounded-image-analysis decision 4 / PLAN 7.5) sends content: "" while it's
   // the newest turn; once it ages out of "newest" its image is dropped too (decision 2: images are
   // only ever resent on the newest turn), leaving neither content nor images. Requiring non-empty
   // content here (even conditionally on images) breaks every later turn in that same conversation

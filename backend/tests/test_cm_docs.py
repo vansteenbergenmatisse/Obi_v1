@@ -32,7 +32,7 @@ def _adr_text(filename: str) -> str:
 def test_cm_docs_0001_stack_names_postgres_pgvector_fastapi_nextjs() -> None:
     """panel cm-docs · substep p0-s0_5-reg-code-map
     0001 records the stack: Postgres + pgvector, FastAPI, Next.js."""
-    text = _adr_text("0001-Archetype-And-Stack.md")
+    text = _adr_text("fastapi-nextjs-postgres-pgvector-stack.md")
     for term in ("postgres", "pgvector", "fastapi", "next.js"):
         assert term in text, f"0001 does not name stack term {term!r}"
 
@@ -40,7 +40,7 @@ def test_cm_docs_0001_stack_names_postgres_pgvector_fastapi_nextjs() -> None:
 def test_cm_docs_0002_retrieval_core_hybrid_rrf_versioned_store() -> None:
     """panel cm-docs · substep p0-s0_5-reg-code-map
     0002 records the retrieval core: hybrid retrieval, RRF, a versioned store."""
-    text = _adr_text("0002-Retrieval-And-Versioning-Model.md")
+    text = _adr_text("hybrid-retrieval-over-versioned-chunk-store.md")
     assert "hybrid" in text, "0002 does not name hybrid retrieval"
     assert "versioned store" in text, "0002 does not name the versioned store"
     # The check names "RRF"; the ADR states the concept in full ("Reciprocal Rank
@@ -55,6 +55,6 @@ def test_cm_docs_0002_retrieval_core_hybrid_rrf_versioned_store() -> None:
 def test_cm_docs_0003_feature_boundaries() -> None:
     """panel cm-docs · substep p0-s0_5-reg-code-map
     0003 records feature boundaries."""
-    text = _adr_text("0003-Feature-Boundary-Enforcement.md")
+    text = _adr_text("features-import-only-through-public-root.md")
     assert "feature" in text, "0003 does not name features"
     assert "boundary" in text or "boundaries" in text, "0003 does not name boundaries"

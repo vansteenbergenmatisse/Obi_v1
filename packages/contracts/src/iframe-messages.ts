@@ -1,13 +1,13 @@
 /**
  * postMessage contract between the Obi loader (`obi.js`, running in the host page) and the Obi
- * `/embed` iframe frame (PLAN 11.1c, ADR-0014). Four message types exist in two directions:
+ * `/embed` iframe frame (PLAN 11.1c). Four message types exist in two directions:
  *
  *  - HOST → FRAME (three): `obi:open`, `obi:token`, `obi:clear`. The loader posts these to the
  *    iframe with the exact Obi origin as `targetOrigin` (never `"*"`); the frame's bridge accepts
  *    them only from `window.parent` and only when `event.origin` is an allowed host origin.
- *  - FRAME → HOST (one): `obi:hidden` (sync-rules Task 5, authorized by ADR-0022). The frame posts
+ *  - FRAME → HOST (one): `obi:hidden` (sync-rules Task 5, authorized by ADR-widget-hides-via-visibility-probe). The frame posts
  *    it after the server-authoritative `GET /chat/visibility` probe reports `visible:false`
- *    (source-enablement hide, ADR-0023); the loader accepts it only from its own iframe's `contentWindow`
+ *    (source-enablement hide, ADR-source-system-decides-widget-eligibility); the loader accepts it only from its own iframe's `contentWindow`
  *    and the exact Obi origin, then `destroy()`s the widget.
  *
  * The token lives only in memory on both sides — never a cookie, localStorage, sessionStorage, or
@@ -36,7 +36,7 @@ export interface ObiClearMessage {
 /**
  * Frame → host: the server-authoritative visibility probe (`GET /chat/visibility`) reported
  * `visible:false` for the verified context — the directed token's source system is not
- * supported (ADR-0023; the message itself was authorized by ADR-0022). Carries no data. The loader `destroy()`s
+ * supported (ADR-source-system-decides-widget-eligibility; the message itself was authorized by ADR-widget-hides-via-visibility-probe). Carries no data. The loader `destroy()`s
  * the widget on receipt, accepting it ONLY from its own iframe's `contentWindow` and the exact Obi
  * origin. A hard failure of the probe (400/401/429/503) is NEVER turned into this message — the
  * widget stays mounted — so an outage can't blank the widget for everyone.
@@ -55,5 +55,5 @@ export const OBI_MESSAGE_TYPES = ["obi:open", "obi:token", "obi:clear"] as const
 export type ObiMessageType = (typeof OBI_MESSAGE_TYPES)[number];
 
 /** The single FRAME → HOST literal type string — the ONLY message the loader accepts from the
- * iframe (sync-rules Task 5, ADR-0022). */
+ * iframe (sync-rules Task 5, ADR-widget-hides-via-visibility-probe). */
 export const OBI_HIDDEN_MESSAGE_TYPE = "obi:hidden" as const;

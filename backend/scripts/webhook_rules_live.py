@@ -47,7 +47,7 @@ Usage (from ``backend``; typically ~20 s per leg, minutes if Forge delivery is s
     uv run python scripts/webhook_rules_live.py --page-id 1670873122 --other-page-id 1670971395 \
         --scope-a toast-general --scope-b mews-general --yes
 
-``--scope-a`` / ``--scope-b`` are recognized ROUTING labels (ADR-0021 Path B — the knowledge-scope
+``--scope-a`` / ``--scope-b`` are recognized ROUTING labels (ADR-routing-labels-sole-content-axis Path B — the knowledge-scope
 ``-test`` axis is retired; membership = published + >=1 recognized routing label).
 
 Exits 0 iff every check that ran passed and the original labels + body were restored.
@@ -493,10 +493,10 @@ def main(argv: list[str] | None = None) -> int:
         help="Witness page for rule 8 — byte-fingerprinted before/after, must be identical.",
     )
     parser.add_argument(
-        "--scope-a", default="mews-general", help="The page's recognized routing label (ADR-0021)."
+        "--scope-a", default="mews-general", help="The page's recognized routing label (ADR-routing-labels-sole-content-axis)."
     )
     parser.add_argument(
-        "--scope-b", default="toast-general", help="Second recognized routing label (ADR-0021)."
+        "--scope-b", default="toast-general", help="Second recognized routing label (ADR-routing-labels-sole-content-axis)."
     )
     parser.add_argument(
         "--marker",

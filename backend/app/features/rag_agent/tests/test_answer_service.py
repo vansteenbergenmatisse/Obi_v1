@@ -560,7 +560,7 @@ def test_no_candidates_refuses_without_calling_generator() -> None:
 
 
 def test_no_candidates_refusal_emits_human_handoff_log(monkeypatch) -> None:
-    """PLAN 9.6, ADR-0008 decision 6: every `refused=True` answer emits one `human_handoff`
+    """PLAN 9.6, ADR-ambiguity-clarification-then-fallback-answer decision 6: every `refused=True` answer emits one `human_handoff`
     structured log record (`trace_id`, `raw_query`, `refusal_reason`) — the stub hand-off's only
     real effect this phase, alongside the widget's static CTA (PLAN 9.6 frontend piece)."""
     fake_log = _FakeLog()
@@ -1050,7 +1050,7 @@ def test_no_image_never_calls_generate_image_analysis() -> None:
 
 
 def test_image_on_turn_with_no_retrieved_candidates_does_not_refuse() -> None:
-    """ADR-0009 decision 3: a turn whose text retrieval found nothing can still produce a real
+    """ADR-vision-grounded-image-analysis decision 3: a turn whose text retrieval found nothing can still produce a real
     answer from the attached image alone — `decide_refusal`'s `has_image` gate must prevent the
     no-candidates refusal that would otherwise fire here."""
     # Substep 3.6.7: the one search now folds the transcription in ("q" + "I see a cat.").
@@ -1068,7 +1068,7 @@ def test_image_on_turn_with_no_retrieved_candidates_does_not_refuse() -> None:
 
 
 def test_image_analysis_survives_a_citation_enforcement_refusal() -> None:
-    """ADR-0009 decision 3: `no_citations` (citation enforcement stripped every claim) is
+    """ADR-vision-grounded-image-analysis decision 3: `no_citations` (citation enforcement stripped every claim) is
     unaffected by `has_image` — the grounded text still degrades to refusal, but the
     independently-generated image analysis is not blocked by that and rides along regardless."""
     # Substep 3.6.7: the one search now folds the transcription in ("q" + "I see a cat.").
@@ -1265,7 +1265,7 @@ def test_clarification_branch_enabled_with_no_classifier_configured_is_a_no_op()
 
 
 def test_small_talk_short_circuits_before_the_clarification_classifier_too() -> None:
-    """Explicit tie-break (ADR-0008's flagged open question): `is_small_talk`'s exact whole-
+    """Explicit tie-break (ADR-ambiguity-clarification-then-fallback-answer's flagged open question): `is_small_talk`'s exact whole-
     message match runs first, so a real small-talk phrase never reaches the clarification branch
     even when it's enabled."""
     retriever = _FakeRetriever({}, {})
@@ -1285,7 +1285,7 @@ def test_small_talk_short_circuits_before_the_clarification_classifier_too() -> 
 
 def test_image_analysis_is_never_passed_through_citation_enforcement() -> None:
     """The image-analysis text must never end up in `citations` or gain a marker — it is a
-    separate, uncited field, per ADR-0009 decision 4."""
+    separate, uncited field, per ADR-vision-grounded-image-analysis decision 4."""
     # Substep 3.6.7: the one search now folds the transcription in.
     retriever = _FakeRetriever(
         {"q\n\nA screenshot with no markers.": RetrievalResult(hits=[_HIT_A], trace_id=1)},
@@ -1303,11 +1303,11 @@ def test_image_analysis_is_never_passed_through_citation_enforcement() -> None:
     assert result.text == "Answer [1]."  # unchanged — image analysis is not appended into it
 
 
-# -- PLAN 10.5, ADR-0011 decision 6: knowledge_scope threading -----------------------------
+# -- PLAN 10.5, ADR-knowledge-scope-tagging-and-filtering decision 6: knowledge_scope threading -----------------------------
 
 
 def test_auth_allowed_scopes_reach_the_retriever_verbatim() -> None:
-    """PLAN 11.1c (ADR-0014): AnswerService no longer resolves scopes — it forwards the verified
+    """PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): AnswerService no longer resolves scopes — it forwards the verified
     AuthContext's allowed_scopes to the retriever unchanged. Resolution (integration->scopes,
     obi-general-test always included, unrecognized rejected, deployment default) now lives in the
     platform registry + router; see test_platforms.py and test_router_auth_context.py."""
@@ -1324,7 +1324,7 @@ def test_auth_allowed_scopes_reach_the_retriever_verbatim() -> None:
 
 
 def test_subject_hash_persisted_is_the_hash_not_the_raw_subject() -> None:
-    """PLAN 11.1c (ADR-0014): the trace records sha256(sub), never the raw token subject."""
+    """PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): the trace records sha256(sub), never the raw token subject."""
     from app.shared.hashing import sha256_text
 
     row = _FakeTraceRow()
@@ -1341,7 +1341,7 @@ def test_subject_hash_persisted_is_the_hash_not_the_raw_subject() -> None:
 
 
 def test_omitted_knowledge_scope_passes_empty_allowed_scopes() -> None:
-    # ADR-0021: the knowledge-scope axis is retired, so general_only_context() carries no scopes
+    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired, so general_only_context() carries no scopes
     # and the retriever is handed an empty allow-list (the scope filter is inert).
     retriever = _FakeRetriever({"q": RetrievalResult(hits=[_HIT_A], trace_id=1)}, {501: "text"})
     generator = _FakeGenerator("Answer [1].")
@@ -1394,7 +1394,7 @@ def test_no_reader_sessionmaker_configured_composes_zero_curated_entries() -> No
 
 
 def test_curated_entries_are_prepended_as_markers_1_through_k(monkeypatch) -> None:
-    """PLAN 10.6, ADR-0011: curated markers `[1..k]`, retrieved hits `[k+1..n]` — the plan's own
+    """PLAN 10.6, ADR-knowledge-scope-tagging-and-filtering: curated markers `[1..k]`, retrieved hits `[k+1..n]` — the plan's own
     numbering scheme, reusing `build_evidence_block`/`enforce_citations` unchanged."""
     curated = [CuratedEntry(id=9, tags=(), title="General FAQ", body="Curated body.")]
     monkeypatch.setattr(
@@ -1472,7 +1472,7 @@ def test_curated_entries_fetched_with_the_same_resolved_allowed_scopes(monkeypat
         _auth(scopes=("scope-a", "scope-b")),
     )
 
-    # ADR-0021: the curated fetch still receives whatever allowed_scopes the auth carries
+    # ADR-routing-labels-sole-content-axis: the curated fetch still receives whatever allowed_scopes the auth carries
     # (threading preserved); the scope axis is retired, so the values are arbitrary.
     assert seen_scopes == [["scope-a", "scope-b"]]
 
@@ -1662,7 +1662,7 @@ def test_sec_image_transcription_is_never_written_to_the_trace_query() -> None:
 
 
 # ---------------------------------------------------------------------------------------------
-# Substep 9.4.1 (panels mi-session/mi-hardfilter, ADR-0020): the directed-connection session is
+# Substep 9.4.1 (panels mi-session/mi-hardfilter, ADR-directed-source-target-routing-labels): the directed-connection session is
 # wired into the answer path — chat-start runs once, its four routing labels feed the retrieval
 # hard filter, and its connection block feeds the answer prompt. A legacy/general chat routes None.
 # ---------------------------------------------------------------------------------------------

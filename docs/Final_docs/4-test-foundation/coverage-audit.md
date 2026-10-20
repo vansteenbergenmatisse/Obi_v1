@@ -43,7 +43,7 @@ as G1–G19 below.
 | Unknown integration / cross-issuer / inactive platform → 401 | `test_auth_context.py` + `test_router_auth_context.py` (6 tests, CIP-A1/A2/AUTH-1) | |
 | GUCs bound-param, None→`*`, []→fail-closed | `retrieval/tests/test_search_repo_gucs.py` | |
 | Search txn sets both GUCs + runs as rag_reader | `retriever.py:134-182` + `test_s_reader_role_usage.py` | PARTIAL — gap G10: only `keyword_search` spied; siblings inferred via shared session |
-| RLS backstop flag-on/flag-off, two-scope no-cross-leak, AUTH-7 parent expansion, ADR-0014 parent-text `*` opt-out (disclosed) | `test_retrieval_knowledge_scope.py` (4 tests) + 2 AUTH-7 tests | |
+| RLS backstop flag-on/flag-off, two-scope no-cross-leak, AUTH-7 parent expansion, ADR-db-level-customer-scope-isolation-backstop parent-text `*` opt-out (disclosed) | `test_retrieval_knowledge_scope.py` (4 tests) + 2 AUTH-7 tests | |
 | Curated: GUC set before read, runs as rag_reader, same resolved scopes as search, CRAG retry reuses them | `test_curated_knowledge.py`, `test_s_reader_curated_fetch.py`, `test_answer_service.py` (3 tests), `test_curated_knowledge_repo.py` | D2: repo test proves app predicate, not RLS (owner session) — docstring pointer needed |
 | Token verification order (issuer→alg→kid→sig→aud/exp/iat/sub→lifetime→business-claims), contract schema | `test_token_verifier.py` (~12 tests) + `test_token_claims_contract.py` | PARTIAL — gaps G8 (true forged signature never exercised), G9 (uniform bare 401 at the wire) |
 | classified body scope → 400 (tokened + tokenless) | `test_router_classified_scope.py` | |

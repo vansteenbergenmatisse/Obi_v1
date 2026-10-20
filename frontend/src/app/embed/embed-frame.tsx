@@ -3,7 +3,7 @@
  * rather than in `features/embed` (which is the postMessage bridge + CSP reader, not UI).
  * Wires `initIframeBridge` for the life of the frame and renders the existing chat PANEL with NO
  * `knowledgeScope` prop: scope is derived server-side from the verified `X-Obi-Token` the browser
- * now forwards on every `POST /api/chat` (PLAN 11.1c, ADR-0014).
+ * now forwards on every `POST /api/chat` (PLAN 11.1c).
  *
  * Unlike the main site, the embed does NOT mount the full `ChatWidget` (launcher + teaser +
  * panel): the host page's `obi.js` injects the one launcher (the "star") and shows/hides this
@@ -50,7 +50,7 @@ function EmbedBridge({ allowedOrigins }: EmbedFrameProps) {
   const restartRef = useRef(restart);
   restartRef.current = restart;
 
-  // Source-enablement cross-check (ADR-0023). On every token receipt, ask the
+  // Source-enablement cross-check (ADR-source-system-decides-widget-eligibility). On every token receipt, ask the
   // server-authoritative `/chat/visibility` probe whether Obi should be shown for the verified
   // directed context. ONLY an explicit `visible:false` hides — a hard failure (thrown) is swallowed
   // and never treated as hidden, so a transient outage can't blank the widget for everyone. The

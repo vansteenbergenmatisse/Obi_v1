@@ -28,7 +28,7 @@ Test-1 requirement.
   `main` requiring the check, a deliberate webhook-HMAC break, the red run, the revert, the green
   run, PR #1 closed unmerged). Carries a 2026-09-18 read-only re-verification note.
 - `live-isolation-2026-09-16.txt` — the last live staging isolation run (owner-confirmed staging,
-  exit 0, ADR-0004 read-path isolation green). The 2026-09-18 audit did **not** produce a fresh run —
+  exit 0, ADR-source-id-row-security-with-reader-writer-roles read-path isolation green). The 2026-09-18 audit did **not** produce a fresh run —
   Test 4 is BLOCKED (no `STAGING_*` config / no this-session staging confirmation), so no
   `live-isolation-2026-09-18.txt` was created rather than fabricate one.
 - `release-audit-2026-09-18.md` — the release audit of the whole regression phase: five tests, the

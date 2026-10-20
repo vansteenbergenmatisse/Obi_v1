@@ -20,7 +20,7 @@ knowledge_scopes.py pattern), enforcing §3 below — one red-first unit test pe
 `backend/app/platform/config/tests/test_product_catalog.py`. The gate does not consume it yet
 (§6 items 2 onward; substep 8.1.3).
 
-**Loader extended for directed routing (substep 9.1.1, Option A / ADR-0020):** the same catalog
+**Loader extended for directed routing (substep 9.1.1, Option A / ADR-directed-source-target-routing-labels):** the same catalog
 now also resolves a directed `source → target` connection into the four ordered Confluence label
 boxes. `product_catalog.py` gains three members on `ProductCatalog`:
 `resolve_system(name)` (lenient, case- and whitespace-insensitive match on canonical id, alias or
@@ -83,7 +83,7 @@ Top-level keys:
   allowed at launch (`pos: [toast]`, `pms: [mews]`). A **filled** POS/PMS slot outside this list
   hides Obi; an **empty** slot never does. Data, not code, so widening the launch set later is a
   config edit plus its test. Governs the **slot** token only.
-- **`enabled_sources`** — **optional flat list** (ADR-0023, renamed from ADR-0022's
+- **`enabled_sources`** — **optional flat list** (ADR-source-system-decides-widget-eligibility, renamed from ADR-widget-hides-via-visibility-probe's
   `enabled_targets`): the product-global set of SOURCE systems Obi supports on the **directed** token
   path (shipped `["mews", "toast", "opera-cloud"]`). A directed `source → target` whose **source** is
   unknown or not in this list is refused — backend **403** (`SourceNotEnabledError`) and
@@ -109,7 +109,7 @@ can mis-scope anyone, each failure naming the offending entry:
    role (an expansion can never put two products in one slot).
 6. `launch_allowlist` lists only existing canonical ids whose `role` matches the list they sit
    in.
-6b. `enabled_sources` (optional; ADR-0023, formerly `enabled_targets`) — when present, every entry is an existing catalog
+6b. `enabled_sources` (optional; ADR-source-system-decides-widget-eligibility, formerly `enabled_targets`) — when present, every entry is an existing catalog
    canonical id; stored as a frozenset; an unknown id stops the backend at boot. Absent ⇒ all
    products enabled (no validation, feature inert).
 7. The reserved names never appear anywhere in this file: `classified`,

@@ -26,7 +26,7 @@ The schema shape built here is the superset every consumer needs: ``create_all``
 ``rag_reader`` role + the ``chunk`` source and knowledge-scope RLS policies. It deliberately does
 **not** apply ``apply_reader_rls`` / ``enable_non_chunk_rls`` — ``test_customer_isolation_backstop``
 toggles that non-chunk RLS state itself and relies on the shared harness leaving it off (see that
-file's docstring). Owner-role reads bypass RLS (ADR-0013 NO FORCE), so the keyword-only suite is
+file's docstring). Owner-role reads bypass RLS (ADR-supabase-postgres-store-without-force-rls NO FORCE), so the keyword-only suite is
 unaffected by the RLS policies being present.
 """
 
@@ -44,7 +44,7 @@ from schema import engine as engine_mod
 from schema import schema
 from schema.base import Base
 
-# Non-owner role the retriever reads as, so RLS is actually exercised (ADR-0004). The writer
+# Non-owner role the retriever reads as, so RLS is actually exercised (ADR-source-id-row-security-with-reader-writer-roles). The writer
 # (superuser ``rag``) bypasses RLS; this role does not, which is the point of the isolation tests.
 READER_ROLE = "rag_reader"
 READER_PASSWORD = "rag_reader_test"
@@ -136,15 +136,15 @@ def provision_test_database() -> Iterator[None]:
     with eng.begin() as conn:
         schema.drop_all(conn)
         schema.create_all(conn)
-        # RLS + the non-owner reader role (ADR-0004), so retrieval is RLS-subject like production.
+        # RLS + the non-owner reader role (ADR-source-id-row-security-with-reader-writer-roles), so retrieval is RLS-subject like production.
         schema.ensure_reader_role(conn, role=READER_ROLE, password=READER_PASSWORD)
         schema.apply_chunk_rls(conn)
-        # Phase 11.1a / ADR-0014: the customer-scope backstop on chunk (RESTRICTIVE, ANDs with the
+        # Phase 11.1a / ADR-db-level-customer-scope-isolation-backstop: the customer-scope backstop on chunk (RESTRICTIVE, ANDs with the
         # source policy). Deliberately no apply_reader_rls / enable_non_chunk_rls here — the curated
         # analogue toggles non-chunk RLS state in a dedicated isolated test
         # (test_customer_isolation_backstop), which relies on this shared harness leaving it off.
         schema.apply_chunk_scope_rls(conn)
-        # Option A / ADR-0020 D1: the directed-connection labels policy (RESTRICTIVE, ANDs with the
+        # Option A / ADR-directed-source-target-routing-labels D1: the directed-connection labels policy (RESTRICTIVE, ANDs with the
         # source + scope policies). A no-op until app.allowed_labels is set (9.4.1), so retrieval is
         # unchanged today; applied here so the sec tests exercise the live policy shape.
         schema.apply_chunk_labels_rls(conn)

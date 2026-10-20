@@ -5,7 +5,7 @@
  *
  * Feature-internal (used once, only by ChatPanel).
  *
- * Attachments are base64-encoded here on send (ADR-0009 decision 2: inline on the newest turn
+ * Attachments are base64-encoded here on send (ADR-vision-grounded-image-analysis decision 2: inline on the newest turn
  * only, no upload endpoint) and handed to `onSend` alongside their still-live preview URL, so the
  * caller can both build the wire request and keep rendering the sent image in the thread.
  */

@@ -1,5 +1,5 @@
 /**
- * Visibility-probe route entrypoint (sync-rules Task 5, ADR-0022) — a thin entrypoint, like
+ * Visibility-probe route entrypoint (sync-rules Task 5, ADR-widget-hides-via-visibility-probe) — a thin entrypoint, like
  * `app/api/chat/route.ts`.
  *
  * It only composes the `chat` feature's exported server handler; the proxy behavior (user-token

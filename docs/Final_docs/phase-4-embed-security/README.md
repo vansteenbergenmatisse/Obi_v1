@@ -2,7 +2,7 @@
 
 The single home for the owner-requested **implementation → independent-audit → repair → re-audit** loop over the Obi embed / JWT security core. Start here.
 
-> **This is not a numbered action-plan substep.** It is a security-hardening pass, requested by the owner as a closed audit loop, over work that already landed under Phase 4 / PLAN 11.1c / ADR-0014. It runs on branch `feat/rag-phase-4-embed-security-hardening`. Ledger and progress-log entries for this pass are marked `SEC-*` and say so, so the append-only record stays honest about what was substep work and what was this hardening pass.
+> **This is not a numbered action-plan substep.** It is a security-hardening pass, requested by the owner as a closed audit loop, over work that already landed under Phase 4 / PLAN 11.1c / ADR-db-level-customer-scope-isolation-backstop. It runs on branch `feat/rag-phase-4-embed-security-hardening`. Ledger and progress-log entries for this pass are marked `SEC-*` and say so, so the append-only record stays honest about what was substep work and what was this hardening pass.
 
 ## What lives here
 

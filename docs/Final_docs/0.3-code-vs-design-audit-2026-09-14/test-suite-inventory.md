@@ -794,7 +794,7 @@ Purpose (docstring L1-L7): drives `tools/panel.py` (the design-panel reader/upda
 - L171 "applies a runtime scope change (the PLAN 10.8 switcher) to the next outgoing request" — w-scope
 - L210 "omits knowledgeScope from the outgoing request when not configured" — w-scope
 - L234 "attaches images to the newest history turn only, and reads imageAnalysis back off done" — r5-image
-- L292 "marks a turn as clarifying (not refused) and keeps its options, per ADR-0008 decision 3" — r1-clarify
+- L292 "marks a turn as clarifying (not refused) and keeps its options, per ADR-ambiguity-clarification-then-fallback-answer decision 3" — r1-clarify
 - L332 "resends a clarifying turn's question as history on the next message" — r1-clarify
 
 ### `chat-widget.test.tsx` (5)
@@ -826,7 +826,7 @@ Purpose (docstring L1-L7): drives `tools/panel.py` (the design-panel reader/upda
 
 ### `knowledge-scopes.test.ts` (2)
 - L25 "mirrors config/knowledge_scopes.json's scope names in order (no drift)" — cm-config, w-scope
-- L32 "always includes obi-general-test — the always-present base scope (ADR-0011)" — cm-config
+- L32 "always includes obi-general-test — the always-present base scope (ADR-knowledge-scope-tagging-and-filtering)" — cm-config
 
 ### `language-menu.test.tsx` (2)
 - L9 "renders all six locales with English checked" — w-i18n
@@ -932,7 +932,7 @@ Purpose (docstring L1-L7): drives `tools/panel.py` (the design-panel reader/upda
 - L47 "rejects history longer than the resource-exhaustion ceiling" — r1-limits
 - L59 "rejects a turn with an invalid role" — r1-limits
 - L64 "accepts a turn with empty content and no images (the backend has no min_length either)" — r1-limits
-- L69 "accepts an image-only turn with empty content (ADR-0009 decision 4)" — r5-image
+- L69 "accepts an image-only turn with empty content (ADR-vision-grounded-image-analysis decision 4)" — r5-image
 - L78 "accepts a resent history where an older, no-longer-newest image-only turn has aged out to empty content and no images (PLAN 7.8 bug E)" — r5-image
 - L97 "rejects history that does not end on a user turn" — r1-limits
 - L107 "rejects a non-string conversationId" — r1-limits

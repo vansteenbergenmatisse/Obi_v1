@@ -1,6 +1,6 @@
 """panel mi-route · substep 9.1.1 — the catalog resolves a directed connection.
 
-Option A (ADR-0020, D4/D7): every chat is one directed source→target connection
+Option A (ADR-directed-source-target-routing-labels, D4/D7): every chat is one directed source→target connection
 and the catalog turns that pair into exactly four ordered Confluence label boxes —
 ``obi-general``, ``{source.slug}-general``, ``{target.slug}-general``,
 ``{source.slug}-to-{target.kind}`` (kind = the target product's role). ``resolve_system``
@@ -89,7 +89,7 @@ def test_rt1_build_labels_unknown_source_yields_obi_general_only() -> None:
 
 
 def test_rt1_build_labels_unknown_target_falls_back_to_the_source_boxes() -> None:
-    """panel mi-route · ADR-0023
+    """panel mi-route · ADR-source-system-decides-widget-eligibility
     A known source with an unknown target (NetSuite is not in the catalog) yields the two boxes
     the source alone can fill — [obi-general, {source}-general] — never a direction box for a
     target we cannot classify, never a wildcard."""

@@ -19,7 +19,7 @@ apps/automation/alembic/versions/0004_source_scope.py                the migrati
 
 ## 3.5.3 — Provider tagging (the writer-side half)
 
-`PLAN.md` lines 1942–2018 (ADR-0004 territory, see [phase-0.md](./phase-0.md)). Schema: three
+`PLAN.md` lines 1942–2018 (ADR-source-id-row-security-with-reader-writer-roles territory, see [phase-0.md](./phase-0.md)). Schema: three
 columns on `page_source` and `chunk` only (never `document_version`, which retrieval never reads)
 — `source_type` (CHECK constraint, not a PG enum), `source_id` (the isolation key, e.g.
 `confluence:default`), `tags` (free-form array).
@@ -38,8 +38,8 @@ the RLS policy, the reader-role GUC binding, and the negative-isolation tests ar
 side (`../retrieval/phase-3.5.md`).
 
 The **writer** is what every ingestion write already runs as — worker, webhook, reconcile, and this
-activation point are untouched by RLS by design (ADR-0004 decision 4). Originally the writer escaped
-RLS by being a superuser locally; **ADR-0013 (Phase 6) changed the mechanism to table ownership with
+activation point are untouched by RLS by design (ADR-source-id-row-security-with-reader-writer-roles decision 4). Originally the writer escaped
+RLS by being a superuser locally; **ADR-supabase-postgres-store-without-force-rls (Phase 6) changed the mechanism to table ownership with
 `FORCE` dropped**, so the same bypass holds on managed Postgres with no superuser — see
 [`./phase-6.md`](./phase-6.md). The reader half (`rag_reader`, non-owner) is unchanged.
 

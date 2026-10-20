@@ -266,7 +266,7 @@ describe("sendFeedback", () => {
   });
 });
 
-describe("checkVisibility (panel mi-gate · ADR-0022)", () => {
+describe("checkVisibility (panel mi-gate · ADR-widget-hides-via-visibility-probe)", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -280,7 +280,7 @@ describe("checkVisibility (panel mi-gate · ADR-0022)", () => {
     vi.unstubAllGlobals();
   });
 
-  // panel mi-gate · ADR-0022 — the probe GETs the widget's OWN same-origin proxy route (which adds
+  // panel mi-gate · ADR-widget-hides-via-visibility-probe — the probe GETs the widget's OWN same-origin proxy route (which adds
   // the host key), never the backend directly, and threads the user token as a Bearer header.
   it("test_visibility_gets_own_proxy_route_with_bearer_token", async () => {
     getTokenMock.mockReturnValue("jwt-abc123");
@@ -307,7 +307,7 @@ describe("checkVisibility (panel mi-gate · ADR-0022)", () => {
     await expect(checkVisibility()).resolves.toEqual({ visible: false, reason: "source_not_enabled" });
   });
 
-  // panel mi-gate · ADR-0022 — a hard failure (400/401/429/503) throws; it is NEVER coerced to
+  // panel mi-gate · ADR-widget-hides-via-visibility-probe — a hard failure (400/401/429/503) throws; it is NEVER coerced to
   // `visible:false`, so an outage can't blank the widget for everyone.
   it("test_visibility_hard_failure_throws_never_masked_as_hidden", async () => {
     for (const status of [400, 401, 429, 503]) {

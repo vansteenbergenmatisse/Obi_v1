@@ -210,7 +210,7 @@ def test_label_driven_knowledge_scope_stamped_on_page_and_chunks(
     gateway, settings: Settings
 ) -> None:
     """PLAN 10.2 / trigger split: a page labeled `toast-general` (a recognized POS-provider
-    knowledge scope — the platform, not this repo's `Muse` codename, per ADR-0011's disclosed
+    knowledge scope — the platform, not this repo's `Muse` codename, per ADR-knowledge-scope-tagging-and-filtering's disclosed
     collision) is stamped with exactly that scope on page_source and every active chunk.
 
     Post trigger/ingestion split the stamped scopes are authoritative — `recognized_labels ∩

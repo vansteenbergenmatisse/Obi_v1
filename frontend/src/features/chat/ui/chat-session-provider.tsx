@@ -37,7 +37,7 @@ function toHistory(messages: ChatMessage[]): ChatTurn[] {
 export interface ChatSession {
   messages: ChatMessage[];
   pending: boolean;
-  /** `images` (PLAN 7.5) rides on this turn only — ADR-0009 decision 2, no history resend. */
+  /** `images` (PLAN 7.5) rides on this turn only — ADR-vision-grounded-image-analysis decision 2, no history resend. */
   sendMessage: (text: string, images?: SentImage[]) => Promise<void>;
   handleFeedback: (messageId: string, traceId: string, value: 1 | -1) => Promise<void>;
   /** Clears the thread and starts a new conversation, aborting any in-flight stream first. */
@@ -102,7 +102,7 @@ export function ChatSessionProvider({ children }: ChatSessionProviderProps) {
           : undefined,
     };
     const history = toHistory([...messages, userMessage]);
-    // The newest turn only (ADR-0009 decision 2) — `toHistory` never carries images itself, so
+    // The newest turn only (ADR-vision-grounded-image-analysis decision 2) — `toHistory` never carries images itself, so
     // the wire payload is attached here, after history is built, not baked into the mapper.
     if (images.length > 0) {
       const wireImages: ImageAttachment[] = images.map(({ mediaType, data }) => ({

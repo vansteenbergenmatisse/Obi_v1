@@ -62,7 +62,7 @@ export picked up a non-local `DATABASE_URL` from the root `.env` and produced 53
 failures; pinning it dropped that to the one real, pre-existing issue below (now an `xfail`,
 not a failure — see below).
 
-**Re-applying `01-roles.sql`:** the `rag_reader` role (source-level RLS, ADR-0004) is normally
+**Re-applying `01-roles.sql`:** the `rag_reader` role (source-level RLS, ADR-source-id-row-security-with-reader-writer-roles) is normally
 created once on a *fresh* Postgres data volume via the compose init-script mount. A volume
 that predates the role (any `make up` against an already-initialized volume) would silently
 skip it. The init script is idempotent (`CREATE ROLE ... IF NOT EXISTS`, idempotent `GRANT`s),
@@ -115,7 +115,7 @@ then Playwright's own `webServer` starts `next dev --port 3100` and waits for it
 
 **Runs:** one smoke test, `apps/web/e2e/widget-mounts.spec.ts`, against
 `/test-hosts/none` — an existing, real Next.js route (`apps/web/src/app/test-hosts/`, PLAN
-11.1c / ADR-0014) that renders nothing but the literal paste-template a real platform
+11.1c / ADR-db-level-customer-scope-isolation-backstop) that renders nothing but the literal paste-template a real platform
 integrator would add (`<script src="/obi.js">` + `Obi.init({ tokenUrl })`), executed for real
 on page load. The test asserts the widget actually mounted: the `.obi-launcher` button is
 visible with `aria-label="Open Obi chat"`, and exactly one `iframe[title="Obi chat"]` exists

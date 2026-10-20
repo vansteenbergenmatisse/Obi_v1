@@ -9,7 +9,7 @@ Shared column helpers: `_pk()` = `BigInteger, primary_key, autoincrement` (model
 `_ts_created()` = `timestamptz NOT NULL server_default now()` (models.py:91-92). `EMB_DIM =
 get_settings().embedding_dim` (models.py:46). `source_type` everywhere is a **CHECK constraint**
 (`IN ('confluence','zendesk','notion','upload')`, models.py:52-53), never a PG enum, so new
-connectors need no `ALTER TYPE` (ADR-0004). Chunk kinds: `KIND_PARENT = 0`, `KIND_CHILD = 1`
+connectors need no `ALTER TYPE` (ADR-source-id-row-security-with-reader-writer-roles). Chunk kinds: `KIND_PARENT = 0`, `KIND_CHILD = 1`
 (models.py:56-57).
 
 ## Scale posture & store choice (2026)
@@ -186,10 +186,10 @@ indexes.
 
 **Which columns back a hard boundary.** Both `source_id` and `tags` back **hard**, database-enforced
 boundaries (`05-security-isolation.md`). `source_id` is enforced by Postgres RLS (`chunk_source_read`,
-ADR-0004) + the explicit `source_id = ANY(:sources)` predicate, default-deny; RLS is `ENABLE`d + `NO
-FORCE` so it is portable to managed Postgres with the owner exempt by ownership (ADR-0013). `tags` on
+ADR-source-id-row-security-with-reader-writer-roles) + the explicit `source_id = ANY(:sources)` predicate, default-deny; RLS is `ENABLE`d + `NO
+FORCE` so it is portable to managed Postgres with the owner exempt by ownership (ADR-supabase-postgres-store-without-force-rls). `tags` on
 the customer axis is enforced by a second `RESTRICTIVE` scope-GUC RLS policy (`chunk_scope_read`,
-ADR-0014) keyed on `app.allowed_knowledge_scopes` — fail-closed and independent of the feature flag —
+ADR-db-level-customer-scope-isolation-backstop) keyed on `app.allowed_knowledge_scopes` — fail-closed and independent of the feature flag —
 with the app-layer `tags && :scopes` predicate as defense-in-depth on top. The same DB-backstop story
 holds for `curated_knowledge_entry.tags` below (its own `curated_knowledge_entry_scope_read` policy).
 
@@ -219,7 +219,7 @@ Narrows/tags reconciliation (PLAN 3.5.6). `root_type` CHECK (`space` | `page`, m
 `root_id`, `tags` (sync-inclusion tags), `is_active`. Unique `(root_type, root_id)`
 (`uq_source_scope_root`, models.py:503). Partial index on `is_active` (models.py:506). **Note:**
 `source_scope.tags` encode *sync inclusion* (which pages get ingested), a different axis from
-knowledge-scope tags — the two are unioned at ingestion (ADR-0011).
+knowledge-scope tags — the two are unioned at ingestion (ADR-knowledge-scope-tagging-and-filtering).
 
 ### `query_trace` (models.py:510-545) — one row per retrieval/answer request
 The tracing scoreboard, written via the **writer** engine so RLS never blocks the insert
@@ -232,7 +232,7 @@ isolation audit trail. Small-talk and clarification short-circuits write **no** 
 ### `curated_knowledge_entry` (models.py:548-569) — one row per always-present knowledge item
 Admin-maintained knowledge (Phase 10.6). `tags` (empty ⇒ applies to every scope, models.py:560-562),
 `title`, `body`, `is_active`. **No FKs, no unique constraints, no explicit indexes.** Isolation is the
-customer-axis `RESTRICTIVE` scope-GUC RLS policy `curated_knowledge_entry_scope_read` (ADR-0014 /
+customer-axis `RESTRICTIVE` scope-GUC RLS policy `curated_knowledge_entry_scope_read` (ADR-db-level-customer-scope-isolation-backstop /
 migration `0010`), fail-closed like `chunk`, with tag filtering as defense-in-depth (see
 `05-security-isolation.md`).
 

@@ -4,7 +4,7 @@ const nextConfig: NextConfig = {
   // Transpile the workspace packages so their TS sources are compiled by Next.
   transpilePackages: ["@omniboost/contracts", "@omniboost/design-tokens"],
 
-  // PLAN 11.1c (ADR-0014): local test-host JWKS. `config/platforms.local.json`'s test issuer
+  // PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): local test-host JWKS. `config/platforms.local.json`'s test issuer
   // entries record `jwks_url`s under `/.well-known/<issuer>/obi-jwks.json` (the conventional path
   // a real platform would use) — rewritten here to the actual App Router implementation rather
   // than relying on a literal dot-prefixed `.well-known` folder being treated as an ordinary App

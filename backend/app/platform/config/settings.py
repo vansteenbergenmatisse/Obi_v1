@@ -79,7 +79,7 @@ class Settings(BaseSettings):
 
     # database
     database_url: str = "postgresql+psycopg://rag:rag@localhost:5434/omniboost_rag"
-    # non-owner rag_reader DSN for RLS-enforced retrieval reads (PLAN 3.5.3; ADR-0004).
+    # non-owner rag_reader DSN for RLS-enforced retrieval reads (PLAN 3.5.3; ADR-source-id-row-security-with-reader-writer-roles).
     # Empty -> retrieval falls back to database_url (RLS is a no-op for a superuser/owner).
     database_reader_url: str = ""
 
@@ -123,7 +123,7 @@ class Settings(BaseSettings):
     contextualization_max_retries: int = 2
     contextualization_max_doc_chars: int = 60_000  # cap document context sent to the model
 
-    # reranker (PLAN 3.5.2). cross-encoder only — no general-LLM rerankers (ADR-0005).
+    # reranker (PLAN 3.5.2). cross-encoder only — no general-LLM rerankers (ADR-rerank-then-verify-cited-answers).
     reranker_provider: str = ""  # cohere | fake | local ; "" -> fake offline
     reranker_api_key: str = ""
     reranker_model: str = "rerank-v3.5"  # hosted cross-encoder (Cohere v2)
@@ -166,7 +166,7 @@ class Settings(BaseSettings):
     rewrite_enabled: bool = True  # conversational query rewrite (routing_model), always on
     crag_max_retries: int = 1  # corrective-retrieval cap on a weak first result (protects p95)
 
-    # ambiguity/vagueness clarification branch (PLAN 9.2/9.3, ADR-0008). Off by default — an
+    # ambiguity/vagueness clarification branch (PLAN 9.2/9.3, ADR-ambiguity-clarification-then-fallback-answer). Off by default — an
     # ambiguous verdict now bypasses rewrite/retrieval/refusal and returns a clarifying question
     # on `Answer` (PLAN 9.3), so flipping this on is a real user-facing behavior change, not just
     # a logging toggle. Ships dark until tuned against `evaluation/datasets/ambiguity.json`
@@ -192,7 +192,7 @@ class Settings(BaseSettings):
     chat_rate_limiter_max_tracked_keys: int = 1000  # bounds in-process memory across distinct IPs
     chat_max_history_turns: int = 20  # C3/C10: caller-supplied conversation turns per request
     chat_max_message_chars: int = 4000  # C3: per-turn content length
-    # PLAN 7.3/7.4, ADR-0009 decision 7: C3/C10 caps on the new `ChatMessage.images` field, folded
+    # PLAN 7.3/7.4, ADR-vision-grounded-image-analysis decision 7: C3/C10 caps on the new `ChatMessage.images` field, folded
     # in alongside 7.3's LLM-call wiring rather than shipped separately — an uncapped image input
     # reaching a real vision call is a live cost/abuse surface the moment `images` exists, and
     # securing-http-and-llm-endpoints has no "add caps later" opt-out for an LLM-CALL surface.
@@ -259,7 +259,7 @@ class Settings(BaseSettings):
     # default). Only has any effect when enable_background_jobs=true.
     dev_reconcile_interval_seconds: int | None = None
 
-    # pipeline version stamps (bumping these forces recompute / re-embed per ADR-0002)
+    # pipeline version stamps (bumping these forces recompute / re-embed per ADR-hybrid-retrieval-over-versioned-chunk-store)
     parser_version: int = 1
     chunker_version: int = 1
     # bumped to 3: the contextualizer discards LLM meta-refusals instead of baking them into
@@ -273,8 +273,8 @@ class Settings(BaseSettings):
     contextualization_version: int = 3
     retrieval_schema_version: int = 1
 
-    # knowledge-scope tagging — RETIRED by ADR-0021 (superseding ADR-0011). The axis is gone;
-    # content routing rides the ADR-0020 routing-label axis. The former toggles
+    # knowledge-scope tagging — RETIRED by ADR-routing-labels-sole-content-axis (superseding ADR-knowledge-scope-tagging-and-filtering). The axis is gone;
+    # content routing rides the ADR-directed-source-target-routing-labels routing-label axis. The former toggles
     # (default_knowledge_scope, enable_knowledge_scope_filtering) are removed; knowledge_scope_set
     # (below) stays only as the `classified` fail-fast + the platforms cross-check.
     # cap on always-present curated entries composed into evidence per answer (PLAN 10.6). Matches

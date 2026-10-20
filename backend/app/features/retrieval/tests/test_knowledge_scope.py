@@ -1,6 +1,6 @@
-"""Resolving a request-shaped scope value into the allowed-scopes set (ADR-0021).
+"""Resolving a request-shaped scope value into the allowed-scopes set (ADR-routing-labels-sole-content-axis).
 
-ADR-0021 retired the knowledge-scope axis, so in production the recognized set is EMPTY and this
+ADR-routing-labels-sole-content-axis retired the knowledge-scope axis, so in production the recognized set is EMPTY and this
 resolver always returns ``[]`` (no base scope is injected). The function is kept as the single
 place that normalises/degrades an incoming request-shaped value; the generic interpret-logic is
 still exercised below with a non-empty sample recognized set.
@@ -15,7 +15,7 @@ _SAMPLE = frozenset({"scope-a", "scope-b"})
 
 
 def test_empty_recognized_set_always_returns_empty() -> None:
-    """ADR-0021 production reality: with the retired axis there are no recognized scopes, so any
+    """ADR-routing-labels-sole-content-axis production reality: with the retired axis there are no recognized scopes, so any
     request resolves to the empty allow-list (no base scope)."""
     assert resolve_allowed_scopes(None, frozenset(), None) == []
     assert resolve_allowed_scopes("scope-a", frozenset(), "scope-b") == []

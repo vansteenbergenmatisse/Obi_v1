@@ -82,7 +82,7 @@ The full per-requirement matrix is `traceability-matrix.md` (Wave-0 baseline). F
 
 - **Browser/iframe (BIT-1…BIT-10):** all working. Gaps closed — BIT-7 runtime token-string guard (S1), BIT-10 `server-only` trip-wire (S3), CSP shared-helper so CSP + bridge allow-list can't diverge (R3), loopback strip parity (R2/R3/RW2/RW3/RW4/RW6/RW7/RW8).
 - **Authorization/isolation (AUTH-1…AUTH-9):** all working. Active-platform gate + per-issuer `allowed_integrations` binding (R2); issuer-namespaced subject `iss\x00sub` (S3); RESTRICTIVE RLS fail-closed on unset GUC (pre-existing, re-proven every wave); AUTH-7 parent-fetch opt-out bounded-safe (documented, `future-ideas.md`).
-- **Confluence/identity (CIP-1…CIP-5):** working for v1. `principal` always None → only unrestricted pages; page-principal ACL is app-layer-only (ADR-0019) with a DB backstop mandated before per-principal ACL is ever enabled.
+- **Confluence/identity (CIP-1…CIP-5):** working for v1. `principal` always None → only unrestricted pages; page-principal ACL is app-layer-only (ADR-page-acl-enforced-in-app-layer-only) with a DB backstop mandated before per-principal ACL is ever enabled.
 - **Config/migration/CI (CFG-01…CFG-05, MIG-01/02, CI-01…CI-04):** all working. Fail-closed prod trust guard when ENV unset (R1); test/localhost/`.local`/placeholder active platform rejected outside offline (S2/R1/RW3/RW4/RW6/RW7/RW8); migration-0010 deploy-readiness gate (S4); CI skip-guard + push/merge_group triggers (R5/RW2); both DB harnesses live-host-guarded before bootstrap (R4/RW2); FLAKE-1 root-caused and fixed (R4).
 
 Every target requirement has an implementation location and an automated proof (unit/db/frontend/e2e). No mandatory requirement is supported only by documentation.
@@ -118,7 +118,7 @@ Every mandate-listed mutation boundary has a guarding test proven to fail on the
 
 - **Real Base / Data Hub staging** — external credentials and platform-dev cooperation not available in this environment; deliberately out of scope for the local loop per the mandate's external-dependency distinction. Reason: no real issuer/JWKS/domains/token-endpoint/host-key; not invented (rule 12).
 - **`datahub.allowed_integrations`** — an owner decision built to the design default `["mews","toast","opera-cloud"]`; reversible config; flag before any real deploy.
-- **AUTH-7 optional defense-in-depth** (pass `allowed_scopes` into `fetch_parent_texts` instead of `'*'`) — deferred in `future-ideas.md`; would change intentional ADR-0014 behavior for a confirmed non-vulnerability, so it needs a new ADR + a db test; not taken.
+- **AUTH-7 optional defense-in-depth** (pass `allowed_scopes` into `fetch_parent_texts` instead of `'*'`) — deferred in `future-ideas.md`; would change intentional ADR-db-level-customer-scope-isolation-backstop behavior for a confirmed non-vulnerability, so it needs a new ADR + a db test; not taken.
 - **Mechanized cross-runtime loopback CI differential** (W9-A1-OBS) — deferred in `future-ideas.md`; the twins are proven equivalent (~882k inputs, 0 divergences) and covered by non-vacuous per-side tests, so this is drift-prevention infra, not a coverage gap; owner to weigh the cross-tree coupling cost.
 
 ---

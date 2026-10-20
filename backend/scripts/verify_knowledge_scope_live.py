@@ -2,8 +2,8 @@
 (PLAN 10.8).
 
     ┌───────────────────────────────────────────────────────────────────────────────────────────┐
-    │  SUPERSEDED (ADR-0021 Path B, 2026-10-12). This script verifies the knowledge-SCOPE axis    │
-    │  (ADR-0011: the ``obi-*-test`` tags + the ``chunk_scope_read`` RLS policy). That axis is    │
+    │  SUPERSEDED (ADR-routing-labels-sole-content-axis Path B, 2026-10-12). This script verifies the knowledge-SCOPE axis    │
+    │  (ADR-knowledge-scope-tagging-and-filtering: the ``obi-*-test`` tags + the ``chunk_scope_read`` RLS policy). That axis is    │
     │  RETIRED — migration 0018 dropped ``chunk_scope_read`` and membership now runs on routing   │
     │  labels. Its scope-add/swap/remove assertions no longer describe live behaviour. Kept as a  │
     │  historical record; do NOT run it to validate Path B. The live equivalents are              │
@@ -29,7 +29,7 @@ What it does, against ONE page you name with ``--page-id`` (pick an already-sync
   3. SWAP the label (default ``obi-mews-test`` -> ``obi-operacloud-test``). Assert the old scope is
      gone, the new one present, no stale double-tag.
   4. REMOVE the added label. Assert the added scope tag is gone (the page falls back to whatever it
-     originally carried — e.g. ``obi-general-test`` — by design, ADR-0011 Decision 1).
+     originally carried — e.g. ``obi-general-test`` — by design, ADR-knowledge-scope-tagging-and-filtering Decision 1).
   5. RESTORE the page's original label set exactly (a verification run must leave no residue in live
      Confluence). Runs in a ``finally`` so an early failure still cleans up.
   6. It also drives one real ``ingest_event(EventEnvelope("label_added", ...))`` and asserts the

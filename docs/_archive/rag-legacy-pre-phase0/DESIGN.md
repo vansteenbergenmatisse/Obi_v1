@@ -9,8 +9,8 @@
 > Companion reading: [`how_this_works.md`](./how_this_works.md) is the A-to-Z *explainer* of the
 > as-built system; [`PLAN.md`](./PLAN.md) is the *execution* plan (tasks, DDL, acceptance checks).
 > This doc is the *design of record* those two hang off. Decisions here are ratified in
-> [`../adr/0004-Multi-Source-Provider-Tagging-And-RLS.md`](../adr/0004-Multi-Source-Provider-Tagging-And-RLS.md)
-> and [`../adr/0005-Reranking-And-Answer-Pipeline.md`](../adr/0005-Reranking-And-Answer-Pipeline.md).
+> [`../adr/source-id-row-security-with-reader-writer-roles.md`](../adr/source-id-row-security-with-reader-writer-roles.md)
+> and [`../adr/rerank-then-verify-cited-answers.md`](../adr/rerank-then-verify-cited-answers.md).
 >
 > `TODAY` = shipped and verified. As of 2026-08-21 that is **Phases 0–4** (ingestion/versioning,
 > hybrid retrieval + reranking, source-isolation RLS, the full `rag_agent` answer runtime, real
@@ -37,7 +37,7 @@
 > live, 2026-08-21, with a cursor-pagination fix and a switch from the non-functional v2
 > restrictions endpoint to the working v1 one — see `docs/rag/ingestion/phase-4.6.md`); a duplicate
 > `source_type`/`root_type` CHECK constraint was found and removed; the pyright baseline was
-> formally reconciled 31→34 (ADR-0003 D1); the RLS reader role now fails closed instead of silently
+> formally reconciled 31→34 (ADR-features-import-only-through-public-root D1); the RLS reader role now fails closed instead of silently
 > running as the RLS-bypassing writer outside local/test/dev/ci; a same-`delivery_id`/different-hash
 > webhook redelivery now dedupes gracefully instead of a 500; `refusal_reason` now reaches the
 > `chat_request` structured log line; and attachment content (PDF/DOCX/XLSX/CSV/HTML) went from
@@ -196,10 +196,10 @@ dropped** so ingestion must set `source_id` explicitly going forward. New partia
 
 | Role | Grants | Used by |
 |---|---|---|
-| `rag_writer` | owner, **non-superuser, `NOBYPASSRLS`** — exempt by table ownership + `NO FORCE` (ADR-0013) | worker / webhook / reconcile / ingestion (write path) — RLS never blocks writes or trace inserts |
+| `rag_writer` | owner, **non-superuser, `NOBYPASSRLS`** — exempt by table ownership + `NO FORCE` (ADR-supabase-postgres-store-without-force-rls) | worker / webhook / reconcile / ingestion (write path) — RLS never blocks writes or trace inserts |
 | `rag_reader` | login, **non-owner**, `GRANT SELECT` on read tables, **no `BYPASSRLS`** | `HybridRetriever` (read path) — RLS actually enforced |
 
-The owner is exempt from RLS (by ownership + `NO FORCE`, ADR-0013 — not `BYPASSRLS`), so **reads
+The owner is exempt from RLS (by ownership + `NO FORCE`, ADR-supabase-postgres-store-without-force-rls — not `BYPASSRLS`), so **reads
 must run as `rag_reader`**. `engine.py` keeps the existing
 writer sessionmaker and adds `get_reader_engine()`/`get_reader_sessionmaker()` bound to
 `database_reader_url` (falls back to `database_url` if empty).
@@ -208,13 +208,13 @@ writer sessionmaker and adds `get_reader_engine()`/`get_reader_sessionmaker()` b
 
 ```sql
 ALTER TABLE chunk ENABLE ROW LEVEL SECURITY;
-ALTER TABLE chunk NO FORCE ROW LEVEL SECURITY;  -- ADR-0013: keep ENABLE, drop FORCE so the
+ALTER TABLE chunk NO FORCE ROW LEVEL SECURITY;  -- ADR-supabase-postgres-store-without-force-rls: keep ENABLE, drop FORCE so the
                                                 -- non-superuser owner (writer) reads its own rows
 CREATE POLICY chunk_source_read ON chunk FOR SELECT
   USING (source_id = ANY(string_to_array(current_setting('app.allowed_sources', true), ',')));
 ```
 
-> **FORCE was dropped in migration `0008` (ADR-0013).** The original design used `FORCE ROW LEVEL
+> **FORCE was dropped in migration `0008` (ADR-supabase-postgres-store-without-force-rls).** The original design used `FORCE ROW LEVEL
 > SECURITY`, which subjects even the table owner to the policy and so required the writer to be a
 > superuser. Migration `0008` switched to `NO FORCE`: RLS stays `ENABLE`d (the non-owner
 > `rag_reader` is still default-denied), while the owner is exempt by ownership — no superuser or
@@ -273,7 +273,7 @@ same trace row (writer engine).
   retry+backoff, circuit breaker, abuse cap). `Reranker` Protocol; `CohereReranker` (raw `httpx`,
   `rerank-v3.5`); `FakeReranker` (identity, deterministic — for tests and offline dev); `build_reranker`
   factory with offline fallback (empty key **or** provider ∈ {`""`,`fake`} **or** offline env →
-  `FakeReranker`). **Cross-encoder rerankers only — no general-LLM rerankers** (ADR-0005). Because the
+  `FakeReranker`). **Cross-encoder rerankers only — no general-LLM rerankers** (ADR-rerank-then-verify-cited-answers). Because the
   retriever deals in page ids only, a `fetch_rerank_texts` refactor in `search_repo.py` (subject to the
   same `_base_filters` + source scope) precedes wiring; rerank is inserted **after** the permission
   filter, **before** the top-`k` slice.
@@ -294,7 +294,7 @@ same trace row (writer engine).
 - **One CRAG retry (✅ Phase 4.2).** On a weak result, exactly one corrective retrieval
   (`crag_max_retries`, default 1): retries with the user's verbatim last turn (in case the rewrite hurt
   retrieval) and keeps whichever result scored higher. A no-op when rewrite is disabled/unchanged.
-  Not an agent loop — a fixed workflow (ADR-0005).
+  Not an agent loop — a fixed workflow (ADR-rerank-then-verify-cited-answers).
 
 **Proof of lift (Phase 3.5.5).** `make eval` reports Precision@5 and NDCG@10 **before vs after** rerank
 on `retrieval_smoke.json`, keeping the report format comparable to the existing baseline. The mechanism
@@ -399,15 +399,15 @@ upgrade layers. Each was audited against the actual code. Verdict + one-line rat
 | Caching (exact + semantic) | **DONE (5.2, exact-match only)** | in-process `TTLCache`, no confirmed multi-instance need for Redis yet; semantic caching deferred — accuracy risk, no traffic to tune a threshold |
 | Adaptive routing (query difficulty) | **ADD (5, last)** | simple vs decompose; cheap wins first |
 | HyDE / multi-query (RAG-fusion) | **DEFER (5)** | hard queries only; cost/latency not justified broadly |
-| Self-RAG / agent loop | **REJECT** | a fixed workflow is more testable and bounds latency (ADR-0005) |
-| General-LLM reranker | **REJECT** | cross-encoder only — cheaper, deterministic, purpose-built (ADR-0005) |
+| Self-RAG / agent loop | **REJECT** | a fixed workflow is more testable and bounds latency (ADR-rerank-then-verify-cited-answers) |
+| General-LLM reranker | **REJECT** | cross-encoder only — cheaper, deterministic, purpose-built (ADR-rerank-then-verify-cited-answers) |
 | Graph RAG | **REJECT** | cost/latency unjustified for this corpus |
 
 ---
 
 ## 9. Phasing & gates
 
-- **Phase 0 (this doc + ADR-0004/0005).** No code. **Gate: user reviews `DESIGN.md` before any Phase 3.5
+- **Phase 0 (this doc + ADR-source-id-row-security-with-reader-writer-roles / ADR-rerank-then-verify-cited-answers).** No code. **Gate: user reviews `DESIGN.md` before any Phase 3.5
   code begins.** The two ADR decisions must be settled first.
 - **Phase 3.5** — accuracy + tagging spine, offline-measurable, no chat. Sub-steps run in order:
   3.5.1 pin pgvector 0.8 → 3.5.2 reranker → 3.5.3 provider tags + RLS + reader role (shipped atomically
@@ -430,7 +430,7 @@ upgrade layers. Each was audited against the actual code. Verdict + one-line rat
 
 **Cross-cutting rules (every phase).** Feature boundaries: export new cross-boundary symbols from the
 feature/capability root, never deep-import; run `make boundaries` before every commit. No-regression on
-ruff/pyright at the ADR-0003 D1 baseline (2/25 ruff, 31/1 pyright) — bring touched files clean, do not
+ruff/pyright at the ADR-features-import-only-through-public-root D1 baseline (2/25 ruff, 31/1 pyright) — bring touched files clean, do not
 reformat untouched files. `make check` stays green. Migrations are reversible and ordered from
 `0001_core_schema`.
 
@@ -461,15 +461,15 @@ removed as implemented (2026-09-12). Status/decision history is in `docs/rag/PLA
 
 ## 11. Ambiguity clarification and fallback — implemented (PLAN Phase 9)
 
-**Status: shipped (2026-08-13), all 9.1–9.9 sub-steps closed, ADR-0008 confirmed matching shipped
+**Status: shipped (2026-08-13), all 9.1–9.9 sub-steps closed, ADR-ambiguity-clarification-then-fallback-answer confirmed matching shipped
 code at the 9.9 exit gate.** See `docs/rag/retrieval/phase-9.md` for the as-built file/folder map;
 `docs/rag/PLAN.md`'s own Phase 9 section for the sub-step-by-sub-step ledger. The design below is
 the original decision record (scoped 2026-08-11 from an external best-practices brief on
 unanswerable/vague-query fallback and `docs/future-ideas/IDEAS.md` #1, full record in
-`docs/adr/0008-Ambiguity-Clarification-Fallback.md`) — kept as written because every decision in it
+`docs/adr/ambiguity-clarification-then-fallback-answer.md`) — kept as written because every decision in it
 shipped as designed; only this status line is new.
 
-**Problem.** The fixed pipeline from §5/ADR-0005 (rewrite → retrieve → rerank → refuse) has no
+**Problem.** The fixed pipeline from §5/ADR-rerank-then-verify-cited-answers (rewrite → retrieve → rerank → refuse) has no
 concept of "this question is too vague to search well" — an under-specified query (e.g. "What are
 the limits?" against a corpus covering both expense limits and approval thresholds) runs the full
 grounded pipeline and lands on either a low-confidence guess or the same refusal string used for
@@ -485,7 +485,7 @@ citation survived enforcement) also render identical copy, so the user can't tel
 - **Contract change is additive, not a new SSE event.** `Answer` gains `needs_clarification: bool`,
   `clarification_question: str | None`, `clarification_options: list[str] | None`. A clarification
   reply streams over the existing `token` events (same as small-talk) with `citations: []`; the
-  `done` payload carries the new fields. The `start`/`token`/`citations`/`done` lifecycle (ADR-0005
+  `done` payload carries the new fields. The `start`/`token`/`citations`/`done` lifecycle (ADR-rerank-then-verify-cited-answers
   §10) is unchanged.
 - **A three-value refusal-reason taxonomy** — `no_candidates | weak_score | no_citations` — surfaced
   (not just logged) so distinct, honest copy can be shown per cause. Clarification is deliberately
@@ -502,10 +502,10 @@ citation survived enforcement) also render identical copy, so the user can't tel
   `evaluation/metrics/`.
 
 **Explicit non-goals** (present in the source brief, rejected for this problem): MMR/diversity
-filtering (doesn't address unanswerable/vague queries; would touch the already-shipped ADR-0005
+filtering (doesn't address unanswerable/vague queries; would touch the already-shipped ADR-rerank-then-verify-cited-answers
 retrieval pipeline for no benefit here); a new vector store or search engine (Postgres+pgvector+
-Cohere stays the stack, ADR-0001/0002); an agent-loop rewrite of `AnswerService` (stays a fixed
-pipeline per ADR-0005 decision 5 — this is one more short-circuit, not a planner).
+Cohere stays the stack, ADR-fastapi-nextjs-postgres-pgvector-stack / ADR-hybrid-retrieval-over-versioned-chunk-store); an agent-loop rewrite of `AnswerService` (stays a fixed
+pipeline per ADR-rerank-then-verify-cited-answers decision 5 — this is one more short-circuit, not a planner).
 
 **Implementation-time tie-break (resolved at 9.2/9.3):** the relative ordering of the two
 pre-pipeline branches when a query is arguably both small talk and ambiguous, e.g. "hi, what's the
@@ -523,7 +523,7 @@ and fixed at 7.8, the last only surfacing under real browser testing). See
 `docs/rag/retrieval/phase-7.md` for the as-built file/folder map; `docs/rag/PLAN.md`'s own Phase 7
 section for the sub-step-by-sub-step ledger. The design below is the original decision record
 (scoped 2026-08-11 from `docs/future-ideas/IDEAS.md` #3 and Phase 4.7.8's click-to-zoom preview,
-full record in `docs/adr/0009-Vision-Grounded-Image-Analysis.md`) — kept as written because every
+full record in `docs/adr/vision-grounded-image-analysis.md`) — kept as written because every
 decision in it shipped as designed; only this status line and the two C3/C10 cap values below are
 new.
 
@@ -553,11 +553,11 @@ question like "what's on this screenshot?" or "what should I click next here?" c
   `generate_small_talk` (same fail-open shape on `AnthropicError`), carries the image content
   blocks and the question, produces no citation markers, and is never passed through
   `enforce_citations`. Its text is appended to the grounded answer as a clearly labeled section.
-  This keeps every ADR-0005-governed citation/refusal guarantee for the *grounded* portion of the
+  This keeps every ADR-rerank-then-verify-cited-answers-governed citation/refusal guarantee for the *grounded* portion of the
   answer completely unchanged — an image can never forge a fake Confluence citation.
 - **Contract change is additive.** `ChatTurn` gains optional `images: ImageAttachment[]`; `Answer`/
   `ChatDoneEvent` gain optional `imageAnalysis: string | null`. No new SSE event — the analysis text
-  streams over the existing `token` events, same shape ADR-0008 used for clarification.
+  streams over the existing `token` events, same shape ADR-ambiguity-clarification-then-fallback-answer used for clarification.
 - **C6 PII redaction does not extend to image bytes.** `redact_pii` stays text-only; this is a
   documented, accepted gap this phase, disclosed to the user via composer copy, not a silently
   ignored one.
@@ -572,7 +572,7 @@ question like "what's on this screenshot?" or "what should I click next here?" c
 
 **Explicit non-goals for this ADR:** does not build real image PII redaction (CV/NER) — flagged as
 a future-phase gap. Does not merge image content into the same call citation enforcement scores —
-rejected, see ADR-0009's alternatives.
+rejected, see ADR-vision-grounded-image-analysis's alternatives.
 
 Sub-step roadmap (7.1 design doc/ADR — this section — onward) is in `docs/rag/PLAN.md`'s own Phase
 7 section, not duplicated here.

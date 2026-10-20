@@ -8,10 +8,10 @@
   directed source-target validation) · `mi-contract` (the company + three-slots / directed
   connection claim shapes)
 - **Status:** Implemented (substep 8.1.3 — the gate accepts slots). Amended by substep 9.3.1
-  (Option A, ADR-0020 — the gate also accepts the directed source → target form), by Task 5
-  (ADR-0022, a visibility gate), and by ADR-0023 (2026-10-20 — only the SOURCE decides: it must be
+  (Option A, ADR-directed-source-target-routing-labels — the gate also accepts the directed source → target form), by Task 5
+  (ADR-widget-hides-via-visibility-probe, a visibility gate), and by ADR-source-system-decides-widget-eligibility (2026-10-20 — only the SOURCE decides: it must be
   in the catalog's `enabled_sources`, else a 403; the target is never checked). All tested at unit
-  (Task 5, ADR-0023) / unit + database (8.1.3, 9.3.1)
+  (Task 5, ADR-source-system-decides-widget-eligibility) / unit + database (8.1.3, 9.3.1)
   levels, not yet proven against a live platform-signed token.
 
 ## What it does
@@ -23,7 +23,7 @@ frozen `AuthContext` that drives every reader transaction on the answer path —
 context also carries the validated integration slots (`slot_pos`/`slot_pms`/`slot_accounting`,
 canonical catalog ids, `None` for empty), feeding the 8.3.x eligibility/attribution work; for a
 directed chat it also carries the routing labels (the live content axis). The knowledge-scope axis
-is retired (ADR-0021): `allowed_scopes` is empty everywhere and the scope GUC is opted out to the
+is retired (ADR-routing-labels-sole-content-axis): `allowed_scopes` is empty everywhere and the scope GUC is opted out to the
 wildcard, so it no longer filters any read.
 
 The verifier extracts both token forms: the structured `context.slots` claim (structural
@@ -50,13 +50,13 @@ After the active-platform gate (AUTH-1/CIP-A2, unchanged), the five slot checks 
    decision O4: inert for eligibility); an empty slot never refuses.
 
 The slot checks still run (they gate the session and feed eligibility), but the gate derives no
-knowledge scopes: `allowed_scopes` is empty for every token (ADR-0021 — the scope axis is retired,
+knowledge scopes: `allowed_scopes` is empty for every token (ADR-routing-labels-sole-content-axis — the scope axis is retired,
 there is no base scope). The body `knowledge_scope` field is fully non-authoritative and inert: it
-is logged (`body_knowledge_scope_ignored`) and ignored, never a 400 and never a filter (ADR-0021;
+is logged (`body_knowledge_scope_ignored`) and ignored, never a 400 and never a filter (ADR-routing-labels-sole-content-axis;
 previously an unknown body value was a 400 before any search). All 401 failure modes stay
 byte-identical on the wire.
 
-### The directed connection form (substep 9.3.1, Option A, ADR-0020)
+### The directed connection form (substep 9.3.1, Option A, ADR-directed-source-target-routing-labels)
 
 When the verified token carries the directed form — `source_system` + `target_system` +
 `business_id` (`VerifiedClaims.source_system`/`target_system`/`business_id`, parsed by
@@ -67,7 +67,7 @@ When the verified token carries the directed form — `source_system` + `target_
 separate branch (`_build_directed_context`) **before** the slot chain and routes on the directed
 connection instead of the membership slots:
 
-Since ADR-0023 (owner, 2026-10-20) **only the source system decides**; a source can have hundreds
+Since ADR-source-system-decides-widget-eligibility (owner, 2026-10-20) **only the source system decides**; a source can have hundreds
 of targets, so the target is assumed supported and never checked.
 
 1. **Source** — resolves through the SAME lenient catalog resolver chat-start uses
@@ -82,9 +82,9 @@ of targets, so the target is assumed supported and never checked.
    `[obi-general, {source}-general]`. Known → the four routing labels as before. No vend,
    enablement, role or allowlist check applies to the target.
 3. The slot **role check (3)** and the **launch allowlist (5)** LAPSE for the directed form
-   (ADR-0020 D4/D5). `UnknownIntegrationError` no longer fires on this path.
+   (ADR-directed-source-target-routing-labels D4/D5). `UnknownIntegrationError` no longer fires on this path.
 
-#### The source-enablement visibility gate (ADR-0023, supersedes the Task 5 target gate)
+#### The source-enablement visibility gate (ADR-source-system-decides-widget-eligibility, supersedes the Task 5 target gate)
 
 `knowledge-base/config/product_catalog.json` carries an optional flat top-level
 `enabled_sources` list of canonical product ids (loader rule 6b in
@@ -110,14 +110,14 @@ loader compares the token's normalized `source_system` against it.
 `business_id` (verified present for this form) becomes the `AuthContext.company_id`
 company-isolation axis; the resolved `source_slug`/`target_slug` ride the context for chat-start
 (9.2.1) to build the four routing labels + connection block. No knowledge scopes are derived here
-(ADR-0021) — the label hard filter is the content axis, wired into retrieval at stage 9.4.1. The
+(ADR-routing-labels-sole-content-axis) — the label hard filter is the content axis, wired into retrieval at stage 9.4.1. The
 body still never decides the connection (rules 2-3): `build_auth_context` takes no body, and
 `ChatRequestBody` forbids a `source_system`/`target_system` key outright (`extra="forbid"`).
 
 ## Why it does it
 
 The request body never decides access (never-bend rule 2); scope comes only from the verified
-note (ADR-0014, PLAN 11.1c). Verification is deliberately trust-free — the verifier proves *who
+note (ADR-db-level-customer-scope-isolation-backstop, PLAN 11.1c). Verification is deliberately trust-free — the verifier proves *who
 signed*, the gate decides *what that signer may assert*. The five checks fail closed in order so
 an unknown or misplaced product dies as a 400 before any search (§D.11 / the 8.1.2 chat.yaml
 contract), a cross-tenant or un-vended slot dies as the same bare 401 as every trust failure,

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Loader source-enablement hide (ADR-0023, supersedes the ADR-0022 target gate; panel mi-gate).
+ * Loader source-enablement hide (ADR-source-system-decides-widget-eligibility, supersedes the ADR-widget-hides-via-visibility-probe target gate; panel mi-gate).
  * The loader decodes the directed `source_system` claim at `init()` and refuses to mount the
  * launcher/iframe when the source is not one Obi supports — a no-flash, load-time hide,
  * cross-checked server-side by `GET /chat/visibility` → `obi:hidden` (covered separately). The
@@ -37,7 +37,7 @@ async function loadObi(): Promise<typeof window.Obi> {
   return window.Obi;
 }
 
-describe("Obi loader · source-enablement hide (panel mi-gate · ADR-0023)", () => {
+describe("Obi loader · source-enablement hide (panel mi-gate · ADR-source-system-decides-widget-eligibility)", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -52,7 +52,7 @@ describe("Obi loader · source-enablement hide (panel mi-gate · ADR-0023)", () 
     document.body.innerHTML = "";
   });
 
-  // panel mi-gate · ADR-0023 — a known source that is not enabled never mounts: no launcher, no
+  // panel mi-gate · ADR-source-system-decides-widget-eligibility — a known source that is not enabled never mounts: no launcher, no
   // iframe, no flash. xero is in the catalog but not in enabled_sources.
   it("test_loader_hides_when_decoded_source_not_enabled", async () => {
     vi.stubGlobal("__OBI_ENABLED_SOURCES__", JSON.stringify(ENABLED_NAMES));
@@ -71,7 +71,7 @@ describe("Obi loader · source-enablement hide (panel mi-gate · ADR-0023)", () 
     expect(document.querySelectorAll("button.obi-launcher").length).toBe(0);
   });
 
-  // panel mi-gate · ADR-0023 — a source the catalog does not know (Base's "PEP PMS") is not a
+  // panel mi-gate · ADR-source-system-decides-widget-eligibility — a source the catalog does not know (Base's "PEP PMS") is not a
   // supported source either, so the widget never mounts.
   it("test_loader_hides_when_decoded_source_unknown", async () => {
     vi.stubGlobal("__OBI_ENABLED_SOURCES__", JSON.stringify(ENABLED_NAMES));
@@ -88,7 +88,7 @@ describe("Obi loader · source-enablement hide (panel mi-gate · ADR-0023)", () 
     expect(document.querySelectorAll("button.obi-launcher").length).toBe(0);
   });
 
-  // panel mi-gate · ADR-0023 — an enabled source mounts whatever its target, and a display name
+  // panel mi-gate · ADR-source-system-decides-widget-eligibility — an enabled source mounts whatever its target, and a display name
   // ("Opera  Cloud", any case or spacing) matches like the backend's lenient resolver.
   it("test_loader_mounts_when_decoded_source_enabled_by_display_name", async () => {
     vi.stubGlobal("__OBI_ENABLED_SOURCES__", JSON.stringify(ENABLED_NAMES));
@@ -105,7 +105,7 @@ describe("Obi loader · source-enablement hide (panel mi-gate · ADR-0023)", () 
     });
   });
 
-  // panel mi-gate · ADR-0023 — default: an absent enabled set means "all enabled", so even a
+  // panel mi-gate · ADR-source-system-decides-widget-eligibility — default: an absent enabled set means "all enabled", so even a
   // disabled-looking source mounts (the build simply didn't inject the set). Proves the fail-safe
   // default `__OBI_ENABLED_SOURCES__` empty/absent ⇒ all enabled.
   it("test_loader_mounts_when_enabled_set_absent_all_enabled", async () => {
@@ -123,7 +123,7 @@ describe("Obi loader · source-enablement hide (panel mi-gate · ADR-0023)", () 
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  // panel mi-gate · ADR-0023 — fail-open: a failed eligibility fetch (e.g. the platform's token
+  // panel mi-gate · ADR-source-system-decides-widget-eligibility — fail-open: a failed eligibility fetch (e.g. the platform's token
   // endpoint is down) must NOT hide the widget. The server-authoritative visibility probe is the
   // real gate; the load-time decode is a no-flash optimization only.
   it("test_loader_mounts_when_eligibility_fetch_fails", async () => {
@@ -139,7 +139,7 @@ describe("Obi loader · source-enablement hide (panel mi-gate · ADR-0023)", () 
     });
   });
 
-  // panel mi-gate · ADR-0023 — the server-authoritative cross-check: an `obi:hidden` posted by the
+  // panel mi-gate · ADR-source-system-decides-widget-eligibility — the server-authoritative cross-check: an `obi:hidden` posted by the
   // loader's OWN iframe, from the exact Obi origin, tears the widget down. A message from a foreign
   // origin is ignored (no destroy).
   it("test_loader_destroys_on_obi_hidden_from_own_frame_only", async () => {

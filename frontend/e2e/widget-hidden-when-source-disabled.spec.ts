@@ -1,5 +1,5 @@
 /**
- * Browser proof for the source-enablement hide (ADR-0023; panel mi-gate).
+ * Browser proof for the source-enablement hide (ADR-source-system-decides-widget-eligibility; panel mi-gate).
  * Mirrors `widget-mounts.spec.ts`, but against the `/test-hosts/quickbooks` stub, whose token route
  * mints a DIRECTED note with `source_system: "quickbooks-online"` — an accounting product NOT in
  * `product_catalog.json`'s `enabled_sources` (`["mews","toast","opera-cloud"]`, baked into

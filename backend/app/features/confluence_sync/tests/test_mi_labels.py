@@ -1,13 +1,13 @@
 """Raw routing labels on every chunk (panel mi-labels, substep 9.1.2 / Option A Stage 3).
 
-The directed-connection hard filter (ADR-0020) routes a chat on the raw Confluence labels a page
+The directed-connection hard filter (ADR-directed-source-target-routing-labels) routes a chat on the raw Confluence labels a page
 was published with, NOT the resolved knowledge-scope ``tags``. This stage lands the storage: a
 ``labels text[]`` column stamped from the unresolved ``gateway.get_labels`` output, kept strictly
 distinct from ``tags`` (the recognized-scope ∩ authorized set). Three things must hold:
 
 * a build stamps the raw labels onto every chunk (and the page_source registry row);
 * a label-only change restamps ``labels`` over the metadata-only path — no re-embed, same
-  document_version (ADR-0020 D3, exactly as ``tags`` already restamp);
+  document_version (ADR-directed-source-target-routing-labels D3, exactly as ``tags`` already restamp);
 * the backfill is idempotent — safe to run twice over existing chunks.
 
 Assertions are outcomes only — stored labels, the sync action, the embed-call count, row counts —
@@ -37,7 +37,7 @@ pytestmark = pytest.mark.db
 
 # Page 3002 ("Mews PMS Sync Setup", space 300, unrestricted) — the fixture the tags siblings use.
 _PAGE = 3002
-# ADR-0021: membership/recognition is the routing-label axis.
+# ADR-routing-labels-sole-content-axis: membership/recognition is the routing-label axis.
 _MEWS = "mews-general"
 _GENERAL = "obi-general"
 _EXTRA = "extra-raw-label"  # a real Confluence label that is NOT a recognized routing label

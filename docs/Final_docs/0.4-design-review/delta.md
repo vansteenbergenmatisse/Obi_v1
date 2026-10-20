@@ -89,8 +89,8 @@ unresolved owner call (not inferred from `docs/plan/decisions.md`, which is unpo
 | d-document | One row per page, stable id | confirmed (platform.md:108; ingestion.md:119, missing-here) | (none) | none |
 | d-reconciliation_run | One row per sweep with counts | confirmed (confluence_sync.md:126); model citation off by 11 lines (platform.md:111, drifted) | (doc fix) | small |
 | d-page_restriction | One row per (page, principal); zero rows = open | confirmed (confluence_sync.md:123; platform.md:113) | (none) | none |
-| s-source | Lock 1, ADR-0004/0013, fails closed | confirmed for the in-folder half (retrieval.md:119) | (none) | none |
-| s-acl | Lock 3, ADR-0005, fails closed, runs before rerank | confirmed (retrieval.md:120) | (none) | none |
+| s-source | Lock 1, ADR-source-id-row-security-with-reader-writer-roles / ADR-supabase-postgres-store-without-force-rls, fails closed | confirmed for the in-folder half (retrieval.md:119) | (none) | none |
+| s-acl | Lock 3, ADR-rerank-then-verify-cited-answers, fails closed, runs before rerank | confirmed (retrieval.md:120) | (none) | none |
 | s-permitted | Only rows passing all locks reach reranker/generator | confirmed (retrieval.md:121) | (none) | none |
 | s-writer | Owner exempt via NO FORCE RLS | drifted — same citation gap as r3-source (platform.md:116); confirmed for local role, needs live for Supabase owner role (packages-config-infra-docs.md:76) | (doc fix + a live check) | small |
 | s-reader | rag_reader used by HybridRetriever's transactions etc. | confirmed partial (retrieval.md:123; alembic-and-scripts.md:92) | (none) | none |
@@ -188,7 +188,7 @@ unresolved owner call (not inferred from `docs/plan/decisions.md`, which is unpo
 | r2-aclsql | Target: page-restriction predicate inside dense/keyword search, before LIMIT 75 | missing — today's searches have no restricted-page predicate at all; ACL applied later in the app, matching this panel's own "today" text under r3-acl (retrieval.md:95) | move lock 3 into the SQL searches | large |
 | r3-scope | Migration 0010 coded and tested, not applied to Supabase; app predicate flag-gated | confirmed coded+tested (platform.md:100); needs live — not applied to Supabase per code alone (platform.md:101); flag defaults False in code, "on" claim unconfirmable from the folder (retrieval.md:98-99) | apply 0010 to Supabase + turn the flag on | large |
 | r3-classified | Classified deleted outright, conflict hidden by policy | missing — same root gap as tg-state/i2-gone (retrieval.md:103; ingestion.md:114) | (see tg-state) | large |
-| s-scope | Lock 2, ADR-0011/0014, applies to chunk and curated_knowledge_entry | drifted/partial — in-folder predicate touches only chunk; curated_knowledge_entry handling owned elsewhere (retrieval.md:122) | (same 0010-not-live gap, two tables) | large |
+| s-scope | Lock 2, ADR-knowledge-scope-tagging-and-filtering / ADR-db-level-customer-scope-isolation-backstop, applies to chunk and curated_knowledge_entry | drifted/partial — in-folder predicate touches only chunk; curated_knowledge_entry handling owned elsewhere (retrieval.md:122) | (same 0010-not-live gap, two tables) | large |
 | r4-union | Merge both runs, dedupe by chunk id, rerank once against one query | not a Claims-table row in `rag_agent.md` (only cross-referenced from `retrieval.md:111`, no owning-folder row); today's actual behavior (pick-higher-of-two-runs) is confirmed via r4-fallback's own note | build the real union-rerank | large |
 | r4-refuse | "Reasons today: no_candidates, weak_score, no_citations" | drifted — a fourth reason, `off_topic`, was added 2026-09-12 and isn't named on the panel (rag_agent.md:88) | update the reason list | small |
 | r5-dedupe | Same parent twice→one block; neighbors merged; budget drops lowest first | missing — no dedupe/merge/token-budget logic exists anywhere; retrieved hits pass straight through (rag_agent.md:90) | build dedupe + budget trim | large |
@@ -321,7 +321,7 @@ _Collected from every synopsis's section 8 ("Not on the design page"), with fold
 - `application/retriever.py:222,234` — `retrieve()` vs `retrieve_with_context()` as two distinct public methods (retrieval.md:127).
 - `application/retriever.py:9-10` — the `RankFn` eval-harness seam (retrieval.md:128).
 - `infrastructure/search_repo.py:52-55` — `KNOWLEDGE_SCOPE_WILDCARD = "*"` sentinel (retrieval.md:129).
-- `__init__.py:15-16` — the feature-root import-boundary rule (ADR-0003 machinery, not a design claim) (retrieval.md:130).
+- `__init__.py:15-16` — the feature-root import-boundary rule (ADR-features-import-only-through-public-root machinery, not a design claim) (retrieval.md:130).
 - `infrastructure/search_repo.py:130-131` — `_vector_literal` helper (retrieval.md:131).
 
 **rag_agent** (`apps/automation/app/features/rag_agent/`)

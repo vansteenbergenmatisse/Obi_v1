@@ -51,7 +51,7 @@ the Phase 5.4 eval). This design does not invent those numbers — where none ex
 | 2 | [`02-ingestion.md`](./02-ingestion.md) | The full write path, step by step, with the files/functions for each stage |
 | 3 | [`03-retrieval.md`](./03-retrieval.md) | The full read/answer path, step by step |
 | 4 | [`04-data-model.md`](./04-data-model.md) | Every table, key columns, relationships, the two search indexes, ER diagram |
-| 5 | [`05-security-isolation.md`](./05-security-isolation.md) | The three-layer isolation model + the writer/reader split and its ADR-0013/0014 rationale |
+| 5 | [`05-security-isolation.md`](./05-security-isolation.md) | The three-layer isolation model + the writer/reader split and its ADR-supabase-postgres-store-without-force-rls / ADR-db-level-customer-scope-isolation-backstop rationale |
 | 6 | [`06-system-visualization.md`](./06-system-visualization.md) | The whole system as a set of Mermaid diagrams (architecture, ER, ingestion, retrieval, security, deployment) |
 
 ## Source-of-truth documents this folder is derived from

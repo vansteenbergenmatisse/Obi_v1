@@ -1,6 +1,6 @@
 """Resolve a request-shaped knowledge-scope value into the allowed-scopes set. Pure, no I/O.
 
-ADR-0021 retired the knowledge-scope axis, so `recognized` is normally empty and this resolver
+ADR-routing-labels-sole-content-axis retired the knowledge-scope axis, so `recognized` is normally empty and this resolver
 returns an empty list (no base scope, no `-test` tag). It is kept as the interpreter of an incoming
 request-shaped value so the router keeps a single place to normalise/degrade one; a recognized
 `requested` or `default` scope (if any are ever reintroduced) is still honoured.

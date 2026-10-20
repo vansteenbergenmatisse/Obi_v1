@@ -25,7 +25,7 @@ retrieval algorithm still in use today:
 - No reranker — RRF's fused order was final.
 - No real, DB-backed principal ACL — `PrincipalPermissionPolicy` was built from fixture-fed data, not
   live `page_restriction` rows (that's Phase 4.3).
-- No RLS-backed source isolation, no `rag_reader` role (that's Phase 3.5.3, ADR-0004).
+- No RLS-backed source isolation, no `rag_reader` role (that's Phase 3.5.3, ADR-source-id-row-security-with-reader-writer-roles).
 - No `query_trace` scoreboard (that's Phase 3.5.4).
 - No answer runtime on top — retrieval returned ranked page ids for the eval harness to score, nothing
   consumed it as a chatbot yet (that's Phase 4, `rag_agent`).

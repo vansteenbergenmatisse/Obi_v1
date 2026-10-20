@@ -1,4 +1,4 @@
-# Obi embed — local test-host keys (PLAN 11.1c, ADR-0014)
+# Obi embed — local test-host keys (PLAN 11.1c, ADR-db-level-customer-scope-isolation-backstop)
 
 How to generate the throwaway RS256 key pairs the four `/test-hosts/*` pages use to sign a note
 locally, and how the pieces wire together. Nothing here is a real secret — these are local-only

@@ -41,7 +41,7 @@ test:
 ## test-unit: fakes only, no database, no live marker (substep 0.5.1 / harness.md).
 ## Every test NOT marked `db` — the reranker, embedder, Claude client and Confluence
 ## gateway are fakes; nothing touches a network or a real Postgres. Runs the architecture
-## boundary checker first (ADR-0003 feature rules + the 1.1.2 one-way folder rules) so a
+## boundary checker first (ADR-features-import-only-through-public-root feature rules + the 1.1.2 one-way folder rules) so a
 ## wrong-way import fails the unit level (and CI, which runs this target). Runs the backend
 ## suite then the knowledge base's own standalone suite (1.1.1-fix: knowledge-base/tests/,
 ## run from its own venv so the one-way rule — it imports nothing from the backend — holds).

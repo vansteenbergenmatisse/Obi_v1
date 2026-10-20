@@ -1,6 +1,11 @@
-# 0022 — Target-Enablement Widget Eligibility in the Directed Path
+# Target-Enablement Widget Eligibility in the Directed Path
 
-Status: Accepted — the target-vs-source choice superseded by ADR-0023 (2026-10-20)
+Identifier: `ADR-widget-hides-via-visibility-probe` (formerly numbered 0022). File paths updated to the current layout (`backend/`, `frontend/`, `knowledge-base/`) on 2026-10-20; the decision is unchanged.
+
+Status: Accepted — the target-vs-source choice is superseded by `ADR-source-system-decides-widget-eligibility`
+(2026-10-20). Read every `enabled_targets` / `TargetNotEnabledError` / `target_not_enabled` below as
+`enabled_sources` / `SourceNotEnabledError` / `source_not_enabled`, gating the SOURCE. The mechanism
+(visibility probe, 403 render, `obi:hidden`, init-time eligibility fetch) is unchanged.
 Date: 2026-10-13
 Governs: `knowledge-base/config/product_catalog.json` (`enabled_targets`),
 `backend/app/platform/config/product_catalog.py` (loader rule 6b, the `enabled_targets` frozenset),
@@ -11,13 +16,13 @@ Governs: `knowledge-base/config/product_catalog.json` (`enabled_targets`),
 (`Error.reason`), `packages/contracts/src/iframe-messages.ts` (`obi:hidden`),
 `frontend/src/features/embed/loader.ts` (the init-time eligibility fetch + `__OBI_ENABLED_TARGETS__`),
 `frontend/src/app/embed/embed-frame.tsx` (the `GET /chat/visibility` probe + the Next proxy).
-Amends ADR-0020 D4/D5 (the launch-allowlist lapse in the directed path). Does NOT touch the retrieval
-routing axis (ADR-0020 D1/D5 four-label hard filter), source/company isolation (ADR-0004/0014), the
-edge-token verification (ADR-0017), or the knowledge-scope retirement (ADR-0021).
+Amends ADR-directed-source-target-routing-labels D4/D5 (the launch-allowlist lapse in the directed path). Does NOT touch the retrieval
+routing axis (ADR-directed-source-target-routing-labels D1/D5 four-label hard filter), source/company isolation (ADR-source-id-row-security-with-reader-writer-roles / ADR-db-level-customer-scope-isolation-backstop), the
+edge-token verification (ADR-signed-token-verified-at-the-edge), or the knowledge-scope retirement (ADR-routing-labels-sole-content-axis).
 
 ## Context
 
-ADR-0020 adopted directed-connection routing and, in D4/D5, made launch behavior **content-gated**:
+ADR-directed-source-target-routing-labels adopted directed-connection routing and, in D4/D5, made launch behavior **content-gated**:
 direction is primary, accounting is a first-class target, and a chat is served when its four label
 boxes have pages and refused with a reason when they are empty. In doing so the directed path
 deliberately dropped the slot form's launch **allowlist** (`context-contract.md` §4: a filled
@@ -35,9 +40,9 @@ without reintroducing the allowlist as a retrieval filter and without a Confluen
 
 ## Decision
 
-1. **Partially reverse the ADR-0020 D4/D5 lapse — for WIDGET ELIGIBILITY ONLY.** A new global
+1. **Partially reverse the ADR-directed-source-target-routing-labels D4/D5 lapse — for WIDGET ELIGIBILITY ONLY.** A new global
    target-enablement axis decides whether the widget is eligible to mount for a directed connection.
-   The retrieval routing axis is **unchanged**: the four-label hard filter (ADR-0020 D1/D5), direction
+   The retrieval routing axis is **unchanged**: the four-label hard filter (ADR-directed-source-target-routing-labels D1/D5), direction
    primacy (D4), and accounting as a first-class target (D5) all stand exactly as ratified. This gate
    adds no label, removes no label, and changes no search. Because retrieval behavior does not change,
    never-bend rule 11's before/after gold-set number does **not** trigger for this change.
@@ -67,19 +72,19 @@ without reintroducing the allowlist as a retrieval filter and without a Confluen
    loader `init()` fetches the token once and decodes a **display-only** `target_system` to hide
    before mount when the target is not enabled, failing **open** on any uncertainty. This is a second
    token fetch in addition to the trust-bearing click fetch; the click fetch stays fresh and remains
-   the authority. ADR-0022 authorizes the extra init fetch as an eligibility-only, non-authoritative
+   the authority. ADR-widget-hides-via-visibility-probe authorizes the extra init fetch as an eligibility-only, non-authoritative
    read.
 
 5. **Authorized bent convention #2 — a 4th `ObiMessage` type `obi:hidden`.** `embed-frame.tsx` calls
    `GET /chat/visibility` through a new same-origin Next proxy that injects the host key; a
    `visible:false` answer posts a NEW frame→host message `obi:hidden`, on which the loader `destroy()`s
    the widget. `obi:hidden` is the **sole** frame→host message and is accepted only from Obi's own
-   iframe at the exact Obi origin. ADR-0022 authorizes this 4th message type and its one-way direction.
+   iframe at the exact Obi origin. ADR-widget-hides-via-visibility-probe authorizes this 4th message type and its one-way direction.
 
 ## Consequences
 
-- **Amends ADR-0020 D4/D5.** The directed path regains a widget-eligibility gate, but as a separate
-  global enablement axis, not as the slot allowlist and not as a retrieval filter. ADR-0020's routing
+- **Amends ADR-directed-source-target-routing-labels D4/D5.** The directed path regains a widget-eligibility gate, but as a separate
+  global enablement axis, not as the slot allowlist and not as a retrieval filter. ADR-directed-source-target-routing-labels's routing
   decisions are untouched.
 - **Honesty surface.** A not-yet-live target (e.g. QuickBooks at launch) now yields no widget and a
   clean 403 (`reason: target_not_enabled`), instead of an already-mounted launcher that can only
@@ -93,4 +98,4 @@ without reintroducing the allowlist as a retrieval filter and without a Confluen
 - **Invariants that MUST hold (unchanged):** never-bend rule 2–3 (the token decides, one auth context
   at the gate, no read looser than the search), rule 10 (no secret/product id leaked in a body), rule
   11 (no change without its test; no retrieval change — so no gold-set number owed here), and the
-  edge-JWT verification (ADR-0017).
+  edge-JWT verification (ADR-signed-token-verified-at-the-edge).

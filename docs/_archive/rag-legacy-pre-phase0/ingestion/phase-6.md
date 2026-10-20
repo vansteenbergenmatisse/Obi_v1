@@ -2,7 +2,7 @@
 
 **Status:** 🟩 **live cutover done + verified against Supabase (2026-09-09); production traffic NOT
 switched, work UNCOMMITTED — operator decides commit + go-live.** The prerequisite RLS fix
-(**ADR-0013** + migration `0008_drop_force_rls` + `apply_chunk_rls`, TDD-gated by
+(**ADR-supabase-postgres-store-without-force-rls** + migration `0008_drop_force_rls` + `apply_chunk_rls`, TDD-gated by
 `app/features/confluence_sync/tests/test_force_rls_managed_postgres.py`) landed first, then the full
 cutover ran green on Supabase (project `vtpbwkbbkfukfmytlqns`, `eu-west-1`, session pooler `:5432`):
 preflight (pgvector 0.8.2, owner `is_superuser=off`) → `alembic upgrade head` (`0008`, `chunk`
@@ -26,7 +26,7 @@ docs/runbooks/                                         new: pooler caveats, back
 ## What this phase is
 
 Moving the corpus + retrieval from local Docker pgvector to **Supabase** (managed Postgres +
-pgvector) as the production vector store, while preserving the ADR-0004 source-isolation model
+pgvector) as the production vector store, while preserving the ADR-source-id-row-security-with-reader-writer-roles source-isolation model
 (see [phase-0.md](./phase-0.md), [phase-3.5.md](./phase-3.5.md)). Deploy/infra work only,
 deliberately separated from Phase 5's accuracy/optimization work so neither blocks the other. Dev
 stays on local Docker pgvector until this phase actually starts — moving dev onto a networked
@@ -43,7 +43,7 @@ gate reasoning, root `CLAUDE.md`'s gate).
 - **Role recreation.** Supabase manages roles differently (`authenticated`/`service_role`/`anon`,
   JWT-claim RLS, **no plain superuser and no reliable `BYPASSRLS` for the tenant role**) — the docker
   init SQL that creates `rag_reader` locally won't run there; it has to be reapplied via a one-off
-  script or a Supabase migration. **How the writer bypasses RLS changed (ADR-0013):** it is no
+  script or a Supabase migration. **How the writer bypasses RLS changed (ADR-supabase-postgres-store-without-force-rls):** it is no
   longer via superuser/`BYPASSRLS` but via **table ownership with `FORCE` dropped** — the writer
   role must *own* `chunk` (i.e. create the tables through `alembic upgrade` as that role), after
   which `ENABLE`d-but-not-`FORCE`d RLS exempts the owner while `rag_reader` stays policy-bound. This

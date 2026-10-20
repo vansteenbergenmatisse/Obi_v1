@@ -420,7 +420,7 @@ def load_platform_registry(
             if entry.active:
                 _reject_untrusted_active_platform(entry)
 
-    # ADR-0021: the knowledge-scope value lists are retired (empty). The keys remain as the valid
+    # ADR-routing-labels-sole-content-axis: the knowledge-scope value lists are retired (empty). The keys remain as the valid
     # integration-claim allow-list (the allowed_integrations cross-check above). Any residual slug
     # is still validated so a stray value can never slip back in unnoticed.
     scopes: dict[str, tuple[str, ...]] = {}

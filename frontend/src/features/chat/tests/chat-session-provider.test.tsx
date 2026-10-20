@@ -337,7 +337,7 @@ describe("ChatSessionProvider", () => {
     });
   });
 
-  it("marks a turn as clarifying (not refused) and keeps its options, per ADR-0008 decision 3", async () => {
+  it("marks a turn as clarifying (not refused) and keeps its options, per ADR-ambiguity-clarification-then-fallback-answer decision 3", async () => {
     fetchMock.mockResolvedValue(
       okStreamResponse([
         sse({ type: "start", conversationId: "conv-1" }),

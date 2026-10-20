@@ -1,6 +1,6 @@
-"""raw routing labels land on chunks (panel mi-labels, substep 9.1.2 / Option A Stage 3, ADR-0020)
+"""raw routing labels land on chunks (panel mi-labels, substep 9.1.2 / Option A Stage 3, ADR-directed-source-target-routing-labels)
 
-Adds the directed-connection routing axis (ADR-0020 D1): a ``labels text[] NOT NULL DEFAULT '{}'``
+Adds the directed-connection routing axis (ADR-directed-source-target-routing-labels D1): a ``labels text[] NOT NULL DEFAULT '{}'``
 column on ``chunk`` and ``page_source`` holding the *raw* Confluence labels a page was published
 with (the unresolved ``get_labels`` output), kept strictly distinct from the resolved
 knowledge-scope ``tags``. A partial GIN ``ix_chunk_labels_gin ... WHERE is_active`` backs the

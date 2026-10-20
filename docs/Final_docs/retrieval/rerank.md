@@ -23,7 +23,7 @@
 ## What it does
 
 After hybrid search, RRF fusion and the locks (source-scope RLS and page ACL, plus the
-routing-label RLS/filter that replaced the retired knowledge-scope lock — ADR-0021) have produced a
+routing-label RLS/filter that replaced the retired knowledge-scope lock — ADR-routing-labels-sole-content-axis) have produced a
 permitted, de-duplicated page ranking, the retriever slices the top `rerank_depth` pages (default
 75) and asks `fetch_rerank_texts` for one representative child chunk per page — the earliest active
 child under the exact same pre-model filters as search (active / child / current, source list,
@@ -75,7 +75,7 @@ carries a verified `CustomerContext`, `_build_rerank_inputs` enriches both:
   only the body tail is truncated after it.
 
 This is **request construction, not a prompt** — no model is asked to reason or generate here
-(ADR-0005 keeps the reranker a cross-encoder), so the helpers live in the retrieval domain and
+(ADR-rerank-then-verify-cited-answers keeps the reranker a cross-encoder), so the helpers live in the retrieval domain and
 no prompt text leaves `rag_agent`. Eligibility is enforced in the search SQL before this point
 (8.3.1); the enrichment only changes how the already-eligible candidates are scored and
 ordered — it is built from that exact candidate set and never widens it. With no context the
@@ -100,9 +100,9 @@ Children retrieve, parents ground: the cross-encoder scores the exact child chun
 matched (rule 6 — the matched chunk is what the reranker scores and what expands to a
 parent), never a stand-in. Rerank runs *after* the locks, in the application layer, on
 the fused candidate set — a document the routing-label filter or ACL excludes is never scored
-(ADR-0005),
+(ADR-rerank-then-verify-cited-answers),
 and `fetch_rerank_texts` carries the same filters in the same transaction so the reranked set
-is a strict subset of what access and eligibility already permit. ADR-0005 also fixes the
+is a strict subset of what access and eligibility already permit. ADR-rerank-then-verify-cited-answers also fixes the
 tool class: a cross-encoder reranker only — never a general chat model asked to reorder —
 which is why there is no prompt here and why the v2 string contract (no instruction field) is
 the researched path rather than a workaround.

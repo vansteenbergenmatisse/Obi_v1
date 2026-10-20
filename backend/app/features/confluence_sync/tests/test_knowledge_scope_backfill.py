@@ -3,7 +3,7 @@
 
 Proven against the real DB (same harness/`index_page` style as
 `test_retrieval_knowledge_scope.py`): a live chunk whose tags overlap none of the recognized
-knowledge scopes would silently vanish from every scoped result once the flag is on (ADR-0011
+knowledge scopes would silently vanish from every scoped result once the flag is on (ADR-knowledge-scope-tagging-and-filtering
 Decision 1 — ``general`` is always in the allowed set but is never inferred for an untagged chunk),
 so `verify_knowledge_scope_coverage` must count it as untagged and report the corpus not-ready.
 """

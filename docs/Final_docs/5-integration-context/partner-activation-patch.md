@@ -91,7 +91,7 @@ map.
 **If a hub vends an accounting target** (`quickbooks-online` or `xero`), add that id as a key to the
 top-level `integrations` map **in the same change** that activates the partner — otherwise the
 registry fails to load at startup (every `allowed_integrations` value must be a key of `integrations`).
-The value is an empty list `[]` (the knowledge-scope value lists are retired and empty per ADR-0021):
+The value is an empty list `[]` (the knowledge-scope value lists are retired and empty per ADR-routing-labels-sole-content-axis):
 
 ```jsonc
 "integrations": {

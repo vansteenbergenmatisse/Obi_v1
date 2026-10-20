@@ -348,7 +348,7 @@ def _apply_metadata_only(
     if tags is not None:
         ps.tags = list(tags)
     if labels is not None:
-        ps.labels = list(labels)  # raw labels restamp (ADR-0020 D3, mi-labels): no re-embed
+        ps.labels = list(labels)  # raw labels restamp (ADR-directed-source-target-routing-labels D3, mi-labels): no re-embed
     if applicability is not _KEEP:
         ps.applicability = applicability  # mi-applies 8.2.2: restamp (None = removed)
     ps.last_indexed_at = now

@@ -1,4 +1,4 @@
-"""ADR-0023 (panel mi-gate / mi-contract): the HTTP surface of the source-enablement visibility
+"""ADR-source-system-decides-widget-eligibility (panel mi-gate / mi-contract): the HTTP surface of the source-enablement visibility
 gate — `router._resolve_auth_context`'s 403 mapping and the read-only `GET /chat/visibility`
 probe (`router._visibility_payload`).
 
@@ -108,7 +108,7 @@ def _settings(reg) -> Settings:
 
 
 def test_mi_gate_disabled_source_maps_to_403_with_reason_and_no_product_id(tmp_path):
-    """panel mi-gate · ADR-0023
+    """panel mi-gate · ADR-source-system-decides-widget-eligibility
     `_resolve_auth_context` maps SourceNotEnabledError to a 403 whose body is exactly
     {"error": "integration not available", "reason": "source_not_enabled"} — a 403 (not 401: off
     the renew path) — and the body never names the refused product (rule 10)."""
@@ -127,7 +127,7 @@ def test_mi_gate_disabled_source_maps_to_403_with_reason_and_no_product_id(tmp_p
 
 
 def test_mi_gate_visibility_probe_reports_hidden_for_disabled_source(tmp_path):
-    """panel mi-contract · ADR-0023
+    """panel mi-contract · ADR-source-system-decides-widget-eligibility
     A known source that is not enabled (xero) reports {"visible": false, "reason":
     "source_not_enabled"}, so the frontend hides Obi before any chat round-trip."""
     reg = _registry(tmp_path, ["mews", "xero"])
@@ -139,7 +139,7 @@ def test_mi_gate_visibility_probe_reports_hidden_for_disabled_source(tmp_path):
 
 
 def test_mi_gate_visibility_probe_hides_an_unknown_source(tmp_path):
-    """panel mi-contract · ADR-0023
+    """panel mi-contract · ADR-source-system-decides-widget-eligibility
     A source the catalog does not know (Base's "PEP PMS") is not supported, so Obi is hidden —
     {"visible": false} — instead of the old 400 error that left the widget showing a failure."""
     reg = _registry(tmp_path, ["mews", "xero"])
@@ -151,7 +151,7 @@ def test_mi_gate_visibility_probe_hides_an_unknown_source(tmp_path):
 
 
 def test_mi_gate_visibility_probe_reports_visible_for_any_target(tmp_path):
-    """panel mi-contract · ADR-0023
+    """panel mi-contract · ADR-source-system-decides-widget-eligibility
     An enabled source is visible whatever its target: a known enabled target (mews), a known
     target that is not enabled (xero), and a target the catalog does not know (NetSuite)."""
     reg = _registry(tmp_path, ["toast", "mews"])

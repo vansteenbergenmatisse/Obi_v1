@@ -1,7 +1,7 @@
 """Core ORM for the versioned Confluence knowledge store.
 
 This is app-wide technical schema shared by the confluence_sync, ingestion, retrieval and
-rag_agent features (they own the *logic*; this module owns the *tables*). See ADR-0002 and
+rag_agent features (they own the *logic*; this module owns the *tables*). See ADR-hybrid-retrieval-over-versioned-chunk-store and
 the migration in alembic/versions/0001_core_schema.py for the authoritative DDL.
 """
 
@@ -45,7 +45,7 @@ from schema.settings import get_kb_settings as get_settings
 
 EMB_DIM = get_settings().embedding_dim
 
-# Provider tagging (ADR-0004). source_type is a coarse connector label constrained by a CHECK
+# Provider tagging (ADR-source-id-row-security-with-reader-writer-roles). source_type is a coarse connector label constrained by a CHECK
 # (not a PG enum, to avoid ALTER TYPE friction as connectors grow). The set is seeded with the
 # planned sources so adding one is data, not a migration; source_id (e.g. "confluence:default")
 # is the per-source isolation key that RLS and the explicit source filter both key on.
@@ -59,7 +59,7 @@ KIND_CHILD = 1
 # pgvector caps a `vector` HNSW index at 2000 dims. For higher-dimension models (e.g. OpenAI
 # text-embedding-3-large at 3072) we index a half-precision cast — `halfvec` HNSW supports up to
 # 4000 dims. Full-precision vectors stay in the column; only the index is half precision, which
-# has negligible recall impact. See ADR-0002.
+# has negligible recall impact. See ADR-hybrid-retrieval-over-versioned-chunk-store.
 _HNSW_MAX_VECTOR_DIM = 2000
 _HNSW_WITH = {"m": 16, "ef_construction": 200}
 _HNSW_WHERE = "is_active AND kind = 1 AND embedding IS NOT NULL"
@@ -99,7 +99,7 @@ class PageSource(Base):
 
     page_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)  # Confluence page id
     space_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    # provider tagging (ADR-0004): mirrors chunk so the registry records each page's source
+    # provider tagging (ADR-source-id-row-security-with-reader-writer-roles): mirrors chunk so the registry records each page's source
     source_type: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default=text("'confluence'")
     )
@@ -109,7 +109,7 @@ class PageSource(Base):
     tags: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
     )
-    # raw Confluence labels the page was published with (ADR-0020 D1, panel mi-labels, migration
+    # raw Confluence labels the page was published with (ADR-directed-source-target-routing-labels D1, panel mi-labels, migration
     # 0016): the unresolved ``get_labels`` output, the directed-connection routing axis. Kept
     # strictly distinct from ``tags`` (the recognized-scope ∩ authorized set). Empty = no labels.
     labels: Mapped[list[str]] = mapped_column(
@@ -169,7 +169,7 @@ class PageSource(Base):
 
 
 class PageRestriction(Base):
-    """Persisted per-page principal read ACL (PLAN 4.3; ADR-0004 §page-level ACL / ADR-0005 §9).
+    """Persisted per-page principal read ACL (PLAN 4.3; ADR-source-id-row-security-with-reader-writer-roles §page-level ACL / ADR-rerank-then-verify-cited-answers §9).
 
     Presence of any row for a page means it is restricted to the listed principals; a page with
     no rows here is unrestricted — the same contract ``PrincipalPermissionPolicy.restrictions``
@@ -288,7 +288,7 @@ class Chunk(Base):
 
     title: Mapped[str] = mapped_column(Text, nullable=False)
     space_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    # provider tagging + the RLS isolation key (ADR-0004)
+    # provider tagging + the RLS isolation key (ADR-source-id-row-security-with-reader-writer-roles)
     source_type: Mapped[str] = mapped_column(
         String(32), nullable=False, server_default=text("'confluence'")
     )
@@ -298,7 +298,7 @@ class Chunk(Base):
     tags: Mapped[list[str]] = mapped_column(
         ARRAY(Text), nullable=False, server_default=text("'{}'::text[]")
     )
-    # raw Confluence labels the page was published with (ADR-0020 D1, panel mi-labels, migration
+    # raw Confluence labels the page was published with (ADR-directed-source-target-routing-labels D1, panel mi-labels, migration
     # 0016): the directed-connection routing axis, distinct from the resolved scope ``tags``. The
     # 9.4.1 hard filter reads it via ``app.allowed_labels`` + ``labels && :session_labels``.
     labels: Mapped[list[str]] = mapped_column(
@@ -368,7 +368,7 @@ class Chunk(Base):
             postgresql_using="gin",
             postgresql_where=text("is_active"),
         ),
-        # directed-connection routing hot path: `labels && ARRAY[...]` overlap (ADR-0020, 9.4.1)
+        # directed-connection routing hot path: `labels && ARRAY[...]` overlap (ADR-directed-source-target-routing-labels, 9.4.1)
         Index(
             "ix_chunk_labels_gin",
             "labels",
@@ -520,7 +520,7 @@ _ROOT_TYPE_CHECK = "root_type IN ('space', 'page')"
 class SourceScope(Base):
     """A configured Confluence sync root: a whole space, or a page-subtree narrower than one.
 
-    Replaces the old, never-consumed ``CONFLUENCE_SPACES`` env var (PLAN 3.5.6 / ADR-0004
+    Replaces the old, never-consumed ``CONFLUENCE_SPACES`` env var (PLAN 3.5.6 / ADR-source-id-row-security-with-reader-writer-roles
     follow-on). ``space`` roots reproduce today's whole-space behavior unchanged; ``page`` roots
     narrow reconciliation to a root page + its live descendants (resolved by
     ``confluence_sync.domain.scope_resolver``). ``tags`` propagate to ``page_source``/``chunk``
@@ -585,7 +585,7 @@ class QueryTrace(Base):
     # populated by retrieval once knowledge-scope filtering resolves the allowed set (PLAN 10.4);
     # nullable because rows written before that phase never had a knowledge scope to record
     allowed_knowledge_scopes: Mapped[list[str] | None] = mapped_column(ARRAY(Text), nullable=True)
-    # sha256 of the verified edge-token subject (PLAN 11.1c, ADR-0014) — never the raw subject and
+    # sha256 of the verified edge-token subject (PLAN 11.1c, ADR-db-level-customer-scope-isolation-backstop) — never the raw subject and
     # never the token; nullable on the tokenless internal/eval path and every pre-11.1c row.
     subject_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -619,7 +619,7 @@ class CuratedKnowledgeEntry(Base):
 
 
 class ChatSession(Base):
-    """One directed-connection chat session (Option A Stage 4, panel mi-session, ADR-0020).
+    """One directed-connection chat session (Option A Stage 4, panel mi-session, ADR-directed-source-target-routing-labels).
 
     Chat-start resolves the directed ``source → target`` connection once and stores it here; every
     later question in the chat reuses this row instead of re-resolving (never-bend rule 8). The row

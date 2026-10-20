@@ -50,7 +50,7 @@ describe("MessageBubble", () => {
     expect(screen.queryByText("Hel")).not.toBeInTheDocument();
   });
 
-  describe("refusal + human hand-off (PLAN 9.6, ADR-0008 decision 6)", () => {
+  describe("refusal + human hand-off (PLAN 9.6, ADR-ambiguity-clarification-then-fallback-answer decision 6)", () => {
     it("shows the refusal banner and a mailto hand-off CTA for a refused turn", () => {
       render(
         <ChatSessionProvider>

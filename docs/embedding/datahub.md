@@ -1,6 +1,6 @@
 # Obi embed — Data Hub hand-over pack
 
-**Phase 11.1c (ADR-0014).** Everything the Data Hub needs to embed Obi, and the values we need back
+**Phase 11.1c (ADR-db-level-customer-scope-isolation-backstop).** Everything the Data Hub needs to embed Obi, and the values we need back
 to switch it on. The Data Hub is a **hub**: it embeds Obi for many customers, and each customer runs
 an underlying PMS/POS (Mews, Toast, or Opera Cloud). So the Data Hub's note carries the **customer's
 underlying integration** as its `integration` claim — not the literal string `datahub` — and that

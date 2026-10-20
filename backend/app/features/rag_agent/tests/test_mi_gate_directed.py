@@ -1,7 +1,7 @@
-"""Substep 9.3.1 + ADR-0023 (panels mi-gate / mi-contract): `build_auth_context` accepts the
-directed source → target connection form (Option A, ADR-0020).
+"""Substep 9.3.1 + ADR-source-system-decides-widget-eligibility (panels mi-gate / mi-contract): `build_auth_context` accepts the
+directed source → target connection form (Option A, ADR-directed-source-target-routing-labels).
 
-ADR-0023 (owner, 2026-10-20): only the SOURCE system decides eligibility. A source can have
+ADR-source-system-decides-widget-eligibility (owner, 2026-10-20): only the SOURCE system decides eligibility. A source can have
 hundreds of targets, so the target is assumed supported and never checked — an unknown target is
 carried as `target_slug=None`. The source must resolve in the catalog, be vendable by the issuer
 (401 otherwise) and be in `enabled_sources` (403 otherwise; an unknown source is also 403, so Obi
@@ -79,11 +79,11 @@ def test_rt1_directed_form_accepted(tmp_path):
     assert ctx.target_slug == "mews"
     assert ctx.company_id == "B-3075"
     assert ctx.token_subject is not None
-    assert ctx.allowed_scopes == ()  # ADR-0021: scopes retired
+    assert ctx.allowed_scopes == ()  # ADR-routing-labels-sole-content-axis: scopes retired
 
 
 def test_rt1_directed_unknown_source_is_hidden_before_search(tmp_path):
-    """panel mi-gate · ADR-0023 (source-only eligibility)
+    """panel mi-gate · ADR-source-system-decides-widget-eligibility (source-only eligibility)
     A source system the catalog does not know is not a source we support, so Obi is hidden for it:
     SourceNotEnabledError (the 403 hide family), raised before any retrieval touches the database."""
     reg = _registry(tmp_path, ["toast", "mews"])
@@ -92,7 +92,7 @@ def test_rt1_directed_unknown_source_is_hidden_before_search(tmp_path):
 
 
 def test_rt1_directed_unknown_target_is_accepted_with_no_target_slug(tmp_path):
-    """panel mi-gate · ADR-0023 (source-only eligibility)
+    """panel mi-gate · ADR-source-system-decides-widget-eligibility (source-only eligibility)
     A source can have hundreds of targets, so the target is never checked: an unknown target
     (NetSuite is not in the catalog) is accepted and carried as target_slug None, never a
     fabricated system. The source still routes."""
@@ -104,7 +104,7 @@ def test_rt1_directed_unknown_target_is_accepted_with_no_target_slug(tmp_path):
 
 
 def test_rt1_directed_source_resolves_by_display_name(tmp_path):
-    """panel mi-gate · ADR-0023
+    """panel mi-gate · ADR-source-system-decides-widget-eligibility
     Base sends display names ("Opera Cloud"), not slugs; the source resolves through the same
     lenient resolver chat-start uses."""
     reg = _registry(tmp_path, ["opera-cloud"])
@@ -114,7 +114,7 @@ def test_rt1_directed_source_resolves_by_display_name(tmp_path):
 
 
 def test_rt1_directed_vend_rights_bind_the_source(tmp_path):
-    """panel mi-gate · substep 9.3.1 + ADR-0023
+    """panel mi-gate · substep 9.3.1 + ADR-source-system-decides-widget-eligibility
     Check 4 (vend rights) still binds the SOURCE: a hub trusted to vend only mews may not assert
     toast as its source — IntegrationNotAllowedError (401), the cross-issuer boundary."""
     reg = _registry(tmp_path, ["mews"])
@@ -123,7 +123,7 @@ def test_rt1_directed_vend_rights_bind_the_source(tmp_path):
 
 
 def test_rt1_directed_target_is_never_vend_checked(tmp_path):
-    """panel mi-gate · ADR-0023
+    """panel mi-gate · ADR-source-system-decides-widget-eligibility
     The target is assumed supported: a known target the issuer does not vend (xero) is accepted
     and still carried as the target slug, so the four routing labels can use it."""
     reg = _registry(tmp_path, ["toast"])
@@ -134,19 +134,19 @@ def test_rt1_directed_target_is_never_vend_checked(tmp_path):
 
 def test_rt1_directed_accounting_target_is_first_class(tmp_path):
     """panel mi-gate · substep 9.3.1
-    ADR-0020 D5: accounting is a first-class target — a mews → xero (PMS → accounting) connection
-    is accepted, and since ADR-0023 the target's own enablement is never checked."""
+    ADR-directed-source-target-routing-labels D5: accounting is a first-class target — a mews → xero (PMS → accounting) connection
+    is accepted, and since ADR-source-system-decides-widget-eligibility the target's own enablement is never checked."""
     reg = _registry(tmp_path, ["mews", "xero"])
     ctx = build_auth_context(_directed(source="mews", target="xero"), reg)
     assert ctx.source_slug == "mews"
     assert ctx.target_slug == "xero"
 
 
-# --- ADR-0023 (panel mi-gate): the source-enablement visibility gate (after vend rights) ---
+# --- ADR-source-system-decides-widget-eligibility (panel mi-gate): the source-enablement visibility gate (after vend rights) ---
 
 
 def test_mi_gate_directed_refuses_disabled_source(tmp_path):
-    """panel mi-gate · ADR-0023
+    """panel mi-gate · ADR-source-system-decides-widget-eligibility
     A verified, vendable directed connection whose SOURCE product is not in the catalog's
     `enabled_sources` (the shipped catalog omits xero) is refused with SourceNotEnabledError — the
     403 family that keeps Obi hidden. Only the source gates."""
@@ -156,7 +156,7 @@ def test_mi_gate_directed_refuses_disabled_source(tmp_path):
 
 
 def test_mi_gate_directed_allows_every_enabled_source(tmp_path):
-    """panel mi-gate · ADR-0023
+    """panel mi-gate · ADR-source-system-decides-widget-eligibility
     Each shipped enabled source (mews, toast, opera-cloud) is accepted, whatever the target."""
     reg = _registry(tmp_path, ["mews", "toast", "opera-cloud"])
     for source in ("mews", "toast", "opera-cloud"):
@@ -165,7 +165,7 @@ def test_mi_gate_directed_allows_every_enabled_source(tmp_path):
 
 
 def test_mi_gate_directed_vend_violation_is_401_before_enablement(tmp_path):
-    """panel mi-gate · ADR-0023 (precedence)
+    """panel mi-gate · ADR-source-system-decides-widget-eligibility (precedence)
     A known source the issuer may not vend is IntegrationNotAllowedError (401) — raised at check 4,
     BEFORE the enablement check placed after it: vend → 401, then not-enabled → 403."""
     reg = _registry(tmp_path, ["mews"])  # does NOT vend xero

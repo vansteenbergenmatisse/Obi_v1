@@ -72,7 +72,7 @@ def _claims(**over):
 def test_builds_scoped_context(tmp_path):
     ctx = build_auth_context(_claims(), _registry(tmp_path))
     assert ctx.integration == "mews"
-    assert ctx.allowed_scopes == ()  # ADR-0021: scopes retired
+    assert ctx.allowed_scopes == ()  # ADR-routing-labels-sole-content-axis: scopes retired
     assert ctx.principal is None  # v1: embedded users are principal-less
     assert ctx.allowed_sources == ("confluence:default",)
     # CIP-4: token_subject is issuer-namespaced (NUL-separated), not the bare `sub`
@@ -91,7 +91,7 @@ def test_no_business_values_is_general_only(tmp_path):
     ctx = build_auth_context(
         _claims(company_id=None, company_name=None, integration=None), _registry(tmp_path)
     )
-    assert ctx.allowed_scopes == ()  # ADR-0021: scopes retired
+    assert ctx.allowed_scopes == ()  # ADR-routing-labels-sole-content-axis: scopes retired
     assert ctx.integration is None
     # CIP-4: still token-identified, and issuer-namespaced
     assert ctx.token_subject == "https://app.mews.com\x00u1"
@@ -160,7 +160,7 @@ def test_active_platform_general_only_is_allowed(tmp_path):
     ctx = build_auth_context(
         _claims(company_id=None, company_name=None, integration=None), _registry(tmp_path)
     )
-    assert ctx.allowed_scopes == ()  # ADR-0021: scopes retired
+    assert ctx.allowed_scopes == ()  # ADR-routing-labels-sole-content-axis: scopes retired
     assert ctx.integration is None
     assert ctx.token_subject == "https://app.mews.com\x00u1"
 
@@ -209,7 +209,7 @@ def test_hub_vends_multiple_product_integrations(tmp_path):
             integration=integration,
         )
 
-    # ADR-0021: the hub may still VEND both integrations (no IntegrationNotAllowedError), but the
+    # ADR-routing-labels-sole-content-axis: the hub may still VEND both integrations (no IntegrationNotAllowedError), but the
     # knowledge-scope axis is retired, so each resolves to the empty scope set.
     assert build_auth_context(_hub_claims("mews"), reg).allowed_scopes == ()
     assert build_auth_context(_hub_claims("toast"), reg).allowed_scopes == ()
@@ -218,12 +218,12 @@ def test_hub_vends_multiple_product_integrations(tmp_path):
 def test_self_serving_platform_asserting_own_integration_is_allowed(tmp_path):
     """CIP-A1: the ordinary case — a self-serving platform asserting its OWN integration works."""
     ctx = build_auth_context(_claims(integration="mews"), _registry(tmp_path))
-    assert ctx.allowed_scopes == ()  # ADR-0021: scopes retired
+    assert ctx.allowed_scopes == ()  # ADR-routing-labels-sole-content-axis: scopes retired
 
 
 def test_general_only_context_helper():
     ctx = general_only_context()
-    assert ctx.allowed_scopes == ()  # ADR-0021: scopes retired
+    assert ctx.allowed_scopes == ()  # ADR-routing-labels-sole-content-axis: scopes retired
     assert ctx.token_subject is None
     assert ctx.principal is None
     assert ctx.allowed_sources == ("confluence:default",)

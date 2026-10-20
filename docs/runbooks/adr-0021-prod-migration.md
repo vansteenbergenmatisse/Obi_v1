@@ -1,4 +1,4 @@
-# Runbook — ADR-0021 production migration & deploy (0014 → head/0018)
+# Runbook — ADR-routing-labels-sole-content-axis production migration & deploy (0014 → head/0018)
 
 **Status: PREPARED, NOT EXECUTED.** This is the owner-authorized procedure to take the live Supabase
 database from its current revision up to head (including migration `0018`, which retires the
@@ -6,7 +6,7 @@ knowledge-scope RLS axis) and deploy the Path B backend. **No step here has been
 production.** Agent task 4 in `docs/Final_docs/sync-rules/plan.md` executes this **only after explicit
 owner authorization**.
 
-Why now: the Path B code (ADR-0021) is complete and green locally, but it writes/reads the
+Why now: the Path B code (ADR-routing-labels-sole-content-axis) is complete and green locally, but it writes/reads the
 `labels` column and assumes the routing-label axis. Production is **reportedly at migration `0014`**
 (owner-attested; a read-only preflight from the build environment was blocked by the
 "Production Reads" guard, so it is **unverified from the agent side** — the owner confirms it first,
@@ -57,7 +57,7 @@ This applies, in order, exactly the revisions not yet on prod:
 | `0018_retire_knowledge_scope_rls` | **drops** `chunk_scope_read` + `curated_knowledge_entry_scope_read` (the retired knowledge-scope axis) | RLS stays enabled; `chunk_source_read` (source/company isolation) + `chunk_labels_read` (routing) remain; re-exposes nothing to anon |
 
 All four are additive-or-policy-only and carry downgrades. `0018` is the sanctioned, deliberate drop
-(fix-forward, ADR-0021); it is **not** a `0009`/`0010`/`0014`-style isolation downgrade.
+(fix-forward, ADR-routing-labels-sole-content-axis); it is **not** a `0009`/`0010`/`0014`-style isolation downgrade.
 
 ## 3. Post-migration verification (before any re-sync)
 
@@ -120,7 +120,7 @@ is healthy.
 
 ---
 
-**Cross-references:** ADR-0021 (`docs/adr/0021-Retire-Knowledge-Scope-Test-Tags.md`), migration
+**Cross-references:** ADR-routing-labels-sole-content-axis (`docs/adr/routing-labels-sole-content-axis.md`), migration
 `0018_retire_knowledge_scope_rls.py`, `supabase-vector-store-cutover.md`,
 `deploy-readiness-scope-rls.md`, `phase-9-directed-routing-live-test.md`, and the Path B status +
 task list in `docs/Final_docs/sync-rules/plan.md`.

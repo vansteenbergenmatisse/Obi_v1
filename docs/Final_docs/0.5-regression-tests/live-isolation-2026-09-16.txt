@@ -12,7 +12,7 @@ reader halfvec    : reader resolves halfvec (dense-query path OK)
 reader non-chunk  : reader reads its non-chunk tables (page_source=13, page_restriction=0, curated_knowledge_entry=0)
 anon role         : anon stays default-denied — anon sees chunk=0 page_source=0 (expect 0/0)
 scope axis        : scope backstop holds — tag 'base': in-scope=85 (expect > 0), out-of-scope=0 (expect 0)
-OK: ADR-0004 read-path isolation + reader read-access hold on this instance.
+OK: ADR-source-id-row-security-with-reader-writer-roles read-path isolation + reader read-access hold on this instance.
 --- end output ---
 
 Exit code: 0 (all checks passed)

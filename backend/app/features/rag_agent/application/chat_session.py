@@ -1,6 +1,6 @@
 """Chat-start + the directed-connection session store (Option A Stage 4, substep 9.2.1).
 
-Panel mi-session (ADR-0020 chat-start step 3/5, D7). A chat is one directed ``source → target``
+Panel mi-session (ADR-directed-source-target-routing-labels chat-start step 3/5, D7). A chat is one directed ``source → target``
 connection. ``start_chat_session`` runs ONCE at chat-start: it resolves both systems in the product
 catalog, builds the four routing labels and the connection block, and upserts a ``chat_session`` row
 keyed on the VERIFIED edge identity (``token_subject`` + ``company_id``, mirroring

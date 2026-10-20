@@ -1,12 +1,14 @@
-# 0008 — Ambiguity Clarification and Fallback
+# Ambiguity Clarification and Fallback
+
+Identifier: `ADR-ambiguity-clarification-then-fallback-answer` (formerly numbered 0008). File paths updated to the current layout (`backend/`, `frontend/`, `knowledge-base/`) on 2026-10-20; the decision is unchanged.
 
 Status: Accepted
 Date: 2026-08-11
-Governs: apps/automation (rag_agent, evaluation), apps/web (chat feature) — extends ADR-0005
+Governs: backend (rag_agent, evaluation), frontend (chat feature) — extends ADR-rerank-then-verify-cited-answers
 
 ## Context
 
-ADR-0005 fixed the answer pipeline as: rewrite → RLS-scoped retrieve → RRF → cross-encoder rerank
+ADR-rerank-then-verify-cited-answers fixed the answer pipeline as: rewrite → RLS-scoped retrieve → RRF → cross-encoder rerank
 → parent-context expansion → grounded generation with forced citations → refusal threshold → one
 CRAG corrective retry. That pipeline handles "the corpus doesn't cover this" (refusal below
 `refusal_min_rerank_score`) but has no concept of "the question itself is too vague to search well" —
@@ -23,8 +25,8 @@ three internal refusal causes (no candidates, weak score, no surviving citations
 user-facing text, so the user can't tell "nothing like this exists" from "I need one more word from
 you" from "the model's answer got fully stripped by citation enforcement."
 
-This ADR extends ADR-0005 with a pre-retrieval clarification branch and a refusal-reason taxonomy,
-without altering any decision ADR-0005 already made about the grounded path itself.
+This ADR extends ADR-rerank-then-verify-cited-answers with a pre-retrieval clarification branch and a refusal-reason taxonomy,
+without altering any decision ADR-rerank-then-verify-cited-answers already made about the grounded path itself.
 
 ## Decision
 
@@ -35,7 +37,7 @@ without altering any decision ADR-0005 already made about the grounded path itse
    pipeline). Wired into `AnswerService.answer` at the same insertion point as
    `is_small_talk` — before rewrite/retrieval/CRAG/refusal — and, like small-talk, writes no
    `query_trace` row. This is one more pre-pipeline branch, not a change to the grounded pipeline
-   ADR-0005 already fixed.
+   ADR-rerank-then-verify-cited-answers already fixed.
 
 2. **Feature-flagged, default off.** `enable_clarification_branch` (new setting,
    `app/platform/config/settings.py`), default `false`. It ships dark until tuned against
@@ -46,7 +48,7 @@ without altering any decision ADR-0005 already made about the grounded path itse
 3. **Contract change: extend `Answer`, do not add a new SSE event.** `Answer` gains
    `needs_clarification: bool = False`, `clarification_question: str | None = None`,
    `clarification_options: list[str] | None = None`. The existing SSE lifecycle
-   (`start`/`token`/`citations`/`done`, ADR-0005 §10) is unchanged — a clarification reply streams
+   (`start`/`token`/`citations`/`done`, ADR-rerank-then-verify-cited-answers §10) is unchanged — a clarification reply streams
    its question text over the existing `token` events (same as a small-talk reply) with
    `citations: []`, and the `done` payload carries the three new fields. This mirrors how
    `refused`/`refusal_reason` were added to `Answer` rather than inventing a parallel event type, and
@@ -97,8 +99,8 @@ without altering any decision ADR-0005 already made about the grounded path itse
 
 8. **No MMR/diversity filtering, no new vector store, no agent-loop rewrite.** Explicit non-goals,
    confirmed with the user: diversity filtering doesn't address unanswerable/vague queries and would
-   touch the already-shipped ADR-0005 retrieval pipeline for no benefit here; Postgres+pgvector+
-   Cohere remains the stack (ADR-0001/0002); `AnswerService` stays a fixed pipeline, per ADR-0005
+   touch the already-shipped ADR-rerank-then-verify-cited-answers retrieval pipeline for no benefit here; Postgres+pgvector+
+   Cohere remains the stack (ADR-fastapi-nextjs-postgres-pgvector-stack / ADR-hybrid-retrieval-over-versioned-chunk-store); `AnswerService` stays a fixed pipeline, per ADR-rerank-then-verify-cited-answers
    decision 5 — this branch is one more short-circuit, not a planner.
 
 9. **Execution sequencing: after Phase 7, and after Phase 4.8, by explicit user direction — not a
@@ -111,7 +113,7 @@ without altering any decision ADR-0005 already made about the grounded path itse
 ## Reason
 
 Reusing the small-talk short-circuit's shape keeps the new branch auditable the same way — a narrow,
-flag-gated classifier ahead of the pipeline, not a change inside it — so ADR-0005's fixed-workflow
+flag-gated classifier ahead of the pipeline, not a change inside it — so ADR-rerank-then-verify-cited-answers's fixed-workflow
 guarantees (bounded latency, stage-by-stage testability) hold unchanged for every query that isn't
 flagged ambiguous. Extending `Answer` rather than adding an SSE event minimizes contract churn for
 `packages/contracts` and the web client, which already know how to render `refused`/`citations`.
@@ -148,16 +150,16 @@ before the business has decided where it should actually go.
 - The human hand-off stays a log line + static CTA until a future phase adds a real integration;
   fallback-rate metrics (9.7) measure how often this CTA fires, giving a real number to justify (or
   not) building the Salesforce integration later.
-- No change to `retrieval/**`, the reranker, or any ADR-0005-governed pipeline stage.
+- No change to `retrieval/**`, the reranker, or any ADR-rerank-then-verify-cited-answers-governed pipeline stage.
 
 ## Paths governed
 
-`apps/automation/app/features/rag_agent/domain/clarification.py` (new),
-`apps/automation/app/features/rag_agent/application/answer_service.py`,
-`apps/automation/app/features/rag_agent/domain/prompt.py`,
-`apps/automation/app/features/rag_agent/infrastructure/llm_client.py`,
-`apps/automation/app/features/evaluation/datasets/ambiguity.json`,
-`apps/automation/app/features/evaluation/metrics/**`,
-`apps/automation/app/platform/config/settings.py`,
-`apps/web/src/features/chat/**`, `packages/contracts`,
+`backend/app/features/rag_agent/domain/clarification.py` (new),
+`backend/app/features/rag_agent/application/answer_service.py`,
+`backend/app/features/rag_agent/domain/prompt.py`,
+`backend/app/features/rag_agent/infrastructure/llm_client.py`,
+`backend/app/features/evaluation/datasets/ambiguity.json`,
+`backend/app/features/evaluation/metrics/**`,
+`backend/app/platform/config/settings.py`,
+`frontend/src/features/chat/**`, `packages/contracts`,
 `docs/future-ideas/IDEAS.md` (#1).

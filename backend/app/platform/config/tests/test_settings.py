@@ -1,10 +1,10 @@
-"""PLAN 10.1 (revised): recognized knowledge-scope configuration (ADR-0011).
+"""PLAN 10.1 (revised): recognized knowledge-scope configuration (ADR-knowledge-scope-tagging-and-filtering).
 
 `knowledge_scope_set` delegates to `config/knowledge_scopes.json` (see
 `test_knowledge_scopes.py` for the loader's own parsing/validation coverage) — this file only
 covers that `Settings` wires it through and that the fail-fast-at-startup validator fires.
 "obi-general-test" must always be present — it is the always-included, never-inferred-from-untagged
-base scope (ADR-0011 Decision 1) — so a misconfigured deployment fails at process start rather
+base scope (ADR-knowledge-scope-tagging-and-filtering Decision 1) — so a misconfigured deployment fails at process start rather
 than silently dropping base-scoped content.
 """
 
@@ -21,7 +21,7 @@ from app.platform.config import settings as settings_module
 
 
 def test_knowledge_scope_set_reads_the_committed_config_file() -> None:
-    # ADR-0021: the knowledge-scope axis is retired — the committed file holds only `classified`,
+    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired — the committed file holds only `classified`,
     # so the recognized (offerable) set is empty.
     assert Settings().knowledge_scope_set == frozenset()
 
@@ -42,7 +42,7 @@ def test_construction_fails_fast_when_config_file_is_invalid(
 
 # These two assert the CODE default, read straight off the declared field — not a constructed
 # `Settings()`, which loads the root `.env` and would (correctly) reflect an operator's real config.
-# ADR-0021 retired the knowledge-scope axis: the `default_knowledge_scope` and
+# ADR-routing-labels-sole-content-axis retired the knowledge-scope axis: the `default_knowledge_scope` and
 # `enable_knowledge_scope_filtering` fields were removed, so the former default-value tests here are
 # gone with them.
 

@@ -1,4 +1,6 @@
-# 0019 — Page-Principal ACL Is App-Layer-Only In v1
+# Page-Principal ACL Is App-Layer-Only In v1
+
+Identifier: `ADR-page-acl-enforced-in-app-layer-only` (formerly numbered 0019). File paths updated to the current layout (`backend/`, `frontend/`, `knowledge-base/`) on 2026-10-20; the decision is unchanged.
 
 Status: Accepted
 Date: 2026-09-22
@@ -9,8 +11,8 @@ Governs: `backend/app/features/retrieval/domain/permission.py` (`PrincipalPermis
 The SEC-S3 slice of the Phase-4 embed security-hardening pass (see
 `docs/Final_docs/phase-4-embed-security/`) audited how page-level Confluence restrictions are
 enforced. The finding (matrix gap CIP-5): the source axis and the knowledge-scope axis both have a
-DB-level RLS backstop that fails closed independent of the application (source RLS from ADR-0004;
-scope RLS from ADR-0014 / migration 0010). The **page-principal** axis does not. Migration 0009
+DB-level RLS backstop that fails closed independent of the application (source RLS from ADR-source-id-row-security-with-reader-writer-roles;
+scope RLS from ADR-db-level-customer-scope-isolation-backstop / migration 0010). The **page-principal** axis does not. Migration 0009
 gives `page_restriction` only a coarse `USING(true)` reader policy, and the actual restriction is
 applied in application code (`PrincipalPermissionPolicy.allowed`).
 
@@ -47,5 +49,5 @@ makes the gap explicit and gates the future work.
   unrestricted pages` guarantee a hard, checked contract.
 - Any future work that introduces a non-None principal is on notice: it carries a mandatory,
   ADR-gated prerequisite (the `page_restriction` RLS backstop + isolation test) before it can ship.
-- This ADR is scoped to the page-principal axis only; the source (ADR-0004) and knowledge-scope
-  (ADR-0014) axes already have their DB backstops and are unaffected.
+- This ADR is scoped to the page-principal axis only; the source (ADR-source-id-row-security-with-reader-writer-roles) and knowledge-scope
+  (ADR-db-level-customer-scope-isolation-backstop) axes already have their DB backstops and are unaffected.

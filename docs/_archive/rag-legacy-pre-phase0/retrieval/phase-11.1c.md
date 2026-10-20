@@ -1,9 +1,9 @@
 # Phase 11.1c — Obi embed + JWT edge binding (read-path)
 
 **Status:** 🟩 code + tests done (2026-09-12), committed on `feat/rag-phase-3.5`. Read/answer path
-only — no ingestion counterpart. Sits on top of the Phase 11.1a DB backstop (ADR-0014 scope-GUC RLS).
+only — no ingestion counterpart. Sits on top of the Phase 11.1a DB backstop (ADR-db-level-customer-scope-isolation-backstop scope-GUC RLS).
 Design of record: [`../../embedding/PHASE-11.1c-obi-embed-jwt-spec.md`](../../embedding/PHASE-11.1c-obi-embed-jwt-spec.md)
-+ [`../../adr/0014-Customer-Scope-Isolation-Backstop.md`](../../adr/0014-Customer-Scope-Isolation-Backstop.md).
++ [`../../adr/db-level-customer-scope-isolation-backstop.md`](../../adr/db-level-customer-scope-isolation-backstop.md).
 
 ## What changed on the read path
 
@@ -25,7 +25,7 @@ Per-request flow on `POST /chat`:
    ignored. Body `principal` is ignored entirely (v1 embedded users are principal-less).
 4. **Scope drives every reader txn** — `AnswerService.answer(history, auth)` passes
    `auth.allowed_scopes` to `retrieve_with_context`, which sets the `app.allowed_knowledge_scopes`
-   GUC (RESTRICTIVE RLS, ADR-0014) — so isolation holds at the DB even if the app predicate is off.
+   GUC (RESTRICTIVE RLS, ADR-db-level-customer-scope-isolation-backstop) — so isolation holds at the DB even if the app predicate is off.
 5. **Rate limit + caches keyed on the verified identity** — the rate-limit key is
    `sub:<sha256(token_subject)>` (falls back to client IP when tokenless); the idempotency and
    answer caches bind to `(history, principal, allowed_scopes, token_subject)`. The raw token is

@@ -204,7 +204,7 @@ def test_rt1_malformed_context_is_rejected(registry, keypair):
 
 def test_rt1_verifier_extracts_directed_connection(registry, keypair):
     """panel mi-contract · substep 9.3.1
-    The directed form (source_system + target_system + business_id, ADR-0020) verifies and the
+    The directed form (source_system + target_system + business_id, ADR-directed-source-target-routing-labels) verifies and the
     triple reaches VerifiedClaims — the gate's routing input. The legacy trio rule does not apply
     (no company_id/company_name/integration are present)."""
     tok = _sign(

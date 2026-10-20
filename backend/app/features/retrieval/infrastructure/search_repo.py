@@ -39,7 +39,7 @@ def apply_hnsw_gucs(session: Session, *, ef_search: int, iterative_scan: str) ->
 
 
 def apply_source_scope(session: Session, allowed_sources: Sequence[str]) -> None:
-    """Set the RLS scope GUC ``app.allowed_sources`` for this transaction (ADR-0004).
+    """Set the RLS scope GUC ``app.allowed_sources`` for this transaction (ADR-source-id-row-security-with-reader-writer-roles).
 
     Uses ``set_config(..., is_local=true)`` with a **bound** parameter: ``SET LOCAL`` cannot bind,
     and interpolating the caller's source list would be an injection vector or a silent
@@ -54,14 +54,14 @@ def apply_source_scope(session: Session, allowed_sources: Sequence[str]) -> None
 
 # The '*' sentinel is an explicit opt-out from customer-scope RLS, distinct from an unset GUC (which
 # the RESTRICTIVE `chunk_scope_read` policy reads as default-deny). Public retrieval always resolves
-# a real scope list; only the internal/eval path (`knowledge_scopes is None`) sets '*' (ADR-0014).
+# a real scope list; only the internal/eval path (`knowledge_scopes is None`) sets '*' (ADR-db-level-customer-scope-isolation-backstop).
 KNOWLEDGE_SCOPE_WILDCARD = "*"
 
 
 def apply_knowledge_scope(session: Session, allowed_scopes: Sequence[str] | None) -> None:
     """Set the customer/knowledge-scope RLS GUC ``app.allowed_knowledge_scopes`` for this txn.
 
-    Enforces the customer-isolation backstop (ADR-0014, Phase 11.1a) **independent of the
+    Enforces the customer-isolation backstop (ADR-db-level-customer-scope-isolation-backstop, Phase 11.1a) **independent of the
     ``enable_knowledge_scope_filtering`` app-layer flag** — that flag only governs the redundant SQL
     predicate; RLS always enforces so a dropped predicate or a flag flip can no longer leak.
 
@@ -103,7 +103,7 @@ ALLOWED_LABELS_WILDCARD = "*"
 
 
 def apply_allowed_labels(session: Session, session_labels: Sequence[str] | None) -> None:
-    """Set the directed-connection routing GUC ``app.allowed_labels`` for this txn (ADR-0020 D1).
+    """Set the directed-connection routing GUC ``app.allowed_labels`` for this txn (ADR-directed-source-target-routing-labels D1).
 
     The RESTRICTIVE ``chunk_labels_read`` policy (migration 0016) overlaps ``chunk.labels`` against
     this value; the app-layer ``labels && :session_labels`` predicate in ``_base_filters`` mirrors
@@ -246,13 +246,13 @@ def _base_filters(
         # ix_chunk_active_source. RLS is the security net; this is the query's own predicate.
         clause += " AND source_id = ANY(:sources)"
     if knowledge_scopes is not None:
-        # PLAN 10.4 / ADR-0011: array-overlap against the tags GIN index (0007_knowledge_scope).
+        # PLAN 10.4 / ADR-knowledge-scope-tagging-and-filtering: array-overlap against the tags GIN index (0007_knowledge_scope).
         # Bound, never interpolated — same discipline as `sources` above. A chunk with no
         # knowledge-scope tag at all (empty array) overlaps nothing, so it does not participate
         # (Decision 1: "no recognized tag -> does not participate", not a silent fallback-visible).
         clause += " AND tags && :knowledge_scopes"
     if session_labels is not None:
-        # Option A Stage 6 / 9.4.1 (panel mi-hardfilter, ADR-0020 D1/D2): the directed-connection
+        # Option A Stage 6 / 9.4.1 (panel mi-hardfilter, ADR-directed-source-target-routing-labels D1/D2): the directed-connection
         # routing filter, at the SAME spot as the tags overlap, against the labels GIN index
         # (ix_chunk_labels_gin, migration 0016). Bound, never interpolated (never-bend rule 10).
         # An unlabelled chunk (empty array) overlaps nothing, so it is invisible under an active

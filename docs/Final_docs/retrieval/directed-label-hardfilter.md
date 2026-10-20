@@ -11,7 +11,7 @@
   `knowledge-base/migrations/versions/0016_chunk_labels.py` (the RESTRICTIVE `chunk_labels_read`
   policy + the `labels` column and its partial GIN index).
 - **Design panel:** `mi-hardfilter` (section 05.2 · Multi-integration context); supersedes
-  `mi-filter`/`mi-match` for routing (ADR-0020).
+  `mi-filter`/`mi-match` for routing (ADR-directed-source-target-routing-labels).
 - **Status:** Unverified (coded and db-proven against seeded labels; the Confluence relabel to the
   new label scheme is the parallel owner/content task 9.5.1, and the formal routing-off-vs-on gold
   dataset is 9.5.2 — no production question has flowed through it yet)
@@ -34,7 +34,7 @@ GUC is set to `'*'` — the filter is a no-op (labels are the relevance axis, no
 
 ## Why it does it
 
-`mi-hardfilter` is the design of record for Option A (ADR-0020): a directed chat may never retrieve
+`mi-hardfilter` is the design of record for Option A (ADR-directed-source-target-routing-labels): a directed chat may never retrieve
 a wrong-connection page — a Toast→Mews chat can never see a `toast-to-accounting` or `mews-to-pos`
 page, at any vector similarity — and filtering before top-k shrinks the candidate set the reranker
 and the model see. The two-layer enforcement (GUC + RLS policy AND app predicate) keeps never-bend

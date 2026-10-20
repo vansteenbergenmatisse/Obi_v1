@@ -121,7 +121,7 @@ def _rls_enabled(engine: Engine, table: str) -> bool:
 def test_0014_drops_the_empty_tags_floor(migration_engine: Engine) -> None:
     cfg = _alembic_config()
 
-    command.upgrade(cfg, "0014_chunk_scope_fail_closed")  # ADR-0021: pin below 0018
+    command.upgrade(cfg, "0014_chunk_scope_fail_closed")  # ADR-routing-labels-sole-content-axis: pin below 0018
 
     chunk = _policy(migration_engine, "chunk", _CHUNK_SCOPE_POLICY)
     assert chunk is not None, "chunk scope policy missing at head"
@@ -139,7 +139,7 @@ def test_0014_drops_the_empty_tags_floor(migration_engine: Engine) -> None:
 
 def test_0014_downgrade_restores_floor_then_upgrade_drops_it(migration_engine: Engine) -> None:
     cfg = _alembic_config()
-    command.upgrade(cfg, "0014_chunk_scope_fail_closed")  # ADR-0021: pin below 0018
+    command.upgrade(cfg, "0014_chunk_scope_fail_closed")  # ADR-routing-labels-sole-content-axis: pin below 0018
     assert "cardinality" not in _policy(migration_engine, "chunk", _CHUNK_SCOPE_POLICY)[2]
 
     command.downgrade(cfg, _BELOW_0014)
@@ -151,5 +151,5 @@ def test_0014_downgrade_restores_floor_then_upgrade_drops_it(migration_engine: E
     assert _policy(migration_engine, "chunk", "chunk_source_read") is not None
     assert _rls_enabled(migration_engine, "chunk") is True
 
-    command.upgrade(cfg, "0014_chunk_scope_fail_closed")  # ADR-0021: pin below 0018
+    command.upgrade(cfg, "0014_chunk_scope_fail_closed")  # ADR-routing-labels-sole-content-axis: pin below 0018
     assert "cardinality" not in _policy(migration_engine, "chunk", _CHUNK_SCOPE_POLICY)[2]

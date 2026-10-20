@@ -36,7 +36,7 @@ Disabling RLS would expose every row to the unauthenticated `anon` role. So the 
 - `alembic/versions/0009_reconcile_non_chunk_rls.py` — `upgrade()` = enable + apply_reader_rls;
   `downgrade()` = drop policies + disable (warned).
 
-`chunk` is untouched — its source-keyed default-deny policy (`chunk_source_read`, ADR-0004) still
+`chunk` is untouched — its source-keyed default-deny policy (`chunk_source_read`, ADR-source-id-row-security-with-reader-writer-roles) still
 bites, so read-path source isolation is unchanged. Different axis from Phase 11.1a (customer-scope).
 
 ## Tests
@@ -93,7 +93,7 @@ bites, so read-path source isolation is unchanged. Different axis from Phase 11.
   ingested via `sync_page` (`action=indexed`) with `page_source.tags`/`chunk.tags` = their single
   scope. Exact `search_repo` predicate under the reader RLS scope: general-only→General; Mews→Mews+
   General; Opera→Opera+General; Toast→Toast+General — each product returns only its own page plus the
-  always-on `obi-general-test` base (ADR-0011 Decision 1); no cross-product leak; the old `general`
+  always-on `obi-general-test` base (ADR-knowledge-scope-tagging-and-filtering Decision 1); no cross-product leak; the old `general`
   Base corpus never appears. **`source_scope` reconfigured** (`seed_source_scope`): 4 active `page`
   roots (`tags=[]`) for the test pages, 9 old Base roots deactivated → corpus = exactly the 4 pages.
   The old Base pages are dormant (not hard-deleted). Detail: PLAN.md §0 "VERIFIED LIVE" block.

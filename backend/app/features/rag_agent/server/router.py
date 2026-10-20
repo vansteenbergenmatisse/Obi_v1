@@ -1,6 +1,6 @@
 """Chat HTTP surface: `POST /chat` (SSE) + `PATCH /chat/{trace_id}/feedback` (PLAN 4.4).
 
-Both an HTTP and an LLM surface (ADR-0005 §10) — the full `securing-http-and-llm-endpoints`
+Both an HTTP and an LLM surface (ADR-rerank-then-verify-cited-answers §10) — the full `securing-http-and-llm-endpoints`
 control set applies. `POST /chat` is STATE-MUTATING (writes/updates a `query_trace` row) AND
 LLM-CALL (rewrite + generation), so it satisfies the union of both tiers' required controls.
 `PATCH /chat/{trace_id}/feedback` is STATE-MUTATING only.
@@ -19,12 +19,12 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
   C3_input:       covered   - Pydantic body (extra=forbid); history non-empty + ends on a user
                               turn; per-turn length cap + history-length cap (chat_max_*); an
                               all-digit `principal` is rejected (PLAN 5.3 red-team finding — see
-                              `ChatRequestBody`'s validator docstring). PLAN 7.3/7.4 (ADR-0009):
+                              `ChatRequestBody`'s validator docstring). PLAN 7.3/7.4 (ADR-vision-grounded-image-analysis):
                               per-turn image count cap (chat_max_images_per_turn) + per-image byte
                               cap (chat_max_image_bytes), checked on every turn's `images`, not
                               just the newest — a caller could otherwise stuff an oversized image
                               on an older turn to dodge a newest-turn-only check. PLAN 10.5
-                              (ADR-0011 decision 6): `knowledge_scope` is shape-validated (short
+                              (ADR-knowledge-scope-tagging-and-filtering decision 6): `knowledge_scope` is shape-validated (short
                               lowercase slug) but not whitelisted here — `resolve_allowed_scopes`
                               (retrieval/domain/knowledge_scope.py) already degrades an
                               unrecognized value to `general`/the deployment default rather than
@@ -38,9 +38,9 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
                               fixed-size SSE chunks (chat_token_chunk_chars/stream_interval_ms).
   C6_redaction:   covered   - `redact_pii` scrubs the assembled prompt before every rewrite/
                               generation call (llm_client.py); see rag_agent/domain/pii.py.
-                              PLAN 7.3 (ADR-0009 decision 6): does NOT extend to image bytes on
+                              PLAN 7.3 (ADR-vision-grounded-image-analysis decision 6): does NOT extend to image bytes on
                               `ChatMessage.images` — a disclosed, accepted gap, not a silent one;
-                              see pii.py's module docstring addendum. PLAN 9.2/9.3 (ADR-0008): the
+                              see pii.py's module docstring addendum. PLAN 9.2/9.3 (ADR-ambiguity-clarification-then-fallback-answer): the
                               ambiguity classifier and clarification-question generation calls
                               redact the query text the same way — the latter's reply is shown
                               directly to the user (unlike the classifier's single-word verdict),
@@ -66,9 +66,9 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
                               trace id, refused, refusal reason, needs_clarification (PLAN 9.3),
                               citation count, latency) — never the raw message or answer text;
                               `refusal_reason` is one of the closed `no_candidates | weak_score |
-                              no_citations` category strings (PLAN 9.4, ADR-0008 decision 4/type-
+                              no_citations` category strings (PLAN 9.4, ADR-ambiguity-clarification-then-fallback-answer decision 4/type-
                               enforced by `RefusalReason`), never a free-text diagnostic and never
-                              user query or retrieved content. PLAN 9.6 (ADR-0008 decision 6) adds
+                              user query or retrieved content. PLAN 9.6 (ADR-ambiguity-clarification-then-fallback-answer decision 6) adds
                               a second, disclosed exception to "never user query": on every
                               `refused=True` answer, `answer_service.py` emits one `human_handoff`
                               log line carrying `trace_id`/`raw_query`/`refusal_reason`, for the
@@ -78,11 +78,11 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
                               text is persisted, only a second place it is read from).
   C10_abuse:      covered   - rate limit + history/message-length caps + the Anthropic client's
                               abuse cap (answer_max_input_chars) + circuit breaker. PLAN 7.3
-                              (ADR-0009 decision 7): `generate_image_analysis` is a second,
+                              (ADR-vision-grounded-image-analysis decision 7): `generate_image_analysis` is a second,
                               unconditional LLM call whenever a turn has images — the per-turn
                               image-count/byte caps above are this call's own abuse control,
                               since `answer_max_input_chars` only ever measures text length.
-                              PLAN 9.2/9.3 (ADR-0008): the ambiguity classifier + clarification-
+                              PLAN 9.2/9.3 (ADR-ambiguity-clarification-then-fallback-answer): the ambiguity classifier + clarification-
                               question generation are two more bounded calls, gated behind
                               `enable_clarification_branch` (default off) and only reachable
                               through this already-rate-limited endpoint — no incremental abuse
@@ -105,7 +105,7 @@ security_baseline (surface: PATCH /chat/{trace_id}/feedback, tier STATE-MUTATING
   C10_abuse:      covered   - same rate limiter as POST /chat.
 
 Known, documented limitation (not a bug): there is no end-user login system yet, so `principal`
-is caller-self-reported, trusted only as far as C1 trusts the calling web proxy. Per ADR-0004's
+is caller-self-reported, trusted only as far as C1 trusts the calling web proxy. Per ADR-source-id-row-security-with-reader-writer-roles's
 default-deny model, an absent/unverified principal can only ever see *unrestricted* pages
 (`PrincipalPermissionPolicy.allowed`) — it is never a blanket-access bypass. Real per-user identity
 is a later phase; this endpoint is already safe in its absence.
@@ -173,7 +173,7 @@ router = APIRouter(tags=["chat"])
 _AUTH_HEADER = "authorization"
 _BEARER_PREFIX = "Bearer "
 _IDEMPOTENCY_HEADER = "idempotency-key"
-# PLAN 11.1c (ADR-0014): the platform-signed user JWT rides its own header so it never collides
+# PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): the platform-signed user JWT rides its own header so it never collides
 # with the host `chat_api_key` on `Authorization`. Verified into an AuthContext that drives scope.
 _OBI_TOKEN_HEADER = "x-obi-token"
 
@@ -182,7 +182,7 @@ _OBI_TOKEN_HEADER = "x-obi-token"
 # rejected with a 400 in `_validate_history`, BEFORE any LLM call runs.
 _ALLOWED_IMAGE_MEDIA_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
 
-# ADR-0023 (source-enablement visibility gate): the 403 body for a verified directed connection whose
+# ADR-source-system-decides-widget-eligibility (source-enablement visibility gate): the 403 body for a verified directed connection whose
 # source system Obi does not support. Kept here because rag_agent owns the /chat wire contract (chat.yaml). It is rendered
 # TOP-LEVEL — `{error, reason}`, matching chat.yaml's `Error` schema — NOT wrapped in FastAPI's
 # default `{"detail": ...}`, so the frontend proxy (which forwards the backend JSON verbatim) hands
@@ -249,7 +249,7 @@ class ChatRequestBody(BaseModel):
     conversation_id: str | None = None
     history: list[ChatMessage] = Field(min_length=1)
     principal: str | None = None
-    # DEPRECATED / accepted-and-ignored (ADR-0021 retired the knowledge-scope axis; ADR-0014 already
+    # DEPRECATED / accepted-and-ignored (ADR-routing-labels-sole-content-axis retired the knowledge-scope axis; ADR-db-level-customer-scope-isolation-backstop already
     # stopped it driving scope). The field is kept only so an older client that still sends it does
     # not hit the `extra="forbid"` 422 — it is read by nothing and never reaches retrieval.
     knowledge_scope: str | None = None
@@ -303,7 +303,7 @@ def get_token_verifier_dep(request: Request) -> TokenVerifier:
 def _resolve_auth_context(
     request: Request, settings: Settings, verifier: TokenVerifier
 ) -> AuthContext:
-    """PLAN 11.1c (ADR-0014). Turn the platform-signed `X-Obi-Token` into the frozen `AuthContext`
+    """PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop). Turn the platform-signed `X-Obi-Token` into the frozen `AuthContext`
     that drives scope. No token -> the general-only context (the tokenless internal/eval path, and
     the pilot fallback while platforms are still being onboarded). A present-but-invalid token, or a
     verified token an AuthContext gate refuses — an inactive platform (AUTH-1/CIP-A2), a slot the
@@ -322,7 +322,7 @@ def _resolve_auth_context(
         # never echoes the claimed value — a fixed detail string, like the body-scope 400
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "unknown integration value") from exc
     except SourceNotEnabledError as exc:
-        # ADR-0023: a verified directed connection whose source is not supported. 403 (not 401: it is off the renew
+        # ADR-source-system-decides-widget-eligibility: a verified directed connection whose source is not supported. 403 (not 401: it is off the renew
         # path; not 400: distinct from the fail-closed family) with a fixed top-level {error,
         # reason} body (rule 10 — no product id). Caught BEFORE the generic AuthContextError.
         raise SourceNotEnabledHTTPError() from exc
@@ -439,8 +439,8 @@ def _validate_history(body: ChatRequestBody, settings: Settings) -> None:
                 status.HTTP_400_BAD_REQUEST,
                 f"a turn exceeds {settings.chat_max_message_chars} characters",
             )
-        # PLAN 7.4 (ADR-0009 decision 7): checked on every turn, not just the newest — the
-        # pipeline only ever *analyzes* the newest turn's images (ADR-0009 decision 2), but an
+        # PLAN 7.4 (ADR-vision-grounded-image-analysis decision 7): checked on every turn, not just the newest — the
+        # pipeline only ever *analyzes* the newest turn's images (ADR-vision-grounded-image-analysis decision 2), but an
         # unvalidated older turn would still let a caller smuggle an oversized payload through.
         images = turn.images or []
         if len(images) > settings.chat_max_images_per_turn:
@@ -566,7 +566,7 @@ async def _stream_answer(
             await asyncio.sleep(delay_seconds)  # C5 pacing: bounds bytes/sec streamed
 
     wire_citations = _wire_citations(answer.citations)
-    # PLAN 7.3 (ADR-0009 decision 5): imageAnalysis rides only on `done`, not as extra `token`
+    # PLAN 7.3 (ADR-vision-grounded-image-analysis decision 5): imageAnalysis rides only on `done`, not as extra `token`
     # events — streaming it as more token deltas would make `done.answer` (the grounded text
     # alone) diverge from what a token-accumulating client sees, a real client/server mismatch.
     # The widget renders it as its own labeled block straight from this field (PLAN 7.5).
@@ -583,7 +583,7 @@ async def _stream_answer(
         "traceId": answer.trace_id,
         "refused": answer.refused,
         "imageAnalysis": image_analysis,
-        # PLAN 9.3, ADR-0008 decision 3: additive fields only, no new SSE event type.
+        # PLAN 9.3, ADR-ambiguity-clarification-then-fallback-answer decision 3: additive fields only, no new SSE event type.
         # `needsClarification=False`/`null` on every pre-existing response shape.
         "needsClarification": answer.needs_clarification,
         "clarificationQuestion": answer.clarification_question,

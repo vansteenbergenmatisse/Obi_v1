@@ -1,7 +1,7 @@
 # Runbook — cutting the vector store over to managed Postgres (Supabase / RDS)
 
 Stands up the RAG schema, roles, and corpus on a fresh managed-Postgres instance and proves the
-ADR-0004 read-path isolation holds there. This is the Phase 6 / ADR-0013 procedure. It is written
+ADR-source-id-row-security-with-reader-writer-roles read-path isolation holds there. This is the Phase 6 / ADR-supabase-postgres-store-without-force-rls procedure. It is written
 for Supabase Cloud on AWS (the decision of record); the identical steps apply to an AWS RDS/Aurora
 fallback — only the DSN differs.
 
@@ -23,12 +23,12 @@ The app talks plain Postgres over `psycopg` (a DSN, no Supabase SDK/keys), so th
 - A local source corpus to load (the dev docker DB on `:5434`), or accept the OpenAI-embedding cost
   of a full rebuild (see step 4).
 
-## Why managed Postgres needs the FORCE-RLS drop (ADR-0013)
+## Why managed Postgres needs the FORCE-RLS drop (ADR-supabase-postgres-store-without-force-rls)
 
 Managed Postgres gives **no superuser**. Under the old `FORCE ROW LEVEL SECURITY`, even the table
 owner is policy-subject, so the writer would be filtered to zero rows and ingestion would break.
 The fix (migration `0008_drop_force_rls`): `chunk` keeps RLS **`ENABLE`d** but **`NO FORCE`**, so the
-non-superuser *owner* is exempt while the non-owner `rag_reader` stays policy-bound. ADR-0004's
+non-superuser *owner* is exempt while the non-owner `rag_reader` stays policy-bound. ADR-source-id-row-security-with-reader-writer-roles's
 read-path guarantee is unchanged — verified live in step 5.
 
 ## Procedure
@@ -65,7 +65,7 @@ Run every step from `backend`. Steps are idempotent and safe to re-run.
    > pgvector's `vector`/`halfvec` types live in the supabase-owned `extensions` schema. `rag_reader`
    > ships with no `USAGE` there, so every dense query (`embedding::halfvec(3072)`) fails as the reader
    > (`type "halfvec" does not exist` / `permission denied for schema extensions`) — retrieval must run
-   > as the reader (RLS, ADR-0004), so **live semantic search is broken until this is granted.** The
+   > as the reader (RLS, ADR-source-id-row-security-with-reader-writer-roles), so **live semantic search is broken until this is granted.** The
    > `provision-reader` code *attempts* the grant (`schema.py::_grant_extensions_access`, SAVEPOINT-
    > guarded) but **no-ops on Supabase** because our owner role cannot grant on a schema it does not own.
    > Run these once, as the Supabase project owner, in the SQL editor (P0, 2026-09-10):
@@ -183,7 +183,7 @@ Project `vtpbwkbbkfukfmytlqns`, region `eu-west-1`, session pooler `:5432`, db `
 - **corpus load:** `page_source 9 / document 9 / document_version 9 / chunk 85 / source_scope 9`;
   single source `confluence:default`; commit clean; self-FK reverted to non-deferrable.
 - **verify-isolation:** owner 85; reader no-GUC **0**; reader scoped **85**; reader bogus **0** —
-  ADR-0004 default-deny holds live. (Also proves `rag_reader` authenticates through the pooler.)
+  ADR-source-id-row-security-with-reader-writer-roles default-deny holds live. (Also proves `rag_reader` authenticates through the pooler.)
 - **make eval (live):** retrieval_smoke recall@5 **1.000** / mrr 0.750 / hit_rate@5 1.000;
   ambiguity recall@5 1.000; permission recall@5 0.667; out_of_corpus 0.000 (correct).
 - **local isolation suite:** 24 passed; full suite **483 passed**, boundaries clean.

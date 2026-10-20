@@ -1,6 +1,6 @@
 """Knowledge-base DB settings — the schema package's own configuration source.
 
-The schema package is standalone (ADR-0003 / Phase-1 one-way rule: knowledge-base imports
+The schema package is standalone (ADR-features-import-only-through-public-root / Phase-1 one-way rule: knowledge-base imports
 nothing from the backend). It therefore reads the few DB-relevant settings it needs directly,
 rather than importing ``app.platform.config``. These fields mirror the backend's ``Settings``
 and use the SAME ``env_file`` + env-var names, so both read identical values — there is one
@@ -34,7 +34,7 @@ class KbSettings(BaseSettings):
 
     env: str = "local"
     database_url: str = "postgresql+psycopg://rag:rag@localhost:5434/omniboost_rag"
-    # non-owner rag_reader DSN for RLS-enforced retrieval reads (PLAN 3.5.3; ADR-0004).
+    # non-owner rag_reader DSN for RLS-enforced retrieval reads (PLAN 3.5.3; ADR-source-id-row-security-with-reader-writer-roles).
     # Empty -> retrieval falls back to database_url (RLS is a no-op for a superuser/owner).
     database_reader_url: str = ""
     embedding_dim: int = 1024

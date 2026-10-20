@@ -9,7 +9,7 @@ so that module stays pure and unit-testable without either.
 ``map_page_status`` is a local copy of ingestion's identical mapper: the trigger
 layer must not import ``app.features.ingestion`` (forbidden edge), and a
 one-line ``PageStatus(...)`` mapping is not worth a shared module. Schema enums
-are imported by full path (ADR-0003).
+are imported by full path (ADR-features-import-only-through-public-root).
 """
 
 from __future__ import annotations

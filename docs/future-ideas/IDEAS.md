@@ -64,7 +64,7 @@ Read that section, not this one, for the current state — this entry is kept on
 raised-in-conversation framing, per this file's own convention of not deleting history.
 
 **9.6 hand-off CTA address is a placeholder, not a real decision (2026-08-13).** Asked the user
-what the "connect me to a human" CTA (ADR-0008 decision 6) should actually say/do, since inventing
+what the "connect me to a human" CTA (ADR-ambiguity-clarification-then-fallback-answer decision 6) should actually say/do, since inventing
 a real support email or link isn't this agent's call to make. User's answer: use `test@gmail.com`
 as the CTA's `mailto:` target for now, and record here that it is a stand-in — **the real contact
 address/channel is still an open product decision**, separate from the already-noted eventual
@@ -90,14 +90,14 @@ And-Retrieval-Filtering.md`) closes.** Phase 10 covers only the *declared* case:
 deployment/embed is scoped to, resolved once per session, filtered with a **hard** SQL predicate.
 Everything else raised in this entry stays here, unbuilt:
 - The **hard-vs-soft scoping nuance** below (a customer's own integration context needs a *soft*
-  bias so switching/comparison questions stay answerable) — ADR-0011 Decision 5 explicitly chose a
+  bias so switching/comparison questions stay answerable) — ADR-knowledge-scope-tagging-and-filtering Decision 5 explicitly chose a
   hard filter for Phase 10's declared-scope case and left soft/blended scoping for an *inferred*
   customer-integration case as future work, unchanged from this entry's original framing.
 - The **"Baze" detection mechanism** thread (below) — entirely unaddressed; Phase 10's scope is
   always supplied by the deployment/embed, never inferred from a customer record.
 - Any actual account/tier data model — still doesn't exist.
 
-Read Phase 10 (and ADR-0011) for the now-real "which tags exist and how they're filtered" mechanics;
+Read Phase 10 (and ADR-knowledge-scope-tagging-and-filtering) for the now-real "which tags exist and how they're filtered" mechanics;
 read on below for the parts of this idea that remain genuinely future.
 
 Integrate with the surrounding system so the bot knows things about the asker: what pricing tier
@@ -116,10 +116,10 @@ a new `platform/clients` integration) and a way to fold that context into retrie
 conversation using "Muse" and "Toast" as example names for two of the ~16 planned third-party
 integration types (POS/PMS-style systems a client's business runs, same category as QuickBooks for
 accounting) — **a client-integration-type meaning, not** the same two words' existing meaning in
-`docs/adr/0006-Defer-Multi-Product-Extraction.md` / idea #4 (where "Toast" = this product's own
+`docs/adr/defer-product-and-package-extraction.md` / idea #4 (where "Toast" = this product's own
 current deployment and "Muse" = a hypothetical future *second deployment* of this codebase). That
 collision was flagged in conversation and deliberately left unresolved at the user's direction —
-whoever picks this idea up should pick example names that don't collide with ADR-0006's usage, or
+whoever picks this idea up should pick example names that don't collide with ADR-defer-product-and-package-extraction's usage, or
 explicitly confirm the two are unrelated before scoping real work.
 
 Two concrete pieces surfaced this pass:
@@ -136,7 +136,7 @@ Two concrete pieces surfaced this pass:
 2. **Hard-vs-soft scoping — the actual retrieval design gap.** The instinct is "filter to only the
    client's own integration's content," but the user was explicit that switching/comparison
    questions ("we're on Muse, does this also work on Toast?") must still be answerable — so this
-   cannot reuse ADR-0004's RLS mechanism as-is. RLS is **deliberately hard default-deny** (a security
+   cannot reuse ADR-source-id-row-security-with-reader-writer-roles's RLS mechanism as-is. RLS is **deliberately hard default-deny** (a security
    boundary: an unset scope returns zero rows, by design) — the right tool for isolating principals/
    sources, the wrong tool for "prefer this content but don't exclude the rest." What's actually
    needed is closer to a **soft bias**: default the retrieval/rerank scope to the client's detected
@@ -146,7 +146,7 @@ Two concrete pieces surfaced this pass:
    not a static per-client filter alone.
 
 **Checked, not assumed, before writing this**: `source_scope.tags` → `page_source.tags` →
-`chunk.tags` already exist end-to-end (`ADR-0004`, PLAN 3.5.3/3.5.6) and are already described in
+`chunk.tags` already exist end-to-end (`ADR-source-id-row-security-with-reader-writer-roles`, PLAN 3.5.3/3.5.6) and are already described in
 their own code comments as "for bot scoping" — but a direct read of
 `app/features/retrieval/infrastructure/search_repo.py`'s `_base_filters()` confirms retrieval's SQL
 **never references `tags` at all today** — only `source_id` (RLS + explicit `WHERE`) and `space_id`
@@ -181,9 +181,9 @@ rather than freeform description.
 **Corrected 2026-08-10** — this idea previously conflated two different concepts. "Muse vs. Toast"
 is **not** a corpus-tagging problem: Muse is a future *second full deployment* (its own database/
 knowledge base, same codebase) reusing this app, not a content category inside Toast's own corpus.
-That split is a deployment decision, now governed by `docs/adr/0006-Defer-Multi-Product-Extraction.md`
+That split is a deployment decision, now governed by `docs/adr/defer-product-and-package-extraction.md`
 — deliberately deferred until Muse is a real, scheduled second deployment, and not solved by
-ADR-0004's tagging model at all.
+ADR-source-id-row-security-with-reader-writer-roles's tagging model at all.
 
 The part of the original idea that *is* a real tagging problem, kept here: **within one deployment**
 (e.g. Toast), a single customer can have multiple instances of the same connector — e.g. two separate
@@ -192,7 +192,7 @@ whole corpus for that integration type, as opposed to today's behavior which doe
 connector instances at all.
 
 **Relation to current architecture.** `page_source`/`chunk` already carry `source_type`, `source_id`,
-and a free-form `tags` array (ADR-0004, PLAN 3.5.3), and `source_scope` (PLAN 3.5.6) already resolves
+and a free-form `tags` array (ADR-source-id-row-security-with-reader-writer-roles, PLAN 3.5.3), and `source_scope` (PLAN 3.5.6) already resolves
 which Confluence roots/spaces feed which tags. Extending tags (or `source_id` itself) to encode a
 connector-instance identity (e.g. `quickbooks:acct-1234` vs. `quickbooks:acct-5678`) and then
 filtering `HybridRetriever` by that identity in addition to the existing `source_id` filter is
@@ -204,7 +204,7 @@ this file.
 **Not the same axis as Phase 10 (2026-08-21).** `docs/rag/PLAN.md` Phase 10 / `docs/adr/0011-*.md`
 builds knowledge-scope tagging (which third-party *platform*'s docs a chunk belongs to — Mews vs.
 Opera Cloud). This idea is a different axis entirely (which *instance* of one connector — e.g. two
-QuickBooks accounts) and remains unbuilt; ADR-0011 Decision 8 lists it as an explicit non-goal of
+QuickBooks accounts) and remains unbuilt; ADR-knowledge-scope-tagging-and-filtering Decision 8 lists it as an explicit non-goal of
 Phase 10, not a duplicate of it.
 
 ## 5. Frontend/backend repository separation — **de-scheduled TWICE; operator leans towards never doing it (2026-09-09)**
@@ -213,17 +213,17 @@ Phase 10, not a duplicate of it.
 split") — then **de-scheduled again** the same fortnight when the operator decided to **keep the
 monorepo** and only do the *in-monorepo* separation of concerns (PLAN.md Phase 11.1/11.2). The
 physical git split is parked here again and is **not scheduled**; its three open decisions (package
-registry, two repo names, monorepo fate) + a superseding ADR-0012 matter only if it is ever revisited.
+registry, two repo names, monorepo fate) + a superseding ADR matter only if it is ever revisited.
 The one prerequisite worth doing regardless of a split — a `packages/contracts`↔Pydantic **drift
 test** — may be pulled into Phase 11.2 as monorepo hygiene.
 
 **Was briefly a real, scoped phase, then un-scheduled.** This was raised in conversation on
 2026-08-10 and immediately turned into `docs/rag/PLAN.md` Phase 4.8 (see
-`docs/adr/0007-Frontend-Backend-Repository-Separation.md`), skipping this backlog entirely. It sat
+`docs/adr/README.md`), skipping this backlog entirely. It sat
 blocked on three unanswered decisions through Phase 7's whole lifecycle and never started. On
 2026-08-12 the user confirmed this is a **future** want, not a near-term one — nothing is live yet
 (no second product/deployment, no registry chosen, no repo-naming work done) — so it moved back
-here as an unscheduled idea, per `docs/adr/0010-Redefer-Repository-Separation.md`. Read that ADR
+here as an unscheduled idea, per `docs/adr/keep-frontend-backend-in-one-repo-for-now.md`. Read that ADR
 (and 0006/0007 before it) for the full decision history; this entry keeps the design work itself so
 none of it is lost.
 
@@ -254,7 +254,7 @@ one-line idea):
    today it piggybacks on the monorepo's root scripts, which won't exist once standalone.
 3. **Extract `apps/automation` into its own repository** — name is an **open decision** (e.g.
    `omniboost-rag-automation`). Same history-preserving extraction; its Makefile/`uv` toolchain and
-   `alembic/` migrations move unchanged (already self-contained, per ADR-0003). New standalone CI
+   `alembic/` migrations move unchanged (already self-contained, per ADR-features-import-only-through-public-root). New standalone CI
    (`make check`, `make boundaries`, ruff, pyright).
 4. **Decide the origin monorepo's fate** — **open decision**. Options: (a) archive it once both
    extractions are verified working; (b) keep it as a thin umbrella (`infra/` for combined local
@@ -266,7 +266,7 @@ one-line idea):
    `CHAT_API_KEY`/`CONFLUENCE_*`/`ANTHROPIC_API_KEY` etc. belong to the backend repo only; the
    frontend repo needs only `CHAT_API_KEY` + `AUTOMATION_API_BASE_URL` for its proxy. No secret
    should live in a repo that doesn't need it.
-6. **Update governing docs.** Amend `docs/adr/0001-Archetype-And-Stack.md` (currently describes one
+6. **Update governing docs.** Amend `docs/adr/fastapi-nextjs-postgres-pgvector-stack.md` (currently describes one
    monorepo archetype) to reflect the multi-repo topology; write a new ADR recording the actual
    split decision at that time; update root `CLAUDE.md`'s "Layout" section once the split is real.
 7. **Exit gate.** Both repos build/lint/typecheck/test/deploy independently with zero references to
@@ -277,7 +277,7 @@ one-line idea):
 **Open decisions, unchanged from when this was Phase 4.8** — nothing here executes without answers
 to: which registry (item 1), the two new repo names (items 2/3), and the origin monorepo's fate
 (item 4). Not scoped, designed, or scheduled — same as every other idea in this file. **Trigger to
-revisit** (per ADR-0010): a real second product/deployment with a committed launch date, or the user
+revisit** (per ADR-keep-frontend-backend-in-one-repo-for-now): a real second product/deployment with a committed launch date, or the user
 deciding the three open decisions with enough conviction to actually execute.
 
 ## 7. Folder-level `source_scope` roots (space, page, **or folder**) — raised 2026-08-21
@@ -334,13 +334,13 @@ originally used (see the superseded terminology-collision guidance below, kept f
 trail). This entry is kept in full below as the original raised-in-conversation framing and because
 several threads it named are **explicitly still deferred**, not resolved by Phase 10:
 
-- **Multiple recognized provider labels on one page.** Phase 10 (ADR-0011 Decision 3) treats this as
+- **Multiple recognized provider labels on one page.** Phase 10 (ADR-knowledge-scope-tagging-and-filtering Decision 3) treats this as
   an invalid/conflict state — the page is quarantined to zero label-derived tags and logged, not
   ingested into more than one provider scope. A page intentionally belonging to more than one
   provider scope at once is still future work, unscoped.
 - **Explicit cross-provider / cross-scope retrieval** ("search everything," or blending `general +
   mews + opera-cloud` on purpose for comparison/admin/research use cases) — explicitly out of scope
-  for Phase 10 (ADR-0011 Decision 5/8). The default (and, for Phase 10, the *only* mode) stays
+  for Phase 10 (ADR-knowledge-scope-tagging-and-filtering Decision 5/8). The default (and, for Phase 10, the *only* mode) stays
   `general + active scope`; widening it is a deliberate, separate future feature, never a silent
   default.
 - Frontend/backend reusability (concerns 1–2 below) — unaffected by Phase 10, which only touches the
@@ -358,20 +358,20 @@ scheduled — same as every other idea in this file.
 **Terminology collision — read before using the word "Toast" anywhere near this idea. RESOLVED
 2026-08-21 for Phase 10, kept here for the reasoning trail, not as live guidance to "avoid" it.** This
 codebase's own repo/deployment is itself code-named **Toast** (`RAG-TOAST-omniboost`,
-`docs/adr/0006-Defer-Multi-Product-Extraction.md`'s "Muse vs. Toast" = two hypothetical *deployments
+`docs/adr/defer-product-and-package-extraction.md`'s "Muse vs. Toast" = two hypothetical *deployments
 of this same product*). This idea, as raised, uses "Toast" as an example of a **third-party
 hospitality POS platform** (alongside Mews and Opera Cloud — real PMS/POS systems this product's
 customers run) that a *customer* might be integrated with — a completely different meaning, same
 word. Idea #2 already flagged the identical collision for "Muse"/"Toast" used as example third-party
 integration names and left it explicitly unresolved at the user's direction. **The user has since
-confirmed (ADR-0011, `docs/rag/PLAN.md` Phase 10) that `toast` — meaning Toast POS — is a real
+confirmed (ADR-knowledge-scope-tagging-and-filtering, `docs/rag/PLAN.md` Phase 10) that `toast` — meaning Toast POS — is a real
 recognized knowledge scope, collision disclosed and accepted, not avoided.** The advice below (originally:
 pick example names that don't collide, avoid "Toast"/"Muse") applied to *illustrative* naming in this
 idea's own discussion, not to a considered real decision once one exists — Phase 10 is that considered
 decision for the knowledge-scope axis. "Muse" remains unused and avoidable (no real product is named
 that); "Toast" is now a real, intentional recognized scope value. Whoever scopes remaining real work
 here (idea #2's soft-scoping, idea #4's connector-instance tagging) must still pick example names that
-don't collide with this repo's own ADR-0006 vocabulary where the naming is still illustrative
+don't collide with this repo's own ADR-defer-product-and-package-extraction vocabulary where the naming is still illustrative
 (Mews/Opera Cloud remain safe placeholders; avoid "Muse" as a stand-in for an external provider), or
 state outright that the two meanings are unrelated before writing anything that could be misread as "this
 product embeds inside itself."
@@ -398,12 +398,12 @@ feature-boundary convention) and `apps/web/src/platform/automation-api` as the o
 backend. There is no per-provider frontend fork today — that is already the right shape; this idea
 just says: keep it that way as providers multiply, rather than letting a "Mews build" and an "Opera
 build" diverge into separate codebases. Idea #5 (frontend/backend repository separation, currently
-de-scheduled per `docs/adr/0010-Redefer-Repository-Separation.md`) is the mechanism that would let
+de-scheduled per `docs/adr/keep-frontend-backend-in-one-repo-for-now.md`) is the mechanism that would let
 `apps/web` be independently deployed/embedded per provider context while staying one codebase — this
 idea is a second, concrete reason #5's trigger ("a real second product/deployment with a committed
 launch date") might eventually fire, alongside Muse.
 
-**Shared backend.** Per ADR-0006 decision 2, `apps/automation/app/platform/config/settings.py` is
+**Shared backend.** Per ADR-defer-product-and-package-extraction decision 2, `apps/automation/app/platform/config/settings.py` is
 already fully env-driven — no product-specific literal is baked into logic — so multiple deployments
 of the same backend already cost an environment/ops action, not a code fork. That property should
 hold for provider-scoped deployments too: a "Mews-facing" backend instance and an "Opera-facing" one
@@ -416,13 +416,13 @@ into ingestion).
 **Knowledge / RAG separation — the part that should genuinely partition.** "Knowledge" here means
 what `apps/automation/app/features/retrieval` retrieves from — the `page_source`/`chunk` corpus fed
 by `apps/automation/app/features/confluence_sync` ingestion — not prompts, agent instructions, or
-skills. `docs/adr/0004-Multi-Source-Provider-Tagging-And-RLS.md` already built most of the mechanism
+skills. `docs/adr/source-id-row-security-with-reader-writer-roles.md` already built most of the mechanism
 this idea needs: `source_type`/`source_id`/`tags` columns on `page_source` and `chunk`, `source_type`
 deliberately a CHECK constraint (not a PG enum) specifically so a new connector type doesn't need an
 `ALTER TYPE`, and RLS keyed on `source_id` as the hard security boundary. `source_scope`
 (`apps/automation/app/platform/db/models.py`, resolved by `apps/automation/app/features/
 confluence_sync/domain/scope_resolver.py`) already resolves which Confluence roots feed which tags at
-ingest time. None of this was built for multi-provider scoping specifically (ADR-0004 was written for
+ingest time. None of this was built for multi-provider scoping specifically (ADR-source-id-row-security-with-reader-writer-roles was written for
 generic multi-source isolation, e.g. Confluence vs. a future Zendesk), but it is the same shape:
 "shared/general" would be one `source_id`/tag value, "Mews-specific" and "Opera-specific" would be
 others, coexisting in one database, one corpus, isolated by the same RLS the codebase already relies
@@ -462,14 +462,14 @@ question case ("we're on Mews, does this also work on Opera?") — same underlyi
 default-deny scoping and an intentional wider search, not necessarily the same mechanism.
 
 **Ingestion vs. runtime retrieval are different concerns.** `confluence_sync` already ingests and
-tags at a single seam (ADR-0004 item 8, `ingestion/application/versioning.py`) — that seam already
+tags at a single seam (ADR-source-id-row-security-with-reader-writer-roles item 8, `ingestion/application/versioning.py`) — that seam already
 knows how to write `source_id`/`tags` per document. Ingestion knowing about every provider's content
 does not mean every request should search every provider's content; that split (ingest-time tagging
 vs. query-time scoping) is exactly what today's gap (tags written, never read back) currently
 collapses by omission, and what idea #2/#4/#7 all separately point at from different angles.
 
 **Scalability — a repeatable pattern per new provider.** Because `source_type` is a CHECK constraint
-and the ingestion seam is already parameterized (ADR-0004 item 8: "a constant today, a parameter when
+and the ingestion seam is already parameterized (ADR-source-id-row-security-with-reader-writer-roles item 8: "a constant today, a parameter when
 a second source lands"), adding a provider in principle costs: a new `platform/clients` integration
 (mirroring `confluence_client.py`), a provider tag/`source_id` value, and a `source_scope` root — not
 a new deployment fork. That repeatability is unverified in practice since only one provider
@@ -501,7 +501,7 @@ provider, not a guarantee.
 **Related current architecture.**
 - Frontend: `apps/web/src/features/chat/**` (chat UI, session, `route-handlers.ts` principal
   handling), `apps/web/src/platform/automation-api/**` (the one backend client).
-- Backend/core: `apps/automation/app/platform/config/settings.py` (env-driven config, ADR-0006
+- Backend/core: `apps/automation/app/platform/config/settings.py` (env-driven config, ADR-defer-product-and-package-extraction
   decision 2), `apps/automation/app/platform/clients/confluence_client.py` (the integration-client
   pattern), `apps/automation/app/features/rag_agent/server/router.py` (principal handling).
 - Knowledge/RAG: `apps/automation/app/features/retrieval/infrastructure/search_repo.py`
@@ -510,8 +510,8 @@ provider, not a guarantee.
   (`SourceScope`, `source_type`/`source_id`/`tags` on `page_source`/`chunk`), `apps/automation/app/
   features/confluence_sync/domain/scope_resolver.py` (root resolution), `apps/automation/app/
   features/confluence_sync/application/versioning.py` (the one ingestion tagging seam).
-- Governing docs: `docs/adr/0004-Multi-Source-Provider-Tagging-And-RLS.md`,
-  `docs/adr/0006-Defer-Multi-Product-Extraction.md`, `docs/adr/0010-Redefer-Repository-Separation.md`,
+- Governing docs: `docs/adr/source-id-row-security-with-reader-writer-roles.md`,
+  `docs/adr/defer-product-and-package-extraction.md`, `docs/adr/keep-frontend-backend-in-one-repo-for-now.md`,
   and ideas #2, #4, #5, #7 in this file.
 
 **Open questions / decisions for later.** Exact RAG tagging/namespace format for provider scope
@@ -524,7 +524,7 @@ knowledge ever needs physical (not just tag) separation; multi-provider-per-cust
 if idea #5 is ever revived alongside this.
 
 **Explicit non-goals for now.** No separate backend per provider. No separate frontend fork per
-provider. No new database or vector store. No schema change (ADR-0004's columns are believed
+provider. No new database or vector store. No schema change (ADR-source-id-row-security-with-reader-writer-roles's columns are believed
 sufficient; confirm, don't assume, once real work starts). No solving multi-provider-per-customer
 routing. No implementation of any kind — this entry is documentation only.
 
@@ -542,4 +542,4 @@ ideas is actually being designed.
 
 **No longer "already scheduled"** — see idea #5 above for the current state of the repo-separation
 idea (moved back here from `docs/rag/PLAN.md` Phase 4.8 on 2026-08-12, per
-`docs/adr/0010-Redefer-Repository-Separation.md`).
+`docs/adr/keep-frontend-backend-in-one-repo-for-now.md`).

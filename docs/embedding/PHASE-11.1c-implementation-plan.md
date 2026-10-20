@@ -4,17 +4,17 @@
 
 **Goal:** Let any platform (Mews, Toast, Opera Cloud, an Omniboost app) embed Obi with one `obi.js` script tag, where a per-click platform-signed JWT — verified server-side — replaces the caller-self-reported `knowledgeScope`, so the customer/integration boundary is bound at the edge instead of trusted from the caller.
 
-**Architecture:** The platform's own server signs a short-lived JWT (`iss`, `aud=obi`, `sub`, `iat`, `exp`, and either all three business values `company_id`/`company_name`/`integration` or none). `obi.js` fetches it at button-click, holds it in memory, posts it into the Obi iframe, and sends it as `Authorization: Bearer <jwt>` on every `POST /api/chat`. The Next proxy forwards the host key on `Authorization` and the JWT on a distinct `X-Obi-Token` header. The Obi backend verifies the JWT (alg allow-list, JWKS-by-`kid`, `iss` ∈ `platforms.json`, `aud`, `exp`) and builds one frozen `AuthContext` whose `allowed_scopes` drive `apply_knowledge_scope` on every reader transaction — on top of the DB backstop from Phase 11.1a (ADR-0014). No token ever touches URL / cookie / web-storage / server log / trace row (only a hash of `sub` is traced).
+**Architecture:** The platform's own server signs a short-lived JWT (`iss`, `aud=obi`, `sub`, `iat`, `exp`, and either all three business values `company_id`/`company_name`/`integration` or none). `obi.js` fetches it at button-click, holds it in memory, posts it into the Obi iframe, and sends it as `Authorization: Bearer <jwt>` on every `POST /api/chat`. The Next proxy forwards the host key on `Authorization` and the JWT on a distinct `X-Obi-Token` header. The Obi backend verifies the JWT (alg allow-list, JWKS-by-`kid`, `iss` ∈ `platforms.json`, `aud`, `exp`) and builds one frozen `AuthContext` whose `allowed_scopes` drive `apply_knowledge_scope` on every reader transaction — on top of the DB backstop from Phase 11.1a (ADR-db-level-customer-scope-isolation-backstop). No token ever touches URL / cookie / web-storage / server log / trace row (only a hash of `sub` is traced).
 
-**Tech Stack:** Backend — Python 3.12, FastAPI, Pydantic v2, SQLAlchemy, Alembic, `pyjwt[crypto]` (new, RS256/ES256 + `PyJWKClient` JWKS-by-`kid`). Frontend — Next.js (App Router), TypeScript strict, no new runtime deps (vanilla loader compiled to `public/obi.js`). Contracts — `@omniboost/contracts` (TS + JSON Schema). DB — Postgres + pgvector on Supabase, RLS per ADR-0004 / ADR-0014.
+**Tech Stack:** Backend — Python 3.12, FastAPI, Pydantic v2, SQLAlchemy, Alembic, `pyjwt[crypto]` (new, RS256/ES256 + `PyJWKClient` JWKS-by-`kid`). Frontend — Next.js (App Router), TypeScript strict, no new runtime deps (vanilla loader compiled to `public/obi.js`). Contracts — `@omniboost/contracts` (TS + JSON Schema). DB — Postgres + pgvector on Supabase, RLS per ADR-source-id-row-security-with-reader-writer-roles / ADR-db-level-customer-scope-isolation-backstop.
 
-**Spec:** [`docs/embedding/PHASE-11.1c-obi-embed-jwt-spec.md`](./PHASE-11.1c-obi-embed-jwt-spec.md) (design of record) + [`docs/adr/0014-Customer-Scope-Isolation-Backstop.md`](../adr/0014-Customer-Scope-Isolation-Backstop.md) (the GUC/RLS contract this binds to). Ledger: `docs/rag/PLAN.md` §0.
+**Spec:** [`docs/embedding/PHASE-11.1c-obi-embed-jwt-spec.md`](./PHASE-11.1c-obi-embed-jwt-spec.md) (design of record) + [`docs/adr/db-level-customer-scope-isolation-backstop.md`](../adr/db-level-customer-scope-isolation-backstop.md) (the GUC/RLS contract this binds to). Ledger: `docs/rag/PLAN.md` §0.
 
 ## Global Constraints
 
 - **Feature layout (root `CLAUDE.md`):** backend code lives under `apps/automation/app/features/<feature>/` (domain/application/infrastructure/server split) and `apps/automation/app/platform/config/`. Cross-feature imports go through the feature's public `__init__.py` root only; run `make boundaries` before every commit (must exit 0).
 - **Package managers do not mix:** `uv` for `apps/automation`, `pnpm` for the JS/TS workspace. Add the JWT dep with `uv add`, never `pip`.
-- **No-regression, not zero:** do not let whole-repo Ruff/Pyright counts rise above the ADR-0003 D1 baseline (Ruff 2/15, Pyright 34/1); bring every file you touch clean. Do not reformat files you did not otherwise edit.
+- **No-regression, not zero:** do not let whole-repo Ruff/Pyright counts rise above the ADR-features-import-only-through-public-root D1 baseline (Ruff 2/15, Pyright 34/1); bring every file you touch clean. Do not reformat files you did not otherwise edit.
 - **Test DB:** the hermetic settings fixture uses `omniboost_rag_test`. While `.env` points at Supabase, `make check` needs `DATABASE_URL=<local docker DSN>` as an override (the fixture provisions roles as superuser). `make up` first.
 - **Security gate (CLAUDE.local.md rule 2):** every new/changed HTTP or LLM surface runs the `securing-http-and-llm-endpoints` controls. No secret is ever interpolated into SQL or logged; GUCs are set with bound `set_config(..., true)` params only (never string-interpolated).
 - **Scope-slug mapping (spec drift #2 — CONFIRMED by operator 2026-09-12):** the JWT `integration` claim carries the **platform key** (`mews`, `toast`, `opera-cloud`) as the human-friendly wire value; `platforms.json`'s `integrations` map resolves that key to the **live `obi-*-test` slugs** (`obi-mews-test`, `obi-toast-test`, `obi-operacloud-test`) plus `obi-general-test`. The recognized-scope vocabulary in `config/knowledge_scopes.json` is NOT renamed. Startup validation rejects any mapped slug not present in `knowledge_scopes.json`.
@@ -76,7 +76,7 @@
 
 ```json
 {
-  "_readme": "Platform registry for Obi embed (Phase 11.1c, ADR-0014). 'platforms' = trusted JWT issuers keyed by platform key; the platform key is the JWT 'integration' wire value. 'integrations' maps that key to the live obi-*-test knowledge scopes from config/knowledge_scopes.json. Entries with active=false are skipped by the frame CSP and the frontend loader but STILL verify tokens if one arrives. obi-general-test is always appended; 'classified' is never mappable.",
+  "_readme": "Platform registry for Obi embed (Phase 11.1c, ADR-db-level-customer-scope-isolation-backstop). 'platforms' = trusted JWT issuers keyed by platform key; the platform key is the JWT 'integration' wire value. 'integrations' maps that key to the live obi-*-test knowledge scopes from config/knowledge_scopes.json. Entries with active=false are skipped by the frame CSP and the frontend loader but STILL verify tokens if one arrives. obi-general-test is always appended; 'classified' is never mappable.",
   "platforms": {
     "mews":        { "issuer": "https://app.mews.com",     "jwks_url": "https://app.mews.com/.well-known/obi-jwks.json",     "domains": ["app.mews.com"],     "lifetime_minutes": 60, "algs": ["RS256", "ES256"], "active": false },
     "toast":       { "issuer": "https://pos.toasttab.com", "jwks_url": "https://pos.toasttab.com/.well-known/obi-jwks.json", "domains": ["pos.toasttab.com"], "lifetime_minutes": 60, "algs": ["RS256", "ES256"], "active": false },
@@ -160,7 +160,7 @@ def test_classified_scope_is_never_mappable(tmp_path):
 
 ```python
 # apps/automation/app/platform/config/platforms.py
-"""Platform + integration registry for Obi embed (Phase 11.1c, ADR-0014).
+"""Platform + integration registry for Obi embed (Phase 11.1c, ADR-db-level-customer-scope-isolation-backstop).
 
 The JWT 'integration' claim carries the platform KEY (e.g. "mews"); this registry
 maps that key to the live obi-*-test knowledge scopes and holds the trusted-issuer
@@ -887,7 +887,7 @@ subject_hash: Mapped[str | None] = mapped_column(Text, nullable=True)  # sha256(
 - Modify: `docs/runbooks/` — add the "apply `0010` then `0011` to Supabase" step + the test-key handling note.
 
 - [ ] **Step 1 (OPERATOR):** with `.env` pointed at Supabase, `uv run alembic upgrade head` advances live `0009`→`0010`→`0011`; then `uv run python scripts/setup_supabase.py verify-isolation` (expect the scope-axis line + exit 0). This closes the last CRITICAL pre-public-deploy gate (customer isolation fail-open → fail-closed) **and** adds the new trace column.
-- [ ] **Step 2:** write the phase doc: what runs on the read path now (token → verifier → AuthContext → both GUCs), which files, cross-link ADR-0014 + this plan.
+- [ ] **Step 2:** write the phase doc: what runs on the read path now (token → verifier → AuthContext → both GUCs), which files, cross-link ADR-db-level-customer-scope-isolation-backstop + this plan.
 - [ ] **Step 3:** update `PLAN.md §0` ledger.
 - [ ] **Step 4: Commit** — `git commit -m "docs(embed): phase-11.1c read-path doc + PLAN ledger + runbook migration step (11.1c F2)"`
 

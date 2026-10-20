@@ -22,7 +22,7 @@ export { ChatSessionProvider, useChatSession } from "./ui/chat-session-provider"
 // The `/embed` frame subscribes this to clear stale UI when the backend rejects the token (401).
 export { onUnauthorized } from "./api/chat-client";
 // The `/embed` frame probes this on token receipt to decide whether Obi should be shown for the
-// verified directed context (target-enablement hide, sync-rules Task 5 / ADR-0022).
+// verified directed context (target-enablement hide, sync-rules Task 5 / ADR-widget-hides-via-visibility-probe).
 export { checkVisibility } from "./api/chat-client";
 export type { VisibilityResult } from "./api/chat-client";
 export type { ChatMessage, MessageRole, MessageStatus } from "./model/messages";

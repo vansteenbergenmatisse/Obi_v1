@@ -2,16 +2,16 @@
 
 **Status:** 🟩 code + tests done via TDD (2026-09-10), committed on `feat/rag-phase-3.5`; **migration
 `0010` NOT yet applied to live Supabase** (live head `0009`) — apply is a plain `alembic upgrade head`.
-Design of record: [`../../adr/0014-Customer-Scope-Isolation-Backstop.md`](../../adr/0014-Customer-Scope-Isolation-Backstop.md).
+Design of record: [`../../adr/db-level-customer-scope-isolation-backstop.md`](../../adr/db-level-customer-scope-isolation-backstop.md).
 Distinct axis from Phase 13.1 ([`phase-13.md`](./phase-13.md), reader read-access) and from the source
-policy (ADR-0004).
+policy (ADR-source-id-row-security-with-reader-writer-roles).
 
 ## The problem
 
 The `mews`/`opera-cloud`/`toast`/`general` boundary (carried as `obi-*-test` tags) was enforced **only**
 by the app-layer `tags && :scopes` predicate in `search_repo._base_filters`, gated behind
 `enable_knowledge_scope_filtering` — which **failed open**: flag off, or one dropped predicate, returned
-every customer's rows to everyone. All four scopes share one `source_id`, so ADR-0004's
+every customer's rows to everyone. All four scopes share one `source_id`, so ADR-source-id-row-security-with-reader-writer-roles's
 `chunk_source_read` does not separate them, and `curated_knowledge_entry` had no tenant policy. Source
 isolation fails *closed*; the customer axis did not.
 
@@ -31,7 +31,7 @@ A DB backstop that mirrors the source axis, so a dropped predicate or a flag fli
   interpolated), `'*'` when `None`. Exported from the retrieval facade (`retrieval/__init__.py`).
 - **`retrieval/application/retriever.py::_search`** — calls `apply_knowledge_scope(session,
   knowledge_scopes)` on **every** reader txn, from the raw argument, **independent of the flag**. The
-  flag now governs only the redundant app predicate (defense-in-depth + ADR-0011 Decision-1). Also set in
+  flag now governs only the redundant app predicate (defense-in-depth + ADR-knowledge-scope-tagging-and-filtering Decision-1). Also set in
   `fetch_parent_texts` (as `'*'` — the parent ids already came from a scoped, permitted search).
 - **`rag_agent/infrastructure/curated_knowledge_repo.py::fetch_curated_entries`** — sets the same GUC
   before its read, so the curated layer is isolated at the DB too.

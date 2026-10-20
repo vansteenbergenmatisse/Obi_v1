@@ -1,5 +1,5 @@
 /**
- * chat — SERVER public root (PLAN 11.1c, ADR-0014).
+ * chat — SERVER public root (PLAN 11.1c).
  *
  * The server-only half of the chat feature's public surface: the App Router entrypoints
  * (`app/api/chat/route.ts`, `app/api/chat/[traceId]/feedback/route.ts`) import the proxy handlers

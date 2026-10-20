@@ -18,13 +18,13 @@
   /chat` but owns no retrieval/answer logic. See [`../OBI-WIDGET-DESIGN.md`](../OBI-WIDGET-DESIGN.md).
 - **Phase 4.8 — Frontend/backend repository separation.** Moved out of the plan entirely; see
   [`../../future-ideas/IDEAS.md`](../../future-ideas/IDEAS.md) idea #5 and
-  `docs/adr/0010-Redefer-Repository-Separation.md`.
+  `docs/adr/keep-frontend-backend-in-one-repo-for-now.md`.
 
 ## Phases
 
 | Phase | What it did, on the read/answer side | Status | File |
 |---|---|---|---|
-| 0 | Design docs + ADR-0005 (reranking + answer-pipeline decisions) that govern everything below | ✅ done | [phase-0.md](./phase-0.md) |
+| 0 | Design docs + ADR-rerank-then-verify-cited-answers (reranking + answer-pipeline decisions) that govern everything below | ✅ done | [phase-0.md](./phase-0.md) |
 | 3 | Original hybrid retriever: dense (HNSW) ∥ keyword (`tsvector`) → RRF → baseline permission filter | ✅ done (pre-PLAN.md) | [phase-3.md](./phase-3.md) |
 | 3.5 | pgvector 0.8 + iterative scan, cross-encoder reranker, `rag_reader`/RLS enforcement at query time, `query_trace`, rerank-lift measurement | ✅ done | [phase-3.5.md](./phase-3.5.md) |
 | 4 | `rag_agent` answer runtime (rewrite → retrieve/rerank → CRAG → refuse → expand → generate → cite) + `POST /chat` SSE | ✅ done | [phase-4.md](./phase-4.md) |

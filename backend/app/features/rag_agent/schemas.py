@@ -19,7 +19,7 @@ from app.features.rag_agent.domain.refusal import RefusalReason
 
 
 class ImageAttachment(BaseModel):
-    """One inline image attached to a chat turn (PLAN 7.2/7.3, ADR-0009). ``data`` is
+    """One inline image attached to a chat turn (PLAN 7.2/7.3, ADR-vision-grounded-image-analysis). ``data`` is
     base64-encoded, no data URI prefix. Field name uses the wire's camelCase (``mediaType``) via
     alias — `frontend`'s proxy passes turn content straight through without renaming nested
     fields (unlike ``conversationId`` -> ``conversation_id``, which it does translate), so this
@@ -42,7 +42,7 @@ class ChatMessage(BaseModel):
     images: list[ImageAttachment] | None = Field(
         default=None,
         description=(
-            "Images attached to this turn (ADR-0009). By convention only the newest turn ever "
+            "Images attached to this turn (ADR-vision-grounded-image-analysis). By convention only the newest turn ever "
             "carries these (decision 2) — AnswerService.answer only reads history[-1].images; "
             "an older turn's images is accepted, not rejected, but never analyzed."
         ),
@@ -96,7 +96,7 @@ class Answer(BaseModel):
         default=None,
         description=(
             "One of the closed taxonomy `no_candidates | off_topic | weak_score | no_citations` "
-            "(PLAN 9.4, ADR-0008 decision 4; `off_topic` added 2026-09-12) — never a free-text "
+            "(PLAN 9.4, ADR-ambiguity-clarification-then-fallback-answer decision 4; `off_topic` added 2026-09-12) — never a free-text "
             "diagnostic. Sent over the `/chat` SSE `done` event as `refusalReason` (only on a "
             "refused turn) so the widget shows the hand-off CTA for the hand-off reasons and a "
             "softer redirect for `off_topic`; also the groupable category the audit log uses."
@@ -106,7 +106,7 @@ class Answer(BaseModel):
     image_analysis: str | None = Field(
         default=None,
         description=(
-            "Vision-analysis text for any images on the turn (ADR-0009 decision 4/5), from a "
+            "Vision-analysis text for any images on the turn (ADR-vision-grounded-image-analysis decision 4/5), from a "
             "second, independent generation call that never enters citation enforcement. Kept "
             "separate from `text` on purpose, not appended into it, so the widget can render it "
             "as its own labeled block (decision 5)."
@@ -115,7 +115,7 @@ class Answer(BaseModel):
     needs_clarification: bool = Field(
         default=False,
         description=(
-            "True when the query was judged too vague to search well (PLAN 9.3, ADR-0008 "
+            "True when the query was judged too vague to search well (PLAN 9.3, ADR-ambiguity-clarification-then-fallback-answer "
             "decision 3) and the pipeline bypassed rewrite/retrieval/refusal to ask a clarifying "
             "question instead. A still-open conversation turn, not a refusal — `refused` stays "
             "False on this path."
@@ -124,7 +124,7 @@ class Answer(BaseModel):
     clarification_question: str | None = Field(
         default=None,
         description=(
-            "The clarifying question, identical to `text` on this path (ADR-0008 decision 3) — "
+            "The clarifying question, identical to `text` on this path (ADR-ambiguity-clarification-then-fallback-answer decision 3) — "
             "present as its own field so a client can distinguish a clarification turn without "
             "string-matching `text`."
         ),

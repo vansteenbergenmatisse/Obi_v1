@@ -103,7 +103,7 @@ Level: db + eval (real AnswerService, `evaluation` metrics module).
 - `test_citation_grounding_rate_on_a_real_grounded_answer` — the faithfulness-proxy metric scores 1.0 against a real grounded answer — `e-stage4`
 
 ### app/features/confluence_sync/tests/test_force_rls_managed_postgres.py
-Level: db (ADR-0013, non-superuser owner via `SET ROLE`).
+Level: db (ADR-supabase-postgres-store-without-force-rls, non-superuser owner via `SET ROLE`).
 - `test_non_superuser_owner_reads_own_rows` — a non-superuser table owner still reads its own rows (FORCE dropped) — `s-writer`
 - `test_non_owner_reader_still_isolated` — the non-owner reader stays source-scoped after the FORCE drop — `s-reader`
 
@@ -859,7 +859,7 @@ Level: browser.
 - `applies a runtime scope change (the PLAN 10.8 switcher) to the next outgoing request` — `w-scope`
 - `omits knowledgeScope from the outgoing request when not configured` — `w-scope`
 - `attaches images to the newest history turn only, and reads imageAnalysis back off done` — `r5-image`
-- `marks a turn as clarifying (not refused) and keeps its options, per ADR-0008 decision 3` — `r1-clarify`
+- `marks a turn as clarifying (not refused) and keeps its options, per ADR-ambiguity-clarification-then-fallback-answer decision 3` — `r1-clarify`
 - `resends a clarifying turn's question as history on the next message` — `r1-clarify`
 
 ### apps/web/src/features/chat/tests/menu.test.tsx
@@ -911,7 +911,7 @@ Level: browser.
 ### apps/web/src/features/chat/tests/knowledge-scopes.test.ts
 Level: browser (drift guard, reads the canonical config file directly).
 - `mirrors config/knowledge_scopes.json's scope names in order (no drift)` — `w-scope`
-- `always includes obi-general-test — the always-present base scope (ADR-0011)` — `w-scope`
+- `always includes obi-general-test — the always-present base scope (ADR-knowledge-scope-tagging-and-filtering)` — `w-scope`
 
 ### apps/web/src/features/chat/tests/menu-item.test.tsx
 Level: browser. Generic UI primitive, no design panel of its own.
@@ -957,7 +957,7 @@ Level: browser.
 - `parseChatRequestBody > rejects history longer than the resource-exhaustion ceiling` — `r1-limits`
 - `parseChatRequestBody > rejects a turn with an invalid role` — `r1-limits`
 - `parseChatRequestBody > accepts a turn with empty content and no images` — `r5-image`
-- `parseChatRequestBody > accepts an image-only turn with empty content (ADR-0009 decision 4)` — `r5-image`
+- `parseChatRequestBody > accepts an image-only turn with empty content (ADR-vision-grounded-image-analysis decision 4)` — `r5-image`
 - `parseChatRequestBody > accepts a resent history where an older image-only turn has aged out to empty content and no images` — `r5-image`
 - `parseChatRequestBody > rejects history that does not end on a user turn` — `r1-limits`
 - `parseChatRequestBody > rejects a non-string conversationId` — `r1-limits`

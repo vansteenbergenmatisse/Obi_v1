@@ -8,7 +8,7 @@ against production — the same failure mode as the two live incidents (2026-09-
 backend's guard was added for.
 
 This module mirrors ``backend/app/tests/db_harness.py``'s ``require_local_host`` *by copy, not by
-import*: ``knowledge-base/`` imports nothing from ``backend/`` (ADR-0018, enforced by
+import*: ``knowledge-base/`` imports nothing from ``backend/`` (ADR-folder-dependencies-point-one-way, enforced by
 ``make boundaries``), so the KB tree owns its own guard helper. ``conftest.py`` wires it as an
 autouse, ``db``-gated fixture that runs before any harness opens its first admin connection;
 DB-free KB unit tests never touch it (they carry no ``db`` marker).

@@ -1,4 +1,4 @@
-"""Resolve a page's Confluence labels into knowledge-scope tags (PLAN 10.2, ADR-0011).
+"""Resolve a page's Confluence labels into knowledge-scope tags (PLAN 10.2, ADR-knowledge-scope-tagging-and-filtering).
 
 Pure, no I/O: takes the labels already fetched by the caller (`gateway.get_labels`) and the
 recognized set from `Settings.knowledge_scope_set` (PLAN 10.1). Every recognized label becomes a

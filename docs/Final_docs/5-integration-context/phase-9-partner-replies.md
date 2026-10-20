@@ -1,11 +1,11 @@
 # Partner replies — the directed-connection contract (substep 9.6.1)
 
 > **DRAFTS — the owner edits and sends these. The AI never sends them.** Produced for action-plan
-> substep `9.6.1` (Option A, ADR-0020). Nothing here was sent, deployed, or written into
+> substep `9.6.1` (Option A, ADR-directed-source-target-routing-labels). Nothing here was sent, deployed, or written into
 > `platforms.json`. Owner placeholders are marked `[OWNER: …]`.
 >
 > These express the **directed `source_system` → `target_system` + `business_id`** contract — the
-> form Obi now routes on (ADR-0020, confirmed decision `connection-routing`). They **supersede the
+> form Obi now routes on (ADR-directed-source-target-routing-labels, confirmed decision `connection-routing`). They **supersede the
 > three-slot `context.slots` version** in `jasper-reply-draft.md` (kept as provenance / for the
 > owner's in-progress edits). Base and Data Hub each join exactly two systems — a source and a
 > target (`plan.md` §D.17) — so the directed pair is their real shape, not a simplification.

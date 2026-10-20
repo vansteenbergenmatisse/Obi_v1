@@ -1,4 +1,4 @@
-"""Curated-knowledge domain shapes (PLAN 10.6, ADR-0011): hand-authored entries always eligible
+"""Curated-knowledge domain shapes (PLAN 10.6, ADR-knowledge-scope-tagging-and-filtering): hand-authored entries always eligible
 for citation, independent of any retrieved Confluence chunk.
 
 Pure data plus the adapter that lets a `CuratedEntry` ride through the exact same evidence/citation

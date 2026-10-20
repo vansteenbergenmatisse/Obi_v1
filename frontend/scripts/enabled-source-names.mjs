@@ -1,5 +1,5 @@
 // Prints, as a JSON array, every name an enabled source system answers to — for `build:obi` to
-// inject as `__OBI_ENABLED_SOURCES__` (ADR-0023). For each id in product_catalog.json's
+// inject as `__OBI_ENABLED_SOURCES__` (ADR-source-system-decides-widget-eligibility). For each id in product_catalog.json's
 // `enabled_sources`: the canonical id, the display label and every alias, normalized exactly like
 // the backend's lenient `resolve_system` (case-folded, whitespace collapsed), so a partner token
 // that says "Opera Cloud" is matched by the loader the same way the backend gate matches it.

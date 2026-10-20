@@ -1,5 +1,5 @@
 """Sync rules 3 + 4 END TO END through the routing axis (panels i2-labels / tg-two / mi-hardfilter,
-substep 9.4.1, ADR-0021 Path B).
+substep 9.4.1, ADR-routing-labels-sole-content-axis Path B).
 
 The ``tags`` sibling (``test_sync_rules_visibility.py``) proves the metadata-only restamp of
 ``page_source.tags`` with no re-embed. The direct-seed sibling

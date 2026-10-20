@@ -1,8 +1,10 @@
-# 0005 — Reranking and the Answer Pipeline
+# Reranking and the Answer Pipeline
+
+Identifier: `ADR-rerank-then-verify-cited-answers` (formerly numbered 0005). File paths updated to the current layout (`backend/`, `frontend/`, `knowledge-base/`) on 2026-10-20; the decision is unchanged.
 
 Status: Accepted
 Date: 2026-08-07
-Governs: apps/automation (retrieval, rag_agent, platform/clients), and the answer HTTP surface
+Governs: backend (retrieval, rag_agent, platform/clients), and the answer HTTP surface
 
 ## Context
 
@@ -11,7 +13,7 @@ exists today: the `reranker_provider` / `reranker_api_key` / `reranker_local_mod
 (`settings.py:62-65`, commented "used from Phase 4") are dead — there is no client. Beyond reranking, the
 system has no answer runtime at all: no query rewrite, generation, citations, refusal, or corrective
 retrieval, and `POST /chat` is absent (the web route is a 501 stub). This ADR fixes how retrieved
-candidates are reranked and how a grounded answer is produced. The source-isolation model is ADR-0004.
+candidates are reranked and how a grounded answer is produced. The source-isolation model is ADR-source-id-row-security-with-reader-writer-roles.
 
 ## Decision
 
@@ -61,7 +63,7 @@ candidates are reranked and how a grounded answer is produced. The source-isolat
 8. **One CRAG retry.** On a weak result, exactly one corrective retrieval (`crag_max_retries=1`). The cap is
    a p95 protection: unbounded corrective loops trade latency for marginal recall.
 
-9. **Two enforced security layers on the answer path.** Source-level RLS (ADR-0004) and page-level principal
+9. **Two enforced security layers on the answer path.** Source-level RLS (ADR-source-id-row-security-with-reader-writer-roles) and page-level principal
    ACL both apply. Phase 4 replaces the fixture-fed `PrincipalPermissionPolicy` with persisted, queryable
    principal lists enforced **pre-search**, alongside RLS.
 
@@ -69,7 +71,7 @@ candidates are reranked and how a grounded answer is produced. The source-isolat
     `done`, reader engine) and `PATCH /chat/{trace_id}/feedback` (writer engine) apply the full
     `securing-http-and-llm-endpoints` control set: auth, rate limit, input validation,
     timeout/retry/breaker, output rate limit, PII redaction, idempotency, audit logging, cost/abuse caps.
-    `POST /chat` must not be wired before ADR-0004's reader engine + RLS exist.
+    `POST /chat` must not be wired before ADR-source-id-row-security-with-reader-writer-roles's reader engine + RLS exist.
 
 ## Reason
 
@@ -100,12 +102,12 @@ trustworthiness.
   ranking, not the harness.
 - `refusal_min_rerank_score` is a tuned constant owned by the eval numbers; changing the reranker model
   requires re-tuning it.
-- The answer runtime depends on ADR-0004 being live (reader engine + RLS) before `POST /chat` is wired.
+- The answer runtime depends on ADR-source-id-row-security-with-reader-writer-roles being live (reader engine + RLS) before `POST /chat` is wired.
 
 ## Paths governed
 
-`apps/automation/app/platform/clients/reranker_client.py` (+ `clients/__init__.py`),
-`apps/automation/app/features/retrieval/**`, `apps/automation/app/features/rag_agent/**` (Phase 4),
-`apps/automation/app/main.py` (`POST /chat`, `PATCH /chat/{id}/feedback`),
-`apps/automation/app/platform/config/settings.py`, and the web chat surface
-(`apps/web/src/features/chat/**`, `apps/web/src/app/api/chat/route.ts`, `packages/contracts`).
+`backend/app/platform/clients/reranker_client.py` (+ `clients/__init__.py`),
+`backend/app/features/retrieval/**`, `backend/app/features/rag_agent/**` (Phase 4),
+`backend/app/main.py` (`POST /chat`, `PATCH /chat/{id}/feedback`),
+`backend/app/platform/config/settings.py`, and the web chat surface
+(`frontend/src/features/chat/**`, `frontend/src/app/api/chat/route.ts`, `packages/contracts`).

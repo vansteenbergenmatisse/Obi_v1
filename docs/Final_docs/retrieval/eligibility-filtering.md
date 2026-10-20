@@ -1,6 +1,6 @@
 # Eligibility filtering inside the database (§D.5)
 
-> **SUPERSEDED for routing by Option A (ADR-0020), 2026-10-12 (substep 9.4.1).** The slot/
+> **SUPERSEDED for routing by Option A (ADR-directed-source-target-routing-labels), 2026-10-12 (substep 9.4.1).** The slot/
 > applicability eligibility predicate below is kept for provenance and still ships as code, but the
 > routing axis is now the directed-connection **hard label filter** — see
 > `directed-label-hardfilter.md` (panel `mi-hardfilter`). The `_ELIGIBILITY_CLAUSE` here and the new
@@ -41,7 +41,7 @@ default 75) eligible chunks return; fewer is served as-is, never padded, never r
 The rerank-text fetch applies the same predicate, so an excluded page can never be reranked
 back in; parent expansion and the curated lookup stay access-only — §D.5 scopes eligibility
 to the candidate search, and a parent/curated row is only ever reached from ids that came
-out of the filtered search (ADR-0014 posture, unchanged). The context values are bound
+out of the filtered search (ADR-db-level-customer-scope-isolation-backstop posture, unchanged). The context values are bound
 parameters (`:elig_products`, `:elig_platform`, `:elig_connections`); the SQL text is
 static. Without a context (the internal/eval path) the emitted SQL is byte-for-byte the
 pre-8.3.1 shape.
@@ -53,7 +53,7 @@ database/vector-search function, before the final result limit — the database 
 hands back pieces this customer's setup may use; the prompt never enforces eligibility.
 Applicability narrows INSIDE what access already allows: RLS, the source + routing-label GUCs
 and page permissions are untouched and still apply first (never-bend rule 3; the knowledge-scope
-GUC is retired — ADR-0021), and the request body
+GUC is retired — ADR-routing-labels-sole-content-axis), and the request body
 never decides — the `CustomerContext` is built from the gate-verified `AuthContext` slots
 and the verified issuer's platform key (8.1.3), threaded through both the first retrieve
 and the CRAG retry. The SQL deliberately MIRRORS `match_applicability` (8.2.3) instead of

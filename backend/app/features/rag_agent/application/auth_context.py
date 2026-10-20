@@ -1,4 +1,4 @@
-"""Frozen edge identity for the Obi embed (PLAN 11.1c, ADR-0014).
+"""Frozen edge identity for the Obi embed (PLAN 11.1c, ADR-db-level-customer-scope-isolation-backstop).
 
 `build_auth_context` turns a verified JWT (`VerifiedClaims`, see server/token_verifier.py) into
 the single immutable `AuthContext` that drives EVERY reader transaction on the answer path — its
@@ -108,7 +108,7 @@ class SlotNotOnAllowlistError(AuthContextError):
 
 
 class SourceNotEnabledError(AuthContextError):
-    """ADR-0023 (source-enablement visibility gate, supersedes the ADR-0022 target gate): the
+    """ADR-source-system-decides-widget-eligibility (source-enablement visibility gate, supersedes the ADR-widget-hides-via-visibility-probe target gate): the
     directed SOURCE system is unknown to the catalog or not in its `enabled_sources` — not a source
     Obi supports, so the session is refused and the router returns a 403 (off the 401 renew path)
     that hides Obi. The message NEVER names the product (never-bend rule 10): the error body is a
@@ -129,7 +129,7 @@ class AuthContext:
     slot_pos: str | None = None
     slot_pms: str | None = None
     slot_accounting: str | None = None
-    # substep 9.3.1 (Option A, ADR-0020): the directed connection this chat is bound to — the
+    # substep 9.3.1 (Option A, ADR-directed-source-target-routing-labels): the directed connection this chat is bound to — the
     # resolved CANONICAL catalog ids of the source and target systems, None for the slot/legacy
     # forms. Chat-start (9.2.1) reuses these to build the four routing labels + connection block.
     source_slug: str | None = None
@@ -183,10 +183,10 @@ def _build_directed_context(
     entry: PlatformEntry,
     catalog: ProductCatalog | None,
 ) -> AuthContext:
-    """The directed source → target gate (substep 9.3.1, Option A, ADR-0020, panels mi-gate/
+    """The directed source → target gate (substep 9.3.1, Option A, ADR-directed-source-target-routing-labels, panels mi-gate/
     mi-contract).
 
-    ADR-0023 (owner, 2026-10-20): only the SOURCE system decides eligibility. A source can have
+    ADR-source-system-decides-widget-eligibility (owner, 2026-10-20): only the SOURCE system decides eligibility. A source can have
     hundreds of targets, so the target is assumed supported and NEVER checked.
       source · resolves through the SAME lenient catalog resolver chat-start uses
             (`resolve_system`: canonical id, alias, or display name, case/space insensitive). An
@@ -197,7 +197,7 @@ def _build_directed_context(
       target · resolved with the same resolver for routing only. An unknown target is carried as
             `target_slug=None` (never a fabricated system) and routing falls back to the source's
             own labels; no vend, enablement, role or allowlist check applies to it.
-    The slot role check and the launch allowlist lapse for the directed form (ADR-0020 D4/D5).
+    The slot role check and the launch allowlist lapse for the directed form (ADR-directed-source-target-routing-labels D4/D5).
 
     `business_id` (verified present for this form) becomes `company_id` — the company-isolation
     axis the chat-session key and the audit trail already consume (never a scope axis by itself).
@@ -206,7 +206,7 @@ def _build_directed_context(
     never contributes any of this (never-bend rules 2-3): the gate reads only the verified token."""
     catalog = catalog if catalog is not None else _default_catalog()
 
-    # -- source · membership, vend rights, enablement (ADR-0023: only the source gates) ---------
+    # -- source · membership, vend rights, enablement (ADR-source-system-decides-widget-eligibility: only the source gates) ---------
     source = catalog.resolve_system(claims.source_system or "")
     if source is None:
         raise SourceNotEnabledError("source system is not supported")
@@ -221,7 +221,7 @@ def _build_directed_context(
     if source.id not in catalog.enabled_sources:
         raise SourceNotEnabledError("source system is not supported")
 
-    # -- target · routing input only, never checked (ADR-0023) -----------------------------------
+    # -- target · routing input only, never checked (ADR-source-system-decides-widget-eligibility) -----------------------------------
     target = catalog.resolve_system(claims.target_system or "")
 
     return AuthContext(
@@ -249,7 +249,7 @@ def build_auth_context(
     if entry is None:
         raise InactivePlatformError(claims.issuer)
 
-    # Directed-connection form (substep 9.3.1, Option A, ADR-0020): routes on source → target,
+    # Directed-connection form (substep 9.3.1, Option A, ADR-directed-source-target-routing-labels): routes on source → target,
     # not the membership slots. Validated here and short-circuits the slot chain below.
     if claims.source_system is not None or claims.target_system is not None:
         return _build_directed_context(claims, entry, catalog)
@@ -335,9 +335,9 @@ def build_auth_context(
                 f"{role} slot '{canonical}' is outside the launch allowlist"
             )
 
-    # ADR-0021: the knowledge-scope axis is retired. The slot checks above still gate WHICH
+    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired. The slot checks above still gate WHICH
     # integration a token may assert (shape/membership/role/vend/allowlist — access, not content),
-    # but no knowledge scope is derived; content is routed by the ADR-0020 label axis. No base tag.
+    # but no knowledge scope is derived; content is routed by the ADR-directed-source-target-routing-labels label axis. No base tag.
     return AuthContext(
         company_id=claims.company_id,
         company_name=claims.company_name,

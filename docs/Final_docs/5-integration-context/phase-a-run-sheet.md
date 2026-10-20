@@ -298,7 +298,7 @@ recorded **twice** — once on the local harness (runs now) and once against eac
 (when it exists). A local PASS never stands in for a partner-staging PASS; keep the legs separate.
 Expected results derive from the token claim schema (`packages/contracts/src/token-claims.json`),
 the verification order (`token_verifier.py:146-217`), the gate (`auth_context.py:173-230`),
-ADR-0020, the partner contract (`phase-9-partner-replies.md`), and owner decision round 4 (§D.18).
+ADR-directed-source-target-routing-labels, the partner contract (`phase-9-partner-replies.md`), and owner decision round 4 (§D.18).
 
 For each integration case: the **seven-step evidence table** records one run; the **per-environment
 table** records the local/Base/Data Hub legs separately.
@@ -375,7 +375,7 @@ table** records the local/Base/Data Hub legs separately.
 
 - **How to reach this context:** `/test-hosts/connection-switch` (TOKEN_A `toast → mews`, TOKEN_B
   `opera-cloud → toast`), or mint `toast → mews` then `mews → toast`. Connection under test:
-  directionality + scope-change restart (ADR-0020; `answer_service._resolve_directed_routing`).
+  directionality + scope-change restart (ADR-directed-source-target-routing-labels; `answer_service._resolve_directed_routing`).
 - **Action:** ask a question under direction A; note the labels; switch to direction B mid-session.
 - **Expected:** A's labels include `toast-to-pms`; B's labels flip (`mews`/`opera-cloud` general +
   the other direction's `{source}-to-{target.kind}`); the switch **restarts the thread** (messages
@@ -539,7 +539,7 @@ table** records the local/Base/Data Hub legs separately.
 - **How to reach this context:** a directed token whose **target** is a product that is *not*
   enabled for the customer. Connection under test: target-enablement eligibility. **STATUS
   (transcribed verbatim):** the retrieval half is live; **the eligibility gate is not yet built in
-  the directed path** (the launch allowlist lapses for directed tokens — ADR-0020 D4/D5,
+  the directed path** (the launch allowlist lapses for directed tokens — ADR-directed-source-target-routing-labels D4/D5,
   `auth_context.py:190-192`). This case records current behaviour now and becomes a pass/fail gate
   only once the eligibility refinement is adopted (its own substep + ADR amendment). **Do not fail
   Phase A on this case until the refinement ships.**

@@ -15,7 +15,7 @@
 /**
  * An inline image attached to a chat turn (file-picker/clipboard-paste
  * attachment or a page screenshot capture). `data` is base64-encoded, no
- * data URI prefix. Per ADR-0009 decision 2, the web client only ever puts
+ * data URI prefix. Per ADR-vision-grounded-image-analysis decision 2, the web client only ever puts
  * `images` on the newest turn when resending `history` — the backend does
  * not enforce that shape structurally, it simply passes through whatever a
  * caller sends.
@@ -35,9 +35,9 @@ export interface ChatTurn {
   role: "user" | "assistant";
   content: string;
   /**
-   * Images attached to this turn (ADR-0009). Optional — most turns carry
+   * Images attached to this turn (ADR-vision-grounded-image-analysis). Optional — most turns carry
    * none; when present, sent through a second, independent vision-analysis
-   * call, never through citation enforcement (ADR-0009 decision 4).
+   * call, never through citation enforcement (ADR-vision-grounded-image-analysis decision 4).
    */
   images?: ImageAttachment[];
 }
@@ -56,7 +56,7 @@ export interface ChatRequest {
   /**
    * Caller-self-reported principal id used for page-level ACL scoping.
    * Trusted only as far as the deployment trusts the calling web proxy
-   * (ADR-0004) — absent/unverified never widens access.
+   * (ADR-source-id-row-security-with-reader-writer-roles) — absent/unverified never widens access.
    */
   principal?: string;
   /**
@@ -96,7 +96,7 @@ export interface SimulatedContext {
  * mi-attrib, substep 8.1.2): a general guide, a guide admitted by one named
  * filled slot of the verified integration context (pos / pms / accounting),
  * or a guide for a slot pair the company actually has. `connection` is the
- * directed-routing variant (substep 9.3.1, ADR-0020 Option A): a guide for the
+ * directed-routing variant (substep 9.3.1, ADR-directed-source-target-routing-labels Option A): a guide for the
  * chat's directed `source → target` connection box.
  */
 export type CitationAttribution =
@@ -156,7 +156,7 @@ export interface ChatCitationsEvent {
 }
 
 /**
- * Closed refusal-reason taxonomy (ADR-0008 decision 4; `off_topic` added 2026-09-12).
+ * Closed refusal-reason taxonomy (ADR-ambiguity-clarification-then-fallback-answer decision 4; `off_topic` added 2026-09-12).
  * `off_topic` is a friendly "ask me about the docs" redirect with no human hand-off;
  * the other three route to a human. Mirrors the backend `RefusalReason` literal.
  */
@@ -185,7 +185,7 @@ export interface ChatDoneEvent {
    */
   refused: boolean;
   /**
-   * The refusal category (ADR-0008 decision 4; `off_topic` added 2026-09-12),
+   * The refusal category (ADR-ambiguity-clarification-then-fallback-answer decision 4; `off_topic` added 2026-09-12),
    * present only when `refused` is true. The UI shows the human-hand-off CTA for
    * `no_candidates | weak_score | no_citations` and a softer redirect (no CTA)
    * for `off_topic`. Absent/null on a non-refused turn, and on older backends
@@ -193,7 +193,7 @@ export interface ChatDoneEvent {
    */
   refusalReason?: RefusalReason | null;
   /**
-   * Vision-analysis text for any images on the turn (ADR-0009 decision 5),
+   * Vision-analysis text for any images on the turn (ADR-vision-grounded-image-analysis decision 5),
    * appended after the grounded answer and rendered as its own labeled
    * block — never itself carrying a citation marker. Optional: absent/null
    * when the turn had no image, or before the backend implements 7.3.
@@ -201,7 +201,7 @@ export interface ChatDoneEvent {
   imageAnalysis?: string | null;
   /**
    * True when the query was judged too vague to search well (PLAN 9.3,
-   * ADR-0008 decision 3) and the pipeline bypassed rewrite/retrieval/
+   * ADR-ambiguity-clarification-then-fallback-answer decision 3) and the pipeline bypassed rewrite/retrieval/
    * refusal to ask a clarifying question instead. A still-open
    * conversation turn, not a refusal — `refused` stays false on this path.
    */
@@ -278,7 +278,7 @@ export interface ConfluenceEventEnvelope {
   deliveryId: string;
 }
 
-// ---- Obi embed: iframe postMessage contract (PLAN 11.1c, ADR-0014) ---------
+// ---- Obi embed: iframe postMessage contract (PLAN 11.1c) ---------
 
 export type {
   ObiMessage,

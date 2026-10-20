@@ -1,5 +1,5 @@
 /**
- * embed — public feature root (PLAN 11.1c, ADR-0014), the CLIENT-safe entrypoint.
+ * embed — public feature root (PLAN 11.1c), the CLIENT-safe entrypoint.
  *
  * `chat`'s client (for the token) and the `/embed` frame's own client component import from
  * here. Deliberately does NOT re-export `platforms.ts` (`node:fs`/`node:path`/`node:url`) even

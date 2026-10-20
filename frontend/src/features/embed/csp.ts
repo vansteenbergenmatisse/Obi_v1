@@ -1,5 +1,5 @@
 /**
- * Pure, Edge-runtime-safe CSP decision logic for the Obi `/embed` frame (PLAN 11.1c, ADR-0014).
+ * Pure, Edge-runtime-safe CSP decision logic for the Obi `/embed` frame (PLAN 11.1c).
  *
  * Deliberately split out of `platforms.ts`: that file's `activeDomains()` needs real
  * `node:fs`/`node:path`/`node:url`, which cannot be bundled AT ALL for `middleware.ts` (Edge

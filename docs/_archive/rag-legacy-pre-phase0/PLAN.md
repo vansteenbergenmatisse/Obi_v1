@@ -365,8 +365,8 @@
 > ---
 >
 > **✅ DONE since last update:** the whole tree is committed — `7d79a07` (13.3/13.4 docs + `.env`),
-> `d6d6d67` (Phase 11.1a backstop: migration `0010`, schema DDL, GUC wiring, ADR-0014, `phase-11.md`,
-> tests), `1be08d4` (`verify-isolation` now gates the ADR-0014 **scope axis** — exit code **8** — so it
+> `d6d6d67` (Phase 11.1a backstop: migration `0010`, schema DDL, GUC wiring, ADR-db-level-customer-scope-isolation-backstop, `phase-11.md`,
+> tests), `1be08d4` (`verify-isolation` now gates the ADR-db-level-customer-scope-isolation-backstop **scope axis** — exit code **8** — so it
 > stays green on the tagged live corpus after `0010`). Automation **502 pass** (local-DSN override),
 > boundaries + ruff/format/pyright clean. No git remote configured, so nothing is pushed (local-only).
 >
@@ -458,7 +458,7 @@
 >    can test end-to-end: `obi.js` loader + round button + `/embed` iframe frame; the platform hands a
 >    short **signed note (JWT)** at button-click; the backend verifies it (alg allow-list, JWKS-by-`kid`,
 >    `iss`∈`platforms.json`, `aud=obi`, `exp`) and builds one frozen `AuthContext` that drives **every**
->    read (both GUCs). This is the **edge binding ADR-0014 deferred** — the verified `integration` claim
+>    read (both GUCs). This is the **edge binding ADR-db-level-customer-scope-isolation-backstop deferred** — the verified `integration` claim
 >    replaces the caller-self-reported `knowledge_scope`, closing the last trusted-from-caller gap on the
 >    scope axis (the 11.1a DB backstop is the net beneath it). Retires the pilot `?access_token=` shared
 >    invite token. v1 is **integration-level only** (`principal` stays `None`, open pages only — operator
@@ -552,7 +552,7 @@
       **533 pass**, boundaries + ruff/format/pyright clean.
     - **(c) (optional, product decision) refusal-threshold / general-knowledge fallback.** If general
       questions should be answered from the model's own world knowledge when the docs are silent, that is a
-      deliberate move *away* from accuracy-first (ADR-0005 refusal) and needs an ADR — do **not** just lower
+      deliberate move *away* from accuracy-first (ADR-rerank-then-verify-cited-answers refusal) and needs an ADR — do **not** just lower
       the threshold silently. Default recommendation: keep refusing; fix via (a)+(b).
 3c. **✅ ROOT-CAUSED + ergonomic fix shipped (2026-09-12) — edits to an already-ingested page don't
     propagate to answers.** Raised by the operator 2026-09-12 (Opera Cloud test page *"apples are the only
@@ -628,11 +628,11 @@
   (2026-09-12).** Customer isolation used to fail **OPEN**; the DB backstop (fail-open → fail-closed)
   is scope-GUC RLS (**option ii**, operator-confirmed) and is now live on Supabase — migration `0010`
   applied (`alembic upgrade head`, live head reached `0011`), `verify-isolation` **exit 0** incl. the
-  scope axis. Design of record: **ADR-0014**; retrieval phase doc `retrieval/phase-11.md`; migration
+  scope axis. Design of record: **ADR-db-level-customer-scope-isolation-backstop**; retrieval phase doc `retrieval/phase-11.md`; migration
   `0010_customer_scope_rls`. The per-user→customer edge binding is **11.1c — also DONE + live-proven**
   (the verified `X-Obi-Token` replaces the caller-reported scope; see the 11.1c ✅ block at the top of
   §0). This CRITICAL gate is closed; B/C/D are no longer barred by it.
-  - **Design + rationale now live in [ADR-0014](../adr/0014-Customer-Scope-Isolation-Backstop.md)**
+  - **Design + rationale now live in [ADR-db-level-customer-scope-isolation-backstop](../adr/db-level-customer-scope-isolation-backstop.md)**
     (fork (i) per-customer `source_id` vs (ii) scope-GUC RLS → chose **ii**; RESTRICTIVE-ANDs-not-OR;
     fail-closed on unset; `cardinality(tags)=0` = untagged-global; `'*'` opt-out; enforced independent
     of the flag). The session-log block below records the build; the `▶ IMMEDIATE NEXT` list at the top
@@ -645,7 +645,7 @@
 
 Two clean commits landed the previously-uncommitted work: **`7d79a07`** (13.3/13.4 docs + `.env`
 cleanup) and **`d6d6d67`** (Phase 11.1a backstop — migration `0010`, schema DDL, retriever/curated
-GUC wiring, ADR-0014, `retrieval/phase-11.md`, both new tests). Then extended the live operator step
+GUC wiring, ADR-db-level-customer-scope-isolation-backstop, `retrieval/phase-11.md`, both new tests). Then extended the live operator step
 `setup_supabase.py verify-isolation` (TDD) so it survives `0010` on a **tagged** corpus and proves the
 new axis:
 - The source-axis checks now set `app.allowed_knowledge_scopes='*'` (wildcard opt-out) so the
@@ -675,10 +675,10 @@ fail-open flag). Operator confirmed the design fork = **(ii) scope-GUC RLS**. Bu
   `test_flag_off_ignores_knowledge_scopes_argument` was rewritten to lock the new behavior in.
 - **Security posture** (securing-http-and-llm-endpoints gate): strengthens isolation on the existing
   `/chat` LLM-CALL surface; GUC set via **bound** `set_config` (never interpolated — SQL-injection safe);
-  fail-closed default-deny for tagged content; owner unaffected (ADR-0013 NO FORCE). Not a new endpoint,
+  fail-closed default-deny for tagged content; owner unaffected (ADR-supabase-postgres-store-without-force-rls NO FORCE). Not a new endpoint,
   so no new control-matrix surface; the per-user→customer edge binding remains 11.1c.
 - **Acceptance proven:** app predicate bypassed (flag off) → cross-customer chunk/curated returns **zero**;
-  general/untagged still returns; source axis unchanged. Docs: ADR-0014 + `retrieval/phase-11.md`.
+  general/untagged still returns; source axis unchanged. Docs: ADR-db-level-customer-scope-isolation-backstop + `retrieval/phase-11.md`.
 - **Gates:** automation **501 pass** (local-DSN override, +9 vs 492), `make boundaries` clean, ruff/
   format/pyright clean on every touched file. **Uncommitted.** **Live apply pending:** `alembic upgrade
   head` on Supabase (`0009`→`0010`).
@@ -689,7 +689,7 @@ Doc-only pass (no runtime behaviour changed). Cleared bucket **A** of the NEXT-U
 
 - **13.3 — doc reconciliation sweep.** Reconciled current-state docs to the now-live `0009` + closed P0:
   `how_this_works.md` (table count 10→**11**, added the `curated_knowledge_entry` row + TOC/heading),
-  `DESIGN.md` (11 tables; §3.2/3.3 rewritten — writer exempt by **ownership + `NO FORCE`** per ADR-0013,
+  `DESIGN.md` (11 tables; §3.2/3.3 rewritten — writer exempt by **ownership + `NO FORCE`** per ADR-supabase-postgres-store-without-force-rls,
   not `BYPASSRLS`; `FORCE`→`NO FORCE` DDL + a `0008`/`0009` explainer), `retrieval/phase-13.md` (Status
   header + the whole P0 `extensions`-blocker section flipped to **RESOLVED**), and both runbooks
   (`phase-13.1-*` got a **✅ COMPLETED** banner + fresh-deploy reframing; cutover step 2 `0001→0008`
@@ -864,7 +864,7 @@ DSNs compared by parsed user/host only). Scripts in session scratchpad (`reader_
    - **Four-scope retrieval isolation** via the exact `search_repo` predicate (real page IDs + stored
      metadata): general-only → General only; Mews → Mews+General; Opera → Opera+General; Toast →
      Toast+General. Each product returns **only its own page + the always-on `obi-general-test` base**
-     (ADR-0011 Decision 1); no product leaks into another; the old `general` Base corpus never
+     (ADR-knowledge-scope-tagging-and-filtering Decision 1); no product leaks into another; the old `general` Base corpus never
      appears. ✅
    - **`source_scope` reconfigured to match intent** (via `seed_source_scope`): added 4 active `page`
      roots (ids 10–13, `tags=[]` — labels alone scope them) for the test pages so reconciliation/
@@ -893,7 +893,7 @@ the real end-to-end retrieval as `rag_reader`: pgvector's `vector`/`halfvec` typ
 `anon`/`authenticated`/`postgres`, never to our reader; `search_path` also omits `extensions`). So
 every dense query (`embedding::halfvec(3072)`) fails as the reader with `type "halfvec" does not
 exist` / `permission denied for schema extensions`. Because retrieval MUST run as `rag_reader` (RLS,
-ADR-0004), **live semantic retrieval is currently broken on Supabase** — masked until now because the
+ADR-source-id-row-security-with-reader-writer-roles), **live semantic retrieval is currently broken on Supabase** — masked until now because the
 reader DSN was unset and retrieval fell back to the writer (which has the grant + search_path). Fix:
 `GRANT USAGE ON SCHEMA extensions TO rag_reader;` + `ALTER ROLE rag_reader SET search_path = public,
 extensions;` (or reader-engine `connect_args options=-csearch_path=public,extensions` for the path
@@ -964,7 +964,7 @@ every scope by design.
    (see the 🟡 Uncommitted block below); the `source_scope`/purge changes are live DB data, not code.
 
 ### ✅ Committed to `feat/rag-phase-3.5`
-- **Phase 6** — `db4d0af`: Supabase managed-Postgres cutover + drop `chunk` FORCE-RLS (ADR-0013,
+- **Phase 6** — `db4d0af`: Supabase managed-Postgres cutover + drop `chunk` FORCE-RLS (ADR-supabase-postgres-store-without-force-rls,
   migration `0008`, `setup_supabase.py`, cutover runbook, phase-6 docs, `schema.apply_chunk_rls`
   FORCE→NO-FORCE).
 - **Phase 13.1** — `f52d24a`: reader RLS on non-`chunk` tables (migration `0009` + schema reader
@@ -990,7 +990,7 @@ every scope by design.
   knowledge_scope.py` provider-tag filter); `answer_service` default; `verify_knowledge_scope_live.py`
   `--scope-a/--scope-b` defaults; config loader/settings docstrings; and ~13 test files (guards left
   intact: `Muse/Toast` clarification options, SQL-injection payloads, the `base` source tag,
-  case-insensitivity inputs fixed by hand). ADR-0011 amended. **Gate: 488 pass** (local DSN override),
+  case-insensitivity inputs fixed by hand). ADR-knowledge-scope-tagging-and-filtering amended. **Gate: 488 pass** (local DSN override),
   `make boundaries` clean, ruff check+format clean on every touched file. Confluence labels are matched
   case-insensitively against those exact names.
 - **Phase 10/12 switcher work (separate axis, still WIP).** `apps/web/*` scope-menu + knowledge-scopes
@@ -1115,9 +1115,9 @@ corpus to the public `anon` REST role.
   (1) ~~re-tag the live corpus `general`→`obi-general-test`~~ **SUPERSEDED** — operator abandoned the old
   Base corpus; it was purged and the 4 `obi-*-test` test pages are the live corpus (§0 VERIFIED LIVE);
   (2) the **frontend switcher** (`apps/web/.../knowledge-scopes.ts` + its 5 tests) still sends OLD wire
-  names — still open, tracked as §0 NEXT FIXES #4; (3) ADR-0011 amended (done); (4) 🔴 NEW: reader
+  names — still open, tracked as §0 NEXT FIXES #4; (3) ADR-knowledge-scope-tagging-and-filtering amended (done); (4) 🔴 NEW: reader
   `extensions` USAGE (§0 NEXT FIXES #1) + commit the rename (§0 NEXT FIXES #7).
-- **✅ Committed (2026-09-09):** Phase 6 = `db4d0af` (Supabase cutover + FORCE-RLS drop, ADR-0013,
+- **✅ Committed (2026-09-09):** Phase 6 = `db4d0af` (Supabase cutover + FORCE-RLS drop, ADR-supabase-postgres-store-without-force-rls,
   migration 0008, setup_supabase.py, runbook, phase-6 docs). Phase 13.1 = `f52d24a` (reader RLS,
   migration 0009 + schema helpers, tests, runbook, phase-13 doc, PLAN ledger). schema.py was split by
   hunk across the two. **Still uncommitted (separate axis, Phase 10/12 switcher work):** `apps/web/*`
@@ -1209,7 +1209,7 @@ built+tested, Option B/secure (13.1) — ✅ COMMITTED `f52d24a` and ✅ APPLIED
   core), `rag_agent` (API). Zero deep cross-feature imports — every edge goes through a facade. 11.2
   hardens the last soft spots (shared config object, a mis-filed repo, secret partitioning).
 - **Into separate repos: NO — and that's now intentional.** Stays one monorepo (pnpm + `uv`).
-- **The knowledge/vector layer as its own *service*: it CANNOT be, by design** (ADR-0004) — its
+- **The knowledge/vector layer as its own *service*: it CANNOT be, by design** (ADR-source-id-row-security-with-reader-writer-roles) — its
   isolation *is* Postgres RLS on one shared DB. "Own source of truth" = the retrieval core as a
   package + managed Postgres by DSN (Supabase, live). Never a bespoke data microservice.
 
@@ -1292,7 +1292,7 @@ review (one new code change this run: a preflight bugfix, below).
    table yet". Fixed to check `to_regclass` first. The local dry-run missed it because local was
    already migrated. Script stays ruff/format/pyright clean; app+tests don't import it.*
 2. **alembic upgrade head** ✓ → `0008_drop_force_rls`; `chunk` confirmed `rowsecurity=t
-   forcerowsecurity=f`, policy `chunk_source_read` present (ADR-0013 state).
+   forcerowsecurity=f`, policy `chunk_source_read` present (ADR-supabase-postgres-store-without-force-rls state).
 3. **provision-reader** ✓ — `rag_reader.<ref>` created; `DATABASE_READER_URL` written to `.env`
    (password generated, never printed).
 4. **corpus load** ✓ — `pg_dump --data-only` of the 5 **content** tables (page_source/document/
@@ -1302,7 +1302,7 @@ review (one new code change this run: a preflight bugfix, below).
    self-FK was temporarily made deferrable for the load then reverted to `NOT DEFERRABLE` → schema ==
    migrations. Operational logs (job/query_trace/reconciliation_run) deliberately NOT transplanted.
 5. **prove parity** ✓ — `verify-isolation` on live Supabase: owner **85**, reader no-GUC **0**,
-   reader scoped **85**, reader bogus **0** (ADR-0004 default-deny holds; also proves `rag_reader`
+   reader scoped **85**, reader bogus **0** (ADR-source-id-row-security-with-reader-writer-roles default-deny holds; also proves `rag_reader`
    authenticates through the pooler). `make eval` on the live store: retrieval_smoke recall@5
    **1.000**/mrr 0.750, ambiguity 1.000, permission 0.667, out_of_corpus 0.000. Local isolation
    suite **24 passed**; full suite **483 passed**, boundaries clean, ruff/format/pyright clean on the
@@ -1316,7 +1316,7 @@ derives its `<db>_test` DB from `.env`'s `DATABASE_URL` and provisions roles as 
 `DATABASE_URL` overridden to the local docker DSN (see the runbook's step 5 / gotcha).
 
 **⭐ NEXT — operator decisions (nothing auto-runs):**
-- (a) **Commit or discard** the Phase-6 working tree (ADR-0013 + migration 0008 + `setup_supabase.py`
+- (a) **Commit or discard** the Phase-6 working tree (ADR-supabase-postgres-store-without-force-rls + migration 0008 + `setup_supabase.py`
   incl. the preflight fix + this runbook + docs). `.env` is gitignored and must NOT be committed.
 - (b) **Phase 11.1a** (customer-axis fail-open backstop) MUST land **before any PUBLIC deploy** — the
   source-axis RLS proven here does NOT cover the mews/opera/toast scope axis.
@@ -1340,7 +1340,7 @@ derives its `<db>_test` DB from `.env`'s `DATABASE_URL` and provisions roles as 
   (DSNs overridden inline, `.env` untouched):** `preflight` → pgvector 0.8.5, alembic head `0008`,
   identity ok; reader-DSN derivation → `rag_reader.vtpbwkbbkfukfmytlqns` (sslmode preserved);
   `verify-isolation` on the real 85-chunk corpus → owner 85 / reader-no-GUC **0** / scoped **85** /
-  bogus **0** = ADR-0004 default-deny holds. The dry-run **caught + fixed a real bug** (`SET LOCAL`
+  bogus **0** = ADR-source-id-row-security-with-reader-writer-roles default-deny holds. The dry-run **caught + fixed a real bug** (`SET LOCAL`
   can't bind params → switched to `set_config(name, value, true)`), so the live run won't hit it.
 - **Corpus-load path chosen = `pg_dump --data-only` from local → restore into Supabase** (no LLM
   spend). Local dev corpus verified intact: 9 page_source / 9 document / 9 document_version / **85
@@ -1350,25 +1350,25 @@ derives its `<db>_test` DB from `.env`'s `DATABASE_URL` and provisions roles as 
   or Toast-only document**, so "Mews-scoped can't retrieve Toast-only" is **not demonstrable on real
   data**. It is proven by the automated `test_retrieval_knowledge_scope.py` (stamps synthetic
   mews/toast tags, asserts structural exclusion) — that stays the acceptance evidence; a live
-  synthetic check can be added on Supabase if wanted. The ADR-0004 **source-axis RLS** default-deny
+  synthetic check can be added on Supabase if wanted. The ADR-source-id-row-security-with-reader-writer-roles **source-axis RLS** default-deny
   IS demonstrable live (`verify-isolation`).
 - **Blocker status:** the "replace the placeholder DB password" blocker is now **CLEARED** (operator
   confirmed the real password is in `.env`). The remaining sequence is the ⭐ NEXT STEPS checklist at
   the top of this entry. Nothing below this entry is changed by this prep.
 
-**2026-09-09 (DONE, code-only — Phase 6 step 1): ADR-0013 written + the `FORCE`-RLS fix landed via
+**2026-09-09 (DONE, code-only — Phase 6 step 1): ADR-supabase-postgres-store-without-force-rls written + the `FORCE`-RLS fix landed via
 TDD. Not committed (left in the working tree for the operator to review/commit).** This is exactly
 "step 1 above" from the 2026-09-08 entry — the one piece startable with no infra/secrets. What
 shipped:
-- **ADR-0013** (`docs/adr/0013-Managed-Postgres-Vector-Store-And-Force-RLS-Drop.md`, Accepted):
+- **ADR-supabase-postgres-store-without-force-rls** (`docs/adr/supabase-postgres-store-without-force-rls.md`, Accepted):
   production vector store = **Supabase Cloud on AWS**, RDS/Aurora = reversible DSN-swap fallback;
   connect via session-pooler/direct **:5432** (never `:6543`); confirm **pgvector ≥ 0.8**; and the
-  decision to **drop `FORCE`** on `chunk` RLS. ADR-0004 preserved, not replaced.
+  decision to **drop `FORCE`** on `chunk` RLS. ADR-source-id-row-security-with-reader-writer-roles preserved, not replaced.
 - **`FORCE`-RLS fix.** `apply_chunk_rls` (`platform/db/schema.py`) now issues `ENABLE` + explicit
   `NO FORCE` (was `ENABLE` + `FORCE`); new migration **`0008_drop_force_rls`** (`ALTER TABLE chunk
   NO FORCE ROW LEVEL SECURITY`; downgrade re-`FORCE`s). Verified reversible on a real DB
   (`relforcerowsecurity` f→t→f across down/up). Now a non-superuser **owner** (the managed-Postgres
-  writer) reads its own rows; `rag_reader` (non-owner) stays fully isolated — ADR-0004 read-path
+  writer) reads its own rows; `rag_reader` (non-owner) stays fully isolated — ADR-source-id-row-security-with-reader-writer-roles read-path
   guarantee unchanged.
 - **TDD, red→green.** New `confluence_sync/tests/test_force_rls_managed_postgres.py` reproduces the
   managed-Postgres condition by making a **non-superuser role own `chunk`** and asserting it can read
@@ -1379,7 +1379,7 @@ shipped:
 - **Gate green:** `make check` → **483 passed** (was 481, +2), `make boundaries` clean, migration
   reversible, ruff/format/pyright clean on every touched file (baseline unchanged). Phase docs
   updated: `ingestion/phase-6.md` (step-1 landed + corrected role-recreation mechanism) and
-  `ingestion/phase-3.5.md` (superseded-mechanism forward-ref to ADR-0013).
+  `ingestion/phase-3.5.md` (superseded-mechanism forward-ref to ADR-supabase-postgres-store-without-force-rls).
 - **Next = operator step 2** (infra — ask/act by the user): create the Supabase project in an AWS
   region, confirm pgvector ≥ 0.8, hand back the **writer/owner** `DATABASE_URL` (session-pooler/
   direct :5432, `postgresql+psycopg://…`). Then the agent does step 3 (migrate as owner, derive
@@ -1392,11 +1392,11 @@ shipped:
 DESIGN + widget + reference; the full 5.7k-line PLAN.md; all 11 ADRs; plus a direct read of
 `models.py`/`schema.py`/`retriever.py`/`settings.py`). Conclusion, split by claim:
 
-- **Engine = Postgres + pgvector — ratified, ~100% confirmed.** Not an inference: **ADR-0001** declares
-  the stack (Postgres 16 + pgvector + tsvector), **ADR-0002** builds the retrieval core on pgvector
-  HNSW + tsvector GIN + RRF, **ADR-0004** makes Postgres **RLS** the isolation spine, and the docs
+- **Engine = Postgres + pgvector — ratified, ~100% confirmed.** Not an inference: **ADR-fastapi-nextjs-postgres-pgvector-stack** declares
+  the stack (Postgres 16 + pgvector + tsvector), **ADR-hybrid-retrieval-over-versioned-chunk-store** builds the retrieval core on pgvector
+  HNSW + tsvector GIN + RRF, **ADR-source-id-row-security-with-reader-writer-roles** makes Postgres **RLS** the isolation spine, and the docs
   *explicitly rule out switching* — `DESIGN.md:498` / `PLAN.md:4317`: *"No new vector store or search
-  engine. Postgres+pgvector+Cohere stays the stack (ADR-0001/0002)."* All three requirement-sweeps
+  engine. Postgres+pgvector+Cohere stays the stack (ADR-fastapi-nextjs-postgres-pgvector-stack / ADR-hybrid-retrieval-over-versioned-chunk-store)."* All three requirement-sweeps
   found **zero** requirements pgvector can't meet; everything (dense, keyword, RLS, ACL, versioning,
   tags, job queue, query_trace, curated knowledge) lives in one Postgres store.
 - **Host = Supabase Cloud on AWS — FINAL** (RDS/Aurora = reversible, DSN-swap fallback). Confirmed
@@ -1418,7 +1418,7 @@ the **session-pooler/direct :5432**, never the `:6543` transaction pooler; (d) o
 backend goes public**.
 
 **Agreed setup order (operator + agent, "you + me"):**
-1. **Agent, code-only (no infra/secrets):** write **ADR-0013** (Supabase-on-AWS + RDS fallback + the
+1. **Agent, code-only (no infra/secrets):** write **ADR-supabase-postgres-store-without-force-rls** (Supabase-on-AWS + RDS fallback + the
    drop-`FORCE` RLS design) and land the **`FORCE`-RLS fix** with TDD isolation tests. `make check` green.
 2. **Operator:** create the Supabase project in an AWS region; confirm pgvector ≥ 0.8; hand back **just
    the writer/owner `DATABASE_URL`** (session-pooler/direct :5432, `postgresql+psycopg://…`) — the reader
@@ -1434,7 +1434,7 @@ backend goes public**.
 AWS-direct re-pivot (line ~2203 "Supabase dropped, now RDS/Aurora"; blocker #1) — **both corrected** to
 the final Supabase-primary state. The doc is now internally consistent.
 
-**Next:** step 1 above (ADR-0013 + `FORCE`-RLS fix) — code-only, startable now on go-ahead. Ask before
+**Next:** step 1 above (ADR-supabase-postgres-store-without-force-rls + `FORCE`-RLS fix) — code-only, startable now on go-ahead. Ask before
 any infra/migration step (step 2+).
 
 **2026-09-07 (user decision, FINAL for now): production vector store = Supabase Cloud (managed Postgres
@@ -1460,17 +1460,17 @@ AWS account/VPC/IAM."** That clarification flips the recommendation back to **Su
   **Fix:** writer OWNS the tables; leave RLS **`ENABLE`d but drop `FORCE`** — the non-owner `rag_reader`
   stays policy-bound (isolation unchanged) while the owner writer is exempt without SUPERUSER/BYPASSRLS.
   Small, security-sensitive change to `apply_chunk_rls` (+ migration + isolation tests), TDD-gated.
-  Preserves ADR-0004's read-path isolation. This is the one non-trivial bit and it's needed on either
+  Preserves ADR-source-id-row-security-with-reader-writer-roles's read-path isolation. This is the one non-trivial bit and it's needed on either
   host.
-- **Durable decision → ADR-0013** (*"Production vector store = Supabase Cloud on AWS; RDS/Aurora as a
-  reversible fallback"*), the first task of Phase 6. ADR-0004 (RLS model) is preserved, not replaced.
+- **Durable decision → ADR-supabase-postgres-store-without-force-rls** (*"Production vector store = Supabase Cloud on AWS; RDS/Aurora as a
+  reversible fallback"*), the first task of Phase 6. ADR-source-id-row-security-with-reader-writer-roles (RLS model) is preserved, not replaced.
 - **Interaction flagged:** the CRITICAL fail-open customer-isolation finding (`retriever.py`, Phase
   11.1a) is *must-fix before the backend goes public* — if this deploy makes the backend public, land
   **11.1a before/with it**. 10.8's build-half is still uncommitted; this rescope is a doc edit only.
 - **Blocker #8 (below):** operator creates the Supabase project (AWS region), then hands back the
   **session-pooler/direct** connection string (port 5432, `postgresql+psycopg://…` — NOT the `:6543`
   transaction pooler) for writer + a `rag_reader` reader DSN, plus a **pgvector ≥ 0.8** confirmation.
-- **Next:** write ADR-0013 + the `FORCE`-RLS fix (TDD), then operator stands up Supabase per Phase 6's
+- **Next:** write ADR-supabase-postgres-store-without-force-rls + the `FORCE`-RLS fix (TDD), then operator stands up Supabase per Phase 6's
   setup plan and hands back the DSNs + pgvector version. Ask before any infra/migration step.
 
 **Same session (2026-08-24): Phase 11 (separation of concerns) + Phase 12 (renumber) SCOPED and written
@@ -1483,7 +1483,7 @@ decisions (via `AskUserQuestion`) are now Phase 11/12 above. Key results:
   `confluence_sync`+`ingestion` = write path, `rag_agent` = API/orchestration; zero deep cross-feature
   imports). FE↔BE is already HTTP-only and loosely coupled (browser never holds `CHAT_API_KEY`).
 - **The vector DB can't be its own *service*** — isolation is Postgres RLS + `rag_reader` role + a
-  per-txn GUC on one shared DB (ADR-0004). "Its own source of truth" = **package-level retrieval-core
+  per-txn GUC on one shared DB (ADR-source-id-row-security-with-reader-writer-roles). "Its own source of truth" = **package-level retrieval-core
   extraction + a managed Postgres by DSN** (the Phase 6 Supabase/managed-Postgres seam), not a data microservice.
 - **CRITICAL security finding — customer isolation fails OPEN.** mews/opera/toast/general is enforced
   *only* by an app-layer `tags && :scopes` predicate (all four under one `source_id`, no RLS on the
@@ -1491,7 +1491,7 @@ decisions (via `AskUserQuestion`) are now Phase 11/12 above. Key results:
   which fails open (`retriever.py:128-132`) → flag off / one dropped predicate = **all four customers
   leak**. Source RLS fails closed; customer scope does not. → **Phase 11.1a** adds a DB backstop, to be
   done **before** the backend goes public on Railway (user decision).
-- **Repo split is ADR-0010-blocked** → 11.4 needs a superseding **ADR-0012** + three user decisions
+- **Repo split is ADR-keep-frontend-backend-in-one-repo-for-now-blocked** → 11.4 needs a superseding **ADR-0012** + three user decisions
   (below). Full 7-item split design already in `docs/future-ideas/IDEAS.md` #5.
 - **User decisions this session:** (1) *full repo split* (do 11.1–11.4); (2) *fix the fail-open leak
   before public deploy*; (3) *renumber remaining Phase 10 → Phase 12* (10.8→12.1, 10.10→12.2, 10.9→12.3).
@@ -1560,11 +1560,11 @@ content"). Mapped to the system and three decisions taken via `AskUserQuestion`:
   given, this agent registers the webhook + verifies live. Until then, auto-update rides the
   reconciliation sweep (scheduled/manual), not real time. (Folded into §10.8.)
 - **Scope strictness → "selected tag + general" (NO code change).** On the Muse (`mews`) scope you see
-  `mews` + shared `general` docs — exactly ADR-0011 Decision 1, already built and live (10.4/10.7). The
+  `mews` + shared `general` docs — exactly ADR-knowledge-scope-tagging-and-filtering Decision 1, already built and live (10.4/10.7). The
   strict "only the selected tag" alternative was declined.
 - **Clarified for the user, recorded so it isn't relitigated:** update granularity is **per-page, not
   per-word** — a content change re-embeds that page's chunks; a label-only change is metadata-only (no
-  re-embed). And "Muse" = the `mews` scope (Mews PMS, ADR-0011), not a new tag, unless the user later
+  re-embed). And "Muse" = the `mews` scope (Mews PMS, ADR-knowledge-scope-tagging-and-filtering), not a new tag, unless the user later
   adds a literal `muse` to `config/knowledge_scopes.json`.
 
 **Order (user, 2026-08-24): 10.8 first, then 10.10.** Build the **widget scope switcher (§10.8)** first
@@ -1605,7 +1605,7 @@ a recognized knowledge-scope tag and retrieval filters by it. Sequence (operator
 - **No HTTP/LLM surface changed.** The flip is an `.env` toggle over the already-security-reviewed
   10.4 filter path; `POST /chat`'s control set is unchanged. Confirmed the corpus-all-`general` state
   means scoping to any provider still surfaces general content (expected — `general` is always
-  included, ADR-0011 Decision 1); real per-provider exclusion becomes visible once provider-specific
+  included, ADR-knowledge-scope-tagging-and-filtering Decision 1); real per-provider exclusion becomes visible once provider-specific
   pages are labeled (10.8's job).
 - **One test fixed by the flip (not a regression).** Flipping the `.env` flag surfaced
   `test_settings.py::test_enable_knowledge_scope_filtering_defaults_to_false`, which asserted the code
@@ -1846,7 +1846,7 @@ new prop, forwarded unmodified throughout. **Two corrections beyond the plan's o
 required for correctness:** `CachingAnswerService`'s exact-match cache key and the `Idempotency-Key`
 replay cache's binding both now include `knowledge_scope` — without either, a request differing only
 in `knowledge_scope` could replay another scope's cached Answer, a cross-scope leak of the same shape
-ADR-0011 exists to prevent. 20 new tests (7 `test_answer_service.py`, 3 `test_answer_cache.py`, 5
+ADR-knowledge-scope-tagging-and-filtering exists to prevent. 20 new tests (7 `test_answer_service.py`, 3 `test_answer_cache.py`, 5
 `test_chat_endpoint.py`, 1 `route-handlers.test.ts`, 2 `chat-session-provider.test.tsx`, plus the
 `validation.ts`/`chat.yaml` passthrough exercised by the same). `make check` → **453 passed** (was
 441, +12 backend), `make boundaries` clean, `pnpm --filter web test` → **162 passed** (was 159, +3),
@@ -1937,7 +1937,7 @@ surgically to 10.2's own code (`sync_service.py`/`FEATURES.md` were entangled wi
 already-uncommitted attachment-wiring change from an earlier session; extracted via the same
 base-file-reconstruction technique as 10.1's `settings.py` incident, verified byte-exact against
 HEAD before staging) plus the accumulated Phase 10 documentation (`PLAN.md`'s Phase 10 section,
-ADR-0011, `docs/rag/{ingestion,retrieval}/phase-10.md`) that had also been sitting uncommitted
+ADR-knowledge-scope-tagging-and-filtering, `docs/rag/{ingestion,retrieval}/phase-10.md`) that had also been sitting uncommitted
 since earlier sessions — bundled in per the user's explicit choice, since splitting docs about the
 same initiative further wasn't worth the fragility. The rest of the tree's unrelated uncommitted
 work (attachment wiring, widget access-token auth, other docs) was left exactly as it was — `git
@@ -1989,7 +1989,7 @@ a Confluence label actually propagates to the RAG database automatically, not ju
 and see different data per scope. Clarified two likely dictation errors before writing anything, via
 `AskUserQuestion` rather than guessing: "News" confirmed to mean `general` (already the always-included
 scope, not a 5th new one); "Muse page" confirmed to mean the **Mews** platform, not this repo's own
-`Muse` codename (ADR-0006) — the exact collision ADR-0011 already warned about for `toast`, now also
+`Muse` codename (ADR-defer-product-and-package-extraction) — the exact collision ADR-knowledge-scope-tagging-and-filtering already warned about for `toast`, now also
 disclosed for `mews`/`Muse`. Read the actual code before scoping the work: `label_added`/`label_deleted`
 were already in `SYNC_EVENTS` and already routed to a `sync_page` job (`schemas/events.py` +
 `event_service.py`), and `handle_sync_page`'s label-only path already updates `tags` via
@@ -2051,7 +2051,7 @@ real production pagination bug along the way, indexed it, verified live end-to-e
 
 **Same session (2026-08-21): Phase 10 scoped (design-only, no code) — knowledge-scope tagging.**
 Promotes `docs/future-ideas/IDEAS.md` idea #8 (multi-provider platform architecture) + the
-retrieval-side gap idea #2 already identified: `tags` on `page_source`/`chunk` (ADR-0004) has been
+retrieval-side gap idea #2 already identified: `tags` on `page_source`/`chunk` (ADR-source-id-row-security-with-reader-writer-roles) has been
 written at every ingestion activation since 3.5.3 and read by nothing at query time. `docs/adr/
 0011-Knowledge-Scope-Tagging-And-Retrieval-Filtering.md` records the decision (label-driven per-page
 tags, unioned with existing `source_scope` tags, hard filter behind a dark-by-default flag, request-
@@ -2320,8 +2320,8 @@ change, matching its own scope). Web: `pnpm --filter web test` → **133/133 pas
 9.5, the last sub-step to touch `apps/web`); `pnpm --filter web exec tsc --noEmit` clean. **No dev
 servers were live at the time** (confirmed via `lsof` before starting), so `pnpm --filter web build`
 was run rather than skipped — compiled cleanly, all 5 routes generated, no errors. **Zero
-regressions across every check.** **ADR-0008 read fresh against everything that actually shipped
-across 9.1-9.8 — all 9 decisions match, no amendment needed** (same convention as ADR-0009's closure
+regressions across every check.** **ADR-ambiguity-clarification-then-fallback-answer read fresh against everything that actually shipped
+across 9.1-9.8 — all 9 decisions match, no amendment needed** (same convention as ADR-vision-grounded-image-analysis's closure
 at 7.7: the ADR document's own `Status: Accepted` line is left as-is; closure is recorded here, in
 the ledger, against the shipped reality): the pre-retrieval short-circuit mirrors small-talk's shape
 exactly (decision 1); `enable_clarification_branch` shipped default `false` (decision 2); `Answer`
@@ -2332,7 +2332,7 @@ static CTA, Salesforce noted as the eventual target, no credential invented (dec
 reused the existing `ambiguity`/`answer` `EvalKind` values, no new literal added (decision 7); no
 MMR/diversity filtering, no new vector store, no agent-loop rewrite were built anywhere in this phase
 (decision 8); sequencing waited on Phase 7 as directed, with Phase 4.8's half of that dependency
-formally dropped via ADR-0010 (decision 9). **Docs closed out:** this ledger, Phase 9's own header
+formally dropped via ADR-keep-frontend-backend-in-one-repo-for-now (decision 9). **Docs closed out:** this ledger, Phase 9's own header
 (now 9.1-9.9 all done), the phase-9 summary-table row, and `apps/automation/app/features/FEATURES.md`
 (already current as of 9.8's own entry — no further edit needed). **No code changed this pass — docs
 only.**
@@ -2380,7 +2380,7 @@ sub-step], `make boundaries` clean, ruff/pyright 2/15/34, web `pnpm --filter web
 `tsc --noEmit` clean — all matched/reconciled against the ledger) before starting. Added
 `evaluation/metrics/fallback_metrics.py` (`fallback_rate`, `citation_grounding_rate`, both exported
 at the feature root), a new `evaluation/datasets/out_of_corpus.json` (one case, empty
-`relevant_chunk_ids`, `answer` `EvalKind` — no new literal, ADR-0008 decision 7) wired into
+`relevant_chunk_ids`, `answer` `EvalKind` — no new literal, ADR-ambiguity-clarification-then-fallback-answer decision 7) wired into
 `run_baseline._DATASET_FILES`, and `confluence_sync/tests/test_fallback_eval.py` — a DB-backed
 end-to-end proof against the real `AnswerService` that `ambiguity.json`'s 3 cases actually trigger
 `needs_clarification=True` (not just retrieval recall, which is all that dataset was scored on
@@ -2416,7 +2416,7 @@ full narrative.** User asked to read the plan and continue; ran the pre-phase ve
 live first (`make check` 354 passed, `make boundaries` clean, ruff/pyright 2/15/34, all matched the
 ledger) before starting. Added the `human_handoff` structured log line to both refusal branches in
 `answer_service.py` and a `mailto:` "connect me to a human" CTA (`HandoffCta`) to `message-bubble.tsx`,
-per ADR-0008 decision 6 exactly — a logged event plus static contact copy, no real integration.
+per ADR-ambiguity-clarification-then-fallback-answer decision 6 exactly — a logged event plus static contact copy, no real integration.
 Asked the user what the CTA's actual contact target should be rather than inventing one; the answer
 was `test@gmail.com` as an explicit placeholder, recorded as an open decision in
 `docs/future-ideas/IDEAS.md` #1. Found and fixed a real, order-dependent test flake along the way:
@@ -2502,7 +2502,7 @@ repo's own standing rule says a production build corrupts a live `next dev` serv
 place; `tsc --noEmit` + vitest are the substitute. **Zero regressions.** Docs closed out: this
 ledger, the Phase 7 table row, Phase 7's own header/7.7 entry, and `apps/automation/app/features/
 FEATURES.md`'s `rag_agent` block (dropped a stale "web widget doesn't send/render yet" line and
-added the 7.6 red-team summary) — see Phase 7's own 7.7 entry below for the full detail. ADR-0009
+added the 7.6 red-team summary) — see Phase 7's own 7.7 entry below for the full detail. ADR-vision-grounded-image-analysis
 closed as-is (no amendment — every decision matches what shipped). One small **pre-existing, Phase-
 4.7-owned** doc-drift item found this pass in `apps/web/src/features/chat/FEATURES.md` — flagged
 below, then actually fixed at 7.8 once it turned out to be quick — see that entry for the correction
@@ -2592,7 +2592,7 @@ user|assistant and non-empty content"`, and a desktop-screenshot file upload giv
   Claude-in-Chrome extension wasn't connected this session). Screenshot-capture → send with no text
   worked live. But sending a **second** message (a new image + real typed text) right after failed
   with the exact same `"history turns must have role user|assistant and non-empty content"` error
-  Bug B had just fixed — on a perfectly normal, non-empty turn this time. Root cause: ADR-0009
+  Bug B had just fixed — on a perfectly normal, non-empty turn this time. Root cause: ADR-vision-grounded-image-analysis
   decision 2 means images are resent only on the newest turn; once the first (image-only,
   `content: ""`) turn ages out of "newest," its image is stripped, leaving it with neither content
   nor images — Bug B's conditional fix only covered a turn *currently* carrying an image. Checked
@@ -2621,9 +2621,9 @@ that block it regardless of ordering). **Superseded by the entry immediately bel
 **Same session, immediately after: Phase 4.8 removed from the active plan, moved to
 `docs/future-ideas/IDEAS.md` (2026-08-12).** The user confirmed the repo-separation phase is a
 future want, not near-term work — nothing is live yet (no second product/deployment, no registry
-chosen, no repo names decided), matching exactly the concern ADR-0006 originally raised before
-ADR-0007 reversed it. Recorded as `docs/adr/0010-Redefer-Repository-Separation.md`, which reverses
-ADR-0007's Decision item 1 and reinstates ADR-0006's original deferral. **Phase 4.8's full content
+chosen, no repo names decided), matching exactly the concern ADR-defer-product-and-package-extraction originally raised before
+ADR-separate-frontend-backend-repos reversed it. Recorded as `docs/adr/keep-frontend-backend-in-one-repo-for-now.md`, which reverses
+ADR-separate-frontend-backend-repos's Decision item 1 and reinstates ADR-defer-product-and-package-extraction's original deferral. **Phase 4.8's full content
 (goal, all 7 sub-steps, the three open decisions) moved to `docs/future-ideas/IDEAS.md` idea #5, not
 deleted.** Its own section below is now a short pointer instead of the full spec. **Sequencing
 simplifies:** Phase 9 (9.2 onward) was waiting on "Phase 7 + Phase 4.8"; with 4.8 removed, it now
@@ -2638,8 +2638,8 @@ per this repo's own no-auto-start rule. No code changed this pass — docs only 
 
 **NEXT (VERIFIED 2026-09-08 — see §0's newest entry for the full audit): Phase 6 — migrate the
 production vector store to Supabase Cloud (managed Postgres + pgvector, in an AWS region; RDS/Aurora =
-reversible fallback). Engine ratified by ADR-0001/0002/0004; host FINAL. Agreed operator+agent setup
-order is in §0. Step 1 is code-only and startable now: write ADR-0013 + land the `FORCE`-RLS fix
+reversible fallback). Engine ratified by ADR-fastapi-nextjs-postgres-pgvector-stack / ADR-hybrid-retrieval-over-versioned-chunk-store / ADR-source-id-row-security-with-reader-writer-roles; host FINAL. Agreed operator+agent setup
+order is in §0. Step 1 is code-only and startable now: write ADR-supabase-postgres-store-without-force-rls + land the `FORCE`-RLS fix
 (needed on any managed Postgres — no superuser) with TDD. No infra/secrets until the operator creates
 the Supabase project and hands back the writer/owner DSN (session-pooler/direct :5432, not :6543; the
 reader DSN is agent-derived) and a pgvector ≥ 0.8 confirmation (blocker #8). Before any PUBLIC deploy, land Phase 11.1a (fail-open
@@ -2659,7 +2659,7 @@ detail.
 **Phase 5.1 (`CHAT_API_KEY` rotation), 5.2 (exact-match answer caching), and 5.3 (prompt-injection +
 permission/isolation red-team) are done.**
 
-**✅ Phase 9 is COMPLETE (2026-08-13) — all 9 sub-steps done, exit gate 9.9 green, ADR-0008 closed.**
+**✅ Phase 9 is COMPLETE (2026-08-13) — all 9 sub-steps done, exit gate 9.9 green, ADR-ambiguity-clarification-then-fallback-answer closed.**
 This was deliberately the plan's last phase — no phase follows it. See §0's newest entry above and
 Phase 9's own section below for the full 9.9 exit-gate narrative and commit refs (`771cfce` 9.1;
 `ba5416a`/`d20257c`/`f9ed445`/`10947d8`/`8e1450a` 9.2-9.7; `34706e1` 9.8; 9.9 is docs-only, not yet
@@ -2707,7 +2707,7 @@ separately later the same session, see above.
 sending "test" in the widget got "Not found in the docs — routed to a human." Checked the local dev
 DB first rather than assuming a bug: `page_source`/`chunk`/`document_version` were all **0 rows** —
 nothing has ever been ingested locally, so every query refuses regardless of relevance, exactly as
-the refusal-threshold design intends (ADR-0005 §7). Separately, the user raised a real product
+the refusal-threshold design intends (ADR-rerank-then-verify-cited-answers §7). Separately, the user raised a real product
 question: should a greeting/meta message really hard-refuse just because it was never going to
 match a document? Agreed a narrow fix — `rag_agent/domain/small_talk.py`'s closed, exact-match
 `is_small_talk()` (never fuzzy/substring/LLM-based, so a real question that merely starts with a
@@ -2735,7 +2735,7 @@ supplied an external best-practices brief on unanswerable/vague-query fallback (
 confidence indicators, human hand-off, eval metrics) and asked for one final phase covering
 whatever's genuinely missing, without touching the shipped pipeline. Checked first, per this
 ledger's own habit: hybrid RRF retrieval, cross-encoder reranking, LLM query rewrite + CRAG retry,
-and confidence-threshold refusal (ADR-0005 §7) already cover most of the brief — only the
+and confidence-threshold refusal (ADR-rerank-then-verify-cited-answers §7) already cover most of the brief — only the
 clarification branch, differentiated refusal reasons, a real (if minimal) human hand-off, and
 fallback-quality eval metrics were actually missing. Added as **Phase 9** (see its own section,
 after Phase 7) — 9 sub-steps scoped, none started. **Two scope decisions confirmed with the user
@@ -2746,7 +2746,7 @@ the eventual target once that's prioritized. Promotes `docs/future-ideas/IDEAS.m
 point here.
 
 **Same session, follow-up: 9.1 done + explicit sequencing locked.** User confirmed 9.1 (design doc +
-ADR-0008) is documentation-only and can be written now without waiting: `docs/adr/0008-Ambiguity-
+ADR-ambiguity-clarification-then-fallback-answer) is documentation-only and can be written now without waiting: `docs/adr/0008-Ambiguity-
 Clarification-Fallback.md` + `docs/rag/DESIGN.md` §11 are done, locking the `Answer`-extension
 contract shape (no new SSE event), the 3-value refusal-reason taxonomy (`no_candidates | weak_score
 | no_citations`, "ambiguous" deliberately not a 4th value), and eval-kind reuse (`ambiguity`, no new
@@ -2758,19 +2758,19 @@ under Phase 9 or 4.8 starts until Phase 7 is done. Nothing committed yet.
 **Commit gap closed — 2026-08-11 (new session).** Everything the paragraphs above marked
 "uncommitted" — the small-talk fix, Phase 4.7's completion (incl. 4.7.8, its test-gap closure, and
 the removed `/chat` route), and this session's docs (PLAN.md, DESIGN.md §11/§12,
-OBI-WIDGET-DESIGN.md, IDEAS.md, ADR-0008) — was sitting uncommitted at this session's start.
+OBI-WIDGET-DESIGN.md, IDEAS.md, ADR-ambiguity-clarification-then-fallback-answer) — was sitting uncommitted at this session's start.
 Per `CLAUDE.local.md` §2, re-verified live before committing, not after: `make check` (repo root)
 → **312 passed**, `make boundaries` clean, ruff-check/format and pyright unchanged at the 2/15/34
 baseline; `pnpm --filter web test` → **115/115 passed**; `tsc --noEmit` and `pnpm --filter web
 build` both clean. **No gaps found.** Split into three independently-verified commits per the
 user's own review of the bundling: `90e96b1` (backend — the small-talk short-circuit feature),
 `bf99635` (web — Phase 4.7 in full, incl. 4.7.8), `771cfce` (docs — this ledger + DESIGN.md +
-OBI-WIDGET-DESIGN.md + IDEAS.md + ADR-0008).
+OBI-WIDGET-DESIGN.md + IDEAS.md + ADR-ambiguity-clarification-then-fallback-answer).
 
-**New this session (2026-08-11), same session: Phase 7.1 — design doc + ADR-0009 done.** Per this
+**New this session (2026-08-11), same session: Phase 7.1 — design doc + ADR-vision-grounded-image-analysis done.** Per this
 repo's own rule that Phase 7 needed a real design pass (and an ADR, since it extends
-ADR-0005-governed refusal logic) before any code — the same gate Phase 9.1 used —
-`docs/adr/0009-Vision-Grounded-Image-Analysis.md` + `docs/rag/DESIGN.md` §12 are done, locking:
+ADR-rerank-then-verify-cited-answers-governed refusal logic) before any code — the same gate Phase 9.1 used —
+`docs/adr/vision-grounded-image-analysis.md` + `docs/rag/DESIGN.md` §12 are done, locking:
 inline base64 on the newest `ChatTurn` only (no upload endpoint, no per-turn resend of prior
 images); retrieval still runs, only `decide_refusal` gains a `has_image` gate; a second,
 independent `generate_image_analysis` call that never enters `enforce_citations`, so the grounded,
@@ -2782,8 +2782,8 @@ live-model adversarial pass before shipping. Full sub-step roadmap (7.2–7.7) r
 own section. Documentation only, no code — **uncommitted**, ask before committing.
 
 **New session (2026-08-12): 7.1 committed, 7.2 (contract change) done.** Asked the user which to
-start; answer was commit 7.1 then start 7.2. Committed 7.1 as `eb30837` (design doc + ADR-0009,
-no code, nothing else changed). Then built 7.2 per ADR-0009 decisions 1/2/5: `packages/contracts`
+start; answer was commit 7.1 then start 7.2. Committed 7.1 as `eb30837` (design doc + ADR-vision-grounded-image-analysis,
+no code, nothing else changed). Then built 7.2 per ADR-vision-grounded-image-analysis decisions 1/2/5: `packages/contracts`
 gained `ImageAttachment`, `ChatTurn.images?`, `ChatDoneEvent.imageAnalysis?` (both optional, not
 required-nullable — see Phase 7's own 7.2 entry for why that reading of the ADR is correct).
 Zero-touch outside `packages/contracts` confirmed, not assumed: backend `make check` → 312 passed
@@ -2834,9 +2834,9 @@ grounding claim, DAN-style role switch + secrets request): the model named each 
 instruction it would not follow, never leaked prompt/secrets, never granted the claimed access, never
 adopted the fake citation. C3 caps (>4 images, >5MB image, and an *older* turn's images, not just the
 newest) all rejected live with 400s. Confirmed live that an older turn's image is validated but never
-sent to `generate_image_analysis` (only `history[-1].images`, per ADR-0009 decision 2) — no
+sent to `generate_image_analysis` (only `history[-1].images`, per ADR-vision-grounded-image-analysis decision 2) — no
 cross-turn leakage. Confirmed live that `imageAnalysis` rides along even when the grounded text path
-refuses (empty local corpus → `no_citations` degrade) — ADR-0009 decision 3 holds under a real call,
+refuses (empty local corpus → `no_citations` degrade) — ADR-vision-grounded-image-analysis decision 3 holds under a real call,
 not just the deterministic simulation. One structural point worth recording, not a gap: the
 citation-enforced `generate()` call never receives image bytes at all (only `generate_image_analysis`
 does) — so image content has no code path into the grounded answer regardless of what a model is
@@ -2864,7 +2864,7 @@ process-hygiene.
 
 Test count climbed 219 → 274 across the sub-steps that added tests (4.6.13–4.6.16 were doc/comment-
 only, no test-count change); boundaries clean throughout; ruff/pyright never regressed past the
-reconciled baseline (pyright's true baseline was moved 31→34 at 4.6.9, see ADR-0003 D1 — final
+reconciled baseline (pyright's true baseline was moved 31→34 at 4.6.9, see ADR-features-import-only-through-public-root D1 — final
 state 2 ruff errors / 15 unformatted / 34 pyright errors). Commit refs, one per sub-step:
 
 | Sub-step | What | Commit |
@@ -2877,7 +2877,7 @@ state 2 ruff errors / 15 unformatted / 34 pyright errors). Commit refs, one per 
 | 4.6.6 | `permission.py` overloaded `scope` string removed | `309f4e8` |
 | 4.6.7 | Confluence client breaker + 5xx retry + audit logs | `93cad11` |
 | 4.6.8 | Dedupe `source_type`/`root_type` CHECK constraints (+ migration `0006`) | `be4c8f8` |
-| 4.6.9 | Pyright baseline reconciled 31→34 (ADR-0003 D1 amendment, doc-only) | `b6974ef` |
+| 4.6.9 | Pyright baseline reconciled 31→34 (ADR-features-import-only-through-public-root D1 amendment, doc-only) | `b6974ef` |
 | 4.6.10 | RLS reader-role fails closed outside offline envs | `d897a40` |
 | 4.6.11 | Event dedup: `delivery_id` collision no longer a 500 | `0a61fb4` |
 | 4.6.12 | `refusal_reason` on the `chat_request` log line (+ a real `chat_router.log` monkeypatch bug found via `pyright` and fixed before any test ran) | `9d7c0bf` |
@@ -2952,7 +2952,7 @@ section for the reasoning), open for your override at any time:**
   outside an offline env when `DATABASE_READER_URL` is unset.
 
 **Commit gap closed — 2026-08-10 (new session).** 4.6.1 (Confluence group-restriction fail-closed
-fix), plus ADR-0006/ADR-0007 and the six-agent `docs/rag/fixes/` audit itself, were all sitting
+fix), plus ADR-defer-product-and-package-extraction/ADR-separate-frontend-backend-repos and the six-agent `docs/rag/fixes/` audit itself, were all sitting
 uncommitted at this session's start. Per `CLAUDE.local.md` §2, re-verified live before committing:
 `make check` (from repo root) → **229 passed**, boundaries clean; `ruff check`/`ruff format --check`
 unchanged (2 errors/17 unformatted, same as the 5.3 baseline); `pyright` unchanged (34 errors — the
@@ -2960,17 +2960,17 @@ one error inside `confluence_client.py` is at `list_space_pages`'s pre-existing 
 outside this fix's diff, confirmed by `git diff`); `alembic current` → `0005_page_restriction
 (head)`, no migration needed (pure code fix). Read the new `test_confluence_client.py`'s 10 tests
 directly to confirm they exercise the fail-closed sentinel end to end on both gateways, not just the
-pure resolver. **No gaps found.** Split into two commits: `ede2ae2` (docs — ADR-0006/0007 + the
-fixes-backlog audit + the IDEAS.md #4 correction ADR-0006 required) and `4d0ba70` (the 4.6.1 code fix
+pure resolver. **No gaps found.** Split into two commits: `ede2ae2` (docs — ADR-defer-product-and-package-extraction / ADR-separate-frontend-backend-repos + the
+fixes-backlog audit + the IDEAS.md #4 correction ADR-defer-product-and-package-extraction required) and `4d0ba70` (the 4.6.1 code fix
 + this ledger's own 4.6 section). 4.6.2 remains blocked on your input below — not started.
 
 **Phase 4.7 is done in code, its test gap closed (2026-08-11), committed `bf99635`** — see its own
 section for the full narrative and the "Known gaps / debt" list.
 
 **Phase 4.8 (frontend/backend repository separation) is no longer part of this plan (2026-08-12).**
-It briefly superseded ADR-0006's deferral (see `docs/adr/0007-Frontend-Backend-Repository-
+It briefly superseded ADR-defer-product-and-package-extraction's deferral (see `docs/adr/0007-Frontend-Backend-Repository-
 Separation.md`), then sat blocked on three unanswered decisions through Phase 7's whole lifecycle
-and never started. `docs/adr/0010-Redefer-Repository-Separation.md` reverses that and moves it to
+and never started. `docs/adr/keep-frontend-backend-in-one-repo-for-now.md` reverses that and moves it to
 `docs/future-ideas/IDEAS.md` idea #5 as an unscheduled idea — nothing is live yet to design the
 split against. Phase 9 no longer waits on it.
 
@@ -3401,7 +3401,7 @@ the full `securing-http-and-llm-endpoints` control set applied — see the modul
    identity/session system in this repo yet (confirmed: no auth/session code anywhere in
    `apps/web` or `apps/automation`). `principal` in the request body is caller-self-reported and
    trusted only as far as C1 trusts the calling web proxy. This is safe, not a hole: per
-   ADR-0004's default-deny model, `PrincipalPermissionPolicy.allowed()` already treats an
+   ADR-source-id-row-security-with-reader-writer-roles's default-deny model, `PrincipalPermissionPolicy.allowed()` already treats an
    absent/unverified principal as "only unrestricted pages visible" — never a bypass. Real
    per-user identity is a later, separate phase.
 4. **C6 PII redaction is pattern-based** (`rag_agent/domain/pii.py`: email/phone/SSN/card-number
@@ -3479,7 +3479,7 @@ fixture-fed `PrincipalPermissionPolicy`'s data source with a real, queryable per
 written by `confluence_sync`'s `handle_sync_page` whenever a page's restriction list actually
 changes (or on first index), and read fresh per search by `HybridRetriever._search` — never the
 whole corpus. Source-level RLS (3.5) and this page-level ACL are distinct, both-apply layers per
-ADR-0004/0005, exactly as designed.
+ADR-source-id-row-security-with-reader-writer-roles / ADR-rerank-then-verify-cited-answers, exactly as designed.
 
 **Design decisions (not scope changes — the plan text left the concrete schema open):**
 1. **Schema:** `page_restriction(page_id, principal)`, composite PK, FK to `page_source.page_id
@@ -3489,7 +3489,7 @@ ADR-0004/0005, exactly as designed.
    automatically — no separate grant migration needed.
 2. **Write path lives in `confluence_sync`, ownership stays with `ingestion`** — same convention
    already established for `page_source`/`chunk`: `sync_service.py` writes the ORM model directly
-   (platform/db is shared vocabulary, ADR-0003 D5), `ingestion`'s FEATURES.md block documents it
+   (platform/db is shared vocabulary, ADR-features-import-only-through-public-root D5), `ingestion`'s FEATURES.md block documents it
    as the table owner. Write is a full delete+insert replace (not a diff/append), guarded by
    `local is None or decision.access_scope_hash != local.access_scope_hash` so an unchanged page
    costs nothing extra on every reconcile tick. Deferred until *after* `stage_and_activate` on the
@@ -3589,7 +3589,7 @@ concerns, not call order.
   `test_answer_workflow.py` DB-integration tests (grounded citation flow, source-scope refusal,
   no-grounded-claim refusal) — all against the real fixture corpus with fake LLM collaborators →
   **164 tests total** (was 144). `make boundaries` clean; ruff 2 errors/19 unformatted, pyright 31
-  errors — both exactly at the ADR-0003 D1 no-regression baseline, none of the new errors on touched
+  errors — both exactly at the ADR-features-import-only-through-public-root D1 no-regression baseline, none of the new errors on touched
   files (verified directly, not just counted).
 
 **Not done (deferred, per the plan's own phasing):** `POST /chat` wiring, real Anthropic client
@@ -3609,7 +3609,7 @@ every test rather than going through a settings-driven factory.
 
 **Phase 4.1 done (`e4490aa`):** new `rag_agent` feature scaffolded per the repo
 standard — public root exporting the `Answer`/`Citation`/`ChatMessage` DTO contract; pure domain core
-`decide_refusal` (ADR-0005 §7) + `enforce_citations` (§6, strips uncited/hallucinated-source claims);
+`decide_refusal` (ADR-rerank-then-verify-cited-answers §7) + `enforce_citations` (§6, strips uncited/hallucinated-source claims);
 `FEATURES.md` block; **10 unit tests → 130 passed total**. Boundaries clean; ruff/pyright 0 on the new
 files. No service/endpoint yet (that's 4.2/4.4).
 
@@ -3619,7 +3619,7 @@ clean; `make test` → **120 passed, 0 skipped**; the four DB-backed isolation/t
 `test_retrieval_writes_one_query_trace_row`, `test_rerank_lift_before_vs_after`) all ran and passed;
 all three migrations carry a `downgrade`; RLS `set_config` uses a bound `:s` param (injection-safe);
 reranker has timeout/retry/breaker/abuse-cap and never logs the key; ruff 2 errors / 22 unformatted
-(≤ 2/25) and pyright 31/1 — at the ADR-0003 D1 baseline, no regression.
+(≤ 2/25) and pyright 31/1 — at the ADR-features-import-only-through-public-root D1 baseline, no regression.
 
 **3.5.5 outcome (done):** rerank-lift mechanism (`evaluate_rerank_lift`, pure) + DB-backed integration
 run captured a live Cohere lift of **ndcg@10 −0.123 / precision@5 +0.000** on the saturated 6-case fixture
@@ -3700,7 +3700,7 @@ OCR/image reading untouched.
 
 | Phase | Status | Commit | Proof |
 |---|---|---|---|
-| **0** — DESIGN.md + ADR-0004/0005 | ✅ done | `d793bb1` | design of record + 2 ADRs, code-grounded |
+| **0** — DESIGN.md + ADR-source-id-row-security-with-reader-writer-roles / ADR-rerank-then-verify-cited-answers | ✅ done | `d793bb1` | design of record + 2 ADRs, code-grounded |
 | **3.5.1** — pin pgvector 0.8 + HNSW iterative-scan GUCs | ✅ done | `7cd9fd1` | pgvector 0.8.5 pinned by digest; 4 unit tests |
 | **3.5.2** — cross-encoder reranker (Cohere/Fake) + wire | ✅ done | `7cd9fd1` | 10 unit tests; rerank after permission filter; Fake in CI |
 | **3.5.3** — provider tags + RLS + `rag_reader` role | ✅ done | `96f4786` | RLS default-deny proven; migration 0002 reversible |
@@ -3717,19 +3717,19 @@ OCR/image reading untouched.
 | **5.3** — prompt-injection + permission/isolation red-team | ✅ done | `92bbb7f` | 6 tests → 219 total; found + fixed a real numeric-principal space-trust bypass; no live LLM spend |
 | **4.6** — fixes-backlog remediation (16 sub-steps + exit gate) | ✅ done | see "4.6 progress snapshot" (§0) for all 16 commit refs | independent same-day audit (`docs/rag/fixes/`) found a CRITICAL ACL bypass + a HIGH cross-principal leak + 12 more findings in already-"done" phases 0-4; all fixed, exit gate 4.6.16 green, 274 tests, no ruff/pyright regression; 4.6.2 live-verification still outstanding — Confluence token now works (blocker #3, fixed 2026-08-19) but no space is seeded and no live sync has actually run yet, does not gate anything |
 | **5** (remaining) — 5.4 live-LLM red-team + latency/cost proof, embedder bake-off, adaptive routing | ⬜ todo (unblocked by 4.6; Confluence token fixed 2026-08-19, still blocked on API spend go-ahead + `VOYAGE_API_KEY`) | — | 5.4 needs real API calls/spend (go-ahead not yet given); bake-off still blocked on `VOYAGE_API_KEY` (not in `.env`) |
-| **6** — Supabase Cloud (on AWS) vector store migration & deploy | ⬜ **todo — NEXT (user, 2026-09-07)** | — | prod target = **Supabase Cloud in an AWS region** (RDS/Aurora = documented fallback); needs writer+reader DSNs (session-pooler/direct :5432) + pgvector ≥ 0.8 (blocker #8); first tasks ADR-0013 + the FORCE-RLS fix (`schema.py:60`, needed on Supabase too — no superuser) |
+| **6** — Supabase Cloud (on AWS) vector store migration & deploy | ⬜ **todo — NEXT (user, 2026-09-07)** | — | prod target = **Supabase Cloud in an AWS region** (RDS/Aurora = documented fallback); needs writer+reader DSNs (session-pooler/direct :5432) + pgvector ≥ 0.8 (blocker #8); first tasks ADR-supabase-postgres-store-without-force-rls + the FORCE-RLS fix (`schema.py:60`, needed on Supabase too — no superuser) |
 | **4.7** — Obi widget: chat UI rebuild, brand tokens, screenshot capture, real i18n, `/chat` route removed, image lightbox (4.7.8) | ✅ done, **committed** | `206baab` (first sub-step), `aae90e5` (4.7.2-4.7.6), `bf99635` (rest, incl. 4.7.8 + the test-gap closure) | frontend-only, `apps/web`; does not gate Phase 5; as-built source of truth `docs/rag/OBI-WIDGET-DESIGN.md` (the mockup reference art was removed 2026-09-12) |
-| **4.8** — Frontend/backend repository separation | **moved to `docs/future-ideas/IDEAS.md` #5 (2026-08-12)** | — | re-deferred per `docs/adr/0010-Redefer-Repository-Separation.md`; no longer part of this plan |
-| **7** — Vision-grounded image analysis (attachments + screenshot capture) | ✅ **done (2026-08-12), all 8 sub-steps closed** | `eb30837` (7.1), `7ffd916` (7.2), `12db45a` (7.3+7.4), `1398e64` (7.5); 7.6 is a verification pass, no commit (no code changed); 7.7/7.8 docs+fixes, no commit yet | supersedes `docs/future-ideas/IDEAS.md` #3; ADR-0009 + DESIGN.md §12 lock the contract shape (`ChatTurn.images`, `Answer.imageAnalysis`, no new SSE event), the `has_image` refusal gate, and the independent (never citation-enforced) vision call; 7.6's live adversarial red-team found zero injection compliance, caps enforced live; 7.7 re-ran the full gate with zero regressions and closed ADR-0009; **7.8 found and fixed 5 stacked, user-reported bugs** in a "triple-check the feature" pass — a pre-image-era proxy body-size ceiling (413), a proxy content-length check that rejected genuine image-only turns (400), a backend crash embedding an empty query (uncaught `EmbeddingError`), Anthropic itself rejecting an empty text content block (400), and — found only once real browser testing replaced curl repros — the same content-length check breaking again on any *later* turn once an earlier image-only turn aged out and lost both its content and its image; all five found by fixing one, re-testing, and hitting the next one underneath |
-| **9** — Unanswerable/vague-query fallback (9.1 → 9.9) | ✅ **done (2026-08-13), all 9 sub-steps closed** (9.1 `771cfce`; 9.2-9.7 across `ba5416a`/`d20257c`/`f9ed445`/`10947d8`/`8e1450a`; 9.8 `34706e1`; 9.9 docs-only, not yet committed) — dead last, no phase follows | — | supersedes `docs/future-ideas/IDEAS.md` #1; ADR-0008 + DESIGN.md §11 lock the contract shape (extend `Answer`, no new SSE event), the 3-value refusal-reason taxonomy, and eval-kind reuse — **all 9 decisions confirmed matching shipped code at 9.9, ADR-0008 closed as-is**; ambiguity/vagueness classifier + clarification response, differentiated refusal reasons, human-hand-off stub (Salesforce noted as eventual target), fallback-quality eval metrics, live+deterministic red-team (9.8, zero findings); MMR/diversity filtering and any new vector store explicitly out of scope |
-| **10** — Knowledge-scope tagging & retrieval filtering (ADR-0011) | 🔶 in progress (10.1–10.7 done, `59997e8`) | see §0 | 10.8 build half done + uncommitted; **remaining 10.8/10.9/10.10 renumbered → Phase 12.1/12.3/12.2 (2026-08-24)** |
-| **11** — Separation of concerns (FE / backend-API / RAG-vector-DB core) + fail-open isolation backstop | 🔶 in progress (**11.1a ✅ code done TDD 2026-09-10** — scope-GUC RLS, ADR-0014, migration `0010`, `retrieval/phase-11.md`; **uncommitted + not applied live**; 11.1b/11.2 open; 11.3/11.4 → IDEAS #5) | see §0 + ADR-0014 | user chose monorepo (11.3/11.4 de-scheduled). 11.1a closes the customer-axis fail-**open** leak (RESTRICTIVE RLS, fail-closed) — still gates public deploy until applied live. 11.1b (owner DSN out of read core) + 11.2 (config injection, refile curated repo, secret partition) remain |
+| **4.8** — Frontend/backend repository separation | **moved to `docs/future-ideas/IDEAS.md` #5 (2026-08-12)** | — | re-deferred per `docs/adr/keep-frontend-backend-in-one-repo-for-now.md`; no longer part of this plan |
+| **7** — Vision-grounded image analysis (attachments + screenshot capture) | ✅ **done (2026-08-12), all 8 sub-steps closed** | `eb30837` (7.1), `7ffd916` (7.2), `12db45a` (7.3+7.4), `1398e64` (7.5); 7.6 is a verification pass, no commit (no code changed); 7.7/7.8 docs+fixes, no commit yet | supersedes `docs/future-ideas/IDEAS.md` #3; ADR-vision-grounded-image-analysis + DESIGN.md §12 lock the contract shape (`ChatTurn.images`, `Answer.imageAnalysis`, no new SSE event), the `has_image` refusal gate, and the independent (never citation-enforced) vision call; 7.6's live adversarial red-team found zero injection compliance, caps enforced live; 7.7 re-ran the full gate with zero regressions and closed ADR-vision-grounded-image-analysis; **7.8 found and fixed 5 stacked, user-reported bugs** in a "triple-check the feature" pass — a pre-image-era proxy body-size ceiling (413), a proxy content-length check that rejected genuine image-only turns (400), a backend crash embedding an empty query (uncaught `EmbeddingError`), Anthropic itself rejecting an empty text content block (400), and — found only once real browser testing replaced curl repros — the same content-length check breaking again on any *later* turn once an earlier image-only turn aged out and lost both its content and its image; all five found by fixing one, re-testing, and hitting the next one underneath |
+| **9** — Unanswerable/vague-query fallback (9.1 → 9.9) | ✅ **done (2026-08-13), all 9 sub-steps closed** (9.1 `771cfce`; 9.2-9.7 across `ba5416a`/`d20257c`/`f9ed445`/`10947d8`/`8e1450a`; 9.8 `34706e1`; 9.9 docs-only, not yet committed) — dead last, no phase follows | — | supersedes `docs/future-ideas/IDEAS.md` #1; ADR-ambiguity-clarification-then-fallback-answer + DESIGN.md §11 lock the contract shape (extend `Answer`, no new SSE event), the 3-value refusal-reason taxonomy, and eval-kind reuse — **all 9 decisions confirmed matching shipped code at 9.9, ADR-ambiguity-clarification-then-fallback-answer closed as-is**; ambiguity/vagueness classifier + clarification response, differentiated refusal reasons, human-hand-off stub (Salesforce noted as eventual target), fallback-quality eval metrics, live+deterministic red-team (9.8, zero findings); MMR/diversity filtering and any new vector store explicitly out of scope |
+| **10** — Knowledge-scope tagging & retrieval filtering (ADR-knowledge-scope-tagging-and-filtering) | 🔶 in progress (10.1–10.7 done, `59997e8`) | see §0 | 10.8 build half done + uncommitted; **remaining 10.8/10.9/10.10 renumbered → Phase 12.1/12.3/12.2 (2026-08-24)** |
+| **11** — Separation of concerns (FE / backend-API / RAG-vector-DB core) + fail-open isolation backstop | 🔶 in progress (**11.1a ✅ code done TDD 2026-09-10** — scope-GUC RLS, ADR-db-level-customer-scope-isolation-backstop, migration `0010`, `retrieval/phase-11.md`; **uncommitted + not applied live**; 11.1b/11.2 open; 11.3/11.4 → IDEAS #5) | see §0 + ADR-db-level-customer-scope-isolation-backstop | user chose monorepo (11.3/11.4 de-scheduled). 11.1a closes the customer-axis fail-**open** leak (RESTRICTIVE RLS, fail-closed) — still gates public deploy until applied live. 11.1b (owner DSN out of read core) + 11.2 (config injection, refile curated repo, secret partition) remain |
 | **12** — Remaining forward work (renumbered) | ⬜ todo | — | 12.1/12.2/12.3 = old 10.8/10.10/10.9; 12.4 = Phase 5 remainder. **12.5 (deploy) superseded 2026-09-07: Phase 6 = Supabase-Cloud-on-AWS migration pulled forward to NEXT, no longer deferred behind Phase 11.** Runs after Phase 11 otherwise |
 | **13** — Supabase completeness & tag-behavior verification | 🔶 in progress (13.1 ✅ done+committed `f52d24a`; 13.2 ✅ done `ec7c372`; 13.5 ✅ live-proven 2026-09-09; 13.3/13.4 open; live reader run blocked on P0 `extensions` grant) | see §0 CURRENT STATE + Phase 13 | NEW 2026-09-09 from live introspection + 6-agent doc audit. Schema ✅ complete. **13.1 (migration 0009 — reader RLS, Option B/secure, TDD, +5 tests, 488 green) ✅ COMMITTED `f52d24a` + APPLIED to live Supabase (head `0009`, verified; reader smoke PASS).** ⚠️ Corrected from Option A after finding `anon`/`authenticated` hold SELECT on all tables → keep RLS on + `rag_reader`-scoped policies; runbook `docs/runbooks/phase-13.1-apply-reader-rls-supabase.md`. Remaining: verify-isolation blind spot + fix broken re-provision path (13.2), doc sweep (13.3), runbook/ops (13.4), live tag-proof (13.5, needs live corpus re-tag to `obi-general-test`). Distinct axis from 11.1a |
 
 Gate at each ✅: `make check` green (**219 backend tests** as of 5.3 — 4.5 touched no backend code;
 was 213 at 5.1/5.2, 197 at 5.1, 194 at 4.4, 167 at 4.3, 164 at 4.2, 144 at 3.5.6, 130 at 4.1, 120 at
-end-3.5, 99 pre-3.5), `make boundaries` clean, ruff/pyright at the ADR-0003 D1 baseline (no
+end-3.5, 99 pre-3.5), `make boundaries` clean, ruff/pyright at the ADR-features-import-only-through-public-root D1 baseline (no
 regression — 2 errors/17 unformatted ruff ≤ 25/2, pyright 34 errors — same file list as the 4.3
 baseline, 0 new errors on touched files; re-verified live 2026-08-10 before committing 4.5/5.1/5.2,
 and again for 5.3).
@@ -3807,7 +3807,7 @@ re-tune in Phase 5. **→ Phase 3.5 closed; Phase 4.1 shipped (`e4490aa`); next 
    delivery. Until then, auto-update rides the reconciliation sweep. **Not `.env`:** the URL is a
    Confluence-side setting, not a server var — only `CONFLUENCE_WEBHOOK_SECRET` is a new `.env` value.
 7. **Three repo-split decisions (gate Phase 11.4).** The user chose the full repo split (2026-08-24),
-   but ADR-0010 blocks it until decided + a superseding **ADR-0012** is written: **(a)** which package
+   but ADR-keep-frontend-backend-in-one-repo-for-now blocks it until decided + a superseding **ADR-0012** is written: **(a)** which package
    registry (npm public / GitHub Packages / private) for publishing `packages/contracts` +
    `packages/design-tokens`; **(b)** the two new repo names (frontend, backend); **(c)** the
    origin-monorepo's fate (archive vs thin umbrella). 11.1–11.3 (security backstop, module hardening,
@@ -3815,7 +3815,7 @@ re-tune in Phase 5. **→ Phase 3.5 closed; Phase 4.1 shipped (`e4490aa`); next 
 8. **Vector-store migration (Phase 6, next).** Decided 2026-09-07: prod vector store = **Supabase Cloud
    in an AWS region** (managed Postgres + pgvector); RDS/Aurora kept as a reversible fallback (see Phase
    6). No pre-infra engine/host decision needed — Supabase is the pick. Code prep (mine, on go-ahead):
-   ADR-0013 + the FORCE-RLS fix (`schema.py:60` — needed on Supabase too, no superuser). Then, once the
+   ADR-supabase-postgres-store-without-force-rls + the FORCE-RLS fix (`schema.py:60` — needed on Supabase too, no superuser). Then, once the
    operator creates the Supabase project, I need handed back just **one** DSN: the **writer/owner
    `DATABASE_URL`** (`postgresql+psycopg://…`, port 5432, **session-pooler/direct — NOT the :6543
    transaction pooler**), plus **confirmation pgvector ≥ 0.8** (`SELECT extversion FROM pg_extension
@@ -3949,9 +3949,9 @@ gate all Phase 3.5 code.
   7. Config & flags (mirror §4).
   8. **Research-layer decision table** — each of the ~13 layers → keep / upgrade / add / reject +
      one-line rationale.
-- **`docs/adr/0004-Multi-Source-Provider-Tagging-And-RLS.md`** — decision, context, the
+- **`docs/adr/source-id-row-security-with-reader-writer-roles.md`** — decision, context, the
   `source_type`/`source_id`/`tags` schema, RLS policy, role split, default-deny, consequences.
-- **`docs/adr/0005-Reranking-And-Answer-Pipeline.md`** — cross-encoder-only rule (no general-LLM
+- **`docs/adr/rerank-then-verify-cited-answers.md`** — cross-encoder-only rule (no general-LLM
   rerankers), forced citations, refusal threshold, one CRAG retry, why a fixed workflow not an agent
   loop.
 
@@ -3994,7 +3994,7 @@ looks like a reranker regression.
 
 **Design.** Mirror the embeddings abstraction exactly (`embeddings_client.py:43` `EmbeddingProvider`
 Protocol + `_HttpEmbeddingProvider` machinery: timeout, bounded retry+backoff, circuit breaker,
-abuse cap). Cross-encoder rerankers only — **no general-LLM rerankers** (ADR-0005).
+abuse cap). Cross-encoder rerankers only — **no general-LLM rerankers** (ADR-rerank-then-verify-cited-answers).
 
 **Tasks.**
 
@@ -4159,7 +4159,7 @@ it honestly.
 
 **Phase 3.5 exit gate — MET (2026-08-07):** `make check` green (120), `make eval` shows the rerank table,
 isolation tests pass, pgvector 0.8.5 pinned (≥ 0.8), every retrieval traced. No-regression on ruff/pyright
-(ADR-0003 D1: 22/2 ruff ≤ 25/2; pyright 0/0 on touched files).
+(ADR-features-import-only-through-public-root D1: 22/2 ruff ≤ 25/2; pyright 0/0 on touched files).
 
 ---
 
@@ -4695,7 +4695,7 @@ explicitly" escape hatch for low-value fixes. **Flagging for your explicit confi
 blocking, since it only formalizes what "unchanged (34 errors)" already meant in every 4.6.x
 verification note above.**
 
-**Shipped:** `docs/adr/0003-Feature-Boundary-Enforcement.md`'s D1 deviation amended in place with
+**Shipped:** `docs/adr/features-import-only-through-public-root.md`'s D1 deviation amended in place with
 the full bisect finding and rationale — the baseline is now formally 34/1, not silently drifted.
 Root `CLAUDE.md`'s stale numbers are deliberately left for 4.6.15 (its own batch already lists that
 edit; doing it here would just be overwritten by that pass) — this sub-step's job was settling
@@ -4711,7 +4711,7 @@ baseline, not just an observed count); no migration.
 tests total (was 261). Pure code fix, no migration, exactly as scoped.**
 
 **Decision — fail-closed, not warn-only.** The reader role's entire purpose is RLS enforcement
-(ADR-0004); silently falling back to the RLS-bypassing writer connection in a real deployment is a
+(ADR-source-id-row-security-with-reader-writer-roles); silently falling back to the RLS-bypassing writer connection in a real deployment is a
 security regression, not a convenience — a warning buried in structured logs is easy to miss on a
 production boot, while a raised exception is a loud, immediate startup failure that can't ship
 unnoticed. Matches this codebase's existing posture everywhere else a security control's config is
@@ -4962,7 +4962,7 @@ one extra piece of drift was found in the same file while verifying it and fixed
   fixing the bullet next to it).
 - **Root `CLAUDE.md`'s stale ruff/pyright baseline — confirmed and fixed.** Read `2 errors / 25
   unformatted, Pyright 31/1`; live gate reads `2 errors / 15 unformatted, Pyright 34/1` (the 34
-  matches 4.6.9's ADR-0003 D1 amendment; the unformatted count dropped over the 4.6.x run as touched
+  matches 4.6.9's ADR-features-import-only-through-public-root D1 amendment; the unformatted count dropped over the 4.6.x run as touched
   files were brought clean per the project's own convention). Also fixed the same file's `uv run
   pytest -q # 99 passing` comment to `# 274 passing`.
 - **`QueryTrace.rerank_scores`'s stale "reserved for Phase 4" docstring — confirmed and fixed.**
@@ -5203,11 +5203,11 @@ by this repo's normal bar; fixing it is not in this sub-step's scope.
 
 ## Phase 4.8 — Frontend/backend repository separation — **MOVED to `docs/future-ideas/IDEAS.md` idea #5 (2026-08-12)**
 
-Briefly a real, scoped phase (superseded ADR-0006's deferral — see `docs/adr/0007-Frontend-Backend-
+Briefly a real, scoped phase (superseded ADR-defer-product-and-package-extraction's deferral — see `docs/adr/0007-Frontend-Backend-
 Repository-Separation.md`), then sat blocked on three unanswered decisions (registry choice, two
 new repo names, origin-monorepo fate) through Phase 7's whole lifecycle without starting.
-Re-deferred 2026-08-12 per `docs/adr/0010-Redefer-Repository-Separation.md`: nothing is live yet to
-design the split against (no second product/deployment), matching ADR-0006's original concern. The
+Re-deferred 2026-08-12 per `docs/adr/keep-frontend-backend-in-one-repo-for-now.md`: nothing is live yet to
+design the split against (no second product/deployment), matching ADR-defer-product-and-package-extraction's original concern. The
 full spec (goal + all 7 sub-steps + the three open decisions) now lives in
 `docs/future-ideas/IDEAS.md` idea #5, unscheduled — not deleted, just relocated. **This phase number
 is retired from the active plan; nothing here executes without a fresh decision to re-schedule it.**
@@ -5250,7 +5250,7 @@ is retired from the active plan; nothing here executes without a fresh decision 
 
 **Goal.** Move the corpus + retrieval from local Docker pgvector to **Supabase Cloud** (managed
 Postgres + `pgvector`, provisioned in an **AWS region**) as the production vector store, preserving the
-ADR-0004 source-isolation model. Dev stays on local pgvector. Deploy/infra work, separated from the
+ADR-source-id-row-security-with-reader-writer-roles source-isolation model. Dev stays on local pgvector. Deploy/infra work, separated from the
 Phase 5 accuracy/optimization work so neither blocks the other.
 
 **Why Supabase (decided 2026-09-07, two `AskUserQuestion`s).** The user's "part of our Amazon
@@ -5280,12 +5280,12 @@ re-apply (fully specced in the fallback subsection below), not a rewrite.
   the non-owner `rag_reader` remains policy-bound while the owner writer is exempt — no
   SUPERUSER/BYPASSRLS. Small security-sensitive change (`apply_chunk_rls` + migration + isolation
   tests), TDD-gated. `rag_reader` stays `NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`
-  (`schema.py:95`, unchanged). Preserves ADR-0004's read-path isolation.
+  (`schema.py:95`, unchanged). Preserves ADR-source-id-row-security-with-reader-writer-roles's read-path isolation.
 
 **Tasks (operator + agent split — "you + me"; do in order).**
 
 **Step 1 — AGENT, code-only (no infra, no secrets; startable now on go-ahead):**
-0. **Write ADR-0013** (*"Production vector store = Supabase Cloud on AWS; RDS/Aurora as a reversible
+0. **Write ADR-supabase-postgres-store-without-force-rls** (*"Production vector store = Supabase Cloud on AWS; RDS/Aurora as a reversible
    fallback"*) — decision-on-paper. Record the drop-`FORCE`/table-owner RLS design and the two §0
    caveats (no head-to-head benchmark; no scale target yet).
 1. **Land the FORCE-RLS fix** (drop `FORCE` in `apply_chunk_rls`, keep `ENABLE`; writer owns tables →
@@ -5332,7 +5332,7 @@ documented mitigation); connection uses the psycopg driver; no secret in logs. `
 locally (dev unchanged).
 
 **Known limits, not papered over (§0 caveats):** pgvector was chosen and switching is ruled out
-(ADR-0001/0002), but the docs never benchmarked it against Pinecone/Weaviate/Qdrant/etc.; and no
+(ADR-fastapi-nextjs-postgres-pgvector-stack / ADR-hybrid-retrieval-over-versioned-chunk-store), but the docs never benchmarked it against Pinecone/Weaviate/Qdrant/etc.; and no
 scale/latency/QPS/SLA target exists yet (corpus = 9 pages / 85 chunks). If a real scale target lands,
 that reopens the choice as a *new* ADR — it does not silently change here.
 
@@ -5369,7 +5369,7 @@ folded into 4.2/5/6 ad hoc.
 
 ## Phase 7 — Vision-grounded image analysis (attachments + screenshot capture) ✅ done *(7.1-7.8 all done, 2026-08-11/12 — Phase 7 fully closed, incl. 5 post-closure bugs found+fixed at 7.8, the last only surfacing under real browser testing)*
 
-**Scoped 2026-08-11; 7.1 (design doc + ADR-0009) done the same day — nothing else started.**
+**Scoped 2026-08-11; 7.1 (design doc + ADR-vision-grounded-image-analysis) done the same day — nothing else started.**
 Raised by the user after observing (elsewhere, not in this repo) that an attached or screenshotted
 image can be clicked for a full-size preview *and* gets analyzed for context by the assistant. On
 inspection neither piece existed here — see Phase 4.7.8 above for the click-to-zoom half, which
@@ -5397,16 +5397,16 @@ code, since this touches contracts, the answer pipeline's refusal logic, and a n
 control set — same gate Phase 9's 9.1 used. The remaining sub-steps are the roadmap for turning
 that design into code, not started:
 
-1. **7.1 — Design doc + ADR-0009 ✅ done (2026-08-11, committed `eb30837`; no code, per the gate).**
-   `docs/adr/0009-Vision-Grounded-Image-Analysis.md` + `docs/rag/DESIGN.md` §12 lock: **inline
+1. **7.1 — Design doc + ADR-vision-grounded-image-analysis ✅ done (2026-08-11, committed `eb30837`; no code, per the gate).**
+   `docs/adr/vision-grounded-image-analysis.md` + `docs/rag/DESIGN.md` §12 lock: **inline
    base64 on the newest `ChatTurn` only**, not a separate upload endpoint and not replayed on every
    history resend (no new persistent storage, bounds resend cost); **retrieval still runs — only
    `decide_refusal` changes** (gains a `has_image: bool` input so an image-answerable turn with weak
    text retrieval doesn't incorrectly refuse); **a second, independent
    `generate_image_analysis` call**, structurally parallel to `generate_small_talk`, never passed
    through `enforce_citations` — the grounded, citation-enforced call and every other
-   ADR-0005-governed stage stay untouched; **`Answer`/`ChatDoneEvent` gain `imageAnalysis: string |
-   null`**, no new SSE event (same additive shape ADR-0008 used); **C6 does not extend to image
+   ADR-rerank-then-verify-cited-answers-governed stage stay untouched; **`Answer`/`ChatDoneEvent` gain `imageAnalysis: string |
+   null`**, no new SSE event (same additive shape ADR-ambiguity-clarification-then-fallback-answer used); **C6 does not extend to image
    bytes** — a documented, disclosed gap, not a silent one; **new C3/C10 image-count/byte-size caps
    are required but their concrete values are explicitly not decided by this ADR** (no invented
    cost/scaling number); **image-borne prompt injection is a new threat class flagged for a
@@ -5415,7 +5415,7 @@ that design into code, not started:
    `ImageAttachment { mediaType: string; data: string }` type; `ChatTurn` gains optional
    `images?: ImageAttachment[]`; `ChatDoneEvent` gains optional `imageAnalysis?: string | null` —
    both `src/index.ts` and `chat.yaml` (`ImageAttachment` schema + the two property additions), per
-   ADR-0009 decisions 1/2/5. **Both fields are optional, not required-nullable** — matches the
+   ADR-vision-grounded-image-analysis decisions 1/2/5. **Both fields are optional, not required-nullable** — matches the
    ADR's own Consequences wording ("grow one more *optional* field") over decision 5's looser prose
    ("`Answer` gains `imageAnalysis: string | null`"); optional is correct at this sub-step because
    no backend code emits the field yet (that's 7.3) and a required field nothing ever sends would
@@ -5448,7 +5448,7 @@ that design into code, not started:
    since `apps/web`'s proxy passes turn content straight through without renaming nested fields);
    `ChatMessage.images: list[ImageAttachment] | None`; `Answer.image_analysis: str | None`.
    `domain/refusal.py` — `decide_refusal` gains a **required** `has_image` param (no default, per
-   ADR-0009's own "real signature change" note) that short-circuits to never-refuse when true;
+   ADR-vision-grounded-image-analysis's own "real signature change" note) that short-circuits to never-refuse when true;
    both call sites (`answer_service.py`, `test_refusal.py`) updated. `domain/prompt.py` —
    `IMAGE_ANALYSIS_SYSTEM_PROMPT`, including a basic instruction to treat text inside the image as
    content, not a command (a mitigation for the decision-8 threat class, not a fix — 7.6 still
@@ -5465,7 +5465,7 @@ that design into code, not started:
    `image_analysis` into `Answer.text` — decision 5's own "rather than indistinguishably merged
    into answer" reasoning, and the ADR's Consequences section calling it an *optional* field (not
    decision 5's own looser "Answer gains imageAnalysis: string | null" phrasing), both point the
-   same way: keep the two fields separate. **Disclosed, not decided by ADR-0009:** a small-talk-
+   same way: keep the two fields separate. **Disclosed, not decided by ADR-vision-grounded-image-analysis:** a small-talk-
    classified turn ("hi" + a screenshot) still short-circuits before any of this runs, silently
    dropping the image — `is_small_talk` only ever looks at message text; revisit if raised as a
    real gap (documented in `answer_service.py`'s module docstring).
@@ -5474,7 +5474,7 @@ that design into code, not started:
    `chat_max_images_per_turn: int = 4` (not invented — matches `apps/web/.../composer.tsx`'s
    already-shipped `MAX_ATTACHMENTS`), `chat_max_image_bytes: int = 5_000_000` (a *provisional*
    ceiling under Anthropic's own documented ~5MB per-image API limit — an external technical
-   constraint, not an invented cost/scaling number; ADR-0009 decision 7 explicitly leaves the
+   constraint, not an invented cost/scaling number; ADR-vision-grounded-image-analysis decision 7 explicitly leaves the
    real, usage-tuned value undecided, so this is a safety floor, not the final number).
    `server/router.py` — `_validate_history` now checks both caps on **every** turn's `images`, not
    just the newest (an unvalidated older turn would otherwise be a way to smuggle an oversized
@@ -5510,7 +5510,7 @@ that design into code, not started:
    `composer.tsx`'s `send()` no longer drops staged attachments — it base64-encodes each one
    (`FileReader.readAsDataURL`, stripped of the data-URI prefix, per the wire's `ImageAttachment`
    shape) and hands `(text, SentImage[])` to `onSend`; `ChatSessionProvider.sendMessage` attaches
-   the wire `images` to the **newest** history turn only (ADR-0009 decision 2 — `toHistory` itself
+   the wire `images` to the **newest** history turn only (ADR-vision-grounded-image-analysis decision 2 — `toHistory` itself
    stays image-agnostic; the payload is spliced onto the last entry after the mapper runs), stores
    render-only preview images on the user `ChatMessage`, and reads `imageAnalysis` back off the
    `done` event onto the assistant `ChatMessage`. `message-bubble.tsx` (not `message-list.tsx` —
@@ -5588,11 +5588,11 @@ that design into code, not started:
    every turn, not just the newest" claim holds over the wire, not only in `test_chat_endpoint.py`.
    Sent a 3-turn history with the injection image on the *oldest* user turn and a plain-text newest
    turn: `imageAnalysis` came back `null` — confirming only `history[-1].images` is ever analyzed
-   (ADR-0009 decision 2), so an older turn's image cannot smuggle content into a later analysis call.
+   (ADR-vision-grounded-image-analysis decision 2), so an older turn's image cannot smuggle content into a later analysis call.
    Sent a plain image + an unrelated nonsense query against the empty local corpus: the grounded
    `answer` still degraded to the standard refusal (`no_citations` — expected, matches the standing
    empty-corpus blocker, not a bug) while `imageAnalysis` still rode along with an accurate
-   description — confirming ADR-0009 decision 3 ("`image_analysis` rides on every `Answer` branch,
+   description — confirming ADR-vision-grounded-image-analysis decision 3 ("`image_analysis` rides on every `Answer` branch,
    including refusal") holds against a real call.
 
    **One structural point worth recording, not a gap:** `AnthropicAnswerGenerator.generate` (the
@@ -5622,7 +5622,7 @@ that design into code, not started:
    check** — no fix needed before closing. Docs updated: this ledger (§0 below + this table +
    Phase 7's own header, all three), `apps/automation/app/features/FEATURES.md`'s `rag_agent` block
    (dropped the stale "web widget does not send/render yet — that's 7.5" line, now that 7.5 has long
-   shipped, and added the 7.6 red-team summary). **ADR-0009 closed as-is, no amendment needed** — read
+   shipped, and added the 7.6 red-team summary). **ADR-vision-grounded-image-analysis closed as-is, no amendment needed** — read
    it fresh against the shipped code: all 8 decisions match what actually shipped, including decision
    7's "concrete values TBD" being resolved exactly as anticipated (`chat_max_images_per_turn=4`,
    `chat_max_image_bytes=5_000_000`, both already recorded at 7.4) and decision 8's required live
@@ -5686,7 +5686,7 @@ that design into code, not started:
      (`chrome-devtools` MCP) instead. Screenshot-capture → send with no text worked. But sending a
      **second** message (a new image + real typed text) right after that first one failed with the
      *same* `"history turns must have role user|assistant and non-empty content"` error Bug B had
-     just fixed — this time on a perfectly normal, non-empty turn. Root cause: ADR-0009 decision 2
+     just fixed — this time on a perfectly normal, non-empty turn. Root cause: ADR-vision-grounded-image-analysis decision 2
      means images are resent only on the newest turn; once the first (image-only, `content: ""`)
      turn ages out of "newest," its image is stripped on resend, leaving it with neither content
      nor images — Bug B's fix (`content non-empty OR hasImage`) only covered a turn *currently*
@@ -5721,21 +5721,21 @@ that design into code, not started:
    test files were already fixed during 4.7's own gap closure, `bf99635`, 2026-08-11 — the note just
    never got removed). **Phase 7 (7.1-7.8) is now fully closed — no further sub-steps.**
 
-**Non-goals, explicitly (ADR-0009).** No real image PII redaction (CV/NER) — a documented gap, not
+**Non-goals, explicitly (ADR-vision-grounded-image-analysis).** No real image PII redaction (CV/NER) — a documented gap, not
 built this phase. No merging image content into the same citation-scored generation call — citation
 enforcement's "every claim traces to a retrieved page" guarantee stays exclusively about Confluence
 evidence, never about image content.
 
 **Sequencing.** First in the explicit user-set order, current: **Phase 7 → Phase 9** (Phase 4.8 was
 briefly in this order too, but moved to `docs/future-ideas/IDEAS.md` on 2026-08-12 — see §0 and
-`docs/adr/0010-Redefer-Repository-Separation.md`). Independent of Phase 5/6 — no shared files, no
+`docs/adr/keep-frontend-backend-in-one-repo-for-now.md`). Independent of Phase 5/6 — no shared files, no
 shared risk with either.
 
 ---
 
-## Phase 9 — Unanswerable/vague-query fallback *(2026-08-21: "deliberately last" is superseded — Phase 10 below was scoped the same day, promoting `docs/future-ideas/IDEAS.md` idea #8. This line is kept, not deleted, per this repo's own convention of not silently rewriting history.)* ✅ done *(9.1-9.9 all done, 2026-08-11/13 — Phase 9 fully closed, ADR-0008 confirmed matching shipped code)*
+## Phase 9 — Unanswerable/vague-query fallback *(2026-08-21: "deliberately last" is superseded — Phase 10 below was scoped the same day, promoting `docs/future-ideas/IDEAS.md` idea #8. This line is kept, not deleted, per this repo's own convention of not silently rewriting history.)* ✅ done *(9.1-9.9 all done, 2026-08-11/13 — Phase 9 fully closed, ADR-ambiguity-clarification-then-fallback-answer confirmed matching shipped code)*
 
-**Scoped 2026-08-11; 9.1 (design doc + ADR-0008) done the same day — nothing else started.** User
+**Scoped 2026-08-11; 9.1 (design doc + ADR-ambiguity-clarification-then-fallback-answer) done the same day — nothing else started.** User
 supplied an external best-practices brief on handling
 unanswerable/vague RAG queries (multi-stage retrieval, clarification, confidence indicators, human
 hand-off, eval metrics) and asked for a brand-new phase applying whatever's still missing from it,
@@ -5752,7 +5752,7 @@ Phase 7's own precedent) — do not rebuild:**
 - LLM query rewrite + one CRAG-style corrective retry on the original query —
   `rag_agent/infrastructure/llm_client.py:AnthropicQueryRewriter`,
   `rag_agent/application/answer_service.py:_apply_crag_retry`.
-- Confidence-threshold refusal (`refusal_min_rerank_score`, default `0.10`, ADR-0005 §7) —
+- Confidence-threshold refusal (`refusal_min_rerank_score`, default `0.10`, ADR-rerank-then-verify-cited-answers §7) —
   `rag_agent/domain/refusal.py:decide_refusal`.
 - Citation enforcement that degrades to the same refusal if no claim survives —
   `rag_agent/domain/citations.py:enforce_citations`.
@@ -5773,8 +5773,8 @@ feature flag, with zero regression to the existing answer/refusal/citation path.
 **Confirmed scope decisions (asked, not assumed):**
 - **No MMR/diversity filtering.** The brief's Stage-3 diversity step improves result variety on
   already-good retrieval; it doesn't address unanswerable/vague queries and would touch the
-  already-shipped, ADR-0005-governed retrieval pipeline for no benefit to this phase's goal. Left out.
-- **No new vector store or search engine.** Postgres+pgvector+Cohere stays the stack (ADR-0001/0002);
+  already-shipped, ADR-rerank-then-verify-cited-answers-governed retrieval pipeline for no benefit to this phase's goal. Left out.
+- **No new vector store or search engine.** Postgres+pgvector+Cohere stays the stack (ADR-fastapi-nextjs-postgres-pgvector-stack / ADR-hybrid-retrieval-over-versioned-chunk-store);
   the brief's vendor comparison (Pinecone/Weaviate/Vespa/etc.) is reference material only.
 - **Human hand-off (9.6) is a stub only, this phase.** Logged event (query, refusal reason,
   `trace_id`, timestamp) + a UI "connect me to a human" CTA that displays contact copy — **no real
@@ -5784,12 +5784,12 @@ feature flag, with zero regression to the existing answer/refusal/citation path.
   case data to populate — deferred until that integration is actually prioritized, not this phase).
 
 **Designed at 9.1 (see below); no code yet.** Per this repo's own process, a real design pass and an
-ADR were required before any code, since this extends ADR-0005's fixed pipeline with a new
+ADR were required before any code, since this extends ADR-rerank-then-verify-cited-answers's fixed pipeline with a new
 pre-retrieval branch — that's exactly what 9.1 produced. The remaining sub-steps are the roadmap for
 turning that design into code, not started:
 
-1. **9.1 — Design doc + ADR-0008 ✅ done (2026-08-11, committed `771cfce`; no code, per the gate).**
-   `docs/adr/0008-Ambiguity-Clarification-Fallback.md` + `docs/rag/DESIGN.md` §11 lock: the domain
+1. **9.1 — Design doc + ADR-ambiguity-clarification-then-fallback-answer ✅ done (2026-08-11, committed `771cfce`; no code, per the gate).**
+   `docs/adr/ambiguity-clarification-then-fallback-answer.md` + `docs/rag/DESIGN.md` §11 lock: the domain
    decision shape (`decide_clarification`/`ClarificationDecision`, analogous to `decide_refusal`);
    the `/chat` contract change (**decided: extend `Answer` with `needs_clarification` /
    `clarification_question` / `clarification_options` — no new SSE event**, the existing
@@ -5806,7 +5806,7 @@ turning that design into code, not started:
    through, since the heuristic alone cannot tell them apart) + `AnthropicAmbiguityClassifier`
    (`llm_client.py`, `routing_model` tier, fails open to "not ambiguous" on any `AnthropicError`).
    Wired into `AnswerService.answer` right after the small-talk check — **this is the explicit
-   tie-break ADR-0008 flagged as open**: `is_small_talk` requires the whole message to match, so
+   tie-break ADR-ambiguity-clarification-then-fallback-answer flagged as open**: `is_small_talk` requires the whole message to match, so
    "hi, what's the approval process?" is never small talk and still reaches this branch normally,
    with zero extra code needed. **Deliberately scoped to the classifier only, per PLAN's own 9.2 vs.
    9.3 split** — behind `enable_clarification_branch` (new setting, default `false`), the decision
@@ -5849,7 +5849,7 @@ turning that design into code, not started:
    `is_ambiguous=True` verdict gets silently discarded, worse than a generic fallback question, so
    this reading was chosen without asking, per the repo's low-cost-to-reverse default). `Answer`
    gains `needs_clarification`/`clarification_question`/`clarification_options` (`schemas.py`, exact
-   shape ADR-0008 decision 3 locked) and `ChatDoneEvent` gains the matching
+   shape ADR-ambiguity-clarification-then-fallback-answer decision 3 locked) and `ChatDoneEvent` gains the matching
    `needsClarification`/`clarificationQuestion`/`clarificationOptions` (`packages/contracts`
    `index.ts` + `openapi/chat.yaml`) — additive only, no new SSE event; `router.py`'s `done` payload
    and `chat_request` audit log line (`needs_clarification`) both updated to match. **Disclosed gap,
@@ -5903,11 +5903,11 @@ turning that design into code, not started:
    per this row's own instruction) — a user can now tell "nothing like this exists"
    (`no_candidates`) from "I found something too weak to trust" (`weak_score`) from "my draft
    answer didn't hold up" (`no_citations`); all three still end on the same human-hand-off line
-   (ADR-0008 decision 6 unchanged — still a stub). `Answer.refusal_reason` (`schemas.py`) is now
+   (ADR-ambiguity-clarification-then-fallback-answer decision 6 unchanged — still a stub). `Answer.refusal_reason` (`schemas.py`) is now
    typed to the same closed `Literal` instead of `str | None`. **Confirmed before writing code:**
    `refusal_reason` was never on the `/chat` SSE wire (`router.py`'s `done` payload has no
    `refusalReason` field; only `refused: bool` is sent) — it only ever reached the internal
-   `Answer` DTO and the `chat_request` audit log line, so this sub-step's "surfaced" (ADR-0008
+   `Answer` DTO and the `chat_request` audit log line, so this sub-step's "surfaced" (ADR-ambiguity-clarification-then-fallback-answer
    decision 4) reading is "a stable field any caller can read," not "sent to the browser"; no new
    wire exposure was added, and none is needed for 9.8 to check. This also closes a real,
    pre-existing drift: `router.py`'s own `C9_audit` doc comment already claimed `refusal_reason`
@@ -5935,7 +5935,7 @@ turning that design into code, not started:
    clean, ruff/pyright at the 2/15/34 baseline (matched) before touching any code.
    - **Model:** `MessageStatus` gained `"clarifying"`; `ChatMessage` gained `clarificationOptions`.
      `chat-session-provider.tsx`'s `onDone` now branches `needsClarification → "clarifying"` ahead
-     of `refused → "refused"` (order matches ADR-0008 decision 4 — clarification is never a
+     of `refused → "refused"` (order matches ADR-ambiguity-clarification-then-fallback-answer decision 4 — clarification is never a
      refusal); `toHistory` now resends a `"clarifying"` turn same as `"complete"`/`"refused"`,
      since the backend needs the question it asked as context for the next call.
    - **Quick-reply chips.** `ClarificationChips` (new, `message-bubble.tsx`) renders one button per
@@ -5995,7 +5995,7 @@ turning that design into code, not started:
      project unless the task is explicitly to correct the brand system" rule. Committed `f9ed445`
      (2026-08-13) — asked the user first via `AskUserQuestion`, per this repo's own convention; the
      pre-existing, unrelated stray `docs/future-ideas/IDEAS.md` "Baze" edit was again left out.
-6. **9.6 — Human hand-off stub ✅ done (2026-08-13).** Two additive pieces, exactly per ADR-0008
+6. **9.6 — Human hand-off stub ✅ done (2026-08-13).** Two additive pieces, exactly per ADR-ambiguity-clarification-then-fallback-answer
    decision 6 and the "Confirmed scope decisions" note above — no webhook, ticket, or email
    integration; a logged event plus a static CTA. **Pre-phase verification gate run first**
    (`CLAUDE.local.md` §2): re-ran `make check` (354 passed, matched), `make boundaries` clean,
@@ -6072,7 +6072,7 @@ turning that design into code, not started:
    `relevant_chunk_ids`), which asserted nothing about the clarification behavior the cases exist to
    represent. **A genuinely out-of-corpus case**, `evaluation/datasets/out_of_corpus.json` (one
    case, `kind: "answer"`, empty `relevant_chunk_ids` — reuses the closed 5-way `EvalKind`, no new
-   literal, ADR-0008 decision 7), wired into `run_baseline._DATASET_FILES`; the same end-to-end test
+   literal, ADR-ambiguity-clarification-then-fallback-answer decision 7), wired into `run_baseline._DATASET_FILES`; the same end-to-end test
    proves it refuses (`no_candidates`) rather than clarifying or fabricating an answer, with the
    clarification branch left at its production-default `False` (a short out-of-corpus query must not
    get relabelled ambiguous just because it's short). **A real gap this surfaced and fixed, not
@@ -6122,7 +6122,7 @@ turning that design into code, not started:
    migration — Phase 9 introduced no schema change); web `pnpm --filter web test` →
    **133/133 passed** (unchanged since 9.5), `tsc --noEmit` clean, `pnpm --filter web build`
    compiled cleanly (no dev servers were live, confirmed via `lsof`, so the build wasn't skipped).
-   **ADR-0008 read fresh against everything shipped across 9.1-9.8 — all 9 decisions match, closed
+   **ADR-ambiguity-clarification-then-fallback-answer read fresh against everything shipped across 9.1-9.8 — all 9 decisions match, closed
    as-is, no amendment needed** (see §0's own 9.9 entry for the full decision-by-decision
    confirmation). Docs closed out: this ledger, this phase's own header, and the phase-9 summary-
    table row; `FEATURES.md` was already brought current at 9.8. **No code changed — docs only.**
@@ -6132,11 +6132,11 @@ agent-loop rewrite of `AnswerService` — it stays "a plain function pipeline, n
 its own docstring; this is one more pre-pipeline short-circuit, not a multi-turn planner.
 
 **Sequencing.** Dead last by explicit request — no phase in this plan follows Phase 9. **9.1 (this
-design doc + ADR-0008) is done — documentation only, no code, so it didn't need to wait.** Everything
+design doc + ADR-ambiguity-clarification-then-fallback-answer) is done — documentation only, no code, so it didn't need to wait.** Everything
 from **9.2 onward was sequenced after Phase 7 and Phase 4.8 were both done**, per the user's direct
 instruction at the time — not because 9 has a technical dependency on either (no shared files, no
 shared risk with Phase 5/6/7/4.8). **Phase 4.8 was moved to `docs/future-ideas/IDEAS.md` on
-2026-08-12 (see §0, `docs/adr/0010-Redefer-Repository-Separation.md`), dropping that half of the
+2026-08-12 (see §0, `docs/adr/keep-frontend-backend-in-one-repo-for-now.md`), dropping that half of the
 dependency — 9.2 onward now waits only on Phase 7, which is done.** Do not start 9.2 without an
 explicit go-ahead, same as every other phase (§0 working rules).
 
@@ -6164,12 +6164,12 @@ deployments, repos, or databases.
 
 **Terminology note (read `docs/adr/0011-*.md`'s Context first if this is confusing):** this phase calls
 the concept a **knowledge scope**, never a "provider" — this repo's existing "provider" vocabulary
-(ADR-0004: `source_type`/`source_id`, a data *connector* like Confluence vs. a future Zendesk) and
-ADR-0006's "Toast"/"Muse" (this deployment vs. a hypothetical second deployment) are unrelated
+(ADR-source-id-row-security-with-reader-writer-roles: `source_type`/`source_id`, a data *connector* like Confluence vs. a future Zendesk) and
+ADR-defer-product-and-package-extraction's "Toast"/"Muse" (this deployment vs. a hypothetical second deployment) are unrelated
 concepts that happen to share the word. **Confirmed 2026-08-21, collision disclosed and accepted:**
 recognized scope values are `general`, `mews`, `opera-cloud`, `toast` — yes, including `toast`, meaning
 the third-party Toast POS platform, never this repository's own codename. Every mention of `toast` as a
-scope/tag value from here on means the POS platform; see ADR-0011's Context for the full
+scope/tag value from here on means the POS platform; see ADR-knowledge-scope-tagging-and-filtering's Context for the full
 disambiguation.
 
 ### 1. Current state vs. target (per component)
@@ -6487,7 +6487,7 @@ and this stays focused on the retrieval-side predicate alone): flag off ignores 
 unfiltered baseline call still resolves it (proving structural exclusion, not just a ranking
 effect); flag on includes a page when its scope is allowed; two differently-scoped pages never
 cross-leak into each other's view; a chunk with **no** knowledge-scope tag at all (empty array, not
-even `general`) never participates under any non-empty filter (ADR-0011 Decision 1, proven against
+even `general`) never participates under any non-empty filter (ADR-knowledge-scope-tagging-and-filtering Decision 1, proven against
 real Postgres array-overlap semantics, not just asserted); `query_trace.allowed_knowledge_scopes`
 is populated with the exact list actually applied. One more test closes 10.3's own deferred
 acceptance criterion: `EXPLAIN` against a query with the two competing `is_active`-partial btree
@@ -6572,7 +6572,7 @@ list).** The exact-match answer cache already binds `(history, scope)` so a hit 
 *principal* boundary (PLAN 5). Without also binding `knowledge_scope`, two requests with identical
 history/principal but different `knowledge_scope` would collide on the same cache entry and replay
 an answer grounded in the wrong provider's evidence — a real cross-scope leak of the same shape
-ADR-0011 exists to prevent, just via the cache instead of the SQL filter. Fixed the same way the
+ADR-knowledge-scope-tagging-and-filtering exists to prevent, just via the cache instead of the SQL filter. Fixed the same way the
 principal binding already works: `_cache_key` now hashes `(history, scope, knowledge_scope)`,
 `CachingAnswerService.answer()` takes and forwards `knowledge_scope`. Two new tests
 (`test_different_knowledge_scope_is_not_served_from_cache`,
@@ -6598,7 +6598,7 @@ optional `knowledgeScope` prop, threaded into every `streamChat()` call — `cha
 code change at all (it already `JSON.stringify`s the whole `ChatRequest` object verbatim, so the new
 field rides along for free once the type gained it). **Deliberately not wired to a real value
 anywhere** — `layout.tsx`'s `<ChatSessionProvider>` mount is untouched; a visible switcher is §10.8,
-not this sub-step, matching ADR-0011 Decision 6 ("genuinely new plumbing") and the plan's own file
+not this sub-step, matching ADR-knowledge-scope-tagging-and-filtering Decision 6 ("genuinely new plumbing") and the plan's own file
 list (which does not include `layout.tsx` or `chat-client.ts`'s body).
 
 **Tests:** `rag_agent/tests/test_answer_service.py` (+7: recognized-scope forwarding, unrecognized
@@ -6785,9 +6785,9 @@ label change and re-stamps `tags` via 10.2's new path, and a verification query 
 currently `is_active` chunk has a non-empty knowledge-scope-relevant tag before the flag flips. This is
 a manual, disclosed step — not automated by this phase, since deciding *which* scope each existing page
 belongs to is a content decision, not a mechanical one. **This manual-labeling step is the single
-highest-risk point for the Toast naming collision** (ADR-0011 Context): a human typing the `toast`
+highest-risk point for the Toast naming collision** (ADR-knowledge-scope-tagging-and-filtering Context): a human typing the `toast`
 label is the one place nothing in code catches "did you mean the POS platform or this repo?" — the
-operator doing this relabeling should have ADR-0011's Context open, not just this task description.
+operator doing this relabeling should have ADR-knowledge-scope-tagging-and-filtering's Context open, not just this task description.
 
 **No backfill of historical/superseded `document_version`/chunk rows is needed** — retrieval only ever
 reads `is_active` chunks (confirmed, `_base_filters()`), and superseded rows are already GC'd by
@@ -6936,7 +6936,7 @@ label-gated mode a recognized label is the *only* thing that keeps a page in the
    never entered, so behavior is byte-for-byte unchanged.
 4. **`source_scope` is orthogonal, not unioned.** In label-gated mode a recognized label is the sole
    corpus-membership control — an unlabeled page is deactivated regardless of any folder root (this is
-   the point: pure tags). `source_scope` still exists and still drives RLS *source scoping* (ADR-0004)
+   the point: pure tags). `source_scope` still exists and still drives RLS *source scoping* (ADR-source-id-row-security-with-reader-writer-roles)
    and the `base` folder tag, but it is **not** consulted as an ingestion-coverage input here. (Existing
    `['base','general']` pages keep both tags and stay active via their `general` label — no migration.)
 5. **Rollout flag.** New `Settings.enable_label_gated_ingestion` (default `false`, ships dark, mirrors
@@ -7022,7 +7022,7 @@ reproduced by the user, not just re-asserted by the agent.
 6. With the flag on, a `mews`-active request retrieves `general + mews` only.
 7. With the flag on, an `opera-cloud`-active request retrieves `general + opera-cloud` only.
 7a. With the flag on, a `toast`-active request retrieves `general + toast` only — `toast` here means
-   Toast POS, never this deployment's own codename (ADR-0011 Context); this criterion exists
+   Toast POS, never this deployment's own codename (ADR-knowledge-scope-tagging-and-filtering Context); this criterion exists
    specifically because that collision makes it the highest-risk scope value to get wrong.
 8. Provider-scoped knowledge cannot leak through the retrieval SQL — proven by a negative test, not
    assumed from the LLM ignoring it.
@@ -7035,11 +7035,11 @@ reproduced by the user, not just re-asserted by the agent.
 15. `general`-tagged content remains available to every active scope.
 16. Always-present curated knowledge can be added/edited/deactivated independently via the seed
     script, without a redeploy.
-17. `source_scope` and ADR-0004's `source_id`/RLS mechanism are reused unchanged, not duplicated.
+17. `source_scope` and ADR-source-id-row-security-with-reader-writer-roles's `source_id`/RLS mechanism are reused unchanged, not duplicated.
 18. `principal`-threading pattern is reused for `knowledge_scope`, not a parallel mechanism.
 19. `docs/future-ideas/IDEAS.md` idea #8 (and the retrieval-side half of idea #2) no longer describe
     unbuilt work once this phase ships; remaining open questions stay explicitly in that file.
-20. Multiple-scope-per-page and explicit cross-scope retrieval remain explicitly deferred (ADR-0011
+20. Multiple-scope-per-page and explicit cross-scope retrieval remain explicitly deferred (ADR-knowledge-scope-tagging-and-filtering
     Decision 8) — this phase does not silently half-build either.
 21. A real Confluence label add/edit/removal, driven through the actual event→sync code path against
     live Confluence + a real DB, is shown to update `page_source.tags`/`chunk.tags` with no manual
@@ -7063,27 +7063,27 @@ reproduced by the user, not just re-asserted by the agent.
 > Phase 12.
 
 **Framing facts the investigation established (do not relitigate — grounded in a direct code read):**
-- **The three concerns already exist as machine-enforced module boundaries** (`tools/check_feature_boundaries.py`, ADR-0003): `retrieval` = the RAG read core, `confluence_sync`+`ingestion` = the write path, `rag_agent` = the API/orchestration surface. There are **zero** deep cross-feature imports today; every edge goes through a facade `__init__.py`. The seams are already drawn.
-- **The vector DB cannot become its own *service* today.** Its four-customer + source isolation is Postgres RLS + a `rag_reader` non-`BYPASSRLS` role + a per-transaction `set_config('app.allowed_sources', …, true)` GUC on **one shared Postgres** (ADR-0004; `engine.py:37-64`, `search_repo.py:38-49`). A separate RAG service would mean **replacing the RLS security model**, not moving a component. Target for "its own source of truth" is therefore **package-level extraction of the retrieval core + a managed Postgres reached only by DSN** (the Phase 6 Supabase/managed-Postgres seam) — never a bespoke internal data microservice.
-- **The repo split is currently blocked by ADR-0010** (Accepted 2026-08-12), which re-deferred it to `docs/future-ideas/IDEAS.md` #5. Executing 11.4 requires a **superseding ADR (ADR-0012)** plus three decisions only the user can make (registry, two repo names, origin-monorepo fate). The full 7-item split design already exists in IDEAS #5 — 11.4 executes it, it does not re-design it.
+- **The three concerns already exist as machine-enforced module boundaries** (`tools/check_feature_boundaries.py`, ADR-features-import-only-through-public-root): `retrieval` = the RAG read core, `confluence_sync`+`ingestion` = the write path, `rag_agent` = the API/orchestration surface. There are **zero** deep cross-feature imports today; every edge goes through a facade `__init__.py`. The seams are already drawn.
+- **The vector DB cannot become its own *service* today.** Its four-customer + source isolation is Postgres RLS + a `rag_reader` non-`BYPASSRLS` role + a per-transaction `set_config('app.allowed_sources', …, true)` GUC on **one shared Postgres** (ADR-source-id-row-security-with-reader-writer-roles; `engine.py:37-64`, `search_repo.py:38-49`). A separate RAG service would mean **replacing the RLS security model**, not moving a component. Target for "its own source of truth" is therefore **package-level extraction of the retrieval core + a managed Postgres reached only by DSN** (the Phase 6 Supabase/managed-Postgres seam) — never a bespoke internal data microservice.
+- **The repo split is currently blocked by ADR-keep-frontend-backend-in-one-repo-for-now** (Accepted 2026-08-12), which re-deferred it to `docs/future-ideas/IDEAS.md` #5. Executing 11.4 requires a **superseding ADR (ADR-0012)** plus three decisions only the user can make (registry, two repo names, origin-monorepo fate). The full 7-item split design already exists in IDEAS #5 — 11.4 executes it, it does not re-design it.
 - **CRITICAL — customer isolation currently fails OPEN.** The mews/opera-cloud/toast/general boundary is enforced *only* by an app-layer `tags && :scopes` predicate at ~4 SQL call sites (`search_repo.py:64-69`, `curated_knowledge_repo.py:19-23`), all four scopes share one `source_id`, and the whole thing is gated behind `enable_knowledge_scope_filtering` — which **fails open** (`retriever.py:128-132`: flag off → predicate never added → **every customer's content returned to everyone**). Source RLS fails *closed*; customer scope does not. `curated_knowledge_entry` has **no RLS at all**. The eventual (deferred) **AWS** public exposure makes this urgent, because the only per-request auth is one shared `CHAT_API_KEY` with no per-user→customer binding — and independent of deploy, doing it *before* the split means the refactor can only make isolation stronger.
 
 ### 11.1 — Security backstop (do FIRST, before any public deploy — valuable independent of the split)
 
 **Why first.** A split adds another boundary where the scope list can be dropped/defaulted; hardening the fail-open gap first means the refactor can only make isolation *stronger*, never weaker. This is also the gate the user set: fix before public.
 
-- **11.1a — DB-level customer-isolation backstop.** Give the four-customer boundary the same default-deny DB enforcement the source boundary already has, so a dropped predicate or a flag flip can no longer leak. **Design decision to record in ADR-0012/0013:** either **(i) per-customer `source_id`** — stamp each customer's pages with their own `source_id` so ADR-0004 RLS separates them (reuses existing machinery; cost = data migration + ingestion stamping `source_id` from the resolved label), or **(ii) scope-GUC RLS** — add an RLS policy on `chunk` keyed on a new `app.allowed_knowledge_scopes` GUC that mirrors `app.allowed_sources` (`search_repo.py:38-49`), set per-transaction. Apply the same to `curated_knowledge_entry` (`curated_knowledge_repo.py:5-7`, no RLS today). **Acceptance:** with the app-layer filter deliberately bypassed, a cross-customer query still returns **zero rows** — isolation no longer depends solely on the feature flag.
+- **11.1a — DB-level customer-isolation backstop.** Give the four-customer boundary the same default-deny DB enforcement the source boundary already has, so a dropped predicate or a flag flip can no longer leak. **Design decision to record in ADR-0012 / ADR-supabase-postgres-store-without-force-rls:** either **(i) per-customer `source_id`** — stamp each customer's pages with their own `source_id` so ADR-source-id-row-security-with-reader-writer-roles RLS separates them (reuses existing machinery; cost = data migration + ingestion stamping `source_id` from the resolved label), or **(ii) scope-GUC RLS** — add an RLS policy on `chunk` keyed on a new `app.allowed_knowledge_scopes` GUC that mirrors `app.allowed_sources` (`search_repo.py:38-49`), set per-transaction. Apply the same to `curated_knowledge_entry` (`curated_knowledge_repo.py:5-7`, no RLS today). **Acceptance:** with the app-layer filter deliberately bypassed, a cross-customer query still returns **zero rows** — isolation no longer depends solely on the feature flag.
 - **11.1b — Owner DSN out of the read core.** `main.py:66-113` wires the owner (`BYPASSRLS`) sessionmaker into the answer runtime for `query_trace` writes, so the read path's process holds a connection that silently no-ops RLS if a read is ever routed through it. Narrow it: the retrieval core holds **only** `DATABASE_READER_URL`; route trace/feedback writes through a dedicated write-only capability or the API-orchestration layer. Preserve the `ReaderRoleMisconfiguredError` fail-closed guard (`engine.py:37-57`).
 - **11.1c — Public-exposure hardening (DEFERRED — couples to the later AWS deploy).** Add trusted-proxy `X-Forwarded-For` parsing so per-IP rate limits (`router.py:270-276`, `webhook.py`) don't collapse to the load-balancer/edge IP; keep the chat backend **network-private to the proxy** (document that scope isolation depends on the backend not being directly reachable by arbitrary callers holding `CHAT_API_KEY`); move the rate-limiter + idempotency + answer caches to a shared store (Redis) **only if** >1 instance runs — proportionality-gated, not automatic.
 
 ### 11.2 — Module-boundary hardening (within monorepo; no ADR needed; makes extraction mechanical)
 
-- **Finish config injection.** `retrieval` is already fully constructor-injected (`main.py:76-110`) — the model. Make `ingestion`/`rag_agent`/`confluence_sync` stop calling `get_settings()` directly, or split the 218-line `Settings` god-object per-layer (ADR-0006 D2), so a future package boundary has a clean config seam.
+- **Finish config injection.** `retrieval` is already fully constructor-injected (`main.py:76-110`) — the model. Make `ingestion`/`rag_agent`/`confluence_sync` stop calling `get_settings()` directly, or split the 218-line `Settings` god-object per-layer (ADR-defer-product-and-package-extraction D2), so a future package boundary has a clean config seam.
 - **Refile `curated_knowledge_repo`.** It is a retrieval-shaped DB read (adapts a table onto the evidence-hit protocol) currently parked in `rag_agent` — move it toward the RAG-core boundary so "RAG core" is where the code actually sits.
 - **Resolve `query_trace` write-ownership** (ties to 11.1b) — the table is read-owned by `retrieval` but written by the retriever *and* updated by `rag_agent`; pick one owner for persistence.
-- **Optionally facet `platform/db/models.py`** (11 tables, 586 lines) into per-owner modules or a shared `db-contracts` module, honoring ADR-0003 D5's deliberate "imported by full path, no facade" exception.
+- **Optionally facet `platform/db/models.py`** (11 tables, 586 lines) into per-owner modules or a shared `db-contracts` module, honoring ADR-features-import-only-through-public-root D5's deliberate "imported by full path, no facade" exception.
 - **Partition secrets in config** so each layer only reads what it owns (matrix below).
-- **Gate:** `make boundaries` stays exit-0 throughout; no ruff/pyright regression vs the ADR-0003 D1 baseline.
+- **Gate:** `make boundaries` stays exit-0 throughout; no ruff/pyright regression vs the ADR-features-import-only-through-public-root D1 baseline.
 
 ### 11.3 — Repo-split prerequisites — **DE-SCHEDULED 2026-09-09 → future idea (IDEAS #5)**
 
@@ -7106,8 +7106,8 @@ reproduced by the user, not just re-asserted by the agent.
 > future revisit. Nothing here is active work. *(Original spec retained below.)*
 
 - **Blocked on 3 decisions (recorded in §0 "Blockers"):** (1) which package registry (npm public / GitHub Packages / private) for `contracts`+`design-tokens`; (2) the two new repo names; (3) the origin-monorepo's fate (archive vs thin umbrella).
-- **Write ADR-0012 (supersedes ADR-0010)** authorizing the split — ADR-0010 is the current authority re-deferring it, so the split cannot proceed without reversing it on the record.
-- **Then, per IDEAS #5:** history-preserving `git filter-repo`/`subtree split` of `apps/web` and `apps/automation` into their own repos (automation is already self-contained — Makefile/`uv`/`alembic` move unchanged, ADR-0003); update ADR-0001 + root `CLAUDE.md` "Layout"; **exit gate** = both apps build independently *and* a deliberately breaking contract change is caught by CI.
+- **Write ADR-0012 (supersedes ADR-keep-frontend-backend-in-one-repo-for-now)** authorizing the split — ADR-keep-frontend-backend-in-one-repo-for-now is the current authority re-deferring it, so the split cannot proceed without reversing it on the record.
+- **Then, per IDEAS #5:** history-preserving `git filter-repo`/`subtree split` of `apps/web` and `apps/automation` into their own repos (automation is already self-contained — Makefile/`uv`/`alembic` move unchanged, ADR-features-import-only-through-public-root); update ADR-fastapi-nextjs-postgres-pgvector-stack + root `CLAUDE.md` "Layout"; **exit gate** = both apps build independently *and* a deliberately breaking contract change is caught by CI.
 - **Follow-on called out, not silently in scope:** the two-secret model (`WIDGET_ACCESS_TOKEN` browser-held, `CHAT_API_KEY` proxy-held) assumes browser+proxy **same origin**. True embedding on third-party customer domains ("one widget deployable everywhere") needs CORS + cross-origin token handling the proxy does not implement today (`access-token.ts` is explicitly "trusted pilot, not multi-tenant"). That is a distinct piece of work, flagged here so it isn't assumed done by 11.4.
 
 ### Secret ownership matrix (target end-state — enforced by 11.2/11.3/11.4)
@@ -7144,7 +7144,7 @@ reproduced by the user, not just re-asserted by the agent.
 | **12.4** | Phase 5 remainder | 5.4 live-LLM red-team + latency/cost proof; embedder bake-off; adaptive routing | blocked on API-spend go-ahead + `VOYAGE_API_KEY` |
 | **12.5** | Phase 6 | **Supabase Cloud (on AWS)** vector store migration & deploy — the **vector-DB-as-source-of-truth** prod seam (RDS/Aurora = fallback). **Superseded 2026-09-07: pulled forward to NEXT (see Phase 6), no longer a Phase-12 tail item** | blocked on writer+reader DSNs + pgvector ≥ 0.8 (blocker #8) |
 
-**Cross-cutting note (updated 2026-09-09 pm):** the public **deploy is now targeted at AWS and is deferred** — Railway is no longer the plan. When it happens (backend needs a persistent host — ECS/Fargate or similar, not serverless, for FastAPI + APScheduler) it must carry **11.1c**'s public-exposure hardening and unblocks the real-time Confluence webhook (a public HTTPS URL for `POST /confluence/events`). Until then, auto-update rides the reconciliation sweep. ADR-0011 still governs 12.1–12.3.
+**Cross-cutting note (updated 2026-09-09 pm):** the public **deploy is now targeted at AWS and is deferred** — Railway is no longer the plan. When it happens (backend needs a persistent host — ECS/Fargate or similar, not serverless, for FastAPI + APScheduler) it must carry **11.1c**'s public-exposure hardening and unblocks the real-time Confluence webhook (a public HTTPS URL for `POST /confluence/events`). Until then, auto-update rides the reconciliation sweep. ADR-knowledge-scope-tagging-and-filtering still governs 12.1–12.3.
 
 ---
 
@@ -7169,7 +7169,7 @@ reproduced by the user, not just re-asserted by the agent.
 All 11 mapped tables + `alembic_version` exist (12 public tables); every documented column/index/extension
 is present; **pgvector 0.8.2**; **HNSW** `ix_chunk_embedding_hnsw` on `chunk.embedding` (halfvec(3072)
 path matches `EMBEDDING_DIM=3072`); GIN `ix_chunk_tsv_gin` + partial GIN `ix_chunk_tags_gin`; **alembic
-head 0008** applied (`chunk` `force=false`, ADR-0013); `chunk_source_read` source-axis policy correct;
+head 0008** applied (`chunk` `force=false`, ADR-supabase-postgres-store-without-force-rls); `chunk_source_read` source-axis policy correct;
 `rag_reader` provisioned NOSUPERUSER/NOBYPASSRLS with complete `GRANT SELECT` + default privileges. **The
 pure "missing schema object" set is EMPTY** — the live gaps are RLS *posture*, not absent objects.
 
@@ -7218,7 +7218,7 @@ tree.
   and add explicit permissive reader policies, e.g. `CREATE POLICY reader_select ON page_source FOR SELECT
   TO rag_reader USING (true);` (repeat for `page_restriction`, `curated_knowledge_entry`).
 - Pick **one**, encode it in `0009`, re-assert in `scripts/setup_supabase.py provision-reader`, keep the
-  migration reversible, and **note in ADR-0013/0004** that non-`chunk` RLS posture is now migration-owned.
+  migration reversible, and **note in ADR-supabase-postgres-store-without-force-rls / ADR-source-id-row-security-with-reader-writer-roles** that non-`chunk` RLS posture is now migration-owned.
 - *(The stronger scope-GUC policy on `curated_knowledge_entry` belongs to **11.1a**, not here — 13.1 only
   restores reader read-access.)*
 
@@ -7237,18 +7237,18 @@ De-duplicated across the 6-agent audit; fix all occurrences together:
   `06-system-visualization.md:274`, `PLAN.md:5472,5856` (pre-shift refs), and the `curated_knowledge_repo.py`
   docstring. Do not call tag-filtering the "only" access control on the live deployment.
 - **Stale FORCE-RLS content** — `05-security-isolation.md:37-43,105-118` (Issue 1) + `06:284,331` still
-  show `FORCE ROW LEVEL SECURITY` / `schema.py:60` as an open pre-Phase-6 item. It's **resolved** (ADR-0013
+  show `FORCE ROW LEVEL SECURITY` / `schema.py:60` as an open pre-Phase-6 item. It's **resolved** (ADR-supabase-postgres-store-without-force-rls
   + migration 0008, `force=false` live; `schema.py:65-76` is `ENABLE`+`NO FORCE`). Move Issue 1 → DONE.
 - **"Phase 6 not built"** — `01-system-overview.md:118-120`, `06:312,328-332`, `final_design/README.md:46-47`
   say Phase 6 is "decided on paper, not built." It **was executed** (provisioned/migrated/corpus-loaded,
   uncommitted); only the traffic switch remains. Reword.
-- **`rag_writer` role does not exist** — `ADR-0004`, `DESIGN.md:196-201,198,241`, `ingestion/phase-0.md:43`
+- **`rag_writer` role does not exist** — `ADR-source-id-row-security-with-reader-writer-roles`, `DESIGN.md:196-201,198,241`, `ingestion/phase-0.md:43`
   call the writer `rag_writer`. The writer is the table-owner superuser (local `rag`; live `postgres`,
   BYPASSRLS). Label-only fix; RLS behavior described is correct.
 - **Counts/ranges** — `DESIGN.md:101` "10 tables"→11 (add `curated_knowledge_entry`);
   `04-data-model.md:6` fix the `models.py:572-586` citation (that's `__all__`, 10 classes; PageRestriction
   is mapped but not re-exported); `06:323` migration range `0001..0007`→`0001..0008`.
-- **ADR-0013:84** — soften the "managed Postgres does not reliably grant BYPASSRLS" line: live `postgres`
+- **ADR-supabase-postgres-store-without-force-rls:84** — soften the "managed Postgres does not reliably grant BYPASSRLS" line: live `postgres`
   **does** carry BYPASSRLS; FORCE is dropped for portability (RDS fallback) + narrowness, not necessity.
 
 ### 13.4 — Runbook / operational gaps *(low)*
@@ -7294,7 +7294,7 @@ data lands — hence "before public deploy," not emergencies.
 - **Feature boundaries:** when other code needs a new symbol, export it from the feature/capability
   root (`__init__.py`) — never deep-import. `platform/**` and `shared/**` import no features. Run
   `make boundaries` before every commit.
-- **No-regression on lint/type:** ruff/pyright held at the ADR-0003 D1 baseline (2/25 ruff, 31/1
+- **No-regression on lint/type:** ruff/pyright held at the ADR-features-import-only-through-public-root D1 baseline (2/25 ruff, 31/1
   pyright). Bring files you touch clean; do not reformat files you didn't otherwise touch; do not let
   whole-repo counts rise.
 - **Gate unchanged:** from `apps/automation`, `make check` (boundaries + `pytest -q`) stays green.
@@ -7320,7 +7320,7 @@ data lands — hence "before public deploy," not emergencies.
 | `app/features/rag_agent/` (new), `app/main.py` | answer workflow, `POST /chat`, `PATCH /chat/{id}/feedback` | 4 |
 | `apps/web/src/features/chat/*`, `app/api/chat/route.ts`, `packages/contracts` | chat UI + SSE proxy + contract | 4 |
 | `docs/rag/fixes/*`, `app/features/{confluence_sync,retrieval,rag_agent}/**`, `shared/rate_limiter.py`, `platform/clients/confluence_client.py`, `platform/db/models.py` | 16-item remediation (ACL bypass, cache leak, rate-limiter bypass, rollback gap, schema dup, doc drift) | 4.6 |
-| `docs/adr/0006-Defer-Multi-Product-Extraction.md`, `docs/adr/0007-Frontend-Backend-Repository-Separation.md` (both superseded again), `docs/adr/0010-Redefer-Repository-Separation.md` (new), `docs/future-ideas/IDEAS.md` | deferred → superseded → re-deferred multi-deployment/repo-split decisions + corrected corpus-segmentation idea | 4.7 / 4.8 (removed) |
+| `docs/adr/defer-product-and-package-extraction.md`, `docs/adr/README.md` (both superseded again), `docs/adr/keep-frontend-backend-in-one-repo-for-now.md` (new), `docs/future-ideas/IDEAS.md` | deferred → superseded → re-deferred multi-deployment/repo-split decisions + corrected corpus-segmentation idea | 4.7 / 4.8 (removed) |
 | `packages/design-tokens/src/tokens.ts`, `apps/web/src/features/chat/ui/*` (new), `apps/web/src/app/layout.tsx` | brand-token adoption + Obi widget component rebuild | 4.7 |
 | `packages/contracts/package.json`, `packages/design-tokens/package.json`, new standalone repos | **not built** — published versioned packages + frontend/backend repo extraction moved to `docs/future-ideas/IDEAS.md` #5, unscheduled | 4.8 (removed) |
 | `docs/adr/0011-*.md`, `confluence_sync/domain/knowledge_scope.py` (new), `retrieval/domain/knowledge_scope.py` (new), `search_repo.py`, `retriever.py`, `platform/db/models.py` (`CuratedKnowledgeEntry`, `ix_chunk_tags_gin`, `QueryTrace.allowed_knowledge_scopes`), `alembic/versions/0007_knowledge_scope.py` (new), `rag_agent/domain/curated_knowledge.py` (new), `rag_agent/server/router.py`, `packages/contracts`, `apps/web/src/features/chat/*` | knowledge-scope tagging + retrieval filtering + curated knowledge — **scoped, not built** | 10 |

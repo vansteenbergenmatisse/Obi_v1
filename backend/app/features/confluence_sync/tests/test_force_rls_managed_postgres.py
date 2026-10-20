@@ -1,11 +1,11 @@
-"""ADR-0013 / Phase 6 step 1: the writer must read its own rows WITHOUT being a superuser.
+"""ADR-supabase-postgres-store-without-force-rls / Phase 6 step 1: the writer must read its own rows WITHOUT being a superuser.
 
 Today ``chunk`` is under ``FORCE ROW LEVEL SECURITY`` and the writer escapes the default-deny
 policy *only by being a superuser* (local ``rag`` is one — FORCE makes even the table owner subject,
 so ownership alone would not be enough). Managed Postgres (Supabase, RDS) grants no true superuser,
 so on cutover the writer would be filtered to zero rows and ingestion/reconcile reads would break.
 
-The fix (ADR-0013): drop ``FORCE`` but keep ``ENABLE`` — a non-superuser *owner* then bypasses RLS,
+The fix (ADR-supabase-postgres-store-without-force-rls): drop ``FORCE`` but keep ``ENABLE`` — a non-superuser *owner* then bypasses RLS,
 while the non-owner ``rag_reader`` stays policy-bound and isolation on the read path is unchanged.
 
 These tests reproduce the managed-Postgres condition on the real ``chunk`` table by handing its
@@ -128,7 +128,7 @@ def test_non_owner_reader_still_isolated(gateway, settings: Settings) -> None:
 
 def test_s_writer_chunk_rls_enabled_but_not_forced() -> None:
     """panel s-writer · substep 0.5 regression
-    chunk carries the exact catalog state ADR-0013 requires: RLS ENABLEd (relrowsecurity) so
+    chunk carries the exact catalog state ADR-supabase-postgres-store-without-force-rls requires: RLS ENABLEd (relrowsecurity) so
     non-owner roles are policy-bound, but NOT FORCEd (relforcerowsecurity) so the table owner
     stays exempt by ownership alone -- the mechanic managed Postgres (no true superuser) depends
     on. This is the deterministic equivalent of coverage-map.md's staging-only pg_class check.
@@ -147,7 +147,7 @@ def test_s_writer_chunk_rls_enabled_but_not_forced() -> None:
     )
     assert force_row_security is False, (
         "chunk must NOT have FORCE ROW LEVEL SECURITY -- FORCE would filter the owner too, "
-        "breaking the managed-Postgres writer (ADR-0013)"
+        "breaking the managed-Postgres writer (ADR-supabase-postgres-store-without-force-rls)"
     )
 
 

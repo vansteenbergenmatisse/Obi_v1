@@ -75,6 +75,6 @@ None. This feature makes no HTTP, LLM, embedding, or reranker call anywhere in i
 | e-judge | "A different model grades answers at scale, checked against human grades first" | — | missing | no judge-model code exists anywhere in `apps/automation`; every "judge" hit found (`app/features/rag_agent/domain/prompt.py:102-123`, `app/features/rag_agent/domain/clarification.py:112-114`) is the unrelated ambiguity-classifier's plain-English wording, not an LLM-judge tool — not owned by any other folder either |
 
 ## Not on the design page
-- `metrics/fallback_metrics.py:18,27` (`fallback_rate`, `citation_grounding_rate`, PLAN 9.7 / ADR-0008 decision 7) — exported at the feature root (`__init__.py:16`) and tested (`tests/test_fallback_metrics.py`), but no panel in this assignment's list names them.
+- `metrics/fallback_metrics.py:18,27` (`fallback_rate`, `citation_grounding_rate`, PLAN 9.7 / ADR-ambiguity-clarification-then-fallback-answer decision 7) — exported at the feature root (`__init__.py:16`) and tested (`tests/test_fallback_metrics.py`), but no panel in this assignment's list names them.
 - `run_baseline.py:93-157` — Markdown/JSON rendering of the rerank-lift report (`render_rerank_lift_markdown`, `write_rerank_lift_reports`, `_print_saved_rerank_lift`) is implementation detail not mentioned on any panel.
 - `README.md:1-85` — a feature-local README documenting "the five eval kinds" and the Phase 3-5 plug-in contract; not referenced by any panel's "Where in the code" line.

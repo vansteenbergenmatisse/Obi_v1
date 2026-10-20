@@ -1,5 +1,5 @@
 /**
- * Root layout for the Obi `/embed` frame (PLAN 11.1c, ADR-0014) — one of Next's "multiple root
+ * Root layout for the Obi `/embed` frame (PLAN 11.1c) — one of Next's "multiple root
  * layouts" (see `(site)/layout.tsx`'s docstring). Deliberately does NOT mount
  * `ChatSessionProvider`/`ChatWidget` at this level: `page.tsx` does that itself, scoped to this
  * one route, with no `knowledgeScope` prop — scope now comes from the verified token, not a

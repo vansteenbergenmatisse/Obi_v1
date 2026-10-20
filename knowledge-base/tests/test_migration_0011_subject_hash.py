@@ -1,4 +1,4 @@
-"""PLAN 11.1c (ADR-0014): 0011 must be a true, reversible ``head -> 0010 -> head`` migration that
+"""PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): 0011 must be a true, reversible ``head -> 0010 -> head`` migration that
 adds ``query_trace.subject_hash``.
 
 Runs the real Alembic chain against a dedicated database (same harness discipline as

@@ -33,7 +33,7 @@ export interface WidgetCopy {
   /** Status-pill label for a `clarifying` turn (PLAN 9.5) — distinct from the refusal banner:
    * an open next step, not a failure. */
   clarifyingLabel: string;
-  /** Human hand-off CTA lead-in shown under a `refused` turn (PLAN 9.6, ADR-0008 decision 6) —
+  /** Human hand-off CTA lead-in shown under a `refused` turn (PLAN 9.6, ADR-ambiguity-clarification-then-fallback-answer decision 6) —
    * the email address itself renders separately as a `mailto:` link, not interpolated into this
    * string, so word order stays natural per locale. Stub only: `test@gmail.com` is a placeholder
    * address, not a real support channel — see `docs/future-ideas/IDEAS.md` #1. */
@@ -43,7 +43,7 @@ export interface WidgetCopy {
   /** Persistent composer disclosure shown while an image is staged to send — discloses the C6
    * gap (image bytes are not PII-redacted, unlike message text) rather than hiding it. */
   imageDisclosure: string;
-  /** Label introducing an assistant turn's vision-analysis block (ADR-0009 decision 5). */
+  /** Label introducing an assistant turn's vision-analysis block (ADR-vision-grounded-image-analysis decision 5). */
   imageAnalysisLabel: string;
   /** Composer error shown when a chosen image exceeds the per-image byte cap (w-composer /
    * decision w-composer-images): the image is not attached and the person is told to compress it. */

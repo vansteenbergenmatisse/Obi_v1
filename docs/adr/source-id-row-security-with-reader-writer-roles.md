@@ -1,8 +1,10 @@
-# 0004 — Multi-Source Provider Tagging and Row-Level Security
+# Multi-Source Provider Tagging and Row-Level Security
+
+Identifier: `ADR-source-id-row-security-with-reader-writer-roles` (formerly numbered 0004). File paths updated to the current layout (`backend/`, `frontend/`, `knowledge-base/`) on 2026-10-20; the decision is unchanged.
 
 Status: Accepted
 Date: 2026-08-07
-Governs: apps/automation (retrieval, ingestion, platform/db, alembic), infra/foundation
+Governs: backend (retrieval, ingestion, knowledge-base/schema, alembic), knowledge-base/local
 
 ## Context
 
@@ -11,7 +13,7 @@ One backend and one corpus must power *many* chatbots, each scoped to a subset o
 scopes and **default-deny**. The as-built schema has no source/tenant column — only Confluence `space_id`
 (`models.py:91,231`) — so nothing today can isolate whole source systems. Confluence is the only source
 for now, so we add the isolation spine without generalizing the Confluence-specific ingestion or gateway
-yet. This ADR fixes the isolation model; the reranker/answer pipeline is ADR-0005.
+yet. This ADR fixes the isolation model; the reranker/answer pipeline is ADR-rerank-then-verify-cited-answers.
 
 ## Decision
 
@@ -21,7 +23,7 @@ yet. This ADR fixes the isolation model; the reranker/answer pipeline is ADR-000
    is a **CHECK constraint, not a PG enum** — new connectors must not require `ALTER TYPE`.
 
 2. **Two layered controls, both always applied on every read.** Source-level **RLS** on `chunk` isolates
-   whole source systems; page-level **principal ACL** (persisted in Phase 4, ADR-0005 territory) enforces
+   whole source systems; page-level **principal ACL** (persisted in Phase 4, ADR-rerank-then-verify-cited-answers territory) enforces
    per-page read restrictions within a source. They are distinct layers; neither replaces the other.
 
 3. **Postgres RLS keyed by `source_id`, default-deny.**
@@ -98,7 +100,7 @@ single ingestion seam keep the door open for the next source without an `ALTER T
 
 ## Paths governed
 
-`apps/automation/app/features/{retrieval,ingestion}/**`, `apps/automation/app/platform/db/**`,
-`apps/automation/alembic/**`, `apps/automation/app/platform/config/settings.py`,
-`infra/foundation/docker-compose.yml`, and the eval harness
+`backend/app/features/{retrieval,ingestion}/**`, `knowledge-base/schema/**`,
+`knowledge-base/migrations/**`, `backend/app/platform/config/settings.py`,
+`knowledge-base/local/docker-compose.yml`, and the eval harness
 (`confluence_sync/tests/conftest.py`, `test_retrieval_eval.py`).

@@ -270,7 +270,7 @@ flowchart TB
   L1 --> L2
   subgraph L2["Layer 2 - Knowledge scope (DB RESTRICTIVE RLS + app predicate, fails CLOSED)"]
     K0["set_config('app.allowed_knowledge_scopes', :s, true) - every reader txn"]
-    K1["RESTRICTIVE POLICY chunk_scope_read / curated_..._scope_read (ADR-0014)"]
+    K1["RESTRICTIVE POLICY chunk_scope_read / curated_..._scope_read (ADR-db-level-customer-scope-isolation-backstop)"]
     K2["+ app predicate tags && :knowledge_scopes (flag-gated, defense-in-depth)"]
   end
   L2 --> L3
@@ -281,8 +281,8 @@ flowchart TB
   L3 --> OUT["permitted candidates -> rerank -> answer"]
 
   subgraph DES["Design decisions (ADRs)"]
-    I1["Managed PG: RLS ENABLE + NO FORCE, owner exempt by ownership (ADR-0013)"]
-    I2["Customer axis: RESTRICTIVE scope-GUC RLS, ANDs with source, fail-closed (ADR-0014)"]
+    I1["Managed PG: RLS ENABLE + NO FORCE, owner exempt by ownership (ADR-supabase-postgres-store-without-force-rls)"]
+    I2["Customer axis: RESTRICTIVE scope-GUC RLS, ANDs with source, fail-closed (ADR-db-level-customer-scope-isolation-backstop)"]
   end
   L1 -. "portable to managed PG" .-> I1
   L2 -. "fails closed like source RLS" .-> I2
@@ -290,7 +290,7 @@ flowchart TB
 
 Caption: Three layers gate every read. Layers 1 and 2 are hard, database-enforced, default-deny
 boundaries — Layer 1 isolates source systems, Layer 2 isolates the customer/platform axis with a
-`RESTRICTIVE` scope-GUC RLS policy (ADR-0014) that ANDs on top of Layer 1, backed by a redundant
+`RESTRICTIVE` scope-GUC RLS policy (ADR-db-level-customer-scope-isolation-backstop) that ANDs on top of Layer 1, backed by a redundant
 flag-gated app predicate. Layer 3 (principal ACL) runs before rerank so the cross-encoder never scores a
 document the principal cannot see. The two design decisions worth calling out (managed-PG `NO FORCE`;
 fail-closed customer axis) are attached to the layers they support — see
@@ -329,7 +329,7 @@ Caption: In dev, both apps run locally against a Docker `pgvector/pgvector:pg16`
 5434, with deterministic offline fallbacks (Fake embedder/reranker, fixture Confluence) so the whole
 system runs with no API keys. Production targets **Supabase Cloud on AWS** — managed Postgres + pgvector
 ≥ 0.8, reached over the session-pooler/direct port 5432 by plain DSN, with separate writer and reader
-connection strings. RLS is `ENABLE`d + `NO FORCE` (ADR-0013, owner exempt by ownership) and the
-customer axis is backstopped by `RESTRICTIVE` scope-GUC RLS (ADR-0014). **RDS/Aurora is a reversible
+connection strings. RLS is `ENABLE`d + `NO FORCE` (ADR-supabase-postgres-store-without-force-rls, owner exempt by ownership) and the
+customer axis is backstopped by `RESTRICTIVE` scope-GUC RLS (ADR-db-level-customer-scope-isolation-backstop). **RDS/Aurora is a reversible
 fallback** (a DSN swap + role/RLS re-apply). No scale/latency target is defined. Live cutover status is
 tracked in `docs/rag/PLAN.md` §0.

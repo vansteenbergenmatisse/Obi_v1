@@ -5,7 +5,7 @@ Holds the CFG-D-KB-1 live-host guard: an autouse, ``db``-gated fixture that refu
 ``drop_all`` / ``create_all``, or a ``rag_reader`` password reset). The check lives in the sibling
 ``_db_guard`` module (importable by bare name — the tests directory has no ``__init__.py``, so
 pytest's prepend import mode puts it on ``sys.path``); see that module for why the KB tree carries
-its own copy instead of importing the backend's guard (ADR-0018 one-way boundary).
+its own copy instead of importing the backend's guard (ADR-folder-dependencies-point-one-way one-way boundary).
 """
 
 from __future__ import annotations

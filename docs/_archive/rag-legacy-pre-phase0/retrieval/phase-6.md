@@ -8,14 +8,14 @@ the read/answer path and how it was re-verified live.
 
 ## What changes for retrieval
 
-Nothing in retrieval *code* changes — the whole point of ADR-0001/0002/0004 is that the store is
+Nothing in retrieval *code* changes — the whole point of ADR-fastapi-nextjs-postgres-pgvector-stack / ADR-hybrid-retrieval-over-versioned-chunk-store / ADR-source-id-row-security-with-reader-writer-roles is that the store is
 plain Postgres + pgvector + RLS behind a DSN. The move is:
 
 - **Reader connection repointed.** The RLS-scoped reader engine (`DATABASE_READER_URL`,
   `platform/db/engine.py::get_reader_engine`/`get_reader_sessionmaker`) now points at the managed
   instance as the non-owner `rag_reader` role. `provision-reader` derives this DSN and writes it to
   `.env` — the pooler username is `rag_reader.<project_ref>`.
-- **RLS is the same policy on a host with no superuser.** Under ADR-0013 the writer/owner is exempt
+- **RLS is the same policy on a host with no superuser.** Under ADR-supabase-postgres-store-without-force-rls the writer/owner is exempt
   by *table ownership + `NO FORCE`* (not superuser/`BYPASSRLS`), while `rag_reader` stays policy-bound
   by `chunk_source_read`. The read-path guarantee of [phase-0.md](./phase-0.md) /
   [phase-3.5.md](./phase-3.5.md) — default-deny, scoped by `app.allowed_sources` — is unchanged.
@@ -26,7 +26,7 @@ plain Postgres + pgvector + RLS behind a DSN. The move is:
 
 - **Isolation (`scripts/setup_supabase.py verify-isolation`, live):** owner sees **85** chunks;
   `rag_reader` with **no** `app.allowed_sources` GUC → **0** (default-deny); scoped to the real source
-  → **85**; scoped to a bogus source → **0**. This is the ADR-0004 read-path contract, proven on the
+  → **85**; scoped to a bogus source → **0**. This is the ADR-source-id-row-security-with-reader-writer-roles read-path contract, proven on the
   real instance — and it also proves `rag_reader` authenticates through the session pooler.
 - **Retrieval quality (`make eval`, live):** retrieval_smoke recall@5 **1.000** / mrr 0.750 /
   hit_rate@5 1.000; ambiguity recall@5 1.000; permission recall@5 0.667; out_of_corpus 0.000

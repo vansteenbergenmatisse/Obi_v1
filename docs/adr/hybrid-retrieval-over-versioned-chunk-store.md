@@ -1,8 +1,10 @@
-# 0002 — Retrieval and Versioning Model
+# Retrieval and Versioning Model
+
+Identifier: `ADR-hybrid-retrieval-over-versioned-chunk-store` (formerly numbered 0002). File paths updated to the current layout (`backend/`, `frontend/`, `knowledge-base/`) on 2026-10-20; the decision is unchanged.
 
 Status: Accepted
 Date: 2026-07-28
-Governs: apps/automation (ingestion, retrieval, versioning)
+Governs: backend (ingestion, retrieval, versioning)
 
 ## Decision
 
@@ -30,7 +32,7 @@ versions, no silent re-embedding, safe recovery) underpins knowledge freshness a
 
 ## Paths governed
 
-`apps/automation/app/features/{ingestion,retrieval}/**`, `alembic/**`.
+`backend/app/features/{ingestion,retrieval}/**`, `alembic/**`.
 
 ## Amendment (Phase 3): high-dimension embedding index
 

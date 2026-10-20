@@ -1,5 +1,5 @@
 /**
- * Frame-side bridge for the Obi embed (PLAN 11.1c, ADR-0014) — the `/embed` page's half of the
+ * Frame-side bridge for the Obi embed (PLAN 11.1c) — the `/embed` page's half of the
  * `postMessage` contract with `obi.js` (the host-page loader, `loader.ts`).
  *
  * Security posture (non-negotiable, this is a cross-origin embed):
@@ -36,7 +36,7 @@ let currentToken: string | null = null;
  * `TokenVerifier` is the authority). Kept in memory only, alongside `currentToken`. `slots` is a
  * stable signature of the §D.13 three-slot integration context (substep 8.4.2) — present when the
  * note carries the extended `context.slots` shape, `null` for a legacy single-integration note.
- * `source`/`target` are the directed-connection endpoints (substep 9.3.1, ADR-0020 Option A) —
+ * `source`/`target` are the directed-connection endpoints (substep 9.3.1, ADR-directed-source-target-routing-labels Option A) —
  * present when the note carries the `source_system`/`target_system` form, `null` otherwise. They
  * join the signature so a silent renewal that switches the connection (even a direction swap:
  * toast→mews vs mews→toast) counts as a scope change and resets the thread (no cross-connection

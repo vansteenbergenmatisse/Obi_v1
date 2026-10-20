@@ -8,7 +8,7 @@
   (the `labels` column, GIN index and RLS policy), `knowledge-base/schema/schema.py`
   (`apply_chunk_labels_rls`)
 - **Design panel:** `mi-labels`
-- **Status:** Implemented (database-level; live corpus relabel is substep 9.5.1). Since ADR-0021
+- **Status:** Implemented (database-level; live corpus relabel is substep 9.5.1). Since ADR-routing-labels-sole-content-axis
   (2026-10-12) routing labels are **also the index-membership axis**, not only the routing/relevance
   axis — see "Membership" below.
 
@@ -19,10 +19,10 @@ reads the raw labels Confluence already hands it (`gateway.get_labels`, the unre
 stamps them, verbatim, onto a `labels text[]` column on both `chunk` and `page_source` — once on
 a build and again, with no re-embed, whenever a label-only change arrives over the metadata-only
 path. These raw `labels` are the live routing **and** membership axis. (The `tags` column it once
-stood beside — the resolved knowledge-scope ∩ authorized set — is retired by ADR-0021 and left as
+stood beside — the resolved knowledge-scope ∩ authorized set — is retired by ADR-routing-labels-sole-content-axis and left as
 inert data; nothing reads it after migration 0018.)
 
-### Membership (ADR-0021)
+### Membership (ADR-routing-labels-sole-content-axis)
 
 Routing labels are now the sole index-membership axis as well as the content/routing axis. A page is
 in the index when it is **published + carries at least one recognized routing label + is not
@@ -31,12 +31,12 @@ in the index when it is **published + carries at least one recognized routing la
 `ProductCatalog.all_routing_labels()`. `ingest_decision` / `sync_service` decide membership on that
 set (removing the last recognized routing label removes the page — empty → `delete`), and the
 `reconciliation` discovery sweep keys its label search on the same set. This replaces the retired
-knowledge-scope `-test` tag axis (`obi-general-test` etc.), which ADR-0011 had used for membership;
+knowledge-scope `-test` tag axis (`obi-general-test` etc.), which ADR-knowledge-scope-tagging-and-filtering had used for membership;
 `classified` is unchanged as the overriding delete/exclusion signal (never-bend rule 5).
 
 Migration 0016 adds the column (default `'{}'`), a partial GIN `ix_chunk_labels_gin ... WHERE
 is_active` for the overlap the hard filter will run, and — for the directed-connection routing axis
-(ADR-0020 D1) — an `app.allowed_labels` GUC plus a RESTRICTIVE `chunk_labels_read` RLS policy that
+(ADR-directed-source-target-routing-labels D1) — an `app.allowed_labels` GUC plus a RESTRICTIVE `chunk_labels_read` RLS policy that
 mirrors `chunk_scope_read` in shape. That policy is a deliberate no-op until substep 9.4.1 sets the
 GUC: an unset/empty GUC and the `'*'` sentinel opt out, and only a real label list filters by
 `labels && ...`. A `backfill_labels(gateway)` CLI stamps the raw labels onto pages indexed before the
@@ -44,14 +44,14 @@ column existed; it only writes rows that have drifted, so running it twice is sa
 
 ## Why it does it
 
-The directed-connection hard filter (ADR-0020) routes each chat on the four label boxes a page
+The directed-connection hard filter (ADR-directed-source-target-routing-labels) routes each chat on the four label boxes a page
 carries — `toast-to-pms` ≠ `mews-to-pos`, a distinction the retired tag axis could not express.
 Storing the raw labels is the prerequisite: the 9.4.1 filter reads `labels`. Labels restamp without
-a re-embed (ADR-0020 D3) because a label change never changes an embedding. The policy rides the
+a re-embed (ADR-directed-source-target-routing-labels D3) because a label change never changes an embedding. The policy rides the
 RLS/GUC layer (D1) so that no read can run looser than the search (never-bend rule 3). Labels are
-the routing/relevance and (since ADR-0021) membership axis, not the access boundary: source
+the routing/relevance and (since ADR-routing-labels-sole-content-axis) membership axis, not the access boundary: source
 isolation (lock 1, `chunk_source_read`) remains the fail-closed fence and is untouched. (The former
-knowledge-scope lock 2 is retired — ADR-0021.) Dropping the column, index and policy on downgrade
+knowledge-scope lock 2 is retired — ADR-routing-labels-sole-content-axis.) Dropping the column, index and policy on downgrade
 loosens no isolation (never-bend rule 11).
 
 ## How we know it works

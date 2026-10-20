@@ -1,6 +1,6 @@
 # Obi embed — Mews hand-over pack
 
-**Phase 11.1c (ADR-0014).** Everything Mews needs to embed Obi, and the four values we need back
+**Phase 11.1c (ADR-db-level-customer-scope-isolation-backstop).** Everything Mews needs to embed Obi, and the four values we need back
 to switch it on. Until those four are filled in `config/platforms.json` and `active` is flipped to
 `true`, the `mews` entry stays inactive: the frame's CSP won't list your domain and the loader
 won't run there, but a token that arrives is still verified.

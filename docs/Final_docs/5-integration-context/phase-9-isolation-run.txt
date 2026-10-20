@@ -4,7 +4,7 @@ substep 9.6.1 · 2026-10-12 · branch feat/rag-phase-4-embed-security-hardening
 WHAT THIS PROVES
   A directed source->target chat hard-filters retrieval to its four label boxes and never
   receives another connection's pages — at any vector similarity, in the rerank input, and with
-  an empty-labels chunk never served (ADR-0020 D1/D2, panel mi-hardfilter). Plus: migrations
+  an empty-labels chunk never served (ADR-directed-source-target-routing-labels D1/D2, panel mi-hardfilter). Plus: migrations
   0016 + 0017 are reversible.
 
 ENVIRONMENT (honest scope)

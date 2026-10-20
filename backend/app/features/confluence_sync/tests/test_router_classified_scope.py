@@ -1,4 +1,4 @@
-"""ADR-0011 — the reserved 'classified' scope is never selectable at the /chat HTTP edge.
+"""ADR-knowledge-scope-tagging-and-filtering — the reserved 'classified' scope is never selectable at the /chat HTTP edge.
 
 `classified` must exist in knowledge_scopes.json but is never recognized/offerable: the loader
 returns ``seen - {RESERVED_CLASSIFIED_SCOPE}`` (knowledge_scopes.py:76), so today the ONLY thing
@@ -90,7 +90,7 @@ def _post(client: TestClient, *, token: str | None = None, **body_extra):
 
 
 def test_rag_knowledge_scope_classified_literal_is_never_selectable(client_and_recorder) -> None:
-    """ADR-0021 — `classified` is reserved and can never be selected as a scope by any caller. The
+    """ADR-routing-labels-sole-content-axis — `classified` is reserved and can never be selected as a scope by any caller. The
     knowledge-scope axis is retired, so a body `knowledge_scope` is always logged and IGNORED (never
     a 400, never used): the reserved `classified` value therefore reaches retrieval no differently
     from any other — it is dropped on the floor. It never appears in the served `allowed_scopes`
@@ -102,7 +102,7 @@ def test_rag_knowledge_scope_classified_literal_is_never_selectable(client_and_r
     assert resp.status_code == 200  # ignored, not a 400 — the token drives the request
     assert recorder.last_auth is not None
     assert "classified" not in recorder.last_auth.allowed_scopes  # never selected
-    assert recorder.last_auth.allowed_scopes == ()  # ADR-0021: no scope is selectable at all
+    assert recorder.last_auth.allowed_scopes == ()  # ADR-routing-labels-sole-content-axis: no scope is selectable at all
 
     # tokenless path too: the reserved value is equally inert there
     resp_tokenless = _post(client, knowledge_scope="classified")

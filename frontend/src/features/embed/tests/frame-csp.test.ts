@@ -1,5 +1,5 @@
 /**
- * `/embed` CSP — PLAN 11.1c, ADR-0014.
+ * `/embed` CSP — PLAN 11.1c.
  *
  * `computeEmbedCsp` is the pure decision function; the `middleware()` tests below exercise the
  * real request/response path with a temp `platforms.json` (via the `PLATFORMS_PATH` override) and

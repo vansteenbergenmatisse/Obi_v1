@@ -4,7 +4,7 @@ feature's I/O boundary and `retrieval/infrastructure/search_repo.py`'s bound-arr
 pattern for the identical `tags && :scopes` predicate (PLAN 10.4) — the list is always bound as a
 parameter, never string-interpolated into the SQL text.
 
-Access control (Phase 11.1a / ADR-0014): as of migration 0009 the table has an `anon`-denied RLS
+Access control (Phase 11.1a / ADR-db-level-customer-scope-isolation-backstop): as of migration 0009 the table has an `anon`-denied RLS
 posture (reader-scoped `*_reader_read` policy), and this read now also sets the customer-scope RLS
 GUC (`app.allowed_knowledge_scopes`) via `apply_knowledge_scope` before the query, so the DB
 enforces the same `curated_knowledge_entry_scope_read` RESTRICTIVE policy the retriever enforces on
@@ -33,7 +33,7 @@ def fetch_curated_entries(
     session: Session, allowed_scopes: Sequence[str], limit: int
 ) -> list[CuratedEntry]:
     """Active entries with empty tags (always included) or overlapping `allowed_scopes`, capped at
-    `limit`, ordered by id for deterministic citation numbering. ADR-0021 retired the knowledge
+    `limit`, ordered by id for deterministic citation numbering. ADR-routing-labels-sole-content-axis retired the knowledge
     scope axis, so the scope GUC is opted out (wildcard None) and the curated query matches on the
     `allowed_scopes` overlap (empty → entries with empty tags, always included)."""
     apply_knowledge_scope(session, None)

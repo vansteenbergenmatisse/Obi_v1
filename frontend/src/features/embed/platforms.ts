@@ -1,6 +1,6 @@
 /**
  * Server-only (Node.js-only) platform registry reader for the Obi embed's CSP (PLAN 11.1c,
- * ADR-0014).
+ * ADR-db-level-customer-scope-isolation-backstop).
  *
  * Mirrors the backend's `active_domains()` (`backend/app/platform/config/platforms.py`)
  * just enough to compute the `/embed` route's `frame-ancestors` directive at request time: reads

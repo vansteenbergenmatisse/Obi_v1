@@ -49,7 +49,7 @@ def index_page(
 ) -> None:
     """Seed a page into the index at a given version by running the real sync path.
 
-    Label-gated membership (ADR-0021): a page indexes only if it carries a recognized ROUTING
+    Label-gated membership (ADR-routing-labels-sole-content-axis): a page indexes only if it carries a recognized ROUTING
     label (``obi-general`` / ``{slug}-general`` / ``{slug}-to-{kind}``). Most generic fixtures
     (1001/1002/2002 …) carry only unrelated labels, so — unless the page already has a recognized
     routing label (or one the test set itself) — stamp the base ``obi-general`` routing label on it

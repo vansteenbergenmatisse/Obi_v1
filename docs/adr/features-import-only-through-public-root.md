@@ -1,4 +1,6 @@
-# 0003 — Feature Boundary Enforcement
+# Feature Boundary Enforcement
+
+Identifier: `ADR-features-import-only-through-public-root` (formerly numbered 0003). File paths updated to the current layout (`backend/`, `frontend/`, `knowledge-base/`) on 2026-10-20; the decision is unchanged.
 
 Status: Accepted
 Date: 2026-08-07
@@ -34,16 +36,16 @@ project standard's five-folder rule (`app/features/components/platform/shared`).
    Wired as `make boundaries` and gated in `make check`.
 
 4. **Standards reconciled: backend uses `app/{features, platform, shared}`.** The
-   five-folder rule's `components/` is UI-only and applies to `apps/web`, not backend
+   five-folder rule's `components/` is UI-only and applies to `frontend`, not backend
    services. Pure cross-feature primitives live in `app/shared/` (this is where
    `hashing` now sits, relocated from the `platform/` root); `platform/` holds
    technical capabilities (db, clients, config, jobs, logging).
 
-5. **`platform/db` is deliberately not faceted.** ~40 ORM classes, enums, and DDL
+5. **`knowledge-base/schema` is deliberately not faceted.** ~40 ORM classes, enums, and DDL
    helpers are a large, intrinsically-namespaced vocabulary; collapsing them into one
    root would create a god-module and destroy the `db.enums.PageStatus` vs
    `db.models.PageSource` disambiguation. The standard mandates public entrypoints for
-   *features*, not for every platform sub-capability. `platform/db` keeps full-path imports.
+   *features*, not for every platform sub-capability. `knowledge-base/schema` keeps full-path imports.
 
 6. **The service version is single-sourced** at `app/__init__.py::__version__`;
    pyproject reads it via Hatchling's dynamic version and `app.main` stamps it onto
@@ -89,7 +91,7 @@ re-exports give each feature a single, greppable public surface without a runtim
 - **[D4] The ingestion facade re-exports `normalization` as a module, not loose symbols.**
   Call sites use `norm.Block` / `norm.normalize_body` / `norm.content_hash` — the
   numpy.linalg pattern keeps the call-site diff to one import line.
-- **[D5] `platform/db` gets no facade** — see Decision 5.
+- **[D5] `knowledge-base/schema` gets no facade** — see Decision 5.
 - **[D6] The `app.*` startup import graph is 46 modules** (was 45 pre-refactor). The +1 is
   the `app.shared` namespace introduced by relocating `hashing`; no feature facade leaks
   into `app.main`'s startup graph.

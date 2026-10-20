@@ -1,8 +1,10 @@
-# 0015 — Change-Detection Fingerprints
+# Change-Detection Fingerprints
+
+Identifier: `ADR-change-detection-by-content-fingerprints` (formerly numbered 0015). File paths updated to the current layout (`backend/`, `frontend/`, `knowledge-base/`) on 2026-10-20; the decision is unchanged.
 
 Status: Accepted
 Date: 2026-09-18
-Governs: apps/automation (ingestion, confluence_sync, shared/hashing, platform/db)
+Governs: backend (ingestion, confluence_sync, shared/hashing, knowledge-base/schema)
 
 > **Retroactive ADR.** This records a decision already shipped and covered by tests; it
 > documents existing behavior, it does not change it. Written to close a documentation
@@ -12,25 +14,25 @@ Governs: apps/automation (ingestion, confluence_sync, shared/hashing, platform/d
 ## Context
 
 On every sync of a Confluence page, ingestion must decide whether to **rebuild** the page
-(re-chunk and re-embed — expensive, and it embeds the whole page per ADR-0002 §6 and the
+(re-chunk and re-embed — expensive, and it embeds the whole page per ADR-hybrid-retrieval-over-versioned-chunk-store §6 and the
 never-bend rule "a rebuild embeds the whole page") or apply a cheap **metadata-only**
 update. Only a change to the retrieved content or the pipeline config should cost a
 re-embed. Label edits, permission changes and attachment swaps must not.
 
 To decide this deterministically — tolerating duplicated, delayed and out-of-order webhook
-events (ADR-0002 §1) — the sync needs a stable, comparable fingerprint of each independent
+events (ADR-hybrid-retrieval-over-versioned-chunk-store §1) — the sync needs a stable, comparable fingerprint of each independent
 facet of a page, persisted from the last successful sync.
 
 ## Decision
 
 1. **Deterministic SHA-256 fingerprints**, 32 bytes, stored as BYTEA. Helpers live in one
-   place, `apps/automation/app/shared/hashing.py`, with explicit canonicalization: NFC
+   place, `backend/app/shared/hashing.py`, with explicit canonicalization: NFC
    normalize + whitespace-collapse for text, sorted-key compact JSON for structures, a
    `\x1f` unit separator between parts. Change-detection state is always a hash, never raw
    content.
 
 2. **Three metadata fingerprints**, computed together in
-   `apps/automation/app/features/ingestion/domain/change_detection.py::classify()`
+   `backend/app/features/ingestion/domain/change_detection.py::classify()`
    (lines 122-124), alongside the body `content_hash` / `structure_hash` from
    normalization:
    - `hash_labels(labels)` — the deduped, normalized, sorted label set (`labels_hash`).
@@ -45,7 +47,7 @@ facet of a page, persisted from the last successful sync.
    `permissions_changed`, `attachment_manifest_hash` → `attachment_changed`.
 
 4. **Only content/structure changes trigger a re-embed.** `_REBUILD_CLASSES`
-   (`apps/automation/app/features/confluence_sync/application/sync_service.py:36-43`) is
+   (`backend/app/features/confluence_sync/application/sync_service.py:36-43`) is
    exactly `{body_changed, section_added, section_updated, section_removed, section_moved,
    index_config_change}`. `labels_changed`, `permissions_changed` and `attachment_changed`
    are deliberately excluded: they take the metadata-only path, which updates the tags,
@@ -66,7 +68,7 @@ facet of a page, persisted from the last successful sync.
 - Fingerprints are the single source of the change decision, so idempotency and
   out-of-order tolerance are structural, not incidental.
 
-Cross-references: ADR-0002 (retrieval and versioning model; re-embed triggers).
+Cross-references: ADR-hybrid-retrieval-over-versioned-chunk-store (retrieval and versioning model; re-embed triggers).
 
 Tests: `test_scope_tagging_retag.py`, `test_worker_sync.py` (metadata-only resync keyed on
 `access_scope_hash`), `test_document_constraints.py`, `test_versioning_failed.py`.

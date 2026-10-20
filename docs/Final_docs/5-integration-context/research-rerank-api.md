@@ -17,7 +17,7 @@
   (→ fake offline), `reranker_model="rerank-v3.5"`, `rerank_candidate_k=75`, `rerank_depth=75`,
   `rerank_top_k=5`, `rerank_timeout_seconds=30`, `rerank_max_retries=3`,
   `rerank_breaker_threshold=5`, `rerank_max_docs=1000` (C10 cap).
-- **ADR-0005 boundary:** cross-encoder rerankers only — never a chat model asked to reorder.
+- **ADR-rerank-then-verify-cited-answers boundary:** cross-encoder rerankers only — never a chat model asked to reorder.
   There is no "system prompt" to give; the tool class doesn't have one.
 
 ## 2. The exact request body sent today
@@ -81,7 +81,7 @@ Downstream couplings that move if rerank inputs change:
    undocumented; means switching endpoint or empirically proving v2 acceptance; large blast
    radius (body, `_parse`, every fake, the contract test).
 4. **(d) Model swap (`rerank-v4.0-pro`)** — only buys query-token headroom for (a); still
-   instruction-less; ADR-0005 forbids an LLM reranker regardless.
+   instruction-less; ADR-rerank-then-verify-cited-answers forbids an LLM reranker regardless.
 
 **Recommended combination: (a) + (b)**, keep the v2 string contract, re-tune thresholds,
 record gold-set before/after.

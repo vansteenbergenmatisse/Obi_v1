@@ -1,5 +1,5 @@
 /**
- * Per-request CSP for the Obi embed frame (PLAN 11.1c, ADR-0014).
+ * Per-request CSP for the Obi embed frame (PLAN 11.1c).
  *
  * Scoped to `/embed` only (see `config.matcher`). Computes `frame-ancestors` from the CURRENT
  * active platform domains on every request — never cached, never `*`. An empty active-domain

@@ -13,7 +13,7 @@ export type MessageRole = "user" | "assistant";
  * Lifecycle of an assistant turn as the UI renders it. `refused` means the pipeline
  * declined to answer (below the rerank-score refusal threshold) and the turn should
  * be routed to a human rather than presented as a grounded answer. `clarifying` means
- * the query was judged too vague to search well (PLAN 9.3/9.5, ADR-0008) and the turn
+ * the query was judged too vague to search well (PLAN 9.3/9.5, ADR-ambiguity-clarification-then-fallback-answer) and the turn
  * is a still-open question back to the user, not a refusal — it counts as a normal,
  * resendable turn in history, same as `complete`/`refused`.
  */
@@ -48,7 +48,7 @@ export interface ChatMessage {
   /** Images attached to this (user) turn, for local preview/zoom (PLAN 7.5). */
   images?: MessageImage[];
   /** Vision-analysis text for this (assistant) turn's images, from the `done` event's
-   * `imageAnalysis` (ADR-0009 decision 5) — rendered as its own labeled block, never merged into
+   * `imageAnalysis` (ADR-vision-grounded-image-analysis decision 5) — rendered as its own labeled block, never merged into
    * `text`, since it never passes through citation enforcement. */
   imageAnalysis?: string;
   /** 2-4 quick-reply options from the `done` event's `clarificationOptions` (PLAN 9.3/9.5) —

@@ -138,7 +138,7 @@ def test_permission_enforcement_is_db_backed_not_fixture_fed(gateway, settings: 
     """PLAN 4.3: an EMPTY injected policy must not weaken enforcement — the retriever now reads
     ``page_source``/``page_restriction`` live per search, so a policy object carrying no data at
     all still gets the real, correct answer. This is the acceptance proof that closes the
-    "fixture-only ACL" gap ADR-0004/0005 called out.
+    "fixture-only ACL" gap ADR-source-id-row-security-with-reader-writer-roles / ADR-rerank-then-verify-cited-answers called out.
     """
     _index_corpus(gateway, settings)
     empty_policy = PrincipalPermissionPolicy()  # no space_of, no restrictions — deliberately bare
@@ -165,7 +165,7 @@ def test_permission_enforcement_is_db_backed_not_fixture_fed(gateway, settings: 
 
 def test_s_acl_no_restriction_recorded_is_open_to_everyone(gateway, settings: Settings) -> None:
     """panel s-acl · substep 0.5.3
-    ADR-0005: a page with zero ``page_restriction`` rows (no principal recorded) is open to
+    ADR-rerank-then-verify-cited-answers: a page with zero ``page_restriction`` rows (no principal recorded) is open to
     everyone — absence of restriction is never treated as deny. Indexed alone, so it is the only
     candidate any query can surface: if the permission filter ever flipped "no restriction" to
     closed, none of these callers would get anything back.
@@ -183,7 +183,7 @@ def test_s_acl_no_restriction_recorded_is_open_to_everyone(gateway, settings: Se
 
 def test_s_acl_unexpandable_group_denies_everyone(gateway, settings: Settings) -> None:
     """panel s-acl · substep 0.5.3
-    ADR-0005: a page whose only restriction is an unresolvable group is excluded from candidates
+    ADR-rerank-then-verify-cited-answers: a page whose only restriction is an unresolvable group is excluded from candidates
     for every caller at retrieval time — including one whose real claims happen to match the
     group's membership, since that membership could not be verified when access was checked.
     """
@@ -228,7 +228,7 @@ def test_s_acl_filter_runs_before_rerank_in_the_app_on_candidates(
     gateway, settings: Settings
 ) -> None:
     """panel s-acl · substep p0-s0_5-reg-security (Protect)
-    The page ACL filter (ADR-0005) runs before rerank, in the application layer, on the fused
+    The page ACL filter (ADR-rerank-then-verify-cited-answers) runs before rerank, in the application layer, on the fused
     candidate set — not as a database-only filter (row security alone still lets the reader role
     see the restricted page's chunks) and not after rerank (the reranker's input never includes
     the restricted page's text at all).
@@ -331,7 +331,7 @@ def test_s_permitted_trace_records_allowed_sources_and_knowledge_scopes(
         ).one()
 
     assert list(row.allowed_sources) == ["confluence:default"]
-    # ADR-0021: the knowledge-scope axis is retired; the trace records no scope list (None). The
+    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired; the trace records no scope list (None). The
     # allowed_sources proof (source/company isolation axis) is unchanged.
     assert row.allowed_knowledge_scopes is None
 
@@ -370,7 +370,7 @@ def test_rls_default_deny_on_reader_role(gateway, settings: Settings) -> None:
 
 def test_s_source_fails_closed_with_no_guc_set(gateway, settings: Settings) -> None:
     """panel s-source · substep p0-s0_5-reg-security
-    ADR-0004/0013 Lock 1 fails closed: with no ``app.allowed_sources`` set for this reader-role
+    ADR-source-id-row-security-with-reader-writer-roles / ADR-supabase-postgres-store-without-force-rls Lock 1 fails closed: with no ``app.allowed_sources`` set for this reader-role
     transaction, the populated ``chunk`` table returns zero rows, never every row. A fresh
     ``rag_reader`` session that never calls ``set_config`` sees ``current_setting(...)`` as NULL,
     so ``source_id = ANY(NULL)`` is never true — default-deny, not a leak of the whole corpus."""
@@ -401,7 +401,7 @@ def test_r3_source_real_source_returns_all_rows(gateway, settings: Settings) -> 
     every row the owner (writer, RLS-exempt by ownership) sees — the exact second check
     ``verify-isolation`` runs live. The knowledge-scope GUC is opted out with the ``'*'``
     sentinel (mirroring ``scripts/setup_supabase.py::verify_isolation``) so the separate,
-    RESTRICTIVE ``chunk_scope_read`` policy (ADR-0014, tested elsewhere under ``r3-deny``)
+    RESTRICTIVE ``chunk_scope_read`` policy (ADR-db-level-customer-scope-isolation-backstop, tested elsewhere under ``r3-deny``)
     does not also filter this source-axis count."""
     _index_corpus(gateway, settings)
     with get_sessionmaker()() as owner:

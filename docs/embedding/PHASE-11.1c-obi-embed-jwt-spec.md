@@ -1,12 +1,12 @@
 # Phase 11.1c — Embedding Obi in another application (iframe loader + JWT edge binding)
 
 > **Status: SCOPED, not built (2026-09-12).** This is the design-of-record for the next feature.
-> It is the **edge binding ADR-0014 explicitly deferred** ("does not add a per-user→customer binding at
+> It is the **edge binding ADR-db-level-customer-scope-isolation-backstop explicitly deferred** ("does not add a per-user→customer binding at
 > the edge … still one shared `CHAT_API_KEY` … that is 11.1c + the deferred AWS deploy"). The verified
 > JWT `integration` claim replaces the caller-self-reported `knowledge_scope` — i.e. it closes the last
 > *trusted-from-caller* gap on the scope axis, on top of the DB backstop already built in 11.1a.
 >
-> Governing docs: this spec + [ADR-0014](../adr/0014-Customer-Scope-Isolation-Backstop.md). Ledger:
+> Governing docs: this spec + [ADR-db-level-customer-scope-isolation-backstop](../adr/db-level-customer-scope-isolation-backstop.md). Ledger:
 > `docs/rag/PLAN.md` §0. Per-platform hand-over packs live beside this file in `docs/embedding/`.
 
 ## ⚠️ Reconciliation notes (read before building — resolves drift in the source prompt)

@@ -1,19 +1,21 @@
-# 0009 — Vision-Grounded Image Analysis
+# Vision-Grounded Image Analysis
+
+Identifier: `ADR-vision-grounded-image-analysis` (formerly numbered 0009). File paths updated to the current layout (`backend/`, `frontend/`, `knowledge-base/`) on 2026-10-20; the decision is unchanged.
 
 Status: Accepted
 Date: 2026-08-11
-Governs: apps/automation (rag_agent), apps/web (chat feature), packages/contracts — extends ADR-0005
+Governs: backend (rag_agent), frontend (chat feature), packages/contracts — extends ADR-rerank-then-verify-cited-answers
 
 ## Context
 
 Phase 4.7 (Obi widget) added image attachments (file-picker/clipboard-paste) and a real page
 screenshot capture (`html-to-image`), plus click-to-zoom preview (4.7.8). Both are client-side
 only: on send, images are dropped with an inline notice (`composer.tsx`'s "not analyzed yet"
-copy) — no image ever reaches `apps/automation`. `docs/future-ideas/IDEAS.md` #3 raised this gap
+copy) — no image ever reaches `backend`. `docs/future-ideas/IDEAS.md` #3 raised this gap
 in the abstract ("screenshot-grounded guidance"); this ADR is the design pass that gap required
 before any code, per this repo's own process.
 
-The existing answer pipeline (ADR-0005) is text-in/text-out: `ChatRequest`/`ChatTurn`
+The existing answer pipeline (ADR-rerank-then-verify-cited-answers) is text-in/text-out: `ChatRequest`/`ChatTurn`
 (`packages/contracts`) carry no image field; `AnthropicMessagesClient.create_message`
 (`platform/clients/anthropic_client.py`) builds a single `{"type": "text", ...}` content block per
 call; `redact_pii` (`rag_agent/domain/pii.py`) is a text regex pass that cannot inspect image
@@ -66,11 +68,11 @@ wiring.
    Its output is appended to the grounded answer (if any) as a clearly labeled, visually distinct
    section — never passed through `enforce_citations`, and never itself carrying a numbered
    citation marker. This keeps `citations.py`/`enforce_citations`, `refusal.py`'s existing
-   `no_citations` reason, and every other ADR-0005-governed stage of the grounded call completely
+   `no_citations` reason, and every other ADR-rerank-then-verify-cited-answers-governed stage of the grounded call completely
    untouched — the only touched decision point is `decide_refusal`'s `has_image` gate (3).
 
 5. **`Answer` gains `imageAnalysis: str | None`, not a new SSE event.** Same additive-contract
-   shape ADR-0008 used for clarification: the vision-analysis text streams over the existing
+   shape ADR-ambiguity-clarification-then-fallback-answer used for clarification: the vision-analysis text streams over the existing
    `token` events (appended after the grounded answer text, before `done`), and the `done` payload
    carries `imageAnalysis` so the widget can render it in its own labeled block rather than
    indistinguishably merged into `answer`. `packages/contracts`'s `ChatDoneEvent` grows one more
@@ -78,7 +80,7 @@ wiring.
 
 6. **C6 PII redaction does not extend to image bytes — documented gap, not silently ignored.**
    `redact_pii` remains text-only; there is no NER/CV redaction pass in this repo and building one
-   is out of scope for this phase (same posture ADR-0008 took on obfuscated-email text redaction).
+   is out of scope for this phase (same posture ADR-ambiguity-clarification-then-fallback-answer took on obfuscated-email text redaction).
    The composer's attachment UI must carry an explicit, honest notice that images are sent to the
    model as-is and are not scanned for personal information — copy drafted under
    `copywriting-rules`/`anti-ai-writing` at implementation time. This is a real accepted risk. the
@@ -106,7 +108,7 @@ wiring.
 ## Reason
 
 Keeping the vision call structurally separate from the grounded, citation-enforced call means
-ADR-0005's core guarantees (every claim in `answer` traces to a numbered, retrieved citation) are
+ADR-rerank-then-verify-cited-answers's core guarantees (every claim in `answer` traces to a numbered, retrieved citation) are
 never weakened by a modality that has no citation concept — an image isn't a retrieved,
 versioned Confluence page, so it cannot honestly carry a citation marker. Gating only
 `decide_refusal`, and only on the `has_image` input, is the smallest change that fixes the real
@@ -119,7 +121,7 @@ transmission avoid inventing storage and bound the resend-cost problem without a
 - **Merge image content into the same grounded generation call, extend citation markers to cover
   image references (e.g. `[Image 1]`).** Rejected: this would require `enforce_citations` to
   distinguish "a valid Confluence citation" from "a valid image reference" inside the same
-  enforcement pass, widening ADR-0005's citation domain for a case (visual, not textual, evidence)
+  enforcement pass, widening ADR-rerank-then-verify-cited-answers's citation domain for a case (visual, not textual, evidence)
   it was never designed to represent, and blurring the "every claim traces to a retrieved page"
   guarantee the whole accuracy-first mandate rests on.
 - **A separate upload endpoint returning a reference id.** Rejected: no persistent
@@ -145,7 +147,7 @@ transmission avoid inventing storage and bound the resend-cost problem without a
   visible signature change, not just an additive optional field, since refusal logic is a pure
   function over its inputs).
 - `Answer`/`ChatDoneEvent`/`packages/contracts` grow one more optional field (`imageAnalysis`);
-  `apps/web`'s message-rendering logic needs a matching (additive) update to actually send `images`
+  `frontend`'s message-rendering logic needs a matching (additive) update to actually send `images`
   on the newest turn and render the labeled analysis block — today `composer.tsx` drops attachments
   before `onSend` entirely, so the send path itself changes, not just the render path.
 - A new, real threat class (image-borne injection) is introduced and must clear a live-model
@@ -154,17 +156,17 @@ transmission avoid inventing storage and bound the resend-cost problem without a
 - `redact_pii`'s scope note grows a documented gap (image bytes are never scanned) that a future
   phase would need a real CV/NER pass to close — not invented here.
 - No change to `retrieval/**`, the reranker, citation enforcement's marker logic, or any other
-  ADR-0005-governed pipeline stage besides `decide_refusal`'s new input.
+  ADR-rerank-then-verify-cited-answers-governed pipeline stage besides `decide_refusal`'s new input.
 
 ## Paths governed
 
 `packages/contracts` (`ChatTurn`, `ChatDoneEvent`, `chat.yaml`),
-`apps/automation/app/features/rag_agent/domain/refusal.py`,
-`apps/automation/app/features/rag_agent/infrastructure/llm_client.py`,
-`apps/automation/app/features/rag_agent/application/answer_service.py`,
-`apps/automation/app/features/rag_agent/domain/pii.py` (docstring addendum only),
-`apps/automation/app/platform/clients/anthropic_client.py` (multimodal content blocks),
-`apps/automation/app/platform/config/settings.py` (new image caps),
-`apps/automation/app/features/rag_agent/server/router.py` (C3/C10 image validation),
-`apps/web/src/features/chat/**` (composer send path, message rendering, image-lightbox reuse),
+`backend/app/features/rag_agent/domain/refusal.py`,
+`backend/app/features/rag_agent/infrastructure/llm_client.py`,
+`backend/app/features/rag_agent/application/answer_service.py`,
+`backend/app/features/rag_agent/domain/pii.py` (docstring addendum only),
+`backend/app/platform/clients/anthropic_client.py` (multimodal content blocks),
+`backend/app/platform/config/settings.py` (new image caps),
+`backend/app/features/rag_agent/server/router.py` (C3/C10 image validation),
+`frontend/src/features/chat/**` (composer send path, message rendering, image-lightbox reuse),
 `docs/future-ideas/IDEAS.md` (#3).

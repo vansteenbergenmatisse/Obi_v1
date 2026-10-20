@@ -1,6 +1,6 @@
 # Obi embed — Base hand-over pack
 
-**Phase 11.1c (ADR-0014).** Everything Base needs to embed Obi, and the values we need back to
+**Phase 11.1c (ADR-db-level-customer-scope-isolation-backstop).** Everything Base needs to embed Obi, and the values we need back to
 switch it on. Like the Data Hub, Base is a **hub**: it embeds Obi for many customers, each running an
 underlying PMS/POS (Mews, Toast, or Opera Cloud). So Base's note carries the **customer's underlying
 integration** as its `integration` claim — not the literal string `base` — and that value is what

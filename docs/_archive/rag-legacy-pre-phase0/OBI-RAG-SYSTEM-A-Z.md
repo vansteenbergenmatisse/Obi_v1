@@ -10,7 +10,7 @@
 > `docs/rag/OBI-WIDGET-DESIGN.md`, all ADRs (`docs/adr/0001–0014`), the runbooks (`docs/runbooks/*`),
 > `docs/future-ideas/IDEAS.md`, the source-scoping spec, and the authoritative status ledger
 > `docs/rag/PLAN.md` §0/§1. Where the older `final_design` docs predate live events (Phase 6 cutover,
-> ADR-0013/0014, migrations 0008/0009/0010), this document reconciles to the **current** state.
+> ADR-supabase-postgres-store-without-force-rls / ADR-db-level-customer-scope-isolation-backstop, migrations 0008/0009/0010), this document reconciles to the **current** state.
 > Last reconciled: **2026-09-10**.
 
 ---
@@ -82,17 +82,17 @@ requires a new ADR.
 
 | Decision | Source | Note |
 |---|---|---|
-| Confluence is the (only, for now) knowledge source | ADR-0002, ADR-0004 | Canonical identity = the Confluence **page id**; all sync is idempotent + version-aware |
-| Versioned store with **atomic activation** | ADR-0002 | An index update is immutable and all-or-nothing; the live corpus is never half-rebuilt; rollback is instant |
-| **Hybrid** retrieval (dense + keyword), fused by **RRF** | ADR-0002 | `score = Σ 1/(60 + rank)`; cross-encoder reranked; never the answer model as reranker |
-| **Cross-encoder rerankers only** — no general-LLM reranker | ADR-0005 | Cheaper per candidate, deterministic enough to eval |
-| The answer runtime is a **fixed workflow, not an agent loop** | ADR-0005 | Bounded latency, stage-by-stage testable, auditable refusal + citation enforcement |
-| **One CRAG corrective retry** maximum | ADR-0005 | Bounded to protect p95; not an unbounded agent loop |
-| **Three layered security controls**, all applied on every read | ADR-0004, ADR-0011, ADR-0014 | Source RLS + knowledge-scope tag filter + page-principal ACL |
-| Deterministic **SQL filtering**, never LLM filters | ADR-0002, DESIGN §8 | Keeps recall honest |
-| **Postgres + pgvector** is the stack; switching is ruled out | ADR-0001/0002 | See [Deployment](#11-deployment) |
-| Frontend/backend stay **one monorepo** for now | ADR-0006, ADR-0010 | Repo split re-deferred until a real second consumer exists (IDEAS #5) |
-| Production host = **Supabase Cloud on AWS** | ADR-0013 | Plain Postgres over `psycopg` (a DSN only; no Supabase SDK/REST); RDS/Aurora = reversible fallback |
+| Confluence is the (only, for now) knowledge source | ADR-hybrid-retrieval-over-versioned-chunk-store, ADR-source-id-row-security-with-reader-writer-roles | Canonical identity = the Confluence **page id**; all sync is idempotent + version-aware |
+| Versioned store with **atomic activation** | ADR-hybrid-retrieval-over-versioned-chunk-store | An index update is immutable and all-or-nothing; the live corpus is never half-rebuilt; rollback is instant |
+| **Hybrid** retrieval (dense + keyword), fused by **RRF** | ADR-hybrid-retrieval-over-versioned-chunk-store | `score = Σ 1/(60 + rank)`; cross-encoder reranked; never the answer model as reranker |
+| **Cross-encoder rerankers only** — no general-LLM reranker | ADR-rerank-then-verify-cited-answers | Cheaper per candidate, deterministic enough to eval |
+| The answer runtime is a **fixed workflow, not an agent loop** | ADR-rerank-then-verify-cited-answers | Bounded latency, stage-by-stage testable, auditable refusal + citation enforcement |
+| **One CRAG corrective retry** maximum | ADR-rerank-then-verify-cited-answers | Bounded to protect p95; not an unbounded agent loop |
+| **Three layered security controls**, all applied on every read | ADR-source-id-row-security-with-reader-writer-roles, ADR-knowledge-scope-tagging-and-filtering, ADR-db-level-customer-scope-isolation-backstop | Source RLS + knowledge-scope tag filter + page-principal ACL |
+| Deterministic **SQL filtering**, never LLM filters | ADR-hybrid-retrieval-over-versioned-chunk-store, DESIGN §8 | Keeps recall honest |
+| **Postgres + pgvector** is the stack; switching is ruled out | ADR-fastapi-nextjs-postgres-pgvector-stack / ADR-hybrid-retrieval-over-versioned-chunk-store | See [Deployment](#11-deployment) |
+| Frontend/backend stay **one monorepo** for now | ADR-defer-product-and-package-extraction, ADR-keep-frontend-backend-in-one-repo-for-now | Repo split re-deferred until a real second consumer exists (IDEAS #5) |
+| Production host = **Supabase Cloud on AWS** | ADR-supabase-postgres-store-without-force-rls | Plain Postgres over `psycopg` (a DSN only; no Supabase SDK/REST); RDS/Aurora = reversible fallback |
 
 ---
 
@@ -100,18 +100,18 @@ requires a new ADR.
 
 | Layer | Technology | Anchor |
 |---|---|---|
-| Frontend | Next.js + React + TypeScript + Tailwind + semantic design tokens (`apps/web`) | ADR-0001 |
-| Backend | Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2.0, Alembic (`apps/automation`) | ADR-0001 |
+| Frontend | Next.js + React + TypeScript + Tailwind + semantic design tokens (`apps/web`) | ADR-fastapi-nextjs-postgres-pgvector-stack |
+| Backend | Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2.0, Alembic (`apps/automation`) | ADR-fastapi-nextjs-postgres-pgvector-stack |
 | Package mgmt | `pnpm` workspace for JS/TS; `uv` + Hatchling for Python (never mixed) | root `CLAUDE.md` |
-| Contracts | `packages/contracts` — OpenAPI source of truth (`chat.yaml`) → generated TS + hand-authored Pydantic | ADR-0001 |
-| Database | **PostgreSQL 16 + pgvector + Postgres full-text search (tsvector)** | ADR-0001 |
-| Dense index | pgvector **HNSW** (cosine); `m=16, ef_construction=200` (`models.py:64`) | ADR-0002 |
-| Keyword index | Postgres **GIN** over `tsvector` (`models.py:315`) | ADR-0002 |
-| Fusion | Reciprocal Rank Fusion, constant `k=60` | ADR-0002, `fusion.py` |
-| Reranker | **Cohere `rerank-v3.5`** cross-encoder (`settings.py:83`); `FakeReranker` offline | ADR-0005 |
-| Answer model | Anthropic **`claude-sonnet-5`** (`settings.py:58`) | ADR-0009 |
-| Routing/rewrite model | Anthropic **`claude-haiku-4-5-20251001`** (`settings.py:57`) | ADR-0009 |
-| Embeddings | **Deployed: OpenAI `text-embedding-3-large` @ 3072 → `halfvec(3072)` HNSW** (see note) | ADR-0002 |
+| Contracts | `packages/contracts` — OpenAPI source of truth (`chat.yaml`) → generated TS + hand-authored Pydantic | ADR-fastapi-nextjs-postgres-pgvector-stack |
+| Database | **PostgreSQL 16 + pgvector + Postgres full-text search (tsvector)** | ADR-fastapi-nextjs-postgres-pgvector-stack |
+| Dense index | pgvector **HNSW** (cosine); `m=16, ef_construction=200` (`models.py:64`) | ADR-hybrid-retrieval-over-versioned-chunk-store |
+| Keyword index | Postgres **GIN** over `tsvector` (`models.py:315`) | ADR-hybrid-retrieval-over-versioned-chunk-store |
+| Fusion | Reciprocal Rank Fusion, constant `k=60` | ADR-hybrid-retrieval-over-versioned-chunk-store, `fusion.py` |
+| Reranker | **Cohere `rerank-v3.5`** cross-encoder (`settings.py:83`); `FakeReranker` offline | ADR-rerank-then-verify-cited-answers |
+| Answer model | Anthropic **`claude-sonnet-5`** (`settings.py:58`) | ADR-vision-grounded-image-analysis |
+| Routing/rewrite model | Anthropic **`claude-haiku-4-5-20251001`** (`settings.py:57`) | ADR-vision-grounded-image-analysis |
+| Embeddings | **Deployed: OpenAI `text-embedding-3-large` @ 3072 → `halfvec(3072)` HNSW** (see note) | ADR-hybrid-retrieval-over-versioned-chunk-store |
 
 ### Embedding provider — code default vs deployed `.env`
 
@@ -123,10 +123,10 @@ There are two layers to reconcile:
   `EMBEDDING_MODEL=text-embedding-3-large`, `EMBEDDING_DIM=3072`. **The `.env` overrides the code
   default**, so the actual running config is **OpenAI 3072-dim → the `halfvec(3072)` HNSW path** (pgvector
   caps a plain-`vector` HNSW index at 2000 dims, so >2000 dims forces the halfvec cast). This matches the
-  ADR-0002 amendment and DESIGN §1.
+  ADR-hybrid-retrieval-over-versioned-chunk-store amendment and DESIGN §1.
 
 Whichever provider is active, **ingestion and retrieval always use the same embedder**, and a change of
-embedding model/dim forces a full re-embed via the version-stamp gate (ADR-0002). The Voyage/1024 values
+embedding model/dim forces a full re-embed via the version-stamp gate (ADR-hybrid-retrieval-over-versioned-chunk-store). The Voyage/1024 values
 are only the no-`.env` fallback; `VOYAGE_API_KEY` is now set (verified 2026-09-10) but the bake-off that
 would flip the provider is not yet run.
 
@@ -207,7 +207,7 @@ app/
   shared/        Stable cross-feature primitives (e.g. hashing).
 ```
 
-**Machine-enforced feature boundaries** (`tools/check_feature_boundaries.py`, ADR-0003): code outside a
+**Machine-enforced feature boundaries** (`tools/check_feature_boundaries.py`, ADR-features-import-only-through-public-root): code outside a
 feature imports it only at its root (`app.features.<f>`); code inside `<f>` may deep-import itself but
 reaches other features at their root; a feature never imports its own root; `platform/**` and `shared/**`
 import no features (and `shared/**` imports no `platform/**`). The one deliberate exception is
@@ -341,7 +341,7 @@ rollback:
 
 Handlers: `_handle_sync_page` → `handle_sync_page`; `_handle_delete_page` → `handle_delete_page`;
 `_handle_reconcile_space` → `reconcile_space` (lazily imported to break a module cycle — the one legal
-cycle-breaker, ADR-0003). Every handler is idempotent and version-guarded. `drain` processes up to
+cycle-breaker, ADR-features-import-only-through-public-root). Every handler is idempotent and version-guarded. `drain` processes up to
 `max_jobs=100`.
 
 ### 6.5 Change classification (`sync_service.py` + `domain/change_detection.py`)
@@ -373,7 +373,7 @@ Two tiers (`ChunkConfig`):
   `child_max`=750), `child_overlap_ratio` (0.12) overlap. The **embedding / match unit**.
 
 Split priority: page → heading section → block (tables/code kept whole) → paragraph → sentence/word →
-token. Each chunk carries **stable identity keys** (ADR-0002): `section_key`, `positional_key`,
+token. Each chunk carries **stable identity keys** (ADR-hybrid-retrieval-over-versioned-chunk-store): `section_key`, `positional_key`,
 `content_key` (`sha256_text`), and `stable_key` (position + content), so editing one section reuses
 unchanged embeddings. Parent↔child persisted in `_link_chunks`: parents flushed first, each child mapped
 to its parent, children linked `prev_chunk_id`/`next_chunk_id` in reading order.
@@ -408,7 +408,7 @@ config is a SQL literal, the text a bound parameter. Parents get no `tsv`. Index
 
 ### 6.10 Versioning, activation, rollback, GC (`application/versioning.py`)
 
-An index update is **immutable and atomic** (ADR-0002). `stage_and_activate` runs in the caller's single
+An index update is **immutable and atomic** (ADR-hybrid-retrieval-over-versioned-chunk-store). `stage_and_activate` runs in the caller's single
 transaction:
 
 1. **Ensure the `document`**; compute reusable children (returns `[]` when pipeline config changed — a
@@ -432,7 +432,7 @@ transaction:
 `active_doc_version_id`/`current_cf_version`, and restore the target's change-detection hashes + pipeline
 stamps so the next sync does not falsely report `no_change` (a Phase 4.6 fix).
 
-**Source-tag activation seam (ADR-0004):** the single activation point stamps `source_type="confluence"`,
+**Source-tag activation seam (ADR-source-id-row-security-with-reader-writer-roles):** the single activation point stamps `source_type="confluence"`,
 `source_id="confluence:default"` (constants today, a parameter when a second source lands) onto both
 chunks and `page_source`.
 
@@ -456,7 +456,7 @@ row — this is what lets a brand-new space get its first sweep.
 
 Two distinct tag systems, **unioned** (never one replacing the other):
 
-**(a) Confluence label → knowledge-scope tag** (`domain/knowledge_scope.py`, ADR-0011). A page's native
+**(a) Confluence label → knowledge-scope tag** (`domain/knowledge_scope.py`, ADR-knowledge-scope-tagging-and-filtering). A page's native
 Confluence labels (fetched every sync for `labels_hash`) are intersected with the recognized set
 (`Settings.knowledge_scope_set`, loaded from repo-root `config/knowledge_scopes.json`).
 `resolve_knowledge_scope_tags`: provider tags = matched labels minus the base scope; **more than one
@@ -505,7 +505,7 @@ whole), so the deficit is concentrated in PDF/scanned attachments and images, no
 ## 7. The read path — retrieval + answer, A→Z
 
 The read path turns a user question into a grounded, cited, streamed answer. It is a **fixed workflow,
-not an agent loop** (ADR-0005): every stage is a plain function, so refusal and citation enforcement are
+not an agent loop** (ADR-rerank-then-verify-cited-answers): every stage is a plain function, so refusal and citation enforcement are
 auditable and latency is bounded. Two features own it: `retrieval` (hybrid search + rerank + permission)
 and `rag_agent` (the answer runtime + `POST /chat`). The search runs as the non-owner **reader** role, so
 RLS is actually enforced.
@@ -572,7 +572,7 @@ sequenceDiagram
 
 Handler `post_chat` (`router.py:428-450`), returns a `StreamingResponse(media_type="text/event-stream")`.
 Both an HTTP and an LLM surface, so it carries the full `securing-http-and-llm-endpoints` control set
-(ADR-0005 decision 10):
+(ADR-rerank-then-verify-cited-answers decision 10):
 
 | Control | Mechanism | Anchor |
 |---|---|---|
@@ -602,9 +602,9 @@ Before any retrieval, `AnswerService.answer` checks two branches (both skip retr
 
 - **Small talk** (`is_small_talk`) — a closed exact-match frozenset over the whole normalized message. A
   real question that merely happens to be short does **not** match. Small talk runs **first**, so a
-  message that is arguably both small talk and ambiguous resolves as small talk (ADR-0008 tie-break).
+  message that is arguably both small talk and ambiguous resolves as small talk (ADR-ambiguity-clarification-then-fallback-answer tie-break).
 - **Clarification** (`decide_clarification`) — gated behind `enable_clarification_branch` (default off,
-  ADR-0008). Heuristic first: empty ⇒ not ambiguous; ≥12 words ⇒ not ambiguous; else one cheap LLM
+  ADR-ambiguity-clarification-then-fallback-answer). Heuristic first: empty ⇒ not ambiguous; ≥12 words ⇒ not ambiguous; else one cheap LLM
   classifier call. If ambiguous, returns `Answer(needs_clarification=True, refused=False)` with a
   clarifying question — an open conversation turn, deliberately **not** a refusal. Both classifier and
   generator fail *open*.
@@ -623,7 +623,7 @@ last turn. The rewritten query is stored on the trace.
 1. **Embed the query** — same provider as ingestion. An empty text-only turn never embeds.
 2. **Set per-transaction GUCs** — `apply_hnsw_gucs` sets `SET LOCAL hnsw.ef_search=100` and
    `hnsw.iterative_scan='relaxed_order'`; `apply_source_scope` runs `SELECT set_config('app.allowed_sources',
-   :s, true)` with the **bound** comma-joined source list; and (post-ADR-0014) the retriever sets
+   :s, true)` with the **bound** comma-joined source list; and (post-ADR-db-level-customer-scope-isolation-backstop) the retriever sets
    `app.allowed_knowledge_scopes` on the same reader txn from the raw scopes. An empty source list ⇒
    default-deny.
 3. **Dense ∥ keyword** — conceptually parallel, but run **sequentially** in the one synchronous
@@ -648,7 +648,7 @@ last turn. The rewritten query is stored on the trace.
    whole source systems. Default-deny.
 2. **Knowledge-scope tag filter** — in-SQL `tags && :knowledge_scopes`, backed by `ix_chunk_tags_gin`.
    **Double-gated:** the app predicate applies only when `enable_knowledge_scope_filtering` is on AND the
-   caller passed scopes. **(Post-ADR-0014, the DB-level RESTRICTIVE scope RLS is enforced independent of
+   caller passed scopes. **(Post-ADR-db-level-customer-scope-isolation-backstop, the DB-level RESTRICTIVE scope RLS is enforced independent of
    this flag — see [§9](#9-security--isolation).)**
 3. **Page-principal ACL** — after fusion, on the candidate set only: `fetch_page_scopes` loads each page's
    `space_id` + `page_restriction` principals fresh, builds a request-scoped `PrincipalPermissionPolicy`,
@@ -714,9 +714,9 @@ curated_knowledge_entry WHERE is_active AND (tags = '{}' OR tags && :allowed_sco
 `page_id="curated:<id>"` and a **negative** `chunk_id = -entry.id` so it never collides with real ids;
 its body is injected into `parent_texts` under that negative id. It rides through the identical
 evidence/citation machinery — grounded and citation-enforced exactly like retrieved evidence.
-**(Post-ADR-0014, `curated_knowledge_entry` now carries the RESTRICTIVE scope RLS too — see §9.)**
+**(Post-ADR-db-level-customer-scope-isolation-backstop, `curated_knowledge_entry` now carries the RESTRICTIVE scope RLS too — see §9.)**
 
-### 7.13 Vision / image analysis (ADR-0009)
+### 7.13 Vision / image analysis (ADR-vision-grounded-image-analysis)
 
 `has_image = bool(history[-1].images)`. An image-bearing turn still runs the full text-retrieval path;
 what changes is (a) `decide_refusal` will not refuse on `weak_score`/`no_candidates` when `has_image`,
@@ -748,7 +748,7 @@ knowledge_scope are bound in to prevent cross-principal / cross-scope replay lea
 All tables in `apps/automation/app/platform/db/models.py`; enums in `enums.py`; RLS + roles in
 `schema.py`. There are **11 mapped tables**. `source_type` everywhere is a **CHECK constraint**
 (`IN ('confluence','zendesk','notion','upload')`), never a PG enum, so new connectors need no `ALTER TYPE`
-(ADR-0004). Chunk kinds: `KIND_PARENT=0`, `KIND_CHILD=1`.
+(ADR-source-id-row-security-with-reader-writer-roles). Chunk kinds: `KIND_PARENT=0`, `KIND_CHILD=1`.
 
 ```mermaid
 erDiagram
@@ -888,7 +888,7 @@ tables with no hard FK into the corpus graph.
 - **`query_trace`** — one row per request; written via the **writer** engine. Retrieval + answer +
   feedback fields on one row; `allowed_sources`/`allowed_knowledge_scopes` are the isolation audit trail.
 - **`curated_knowledge_entry`** — admin-maintained always-present knowledge. `tags` (empty ⇒ every scope),
-  `title`, `body`, `is_active`. **(Post-ADR-0014 it now carries the RESTRICTIVE scope RLS; previously it
+  `title`, `body`, `is_active`. **(Post-ADR-db-level-customer-scope-isolation-backstop it now carries the RESTRICTIVE scope RLS; previously it
   had none.)**
 
 ### 8.2 The search indexes (partial, on active child rows)
@@ -939,7 +939,7 @@ flowchart TB
   L1 --> L2
   subgraph L2["Layer 2 - Knowledge scope (customer axis)"]
     K1["app predicate: WHERE tags && :knowledge_scopes (flag-gated)"]
-    K2["DB RESTRICTIVE RLS: chunk_scope_read + curated *_scope_read<br/>GUC app.allowed_knowledge_scopes, fails CLOSED (ADR-0014 / 0010)"]
+    K2["DB RESTRICTIVE RLS: chunk_scope_read + curated *_scope_read<br/>GUC app.allowed_knowledge_scopes, fails CLOSED (ADR-db-level-customer-scope-isolation-backstop / 0010)"]
   end
   L2 --> L3
   subgraph L3["Layer 3 - Principal ACL (request-scoped, pre-rerank)"]
@@ -949,13 +949,13 @@ flowchart TB
   L3 --> OUT["permitted candidates -> rerank -> answer"]
 ```
 
-### 9.1 Layer 1 — Source-level Postgres RLS (ADR-0004)
+### 9.1 Layer 1 — Source-level Postgres RLS (ADR-source-id-row-security-with-reader-writer-roles)
 
 Isolates whole **source systems** (`source_id`, e.g. `confluence:default`). Enforced in the database by a
 non-owner role so it survives an application bug.
 
 - **Policy** (`apply_chunk_rls`): `ALTER TABLE chunk ENABLE ROW LEVEL SECURITY`; **`NO FORCE`** (see
-  ADR-0013 below); `CREATE POLICY chunk_source_read ON chunk FOR SELECT USING (source_id =
+  ADR-supabase-postgres-store-without-force-rls below); `CREATE POLICY chunk_source_read ON chunk FOR SELECT USING (source_id =
   ANY(string_to_array(current_setting('app.allowed_sources', true), ',')))`.
 - **GUC bound per transaction** as a parameter, never `SET LOCAL` (which cannot bind a parameter — an
   injection vector or a silent default-deny). `SELECT set_config('app.allowed_sources', :s, true)`.
@@ -964,7 +964,7 @@ non-owner role so it survives an application bug.
 - **Belt-and-suspenders recall:** `_base_filters` also carries the explicit `source_id = ANY(:sources)`
   predicate; `ix_chunk_active_source` lets the planner use it.
 
-### 9.2 Layer 2 — Knowledge-scope / customer axis (ADR-0011 + **ADR-0014**)
+### 9.2 Layer 2 — Knowledge-scope / customer axis (ADR-knowledge-scope-tagging-and-filtering + **ADR-db-level-customer-scope-isolation-backstop**)
 
 Scopes answers to a declared platform (`obi-general-test` + the active one of
 `obi-mews-test`/`obi-operacloud-test`/`obi-toast-test`). **Two mechanisms now enforce this, one soft and
@@ -973,7 +973,7 @@ one hard:**
 - **Soft (app-layer):** `AND tags && :knowledge_scopes` (Postgres array-overlap), backed by
   `ix_chunk_tags_gin`. **Double-gated** — applied only when `enable_knowledge_scope_filtering` is on AND
   the caller passed scopes. This is a correctness/recall feature.
-- **Hard (DB-enforced, ADR-0014 / migration `0010`):** a **RESTRICTIVE** RLS policy on `chunk`
+- **Hard (DB-enforced, ADR-db-level-customer-scope-isolation-backstop / migration `0010`):** a **RESTRICTIVE** RLS policy on `chunk`
   (`chunk_scope_read`) and `curated_knowledge_entry` (`*_scope_read`), keyed on a new per-txn GUC
   `app.allowed_knowledge_scopes` that mirrors `app.allowed_sources`. RESTRICTIVE so it **ANDs** with the
   source policy (a permissive policy would OR and weaken isolation). Predicate: `'*'` (opt-out) `OR
@@ -982,13 +982,13 @@ one hard:**
   `enable_knowledge_scope_filtering` flag** — the retriever/curated read set the GUC on every reader txn
   from the raw scopes; the flag now only governs the redundant app predicate.
 
-> **This closes the pre-ADR-0014 finding:** source RLS failed *closed* (unset scope ⇒ zero rows) but the
-> customer scope used to fail *open* (unset ⇒ everything). ADR-0014 makes the customer axis fail closed
+> **This closes the pre-ADR-db-level-customer-scope-isolation-backstop finding:** source RLS failed *closed* (unset scope ⇒ zero rows) but the
+> customer scope used to fail *open* (unset ⇒ everything). ADR-db-level-customer-scope-isolation-backstop makes the customer axis fail closed
 > like source RLS. **Status:** code + tests + migration `0010` DONE and committed; **live apply to
 > Supabase pending** (`alembic upgrade head`, `0009`→`0010`). Until applied live, the live DB still relies
 > on the app-layer predicate for the customer axis.
 
-### 9.3 Layer 3 — Page-level principal ACL (ADR-0005 / Phase 4.3)
+### 9.3 Layer 3 — Page-level principal ACL (ADR-rerank-then-verify-cited-answers / Phase 4.3)
 
 Enforces per-page read restrictions *within* a source. `page_restriction` persists the real principal list
 per page (any row ⇒ restricted, zero rows ⇒ unrestricted). At query time, `fetch_page_scopes` loads the
@@ -996,7 +996,7 @@ candidate set's `space_id` + principals **fresh**, builds a request-scoped `Prin
 and filters **after fusion, before rerank**. `classify_scope`: all-digits ⇒ space-level trust, otherwise a
 principal string. Numeric principals are rejected at the HTTP boundary.
 
-### 9.4 The writer / reader role split (ADR-0004 + ADR-0013)
+### 9.4 The writer / reader role split (ADR-source-id-row-security-with-reader-writer-roles + ADR-supabase-postgres-store-without-force-rls)
 
 | Role | Grants | Used by |
 |---|---|---|
@@ -1008,7 +1008,7 @@ binds to `database_reader_url` and **fails closed** (`ReaderRoleMisconfiguredErr
 outside an offline env — so a misconfigured deploy cannot silently run reads on the RLS-bypassing owner
 connection. Writes stay on the owner engine, so RLS never blocks ingestion or the trace insert.
 
-> **Managed-Postgres note (ADR-0013, resolved):** `chunk` was originally under **`FORCE ROW LEVEL
+> **Managed-Postgres note (ADR-supabase-postgres-store-without-force-rls, resolved):** `chunk` was originally under **`FORCE ROW LEVEL
 > SECURITY`**, which makes even the owner policy-bound — safe locally only because the writer was a
 > `SUPERUSER`. Managed Postgres (Supabase/RDS) gives no true superuser, so FORCE would have filtered the
 > writer to zero rows and broken ingestion. The fix (migration `0008`): keep RLS **ENABLE**d, **drop
@@ -1131,7 +1131,7 @@ flowchart LR
 - **Production vector store:** **Supabase Cloud on AWS** (project `vtpbwkbbkfukfmytlqns`, region
   `eu-west-1`, port `:5432`, pgvector `0.8.2`), reached by plain DSN — **no Supabase SDK/REST**. Separate
   writer (`DATABASE_URL`) and reader (`DATABASE_READER_URL`) connection strings. **The Phase 6 cutover is
-  DONE and live** (ADR-0013). **Prod user traffic is not switched yet** — the backend runs locally against
+  DONE and live** (ADR-supabase-postgres-store-without-force-rls). **Prod user traffic is not switched yet** — the backend runs locally against
   Supabase for now; a containerized **AWS deploy is committed but deferred** (never Vercel/other).
 - **RDS/Aurora** is a documented, reversible fallback (a DSN swap + role/RLS re-apply).
 - **No scale/latency/QPS/SLA target is defined** (corpus today ≈ the four `obi-*-test` test pages). The
@@ -1149,7 +1149,7 @@ uvicorn app.main:app   # serve (enable_background_jobs=true adds scheduler + wor
 ```
 
 `make check` bundles the enforced subset (`make boundaries` + tests). Ruff/Pyright are tracked at
-no-regression against the ADR-0003 D1 baseline, not zero. **While `.env` points at Supabase, `make check`
+no-regression against the ADR-features-import-only-through-public-root D1 baseline, not zero. **While `.env` points at Supabase, `make check`
 needs `DATABASE_URL=<local docker DSN>` overridden** (the test fixture provisions roles as superuser
 against a `<db>_test` database).
 
@@ -1189,7 +1189,7 @@ diversity is the bottleneck.
 Thirteen ADRs govern the system (the sequence skips 0012 — it does not exist). Each is summarized as
 **context → decision → rationale → consequences**; exact identifiers are preserved.
 
-### ADR-0001 — Repository Archetype and Stack *(Accepted 2026-07-28)*
+### ADR-fastapi-nextjs-postgres-pgvector-stack — Repository Archetype and Stack *(Accepted 2026-07-28)*
 - **Context.** A new system needs event-driven ingestion, document processing, model orchestration, a
   versioned vector store, and a streaming chat UI.
 - **Decision.** Build an **Application Platform**: `apps/web` (Next.js/React/TS/Tailwind, thin SSE proxy),
@@ -1200,7 +1200,7 @@ Thirteen ADRs govern the system (the sequence skips 0012 — it does not exist).
   service exposes chat, so no separate `apps/api`. Rejected extending the Node/Express Mewsy prototype
   and a single server-rendered Python service.
 
-### ADR-0002 — Retrieval and Versioning Model *(Accepted 2026-07-28)*
+### ADR-hybrid-retrieval-over-versioned-chunk-store — Retrieval and Versioning Model *(Accepted 2026-07-28)*
 - **Context.** Accuracy/recall are top priority; correctness of the versioned store underpins everything.
 - **Decision (6 points).** (1) Canonical identity = the Confluence **page id**; all sync idempotent +
   version-aware. (2) **Immutable `document_version`** (staging→active→superseded); activation = a
@@ -1213,7 +1213,7 @@ Thirteen ADRs govern the system (the sequence skips 0012 — it does not exist).
   `vector` HNSW cap → index on a **`halfvec(3072)` cast** (`halfvec_cosine_ops`), full-precision kept in
   the column; retrieval mirrors the cast. ≤2000 dims stays plain `vector_cosine_ops`.
 
-### ADR-0003 — Feature Boundary Enforcement *(Accepted 2026-08-07)*
+### ADR-features-import-only-through-public-root — Feature Boundary Enforcement *(Accepted 2026-08-07)*
 - **Context.** Feature slices existed but cross-feature imports reached into submodules — a
   convention-only boundary.
 - **Decision.** Every feature exposes **one public root** (`__init__.py`); `platform/clients` too.
@@ -1224,7 +1224,7 @@ Thirteen ADRs govern the system (the sequence skips 0012 — it does not exist).
 - **Deviation D1 (the quality gate).** Ruff/Pyright are **no-regression, not zero**, against a dirty
   baseline (amended 2026-08-11: Pyright 31→34).
 
-### ADR-0004 — Multi-Source Provider Tagging and Row-Level Security *(Accepted 2026-08-07)*
+### ADR-source-id-row-security-with-reader-writer-roles — Multi-Source Provider Tagging and Row-Level Security *(Accepted 2026-08-07)*
 - **Context.** One backend + one corpus must power many scoped chatbots with a hard, default-deny
   boundary; the schema had no source/tenant column.
 - **Decision (10 points).** Provider-tag columns (`source_type` as a **CHECK**, `source_id` the isolation
@@ -1237,7 +1237,7 @@ Thirteen ADRs govern the system (the sequence skips 0012 — it does not exist).
 - **Rationale.** A DB-enforced boundary survives an application bug; the failure mode is "no results,"
   never "wrong tenant's results." *(Later: 0013 drops FORCE; 0014 adds a second orthogonal RLS axis.)*
 
-### ADR-0005 — Reranking and the Answer Pipeline *(Accepted 2026-08-07)*
+### ADR-rerank-then-verify-cited-answers — Reranking and the Answer Pipeline *(Accepted 2026-08-07)*
 - **Context.** Reranking is the accuracy priority but no reranker/answer-runtime existed (`/chat` was a
   501 stub).
 - **Decision (10 points).** **Cross-encoder rerankers only** (Cohere `rerank-v3.5` / local; never an LLM
@@ -1246,20 +1246,20 @@ Thirteen ADRs govern the system (the sequence skips 0012 — it does not exist).
   agent loop** — a new `rag_agent` feature: rewrite → retrieve/RRF/rerank → parent-expand → grounded
   generate → refusal → **one CRAG retry**. **Forced citations** (uncited claims stripped in code).
   **Refusal threshold** (`refusal_min_rerank_score`). `/chat` is both HTTP + LLM surface → full control
-  set; must not be wired before ADR-0004's reader engine + RLS exist.
+  set; must not be wired before ADR-source-id-row-security-with-reader-writer-roles's reader engine + RLS exist.
 
-### ADR-0006 — Defer Multi-Product Extraction *(Accepted 2026-08-10; reinstated by 0010)*
+### ADR-defer-product-and-package-extraction — Defer Multi-Product Extraction *(Accepted 2026-08-10; reinstated by 0010)*
 - **Decision.** No repo split / new shared package / multi-tenant abstraction now. A second full
-  deployment ("Muse") already works via env-driven config against a second `.env`. **ADR-0004 is NOT the
+  deployment ("Muse") already works via env-driven config against a second `.env`. **ADR-source-id-row-security-with-reader-writer-roles is NOT the
   multi-deployment mechanism** (it isolates sources inside one DB; Muse gets its own database). Revisit
   only on a committed second-product launch + a real second Postgres.
 
-### ADR-0007 — Frontend/Backend Repository Separation *(Accepted 2026-08-10; superseded by 0010)*
+### ADR-separate-frontend-backend-repos — Frontend/Backend Repository Separation *(Accepted 2026-08-10; superseded by 0010)*
 - **Decision (historical).** Split `apps/web`/`apps/automation` into independently deployable repos now;
   publish `contracts`/`design-tokens` as versioned packages. Never executed — sat blocked on three open
   decisions (registry, repo names, monorepo fate).
 
-### ADR-0008 — Ambiguity Clarification and Fallback *(Accepted 2026-08-11; extends 0005)*
+### ADR-ambiguity-clarification-then-fallback-answer — Ambiguity Clarification and Fallback *(Accepted 2026-08-11; extends 0005)*
 - **Decision (9 points).** A new **pre-retrieval clarification short-circuit** (`decide_clarification`,
   heuristic-first then LLM), **flag-gated default off** (`enable_clarification_branch`). Extend `Answer`
   with `needs_clarification`/`clarification_question`/`clarification_options` — **no new SSE event**.
@@ -1267,7 +1267,7 @@ Thirteen ADRs govern the system (the sequence skips 0012 — it does not exist).
   copy. Clarification is **not** a refusal. Human hand-off is a **stub** (a structured log + static CTA;
   Salesforce is the eventual target, deferred). Reuses the existing `ambiguity` `EvalKind`.
 
-### ADR-0009 — Vision-Grounded Image Analysis *(Accepted 2026-08-11; extends 0005)*
+### ADR-vision-grounded-image-analysis — Vision-Grounded Image Analysis *(Accepted 2026-08-11; extends 0005)*
 - **Decision (8 points).** **Inline base64** images on `ChatTurn.images` (no upload endpoint), **only on
   the newest turn** (not replayed). An image turn still runs full text retrieval; `decide_refusal` gains
   `has_image` and won't refuse on `weak_score`/`no_candidates` when an image is present. Vision is a
@@ -1276,12 +1276,12 @@ Thirteen ADRs govern the system (the sequence skips 0012 — it does not exist).
   cover image bytes** (disclosed gap). Per-turn image count + per-image byte caps. **Image-borne prompt
   injection** flagged as a new threat class requiring a live adversarial pass.
 
-### ADR-0010 — Re-defer Frontend/Backend Repository Separation *(Accepted 2026-08-12)*
-- **Decision.** Reverse ADR-0007; reinstate ADR-0006 items 1–2. Phase 4.8 content moved to IDEAS #5
-  (preserved, not deleted). Phase 9 now waits only on Phase 7. Revisit trigger mirrors ADR-0006.
+### ADR-keep-frontend-backend-in-one-repo-for-now — Re-defer Frontend/Backend Repository Separation *(Accepted 2026-08-12)*
+- **Decision.** Reverse ADR-separate-frontend-backend-repos; reinstate ADR-defer-product-and-package-extraction items 1–2. Phase 4.8 content moved to IDEAS #5
+  (preserved, not deleted). Phase 9 now waits only on Phase 7. Revisit trigger mirrors ADR-defer-product-and-package-extraction.
 
-### ADR-0011 — Confluence-Label-Driven Knowledge-Scope Tagging and Retrieval Filtering *(Accepted 2026-08-21; amended 2026-09-09)*
-- **Context.** Promotes IDEAS #8/#2: the widget must serve multiple platforms without leakage. ADR-0004's
+### ADR-knowledge-scope-tagging-and-filtering — Confluence-Label-Driven Knowledge-Scope Tagging and Retrieval Filtering *(Accepted 2026-08-21; amended 2026-09-09)*
+- **Context.** Promotes IDEAS #8/#2: the widget must serve multiple platforms without leakage. ADR-source-id-row-security-with-reader-writer-roles's
   `tags` column was written but **read by nothing** at query time.
 - **Decision (8 points).** A knowledge scope = a recognized Confluence **label** + the always-recognized
   base. **Label-derived tags are additive** (unioned with `source_scope` tags). **One provider label per
@@ -1293,7 +1293,7 @@ Thirteen ADRs govern the system (the sequence skips 0012 — it does not exist).
 - **Amendment (2026-09-09).** Scope set renamed to the four **`obi-*-test`** values (`obi-general-test`,
   `obi-mews-test`, `obi-operacloud-test`, `obi-toast-test`).
 
-### ADR-0013 — Production Vector Store = Managed Postgres (Supabase on AWS) + drop FORCE on chunk RLS *(Accepted 2026-09-09)*
+### ADR-supabase-postgres-store-without-force-rls — Production Vector Store = Managed Postgres (Supabase on AWS) + drop FORCE on chunk RLS *(Accepted 2026-09-09)*
 - **Context.** The engine (Postgres+pgvector+tsvector) is settled; only the **host** was open. Blocking
   fact: `chunk` was under **`FORCE ROW LEVEL SECURITY`**, which subjects even the owner — safe locally
   only because the writer was a SUPERUSER, which **no managed Postgres grants**, so cutover would filter
@@ -1302,9 +1302,9 @@ Thirteen ADRs govern the system (the sequence skips 0012 — it does not exist).
   lock-in — plain Postgres over `psycopg` (a DSN only). **D3** Connect via the **session pooler / :5432**
   (never :6543); pgvector ≥ 0.8. **D4** **Keep RLS ENABLEd, drop FORCE** — the non-superuser owner is
   exempt by ownership, the non-owner reader stays policy-bound (migration `0008_drop_force_rls`).
-- **Note.** Explicitly does NOT address the customer-axis fail-open → that's Phase 11.1a / ADR-0014.
+- **Note.** Explicitly does NOT address the customer-axis fail-open → that's Phase 11.1a / ADR-db-level-customer-scope-isolation-backstop.
 
-### ADR-0014 — Customer/Knowledge-Scope Isolation Backstop (DB-level, fail-closed) *(Accepted 2026-09-10)*
+### ADR-db-level-customer-scope-isolation-backstop — Customer/Knowledge-Scope Isolation Backstop (DB-level, fail-closed) *(Accepted 2026-09-10)*
 - **Context.** The four-customer boundary was enforced **only** by an app-layer predicate behind a
   fail-open flag; all four scopes share one `source_id` and `curated_knowledge_entry` had no tenant
   policy. Source isolation failed closed; the customer axis did not — a gate before any public deploy.
@@ -1341,7 +1341,7 @@ no credential is ever printed or logged.
 ### 14.1 Supabase / managed-Postgres vector-store cutover
 
 **Purpose.** Stand up the schema, roles, and corpus on a fresh managed-Postgres instance and prove
-ADR-0004 isolation holds there (the Phase 6 / ADR-0013 procedure). The app talks plain Postgres over
+ADR-source-id-row-security-with-reader-writer-roles isolation holds there (the Phase 6 / ADR-supabase-postgres-store-without-force-rls procedure). The app talks plain Postgres over
 `psycopg` — the whole runbook is "provision Postgres + load data + swap a DSN," no lock-in.
 
 **Preconditions.** pgvector **≥ 0.8**; connect via the **session pooler / `:5432`** (never the `:6543`
@@ -1425,7 +1425,7 @@ The **`source_scope`** table (roots of `root_type` `space` or `page`, each carry
 over the already-fetched page list (no extra API calls). Removing a root **purges** exactly the pages no
 other active root covers (via the existing `deactivate_page` path). This is the **ingest-time** mechanism
 that decides which roots feed which tags — distinct from the **retrieval-time** knowledge-scope label
-filter (ADR-0011). A **folder** root type is not yet supported (IDEAS #7). Seeded via
+filter (ADR-knowledge-scope-tagging-and-filtering). A **folder** root type is not yet supported (IDEAS #7). Seeded via
 `scripts/seed_source_scope.py` (migrations stay data-independent).
 
 ---
@@ -1468,17 +1468,17 @@ service (its isolation *is* RLS on one shared DB); Graph RAG stays off; **never*
 | 3 | Hybrid retriever (dense ∥ keyword → RRF) | **DONE** |
 | 3.5.1–3.5.6 | pgvector≥0.8 · reranker · provider tagging + source RLS + `rag_reader` · tracing · measure · source-scoping | **DONE** |
 | 4.1–4.7 | `rag_agent` · answer workflow · `page_restriction` ACL · `/chat` SSE · web UI · 4.6 fixes backlog (16) · Obi widget | **DONE** |
-| 4.8 | FE/BE repo split | **REMOVED** → IDEAS #5 (ADR-0010) |
+| 4.8 | FE/BE repo split | **REMOVED** → IDEAS #5 (ADR-keep-frontend-backend-in-one-repo-for-now) |
 | 5.1–5.3 | key rotation · answer caching · deterministic red-team | **DONE** |
 | 5.4 → 12.4 | live-LLM red-team + latency/cost + embedder bake-off + adaptive routing | **partial** — red-team + latency PASS on local path; **bake-off unblocked, not built**; adaptive routing not started |
-| 6 | Supabase cutover + ADR-0013 + FORCE-RLS drop (`0008`) | **DONE + committed `db4d0af`; LIVE** (traffic not switched) |
+| 6 | Supabase cutover + ADR-supabase-postgres-store-without-force-rls + FORCE-RLS drop (`0008`) | **DONE + committed `db4d0af`; LIVE** (traffic not switched) |
 | 7 | Vision image analysis (attachments + screenshot) | **DONE** |
-| 9 | Vague-query clarification/fallback (ADR-0008) | **DONE** |
+| 9 | Vague-query clarification/fallback (ADR-ambiguity-clarification-then-fallback-answer) | **DONE** |
 | 10.1–10.7 | knowledge-scope config · label→tag · migration `0007` · retrieval filter · contract threading · curated layer · backfill+flip | **DONE** |
 | 10.8 → 12.1 | live label-sync + scope switcher | switcher committed `bdcaff8`; live-run **pending** |
 | 10.9 → 12.3 | user acceptance pass | **pending** (operator-run) |
 | 10.10 → 12.2 | label-gated ingestion | **not started** (needs decision + ADR) |
-| **11.1a** | **customer-isolation DB backstop** (ADR-0014, migration `0010`) | **CODE DONE + committed `d6d6d67`; NOT applied live** |
+| **11.1a** | **customer-isolation DB backstop** (ADR-db-level-customer-scope-isolation-backstop, migration `0010`) | **CODE DONE + committed `d6d6d67`; NOT applied live** |
 | 11.1b | owner DSN out of the read core | not started |
 | 11.1c | public-exposure hardening | deferred with the AWS deploy |
 | 11.2 | module-boundary hardening (config injection, refile curated repo, single trace-writer, secret partition) | not started |
@@ -1491,7 +1491,7 @@ service (its isolation *is* RLS on one shared DB); Graph RAG stays off; **never*
 
 **Test trajectory:** 99 (P3) → 483 (P6) → 502 pass (current, `1be08d4`); web 171 pass. Counts require a
 **local docker DSN override** (the fixture provisions roles as superuser and `.env` points at Supabase).
-`make boundaries` clean; ruff/pyright at the ADR-0003 D1 no-regression baseline.
+`make boundaries` clean; ruff/pyright at the ADR-features-import-only-through-public-root D1 no-regression baseline.
 
 ### 15.4 Live Supabase state
 
@@ -1541,10 +1541,10 @@ criteria). Numbering skips #6.
 | **1** | **Clarify before searching** on an underspecified question | **Promoted → Phase 9 (DONE).** The "connect me to a human" CTA is a placeholder address; the real contact + Salesforce hand-off is an open product decision. |
 | **2** | **Account/tier/integration awareness** — tailor answers/scope to the asker | **Partially promoted → Phase 10** (declared-scope hard filter). Still open: soft/blended scoping for comparison questions; a "Baze" per-client integration signal (identity unverified); an actual account/tier data model. |
 | **3** | **Screenshot-grounded guidance** (vision) | **Promoted → Phase 7 (DONE for capture/attach).** The *analysis* half needs a vision backend + a security pass — the widget's screenshot is real, its analysis is not yet wired. |
-| **4** | **Segment retrieval by connector instance** (e.g. two QuickBooks accounts in one deployment) | Unscheduled. A *different axis* from Phase 10 (which platform's docs); ADR-0011 lists it as a non-goal. Plausibly a small `tags`/`source_id` extension. |
-| **5** | **Frontend/backend repository separation** (separate git repos, published packages) | **De-scheduled TWICE (ADR-0007 → ADR-0010); operator leans toward never.** Clean FE/BE separation stays *inside* the monorepo (Phase 11.1/11.2). Three open decisions if revived: registry, two repo names, monorepo fate. The one worth doing regardless — a `contracts`↔Pydantic drift test — may fold into 11.2. |
+| **4** | **Segment retrieval by connector instance** (e.g. two QuickBooks accounts in one deployment) | Unscheduled. A *different axis* from Phase 10 (which platform's docs); ADR-knowledge-scope-tagging-and-filtering lists it as a non-goal. Plausibly a small `tags`/`source_id` extension. |
+| **5** | **Frontend/backend repository separation** (separate git repos, published packages) | **De-scheduled TWICE (ADR-separate-frontend-backend-repos → ADR-keep-frontend-backend-in-one-repo-for-now); operator leans toward never.** Clean FE/BE separation stays *inside* the monorepo (Phase 11.1/11.2). Three open decisions if revived: registry, two repo names, monorepo fate. The one worth doing regardless — a `contracts`↔Pydantic drift test — may fold into 11.2. |
 | **7** | **Folder-level `source_scope` roots** (space / page / **folder**) | Unscheduled. Today a `page` root pointed at a folder id resolves to an empty set — a **silent zero-coverage no-op** (folders aren't v2 pages). Needs a `folder` root type + gateway folder enumeration + a mixed folder/page parent walk. |
-| **8** | **Multi-provider platform architecture** — one reusable core, provider-scoped knowledge | **Knowledge/RAG piece promoted → Phase 10 / ADR-0011.** Still deferred: multi-label pages (quarantined), explicit cross-scope "search everything," soft scoping, connector-instance tagging, FE/BE reusability (#5). |
+| **8** | **Multi-provider platform architecture** — one reusable core, provider-scoped knowledge | **Knowledge/RAG piece promoted → Phase 10 / ADR-knowledge-scope-tagging-and-filtering.** Still deferred: multi-label pages (quarantined), explicit cross-scope "search everything," soft scoping, connector-instance tagging, FE/BE reusability (#5). |
 
 **Closing note in the file:** once any idea gets real shape, draw the target pipeline as a Mermaid diagram
 showing how clarification, account context, screenshots, and corpus segmentation compose with the existing

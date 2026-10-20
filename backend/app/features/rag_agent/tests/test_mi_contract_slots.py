@@ -29,7 +29,7 @@ _CHAT_YAML = _CONTRACTS_SRC / "openapi" / "chat.yaml"
 _INDEX_TS = _CONTRACTS_SRC / "index.ts"
 
 # The attribution vocabulary (§D.13 keuze 3 + substep 9.3.1): general, a named slot, a pair, or
-# `connection` — the directed source → target box of Option A routing (ADR-0020).
+# `connection` — the directed source → target box of Option A routing (ADR-directed-source-target-routing-labels).
 _ATTRIBUTION_VALUES = frozenset({"general", "pair", "connection"}) | VALID_PRODUCT_ROLES
 
 
@@ -126,7 +126,7 @@ def test_data_mi_attrib_citation_schema_carries_attribution() -> None:
 def test_data_mi_attrib_attribution_values_match_backend_roles() -> None:
     """panel mi-attrib · substep 8.1.2 / 9.3.1
     Drift: the attribution vocabulary is exactly general + the backend catalog's three slot roles
-    + pair (§D.13 keuze 3) + the directed `connection` box (substep 9.3.1, ADR-0020) — no invented
+    + pair (§D.13 keuze 3) + the directed `connection` box (substep 9.3.1, ADR-directed-source-target-routing-labels) — no invented
     value on either side."""
     attribution = _chat_document()["components"]["schemas"]["Citation"]["properties"]["attribution"]
     assert set(attribution["enum"]) == (

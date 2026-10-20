@@ -1,7 +1,7 @@
 # Baseline — the no-regression floor
 
 `/obi-verify` reads this file to check that quality counts never rise (lint, types) and
-that eval metrics never fall (ADR-0003 D1). **First real numbers recorded 2026-10-05**
+that eval metrics never fall (ADR-features-import-only-through-public-root D1). **First real numbers recorded 2026-10-05**
 (roadmap Step 4, substep 4.1 — sync-rules §15.2 golf 0), at commit `a8c3421` + the
 uncommitted sync-rules/plan.md pointer edit. Counts may only go down and metrics only up;
 the reverse needs an ADR.
@@ -11,10 +11,10 @@ the reverse needs an ADR.
 Measured from `backend/` with `uv run ruff check .`, `uv run ruff format --check .`,
 `uv run pyright` (pyright 1.1.411 pinned by uv).
 
-**Refreshed 2026-10-12** (ADR-0021 — knowledge-scope `-test` axis retirement + the Task-2 cleanup).
+**Refreshed 2026-10-12** (ADR-routing-labels-sole-content-axis — knowledge-scope `-test` axis retirement + the Task-2 cleanup).
 Re-measured on the current working tree; a `git stash` measurement confirmed the pyright count was
-already 46 on this branch *before* any ADR-0021 work (the earlier recorded 43 was stale drift that
-predated this session), so ADR-0021 is net-zero on types. Ruff and ruff-format are unchanged from
+already 46 on this branch *before* any ADR-routing-labels-sole-content-axis work (the earlier recorded 43 was stale drift that
+predated this session), so ADR-routing-labels-sole-content-axis is net-zero on types. Ruff and ruff-format are unchanged from
 the 2026-10-05 floor.
 
 - Ruff errors: **18** (E501 line-too-long + 2 × SIM115 + 1 × E741; all pre-existing)

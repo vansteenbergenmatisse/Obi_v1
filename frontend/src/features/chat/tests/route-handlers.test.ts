@@ -96,7 +96,7 @@ describe("proxy route wiring (panel w-proxy · substep p0-s0_5-reg-the-widget)",
     expect(response.status).toBe(200);
   });
 
-  // panel mi-gate · ADR-0022 — the thin GET /api/chat/visibility entry composes the feature's
+  // panel mi-gate · ADR-widget-hides-via-visibility-probe — the thin GET /api/chat/visibility entry composes the feature's
   // handleGetVisibility, same pattern as the POST /chat entry.
   it("mi_gate_visibility_route_wires_to_handle_get_visibility", async () => {
     const request = new Request("http://localhost/api/chat/visibility", { method: "GET" });
@@ -365,7 +365,7 @@ describe("handlePostChat", () => {
     expect(callAutomationApiMock).not.toHaveBeenCalled();
   });
 
-  // PLAN 11.1c (ADR-0014): the pilot invite-token gate is retired. The incoming `Authorization`
+  // PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): the pilot invite-token gate is retired. The incoming `Authorization`
   // header (the embed frame's platform-signed JWT) is threaded through to `callAutomationApi` as
   // `userToken` — never forwarded as the outbound `Authorization` (that stays the host key).
   it("threads a Bearer Authorization header through to callAutomationApi as userToken", async () => {
@@ -425,12 +425,12 @@ describe("handlePatchFeedback", () => {
   });
 });
 
-describe("handleGetVisibility (panel mi-gate · ADR-0022)", () => {
+describe("handleGetVisibility (panel mi-gate · ADR-widget-hides-via-visibility-probe)", () => {
   function visibilityRequest(headers: Record<string, string> = {}): Request {
     return new Request("http://localhost/api/chat/visibility", { method: "GET", headers });
   }
 
-  // panel mi-gate · ADR-0022 — the proxy issues a GET to the backend's /chat/visibility through the
+  // panel mi-gate · ADR-widget-hides-via-visibility-probe — the proxy issues a GET to the backend's /chat/visibility through the
   // server-side client that carries the host key, threading the incoming user JWT as the X-Obi-Token
   // (userToken), and forwards the 200 body verbatim. No request body.
   it("mi_gate_visibility_injects_host_key_and_threads_user_token", async () => {
@@ -449,7 +449,7 @@ describe("handleGetVisibility (panel mi-gate · ADR-0022)", () => {
     expect(callArgs.body).toBeUndefined();
   });
 
-  // panel mi-gate · ADR-0022 — a backend 403 (the authoritative not-enabled answer on POST /chat)
+  // panel mi-gate · ADR-widget-hides-via-visibility-probe — a backend 403 (the authoritative not-enabled answer on POST /chat)
   // or any hard failure is forwarded verbatim, never reshaped.
   it("mi_gate_visibility_forwards_backend_hidden_and_hard_failures_verbatim", async () => {
     callAutomationApiMock.mockResolvedValueOnce(

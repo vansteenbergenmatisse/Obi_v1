@@ -4,7 +4,7 @@
 
 ## What happened
 
-Phase 4 built the `rag_agent` feature — a fixed function pipeline (ADR-0005 §5: "not an agent loop")
+Phase 4 built the `rag_agent` feature — a fixed function pipeline (ADR-rerank-then-verify-cited-answers §5: "not an agent loop")
 that turns a retrieval into a grounded, cited, streamed chat answer — and wired it to HTTP.
 
 ```mermaid
@@ -147,4 +147,4 @@ and `ChatRequestBody`/`Answer` mirror.
 - `packages/contracts` — the wire shapes shared with `apps/web`.
 
 See [`../how_this_works.md`](../how_this_works.md) §7.3–7.4 for the full pipeline narrative and
-`docs/adr/0005-Reranking-And-Answer-Pipeline.md` for the governing decisions.
+`docs/adr/rerank-then-verify-cited-answers.md` for the governing decisions.

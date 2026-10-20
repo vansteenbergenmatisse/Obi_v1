@@ -1,5 +1,5 @@
 /**
- * Browser test (substep 9.3.1, panels mi-contract / mi-gate, ADR-0020 Option A). Drives the REAL
+ * Browser test (substep 9.3.1, panels mi-contract / mi-gate, ADR-directed-source-target-routing-labels Option A). Drives the REAL
  * embed frame on the `/test-hosts/connection-switch` page and proves that switching the directed
  * `source → target` connection via a silent token renewal RESETS the open thread — no answer built
  * for one connection bleeds into another.

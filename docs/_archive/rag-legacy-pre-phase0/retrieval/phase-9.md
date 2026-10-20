@@ -2,7 +2,7 @@
 
 **Status:** ✅ done, all 9 sub-steps closed (`docs/rag/PLAN.md` lines 3584–3993, 2026-08-11/13 —
 deliberately the **last** phase in the plan). Governed by
-`docs/adr/0008-Ambiguity-Clarification-Fallback.md` and `docs/rag/DESIGN.md` §11.
+`docs/adr/ambiguity-clarification-then-fallback-answer.md` and `docs/rag/DESIGN.md` §11.
 
 ## What happened
 
@@ -11,7 +11,7 @@ of silently running the full grounded pipeline into one generic refusal string; 
 a distinguishable, closed taxonomy; the "routing this to a human" copy became a real (if minimal)
 logged event; and fallback quality became measurable.
 
-**ADR-0008's locked contract shape:**
+**ADR-ambiguity-clarification-then-fallback-answer's locked contract shape:**
 
 1. **A new pre-retrieval short-circuit**, structurally identical to the pre-existing small-talk fix —
    `domain/clarification.py::decide_clarification`, checked right after the small-talk check, before
@@ -31,11 +31,11 @@ logged event; and fallback quality became measurable.
 
 ## Sub-steps
 
-- **9.1** — Design doc + ADR-0008. No code.
+- **9.1** — Design doc + ADR-ambiguity-clarification-then-fallback-answer. No code.
 - **9.2** — `domain/clarification.py::decide_clarification` + `AnthropicAmbiguityClassifier`
   (`llm_client.py`, cheap `routing_model` tier). Heuristic-first: a query ≥12 words is confidently
   self-specifying and skips the LLM call; every shorter query falls through to the classifier
-  (never guessed at). Wired right after small-talk — this **is** the tie-break ADR-0008 flagged as
+  (never guessed at). Wired right after small-talk — this **is** the tie-break ADR-ambiguity-clarification-then-fallback-answer flagged as
   open ("hi, what's the approval process?" still reaches this branch normally, since `is_small_talk`
   requires the *whole* message to match). Behind the flag, computed and logged
   (`clarification_decision`) but never changes `Answer` yet — the bypass itself is 9.3.
@@ -73,7 +73,7 @@ logged event; and fallback quality became measurable.
   category) plus a **live-model adversarial pass** (system-prompt exfiltration, DAN-style role
   switch, internal-category exfiltration, benign control) against the real classifier +
   clarification calls — zero findings, mirroring 7.6's precedent.
-- **9.9** — Exit gate. Zero regressions; ADR-0008 confirmed matching shipped code across all 9
+- **9.9** — Exit gate. Zero regressions; ADR-ambiguity-clarification-then-fallback-answer confirmed matching shipped code across all 9
   decisions.
 
 ## Files & folders used
@@ -96,4 +96,4 @@ logged event; and fallback quality became measurable.
 - `app/platform/config/settings.py` — `enable_clarification_branch`.
 - `app/features/evaluation/metrics/fallback_metrics.py`; `evaluation/datasets/ambiguity.json`,
   `evaluation/datasets/out_of_corpus.json`.
-- `docs/adr/0008-Ambiguity-Clarification-Fallback.md`, `docs/rag/DESIGN.md` §11.
+- `docs/adr/ambiguity-clarification-then-fallback-answer.md`, `docs/rag/DESIGN.md` §11.

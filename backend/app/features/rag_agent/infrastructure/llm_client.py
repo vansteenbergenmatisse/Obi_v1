@@ -7,7 +7,7 @@ timeout/retry/backoff/breaker/abuse-cap discipline itself lives in `AnthropicMes
 (C6) on the fully-assembled prompt right before it is sent, and, for the rewriter, the fail-open
 policy described on `AnthropicQueryRewriter`.
 
-``generate_image_analysis`` (PLAN 7.3, ADR-0009) does not redact the image bytes it sends — C6
+``generate_image_analysis`` (PLAN 7.3, ADR-vision-grounded-image-analysis) does not redact the image bytes it sends — C6
 covers the ``query`` text argument only, same as every other call here; see `domain/pii.py`'s
 module docstring for the disclosed, accepted gap.
 """
@@ -114,14 +114,14 @@ class AnswerGenerator(Protocol):
         ...
 
     def generate_image_analysis(self, query: str, images: Sequence[ImageAttachment]) -> str:
-        """Return an ungrounded description/answer for the images on a turn (PLAN 7.3, ADR-0009
+        """Return an ungrounded description/answer for the images on a turn (PLAN 7.3, ADR-vision-grounded-image-analysis
         decision 4) — a second, independent call, structurally parallel to ``generate_small_talk``.
         Never passed through ``enforce_citations``; its output carries no citation marker."""
         ...
 
     def generate_clarification(self, query: str) -> ClarificationReply:
         """Return a clarifying question + 2-4 options for a query `domain/clarification.py`'s
-        classifier judged ambiguous (PLAN 9.3, ADR-0008 decision 3). Always returns a value, never
+        classifier judged ambiguous (PLAN 9.3, ADR-ambiguity-clarification-then-fallback-answer decision 3). Always returns a value, never
         raises — fails open to a static fallback on any generation or parsing failure, the same
         shape as ``generate_small_talk``."""
         ...
@@ -223,7 +223,7 @@ class AnthropicAnswerGenerator:
             )
             if integration_block is not None:
                 system_blocks.append({"type": "text", "text": integration_block})
-        # Substep 9.4.1 (panel mi-session, ADR-0020): the directed-connection block chat-start wrote
+        # Substep 9.4.1 (panel mi-session, ADR-directed-source-target-routing-labels): the directed-connection block chat-start wrote
         # on the session row — an uncached per-chat block (varies per connection), presented as
         # facts, never instructions (anti-injection posture). Response context only; the label hard
         # filter + the database decide what the chat may see (rule 3), never anything said here.
@@ -257,7 +257,7 @@ class AnthropicAnswerGenerator:
         return out.strip() or _SMALL_TALK_FALLBACK
 
     def generate_image_analysis(self, query: str, images: Sequence[ImageAttachment]) -> str:
-        """No C6 redaction of the image bytes themselves (ADR-0009 decision 6, disclosed gap —
+        """No C6 redaction of the image bytes themselves (ADR-vision-grounded-image-analysis decision 6, disclosed gap —
         see `domain/pii.py`'s module docstring); ``query`` text still goes through `redact_pii`
         like every other call site. Fails open to a short apology on `AnthropicError`, same
         reasoning as `generate_small_talk`: a vision-analysis failure carries no accuracy risk to

@@ -1,4 +1,4 @@
-"""PLAN 11.1c (ADR-0014) — the /chat edge-binding proof: the verified `X-Obi-Token` (NOT the
+"""PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop) — the /chat edge-binding proof: the verified `X-Obi-Token` (NOT the
 request body) drives the knowledge scope that reaches the answer service.
 
 This is the security done-when for Task B1, extended with the AUTH-1 / CIP-A1 / CIP-A2 repair:
@@ -149,7 +149,7 @@ def test_token_integration_drives_scopes(client_and_recorder) -> None:
     resp = _post(client, token="MEWS")
     assert resp.status_code == 200
     assert recorder.last_auth is not None
-    assert recorder.last_auth.allowed_scopes == ()  # ADR-0021
+    assert recorder.last_auth.allowed_scopes == ()  # ADR-routing-labels-sole-content-axis
 
 
 def test_body_scope_disagreeing_with_token_is_ignored(client_and_recorder) -> None:
@@ -158,12 +158,12 @@ def test_body_scope_disagreeing_with_token_is_ignored(client_and_recorder) -> No
     assert resp.status_code == 200
     # token wins — the recognized-but-disagreeing body scope is logged and ignored, never used
     assert recorder.last_auth is not None
-    assert recorder.last_auth.allowed_scopes == ()  # ADR-0021
+    assert recorder.last_auth.allowed_scopes == ()  # ADR-routing-labels-sole-content-axis
 
 
 def test_unknown_body_scope_is_ignored_not_400(client_and_recorder) -> None:
     client, recorder = client_and_recorder
-    # ADR-0021: the knowledge-scope axis is retired, so a body knowledge_scope is always logged and
+    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired, so a body knowledge_scope is always logged and
     # ignored (never a 400); the verified token drives the request and the service IS reached.
     resp = _post(client, token="MEWS", knowledge_scope="obi-fake-test")
     assert resp.status_code == 200
@@ -176,7 +176,7 @@ def test_hub_vends_product_integration(client_and_recorder) -> None:
     resp = _post(client, token="HUB_TOAST")
     assert resp.status_code == 200
     assert recorder.last_auth is not None
-    assert recorder.last_auth.allowed_scopes == ()  # ADR-0021
+    assert recorder.last_auth.allowed_scopes == ()  # ADR-routing-labels-sole-content-axis
 
 
 def test_cross_issuer_integration_is_401(client_and_recorder) -> None:
@@ -213,7 +213,7 @@ def test_tokenless_request_is_general_only(client_and_recorder) -> None:
     resp = _post(client)
     assert resp.status_code == 200
     assert recorder.last_auth is not None
-    assert recorder.last_auth.allowed_scopes == ()  # ADR-0021
+    assert recorder.last_auth.allowed_scopes == ()  # ADR-routing-labels-sole-content-axis
     assert recorder.last_auth.token_subject is None
 
 
@@ -231,7 +231,7 @@ def test_rt1_body_scope_is_accepted_and_ignored_and_token_scopes_serve(
     client_and_recorder,
 ) -> None:
     """panel r1-auth · substep 4.2 (coverage gap G4)
-    ADR-0021: the knowledge-scope axis is retired. A body `knowledge_scope` that disagrees with the
+    ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired. A body `knowledge_scope` that disagrees with the
     token is accepted and SILENTLY ignored (no 400, no log line — the field is deprecated and read
     by nothing); the served scopes come only from the verified token (now empty), never the body
     (never-bend rule 2 — the body never decides access)."""
@@ -280,7 +280,7 @@ def test_rt1_empty_pos_with_mews_pms_serves_at_chat(client_and_recorder) -> None
     resp = _post(client, token="SLOTS_MEWS_EMPTY_POS")
     assert resp.status_code == 200
     assert recorder.last_auth is not None
-    assert recorder.last_auth.allowed_scopes == ()  # ADR-0021
+    assert recorder.last_auth.allowed_scopes == ()  # ADR-routing-labels-sole-content-axis
     assert recorder.last_auth.slot_pms == "mews"
     assert recorder.last_auth.slot_pos is None
 
@@ -313,7 +313,7 @@ def test_rt1_accounting_slot_outside_support_serves_at_chat(client_and_recorder)
     resp = _post(client, token="SLOTS_INERT_ACCOUNTING")
     assert resp.status_code == 200
     assert recorder.last_auth is not None
-    assert recorder.last_auth.allowed_scopes == ()  # ADR-0021
+    assert recorder.last_auth.allowed_scopes == ()  # ADR-routing-labels-sole-content-axis
     assert recorder.last_auth.slot_accounting == "xero"
 
 
@@ -340,7 +340,7 @@ def test_rt1_legacy_note_serves_identically_to_one_filled_slot(client_and_record
 def test_rt1_body_hint_never_overrides_the_note_slots(client_and_recorder) -> None:
     """panel mi-gate · substep 8.1.3
     The body never decides access under the slot form either: a body `knowledge_scope` that
-    disagrees with the structured note is accepted and silently ignored (ADR-0021: the scope axis
+    disagrees with the structured note is accepted and silently ignored (ADR-routing-labels-sole-content-axis: the scope axis
     is retired — no 400, no log); the served scopes stay the note's (now empty), never the body
     (never-bend rule 2)."""
     client, recorder = client_and_recorder
@@ -349,4 +349,4 @@ def test_rt1_body_hint_never_overrides_the_note_slots(client_and_recorder) -> No
 
     assert resp.status_code == 200
     assert recorder.last_auth is not None
-    assert recorder.last_auth.allowed_scopes == ()  # ADR-0021
+    assert recorder.last_auth.allowed_scopes == ()  # ADR-routing-labels-sole-content-axis

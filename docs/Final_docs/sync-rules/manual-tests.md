@@ -67,7 +67,7 @@ failure; re-read after the window.
   tg-remove). **Live-script covers it:** yes.
 
 ### MT-3 — Remove one recognized label, another stays (rule 3)
-> ADR-0021 Path B: "recognized label" means a ROUTING label (`{slug}-general` / `{slug}-to-{kind}` /
+> ADR-routing-labels-sole-content-axis Path B: "recognized label" means a ROUTING label (`{slug}-general` / `{slug}-to-{kind}` /
 > `obi-general`). The directed boxes make the routing flip visible: a page labelled `toast-to-pms`
 > + `mews-to-pos` is served to a Toast→Mews chat (via `toast-to-pms`) and to a Mews→Toast chat (via
 > `mews-to-pos`).

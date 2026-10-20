@@ -1,7 +1,7 @@
 /**
  * The Obi embed loader — bundled to `public/obi.js` (esbuild, IIFE, `pnpm --filter web
  * build:obi`) and served from our own domain. A platform's page adds ONE script tag pointing at
- * it, then calls `Obi.init({ tokenUrl })` (PLAN 11.1c, ADR-0014).
+ * it, then calls `Obi.init({ tokenUrl })` (PLAN 11.1c).
  *
  * Runs entirely in the HOST page's window — a completely different JS realm from the `/embed`
  * iframe's own bundle (`features/embed/iframe-bridge.ts`); the two talk only via `postMessage`,
@@ -10,10 +10,10 @@
  * `"*"`. This module never imports `@omniboost/contracts` directly (a standalone esbuild IIFE
  * bundle, not part of the Next module graph) — the message-type strings are inlined below and kept
  * in lockstep with `packages/contracts/src/iframe-messages.ts`. The loader additionally LISTENS for
- * the one FRAME → HOST message, `obi:hidden` (sync-rules Task 5, ADR-0022), accepting it only from
+ * the one FRAME → HOST message, `obi:hidden` (sync-rules Task 5, ADR-widget-hides-via-visibility-probe), accepting it only from
  * its own iframe's `contentWindow` at the exact Obi origin and then tearing the widget down.
  *
- * Source-enablement hide (ADR-0023, supersedes the ADR-0022 target gate): BEFORE mounting, `init()`
+ * Source-enablement hide (ADR-source-system-decides-widget-eligibility, supersedes the ADR-widget-hides-via-visibility-probe target gate): BEFORE mounting, `init()`
  * fetches the token once and decodes its directed `source_system` claim (display-only, same
  * non-trust posture as `decodeExpMs`). If that source is not in the build-injected
  * `__OBI_ENABLED_SOURCES__` set, the widget never mounts — no launcher, no iframe, no flash. The
@@ -73,7 +73,7 @@ const MSG_OPEN = "obi:open";
 const MSG_TOKEN = "obi:token";
 const MSG_CLEAR = "obi:clear";
 // Frame → host (the one inbound message this loader accepts): the server-authoritative visibility
-// probe reported the directed source is not supported (ADR-0023).
+// probe reported the directed source is not supported (ADR-source-system-decides-widget-eligibility).
 const MSG_HIDDEN = "obi:hidden";
 
 // Renew this long before the decoded `exp` so a click never races an about-to-expire token.
@@ -305,7 +305,7 @@ function mount(tokenUrl: string): void {
   launcherEl = injectLauncherButton(() => toggleWidget(tokenUrl));
 }
 
-/** Load-time source-enablement gate (ADR-0023). When an enabled set is known, fetch the note once
+/** Load-time source-enablement gate (ADR-source-system-decides-widget-eligibility). When an enabled set is known, fetch the note once
  * and decode its (display-only) `source_system`; if that source is not enabled (or unknown), return
  * without mounting — no launcher, no iframe, no flash. A missing enabled set, a failed fetch, or a
  * note with no `source_system` all fail OPEN (mount): the server-authoritative
@@ -349,7 +349,7 @@ function init(options: ObiInitOptions): void {
 }
 
 /** Frame → host listener: the `/embed` frame posts `obi:hidden` after the server-authoritative
- * `/chat/visibility` probe reports the directed source is not supported (ADR-0023). Accept it ONLY from our own iframe's `contentWindow` AND the exact Obi origin — never
+ * `/chat/visibility` probe reports the directed source is not supported (ADR-source-system-decides-widget-eligibility). Accept it ONLY from our own iframe's `contentWindow` AND the exact Obi origin — never
  * a wildcard, never another frame — then tear the widget down. A hostile/misconfigured sender is
  * ignored silently (no throw), matching the frame bridge's posture. */
 function handleFrameMessage(event: MessageEvent): void {

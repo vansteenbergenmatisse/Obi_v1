@@ -62,7 +62,7 @@ def _set_chunk_labels(page_id: int, labels: list[str]) -> None:
 def test_label_hard_filter_excludes_a_page_outside_the_connection_boxes(
     gateway, settings: Settings
 ) -> None:
-    """ADR-0021 (supersedes the ADR-0014 knowledge-scope RLS backstop): content isolation is the
+    """ADR-routing-labels-sole-content-axis (supersedes the ADR-db-level-customer-scope-isolation-backstop knowledge-scope RLS backstop): content isolation is the
     routing-label hard filter. A page whose only routing label sits outside a chat's four
     connection boxes is never returned, while a session whose boxes include that label resolves it
     (so the exclusion is the label boundary, not an unfindable page). The retired scope backstop no
@@ -105,7 +105,7 @@ def test_no_knowledge_scopes_argument_is_unrestricted(gateway, settings: Setting
 def test_scope_filter_retired_knowledge_scopes_no_longer_excludes(
     gateway, settings: Settings
 ) -> None:
-    # ADR-0021: the knowledge-scope filter is RETIRED. Passing `knowledge_scopes` no longer excludes
+    # ADR-routing-labels-sole-content-axis: the knowledge-scope filter is RETIRED. Passing `knowledge_scopes` no longer excludes
     # a page by its `tags` — the arg is ignored (the scope GUC is opted out to wildcard). Content
     # isolation is now the routing-label axis (see retrieval/test_label_hardfilter_db.py) + source
     # isolation. This test guards against re-introducing scope-tag exclusion.
@@ -136,7 +136,7 @@ def test_flag_on_includes_page_when_its_scope_is_allowed(gateway, settings: Sett
 
 
 def test_scope_filter_retired_no_longer_isolates_by_scope(gateway, settings: Settings) -> None:
-    # ADR-0021: scope tags no longer isolate content. A mews-tagged page is now visible regardless
+    # ADR-routing-labels-sole-content-axis: scope tags no longer isolate content. A mews-tagged page is now visible regardless
     # of the knowledge_scopes passed (the axis is retired); cross-integration isolation is enforced
     # by the routing-label hard filter (test_label_hardfilter_db.py), not by scope tags.
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
@@ -159,7 +159,7 @@ def test_scope_filter_retired_no_longer_isolates_by_scope(gateway, settings: Set
 def test_scope_filter_retired_untagged_chunk_still_participates(
     gateway, settings: Settings
 ) -> None:
-    # ADR-0021: with the scope axis retired, a chunk's `tags` no longer gate retrieval, so an
+    # ADR-routing-labels-sole-content-axis: with the scope axis retired, a chunk's `tags` no longer gate retrieval, so an
     # untagged chunk participates normally (membership is the routing-label axis at ingestion, and
     # retrieval filters on source + labels, never `tags`).
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
@@ -176,7 +176,7 @@ def test_scope_filter_retired_untagged_chunk_still_participates(
 def test_query_trace_records_no_knowledge_scopes_after_retirement(
     gateway, settings: Settings
 ) -> None:
-    # ADR-0021: the scope axis is retired, so the retriever no longer sets a scope list; the trace
+    # ADR-routing-labels-sole-content-axis: the scope axis is retired, so the retriever no longer sets a scope list; the trace
     # records None for allowed_knowledge_scopes (source scope + labels are the live axes).
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
     _set_chunk_tags(_ONBOARDING_PAGE, ["obi-general", "mews-general"])
@@ -211,7 +211,7 @@ def _one_child_and_parent(page_id: int) -> tuple[int, int, str]:
 def test_auth7_label_filtered_search_excludes_out_of_box_child_so_parent_not_expanded(
     gateway, settings: Settings
 ) -> None:
-    """gap AUTH-7 · ADR-0021 (supersedes the ADR-0014 scope version) — the load-bearing
+    """gap AUTH-7 · ADR-routing-labels-sole-content-axis (supersedes the ADR-db-level-customer-scope-isolation-backstop scope version) — the load-bearing
     parent-expansion protection, now on the routing-label axis.
 
     Parent expansion (`fetch_parent_texts`) is only ever called on chunk ids that already passed
@@ -253,7 +253,7 @@ def test_auth7_label_filtered_search_excludes_out_of_box_child_so_parent_not_exp
 def test_auth7_parent_text_fetch_opts_out_of_scope_rls_by_design_adr0014(
     gateway, settings: Settings
 ) -> None:
-    """gap AUTH-7 · ADR-0014 — pins the DELIBERATE scope-RLS opt-out on parent-text fetch (FINDING).
+    """gap AUTH-7 · ADR-db-level-customer-scope-isolation-backstop — pins the DELIBERATE scope-RLS opt-out on parent-text fetch (FINDING).
 
     `HybridRetriever.fetch_parent_texts` sets the knowledge-scope GUC to the `'*'` wildcard, so the
     RESTRICTIVE `chunk_scope_read` policy does NOT re-filter the parent by scope: an
@@ -281,7 +281,7 @@ def test_auth7_parent_text_fetch_opts_out_of_scope_rls_by_design_adr0014(
     # fetch opts out of scope RLS ('*'), the parent text is still returned for the authorized child.
     result = retr.fetch_parent_texts([child_id])
     assert child_id in result
-    assert result[child_id] == parent_text  # differently-tagged parent IS surfaced (ADR-0014)
+    assert result[child_id] == parent_text  # differently-tagged parent IS surfaced (ADR-db-level-customer-scope-isolation-backstop)
 
 
 def test_gin_index_is_plan_usable_for_tags_overlap(gateway, settings: Settings) -> None:

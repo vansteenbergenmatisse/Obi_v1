@@ -1,7 +1,7 @@
 [project]
 name = "obi-knowledge-base"
 version = "0.1.0"
-description = "Obi knowledge base: the versioned Confluence store schema, roles, policies and DB settings. Imported by the backend as the `schema` package; imports nothing back (ADR-0003, Phase-1 one-way rule)."
+description = "Obi knowledge base: the versioned Confluence store schema, roles, policies and DB settings. Imported by the backend as the `schema` package; imports nothing back (ADR-features-import-only-through-public-root, Phase-1 one-way rule)."
 requires-python = ">=3.12,<3.14"
 dependencies = [
     "sqlalchemy>=2.0.35",

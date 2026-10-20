@@ -62,7 +62,7 @@ string when it is (never a diagnostic with an interpolated score — see [phase-
 ## Cross-cutting gates (not retrieval-specific, but gate this whole sub-phase)
 
 - **4.6.9 — Pyright baseline reconciliation.** Governance fix: the pyright error count had crept
-  31→34 across earlier phases, reported "unchanged" without ever reconciling against ADR-0003's
+  31→34 across earlier phases, reported "unchanged" without ever reconciling against ADR-features-import-only-through-public-root's
   actual fixed number. Every 4.6 sub-step above is diffed against this reconciled baseline (2 ruff
   errors / ≤25 unformatted / 34 pyright errors), not just counted.
 - **4.6.16 — Exit gate.** All 16 sub-steps green, 274 tests, no ruff/pyright regression. Gates Phase

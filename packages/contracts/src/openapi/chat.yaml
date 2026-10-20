@@ -35,7 +35,7 @@ paths:
         An empty slot never triggers this refusal. Enforced at the gate
         (substep 8.1.3); documented here as the contract.
 
-        Directed connection (substep 9.3.1, ADR-0020 Option A): the token MAY
+        Directed connection (substep 9.3.1, ADR-directed-source-target-routing-labels Option A): the token MAY
         instead carry a directed `source_system` → `target_system` +
         `business_id` connection (see `token-claims.json`), which is what routes
         going forward; the slot and legacy forms stay accepted but no longer
@@ -76,7 +76,7 @@ paths:
                 $ref: "#/components/schemas/Error"
         "403":
           description: >
-            Source not supported (ADR-0023, source-enablement visibility gate).
+            Source not supported (ADR-source-system-decides-widget-eligibility, source-enablement visibility gate).
             The verified directed token's source system is unknown or not in
             the catalog's enabled_sources, so the session is refused and Obi
             stays hidden for that company. The target is never checked. The body is `{"error": "integration
@@ -107,7 +107,7 @@ paths:
       operationId: getChatVisibility
       summary: Probe whether Obi should be shown for the caller's verified context.
       description: >
-        Read-only visibility probe (ADR-0023, source-enablement visibility gate).
+        Read-only visibility probe (ADR-source-system-decides-widget-eligibility, source-enablement visibility gate).
         Authed by the same host `CHAT_API_KEY` (server-to-server) and per-user
         `X-Obi-Token` as `POST /chat`; no request body. Returns 200 with
         `{"visible": true}` when the verified context is servable, or
@@ -227,7 +227,7 @@ components:
         - mediaType
         - data
       description: >
-        An inline image attached to a chat turn (ADR-0009). Per decision 2,
+        An inline image attached to a chat turn (ADR-vision-grounded-image-analysis). Per decision 2,
         the web client only ever puts this on the newest turn when resending
         history; the backend does not enforce that shape structurally.
       properties:
@@ -255,7 +255,7 @@ components:
           items:
             $ref: "#/components/schemas/ImageAttachment"
           description: >
-            Images attached to this turn (ADR-0009). Sent through a second,
+            Images attached to this turn (ADR-vision-grounded-image-analysis). Sent through a second,
             independent vision-analysis call, never through citation
             enforcement (decision 4).
 
@@ -281,7 +281,7 @@ components:
           description: >
             Caller-self-reported principal id used for page-level ACL scoping.
             Trusted only as far as the deployment trusts the calling web proxy
-            (ADR-0004) — absent/unverified never widens access.
+            (ADR-source-id-row-security-with-reader-writer-roles) — absent/unverified never widens access.
         simulatedContext:
           $ref: "#/components/schemas/SimulatedContext"
           description: >
@@ -353,7 +353,7 @@ components:
             panel mi-attrib): a general guide, a guide admitted by one named
             filled slot (pos / pms / accounting), a guide for a slot pair the
             company actually has, or `connection` — the directed source → target
-            connection box this chat is bound to (substep 9.3.1, ADR-0020 Option
+            connection box this chat is bound to (substep 9.3.1, ADR-directed-source-target-routing-labels Option
             A). Optional — absent until the backend assembles attribution
             (substep 8.3.4); the field never carries anything beyond the
             customer's own verified context.
@@ -415,14 +415,14 @@ components:
         imageAnalysis:
           type: ["string", "null"]
           description: >
-            Vision-analysis text for any images on the turn (ADR-0009
+            Vision-analysis text for any images on the turn (ADR-vision-grounded-image-analysis
             decision 5), appended after the grounded answer as its own
             labeled block. Absent/null when the turn had no image.
         needsClarification:
           type: boolean
           description: >
             True when the query was judged too vague to search well
-            (PLAN 9.3, ADR-0008 decision 3) and the pipeline bypassed
+            (PLAN 9.3, ADR-ambiguity-clarification-then-fallback-answer decision 3) and the pipeline bypassed
             rewrite/retrieval/refusal to ask a clarifying question instead.
             A still-open conversation turn, not a refusal — `refused` stays
             false on this path. Absent/false before the backend implements
@@ -540,6 +540,6 @@ components:
             carry one. Today the sole value is `source_not_enabled`, on the 403
             returned by `POST /chat` (and surfaced as `visible: false` by
             `GET /chat/visibility`) when the verified directed token's source
-            system is not supported (ADR-0023, source-enablement visibility
+            system is not supported (ADR-source-system-decides-widget-eligibility, source-enablement visibility
             gate). The field never carries a product id or any other detail about
             the customer's context (never-bend rule 10).

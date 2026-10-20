@@ -34,7 +34,7 @@ zero rows, never another tenant's. Layer 1 isolates whole source systems; Layer 
 platform axis with a `RESTRICTIVE` policy that ANDs on top of Layer 1, backed by a redundant app-layer
 predicate. Layer 3 (page-principal ACL) runs after fusion, before rerank, on the candidate set only.
 
-### Layer 1 — Source-level Postgres RLS (ADR-0004)
+### Layer 1 — Source-level Postgres RLS (ADR-source-id-row-security-with-reader-writer-roles)
 
 Isolates whole **source systems** (`source_id`, e.g. `confluence:default`; later `zendesk:*`, etc.).
 Enforced in the database by a non-owner role so it survives an application bug.
@@ -42,16 +42,16 @@ Enforced in the database by a non-owner role so it survives an application bug.
 - **Policy** (`apply_chunk_rls`, schema.py:52-68):
   ```sql
   ALTER TABLE chunk ENABLE ROW LEVEL SECURITY;
-  ALTER TABLE chunk NO FORCE ROW LEVEL SECURITY;             -- ADR-0013: owner exempt by ownership, not superuser
+  ALTER TABLE chunk NO FORCE ROW LEVEL SECURITY;             -- ADR-supabase-postgres-store-without-force-rls: owner exempt by ownership, not superuser
   CREATE POLICY chunk_source_read ON chunk FOR SELECT
     USING (source_id = ANY(string_to_array(current_setting('app.allowed_sources', true), ',')));
   ```
-  RLS is `ENABLE`d but **`NO FORCE`** (ADR-0013): the non-owner `rag_reader` is fully policy-bound, while
+  RLS is `ENABLE`d but **`NO FORCE`** (ADR-supabase-postgres-store-without-force-rls): the non-owner `rag_reader` is fully policy-bound, while
   the table owner (the writer) is exempt **by ownership** — it needs neither `SUPERUSER` nor `BYPASSRLS`,
   so the same policy works on managed Postgres (Supabase/RDS) where no true superuser exists.
 - **GUC** — the scope is bound **per transaction** as a parameter, never `SET LOCAL`: `SELECT
   set_config('app.allowed_sources', :s, true)` (search_repo.py:38-49). `SET LOCAL` cannot bind a
-  parameter — using it would be an injection vector or a silent default-deny (ADR-0004 decision 5).
+  parameter — using it would be an injection vector or a silent default-deny (ADR-source-id-row-security-with-reader-writer-roles decision 5).
 - **Default-deny proof:** an unset GUC ⇒ `current_setting(..., true)` returns `NULL` ⇒
   `string_to_array(NULL, ',')` ⇒ `source_id = ANY(NULL)` is never true ⇒ **zero rows**. A retrieval
   that forgets to scope leaks nothing; it returns nothing (schema.py:55-56). Asserted by a negative
@@ -63,13 +63,13 @@ Enforced in the database by a non-owner role so it survives an application bug.
   scan can under-return. `hnsw.iterative_scan='relaxed_order'` (pgvector 0.8+) is the safety valve, set
   per transaction alongside the scope GUC.
 
-### Layer 2 — Knowledge-scope isolation (ADR-0011 + ADR-0014)
+### Layer 2 — Knowledge-scope isolation (ADR-knowledge-scope-tagging-and-filtering + ADR-db-level-customer-scope-isolation-backstop)
 
 Scopes answers to a declared platform (`obi-general-test` + the active one of `obi-mews-test` /
 `obi-operacloud-test` / `obi-toast-test`). All four scopes share **one `source_id`**, so Layer 1 does
 not separate them — the customer axis is isolated in its own right, in two mutually-reinforcing parts:
 
-- **Database backstop — `RESTRICTIVE` scope-GUC RLS (ADR-0014, the hard boundary).** A second RLS policy
+- **Database backstop — `RESTRICTIVE` scope-GUC RLS (ADR-db-level-customer-scope-isolation-backstop, the hard boundary).** A second RLS policy
   per protected table — `chunk_scope_read` on `chunk` and `curated_knowledge_entry_scope_read` on
   `curated_knowledge_entry` — keyed on a per-transaction GUC `app.allowed_knowledge_scopes` that mirrors
   `app.allowed_sources`. The retriever and curated read set it on **every** reader transaction via
@@ -84,19 +84,19 @@ not separate them — the customer axis is isolated in its own right, in two mut
     corpora and the always-on base keep working).
   - **`'*'`** ⇒ an *explicit* opt-out for the internal/eval path only; the public `/chat` path always
     resolves a real, non-empty scope list (always including `obi-general-test`), so it never sets `'*'`.
-- **Application predicate — `AND tags && :knowledge_scopes` (ADR-0011, defense-in-depth).** A hard SQL
+- **Application predicate — `AND tags && :knowledge_scopes` (ADR-knowledge-scope-tagging-and-filtering, defense-in-depth).** A hard SQL
   filter (Postgres array-overlap) backed by `ix_chunk_tags_gin` (search_repo.py:64-69), applied when the
   `enable_knowledge_scope_filtering` construction flag is on and the caller passed scopes
-  (retriever.py:116, 128-132). It adds recall/planner benefit and the ADR-0011 Decision-1 untagged-drop
+  (retriever.py:116, 128-132). It adds recall/planner benefit and the ADR-knowledge-scope-tagging-and-filtering Decision-1 untagged-drop
   on top of the DB backstop.
 
-The two are decoupled: **the DB backstop is enforced independent of the feature flag** (ADR-0014 D3) —
+The two are decoupled: **the DB backstop is enforced independent of the feature flag** (ADR-db-level-customer-scope-isolation-backstop D3) —
 the flag now governs only the redundant app predicate, so passing `knowledge_scopes` isolates tagged
 content at the database even with the flag off. The owner (writer) is exempt by ownership + `NO FORCE`
-(ADR-0013), so ingestion and trace writes are untouched; only the non-owner `rag_reader` read path is
+(ADR-supabase-postgres-store-without-force-rls), so ingestion and trace writes are untouched; only the non-owner `rag_reader` read path is
 policed.
 
-### Layer 3 — Page-level principal ACL (ADR-0005 / Phase 4.3)
+### Layer 3 — Page-level principal ACL (ADR-rerank-then-verify-cited-answers / Phase 4.3)
 
 Enforces per-page read restrictions *within* a source. `page_restriction` persists the real principal
 list per page (written by `confluence_sync`; any row ⇒ restricted, zero rows ⇒ unrestricted). At query
@@ -111,7 +111,7 @@ boundary, router.py:178-188.)
 
 | Role | Grants | Used by |
 |---|---|---|
-| **writer** (table owner) | owns tables; exempt from RLS **by ownership + `NO FORCE`** (ADR-0013), needs no `SUPERUSER`/`BYPASSRLS` | worker / webhook / reconcile / ingestion + all `query_trace` inserts and feedback updates |
+| **writer** (table owner) | owns tables; exempt from RLS **by ownership + `NO FORCE`** (ADR-supabase-postgres-store-without-force-rls), needs no `SUPERUSER`/`BYPASSRLS` | worker / webhook / reconcile / ingestion + all `query_trace` inserts and feedback updates |
 | **`rag_reader`** | `LOGIN`, **non-owner**, `NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`, `GRANT SELECT` on read tables | `HybridRetriever` (the search transaction) |
 
 `ensure_reader_role` (schema.py:78-102) creates the reader with the restrictive attributes and grants
@@ -135,7 +135,7 @@ secret, never sent to the browser and never logged; its overlap-window rotation 
 
 Both exist because a naïve reading of the model would get them wrong; both are ratified in ADRs.
 
-### Managed-Postgres RLS without a superuser (ADR-0013)
+### Managed-Postgres RLS without a superuser (ADR-supabase-postgres-store-without-force-rls)
 
 The obvious way to let ingestion bypass the read policy is `FORCE ROW LEVEL SECURITY` off a `SUPERUSER`
 writer — which works locally but **breaks on managed Postgres** (Supabase/RDS/Aurora grant no true
@@ -145,7 +145,7 @@ keeps RLS **`ENABLE`d but `NO FORCE`** and relies on **table ownership** for the
 the owner is exempt without any elevated role. This is what makes the same isolation model portable to
 the managed host.
 
-### Fail-closed on the customer axis (ADR-0014)
+### Fail-closed on the customer axis (ADR-db-level-customer-scope-isolation-backstop)
 
 Because all four customer scopes share one `source_id`, the source policy (Layer 1) cannot separate them
 — so the customer axis gets **its own** `RESTRICTIVE` scope-GUC RLS policy (Layer 2 above). The choice
@@ -158,8 +158,8 @@ of `enable_knowledge_scope_filtering`, so the flag is a recall knob, not the sec
 
 | Boundary | Mechanism | Fails | Hard security boundary? |
 |---|---|---|---|
-| Source system (`source_id`) | Postgres RLS, default-deny, non-owner role (ADR-0004, `NO FORCE` per ADR-0013) | closed | **Yes** |
-| Knowledge scope (customer/platform) | `RESTRICTIVE` scope-GUC RLS (ADR-0014) + app-layer `tags && :scopes` (ADR-0011) | closed | **Yes** |
+| Source system (`source_id`) | Postgres RLS, default-deny, non-owner role (ADR-source-id-row-security-with-reader-writer-roles, `NO FORCE` per ADR-supabase-postgres-store-without-force-rls) | closed | **Yes** |
+| Knowledge scope (customer/platform) | `RESTRICTIVE` scope-GUC RLS (ADR-db-level-customer-scope-isolation-backstop) + app-layer `tags && :scopes` (ADR-knowledge-scope-tagging-and-filtering) | closed | **Yes** |
 | Page principal (ACL) | request-scoped policy over `page_restriction`, pre-rerank | closed (no principal ⇒ unrestricted only) | Yes, within a source |
 
 > **Not a full multi-tenant auth story.** These layers close the *data-layer* boundary. They do **not**

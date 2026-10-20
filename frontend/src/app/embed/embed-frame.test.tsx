@@ -212,7 +212,7 @@ describe("EmbedFrame lifecycle", () => {
     expect(requestBodies[1].conversationId).toBeUndefined();
   });
 
-  // panel mi-gate · ADR-0022 — on token receipt the frame runs the server-authoritative visibility
+  // panel mi-gate · ADR-widget-hides-via-visibility-probe — on token receipt the frame runs the server-authoritative visibility
   // probe; a `visible:false` answer posts the NEW 4th frame→host `obi:hidden` message to the host
   // (the loader then destroy()s the widget). Posted to the exact allowed host origin, never "*".
   it("test_embed_posts_obi_hidden_when_visibility_reports_hidden", async () => {
@@ -239,7 +239,7 @@ describe("EmbedFrame lifecycle", () => {
     parentPostMessage.mockRestore();
   });
 
-  // panel mi-gate · ADR-0022 — a HARD failure of the probe (here 503) is never treated as hidden:
+  // panel mi-gate · ADR-widget-hides-via-visibility-probe — a HARD failure of the probe (here 503) is never treated as hidden:
   // no obi:hidden is posted, so an outage can't blank the widget for everyone.
   it("test_embed_does_not_hide_on_visibility_hard_failure", async () => {
     fetchMock.mockImplementation((url: string) => {

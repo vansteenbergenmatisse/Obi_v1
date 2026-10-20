@@ -76,7 +76,7 @@ cd backend && uv run python -u scripts/webhook_rules_live.py \
   --scope-a obi-toast-test --scope-b obi-mews-test --yes
 ```
 
-> The `obi-…-test` label names shown above are retired (ADR-0021, 2026-10-12): index membership and
+> The `obi-…-test` label names shown above are retired (ADR-routing-labels-sole-content-axis, 2026-10-12): index membership and
 > routing now run on recognized **routing labels** (`obi-general`, `{slug}-general`,
 > `{slug}-to-{pos|pms|accounting}`), not on the old knowledge-scope `-test` tags. A fresh live run
 > should pass recognized routing labels; the two values are only the pair of labels the script flips

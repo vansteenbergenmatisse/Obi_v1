@@ -8,7 +8,7 @@
 |---|---|---|
 | `get_settings()` | `apps/automation/app/platform/config/settings.py:317` | `apps/automation/app/main.py:46` and every feature |
 | `get_engine()` / `get_sessionmaker()` / `session_scope()` | `apps/automation/app/platform/db/engine.py:20,32,72` | `apps/automation/app/main.py:47`; `features/rag_agent/server/router.py`; confluence_sync worker/webhook/tests |
-| `get_reader_engine()` / `get_reader_sessionmaker()` | `apps/automation/app/platform/db/engine.py:37,67` | `apps/automation/app/main.py:47`; retrieval reads (RLS-enforced path, ADR-0004) |
+| `get_reader_engine()` / `get_reader_sessionmaker()` | `apps/automation/app/platform/db/engine.py:37,67` | `apps/automation/app/main.py:47`; retrieval reads (RLS-enforced path, ADR-source-id-row-security-with-reader-writer-roles) |
 | `enqueue_job()` | `apps/automation/app/platform/jobs/queue.py:25` | `features/confluence_sync/application/event_service.py:23`, `reconciliation.py:37` |
 | `claim_job()` / `complete_job()` / `fail_job()` / `reap_expired()` | `apps/automation/app/platform/jobs/queue.py:56,90,98,120` | `features/confluence_sync/application/worker.py:38` |
 | `build_embedding_provider()` | `apps/automation/app/platform/clients/embeddings_client.py:207` | `apps/automation/app/main.py` |

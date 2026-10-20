@@ -9,7 +9,7 @@
  * not the backend's (union of both applies end to end):
  *
  * security_baseline (surface: POST /api/chat, tier STATE-MUTATING + LLM-CALL):
- *   C1_auth:        covered   - PLAN 11.1c (ADR-0014) retired the pilot invite-token gate
+ *   C1_auth:        covered   - PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop) retired the pilot invite-token gate
  *                               (`WIDGET_ACCESS_TOKEN`/`access-token.ts`/`auth.ts` — deleted) that
  *                               previously guarded this leg. The browser->proxy leg is no longer
  *                               invite-gated: any request reaches this handler, but the platform-
@@ -47,7 +47,7 @@
  *   trace-id-keyed update, not a scoped read.
  *
  * security_baseline (surface: GET /api/chat/visibility, tier AUTHENTICATED-READ — sync-rules
- * ADR-0023, the source-enablement visibility probe):
+ * ADR-source-system-decides-widget-eligibility, the source-enablement visibility probe):
  *   C1_auth:        covered   - identical to POST /api/chat: the incoming per-user JWT
  *                               (`Authorization: Bearer`) is threaded to the backend as
  *                               `X-Obi-Token` (the scope authority, verified by `TokenVerifier`);
@@ -82,7 +82,7 @@ const _BEARER_PREFIX = "Bearer ";
 /** Extracts the platform-signed user JWT from the incoming `Authorization` header, if present.
  * Never forwarded back out as `Authorization` (that header carries the host `chat_api_key` on the
  * outbound leg) — threaded into `callAutomationApi` as `userToken`, which sends it on its own
- * `X-Obi-Token` header (PLAN 11.1c, ADR-0014). Absent means the tokenless/general-only path;
+ * `X-Obi-Token` header (PLAN 11.1c). Absent means the tokenless/general-only path;
  * never logged. */
 function extractUserToken(request: Request): string | undefined {
   const header = request.headers.get(_AUTH_HEADER) ?? "";
@@ -222,7 +222,7 @@ export async function handlePostChat(request: Request): Promise<Response> {
 }
 
 /**
- * GET /api/chat/visibility (ADR-0023) — the source-enablement visibility probe.
+ * GET /api/chat/visibility (ADR-source-system-decides-widget-eligibility) — the source-enablement visibility probe.
  * Read-only, no request body: extracts the per-user JWT, injects the host key server-side (via
  * `callAutomationApi`), and forwards the backend's `/chat/visibility` body + status verbatim. A
  * `{"visible":false,"reason":"source_not_enabled"}` 200 and any hard failure (400/401/429/503) are

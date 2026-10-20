@@ -1,14 +1,14 @@
 # Routing test labels — the Confluence pages to create (Option A / substep 9.5.1)
 
 **Handed over to the owner 2026-10-12. Owner-finalized 2026-10-12.** This is the exact label scheme for
-the directed-connection routing engine (ADR-0020). The owner creates these as separate Confluence pages;
+the directed-connection routing engine (ADR-directed-source-target-routing-labels). The owner creates these as separate Confluence pages;
 the engine (`9.2.1`–`9.4.1`) routes on the routing label, and the automated DB tests seed the same scheme.
 
 **The live routing-label set is exactly these nine labels** — `obi-general`, `toast-general`,
 `mews-general`, `opera-cloud-general`, `toast-to-pms`, `mews-to-pos`, `opera-cloud-to-pos`,
 `toast-to-accounting`, `mews-to-accounting`. There is **no** accounting-product general page
 (e.g. `quickbooks-online-general`) and **no** `opera-cloud-to-accounting` page at launch: those are valid
-engine labels (see "The full catalog" below) but their boxes stay empty (content-gated, ADR-0020 D5).
+engine labels (see "The full catalog" below) but their boxes stay empty (content-gated, ADR-directed-source-target-routing-labels D5).
 
 Source of truth: `knowledge-base/config/product_catalog.json` + `build_labels()` in
 `backend/app/platform/config/product_catalog.py`. A connection `source → target` resolves to exactly
@@ -16,17 +16,17 @@ four label "boxes": `obi-general`, `{source.slug}-general`, `{target.slug}-gener
 `{source.slug}-to-{target.role}` (the role is the **target's** kind: pos/pms/accounting). Direction
 is primary: `toast-to-pms ≠ mews-to-pos`.
 
-## One label per page (ADR-0021 Path B)
+## One label per page (ADR-routing-labels-sole-content-axis Path B)
 
 Each test page gets **exactly one routing label** from the table below — nothing else.
 
-> **Updated 2026-10-12 (ADR-0021 Path B).** An earlier version of this handover asked for a second,
+> **Updated 2026-10-12 (ADR-routing-labels-sole-content-axis Path B).** An earlier version of this handover asked for a second,
 > base `obi-general-test` **membership tag** on every page. That is **no longer required and must not
-> be added**: ADR-0021 retired the knowledge-scope `-test` axis entirely (migration 0018 dropped
+> be added**: ADR-routing-labels-sole-content-axis retired the knowledge-scope `-test` axis entirely (migration 0018 dropped
 > `chunk_scope_read`). Under Path B a page is a member of the index iff it is **published and carries
 > ≥1 recognized routing label** (`obi-general` / `{slug}-general` / `{slug}-to-{kind}`) and is
 > not `classified`. The routing label is now **both** the membership axis and the content-routing
-> axis, so one label is all a page needs. Company/source isolation (locks 0–2) is unchanged (ADR-0020
+> axis, so one label is all a page needs. Company/source isolation (locks 0–2) is unchanged (ADR-directed-source-target-routing-labels
 > D0) and does not depend on any content tag.
 
 ## Core set — required (launch: Toast ⇄ Mews; proves general / system / direction / isolation)
@@ -58,7 +58,7 @@ PMSes) but **not** page 3 (`mews-general`) — the per-system box is what separa
 Accounting products are **targets only** — a chat never starts from one, so there is no accounting-product
 general page. The accounting connection box (`{source}-to-accounting`) is product-agnostic and carries the
 content. The `{target}-general` box the engine emits for an accounting target (e.g. `quickbooks-online-general`)
-stays **empty** at launch (content-gated, ADR-0020 D5); the connection still routes on `obi-general` +
+stays **empty** at launch (content-gated, ADR-directed-source-target-routing-labels D5); the connection still routes on `obi-general` +
 `{source}-general` + `{source}-to-accounting`.
 
 | # | Page title | Routing label | Marker word | Served where… |
@@ -70,7 +70,7 @@ stays **empty** at launch (content-gated, ADR-0020 D5); the connection still rou
 
 > These are the forms the engine *accepts and can emit* — a **superset** of the nine labels the owner
 > populates (top of this doc). `quickbooks-online-general`, `xero-general` and `opera-cloud-to-accounting`
-> are valid engine labels with **no page** at launch; their boxes stay empty (content-gated, ADR-0020 D5).
+> are valid engine labels with **no page** at launch; their boxes stay empty (content-gated, ADR-directed-source-target-routing-labels D5).
 
 - **Products** (canonical id · role): `toast`·pos, `mews`·pms, `opera-cloud`·pms,
   `quickbooks-online`·accounting, `xero`·accounting.

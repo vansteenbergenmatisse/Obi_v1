@@ -100,9 +100,9 @@ Notes that keep this honest:
   check is enforced by the backend gate as well, never only by the frontend (never-bend rules
   2–3).
 
-> **Updated 2026-10-13 by ADR-0022 (directed path).** This section's slot-form allowlist governs
-> the slot token. The directed-connection token (ADR-0020) dropped the allowlist (D4/D5: routing
-> is content-gated by the four label boxes), so ADR-0022 restores a widget-eligibility gate for
+> **Updated 2026-10-13 by ADR-widget-hides-via-visibility-probe (directed path).** This section's slot-form allowlist governs
+> the slot token. The directed-connection token (ADR-directed-source-target-routing-labels) dropped the allowlist (D4/D5: routing
+> is content-gated by the four label boxes), so ADR-widget-hides-via-visibility-probe restores a widget-eligibility gate for
 > the directed path as a **separate global axis**: a product-global `enabled_targets` list in
 > `product_catalog.json` (absent ⇒ all enabled, reversible, no migration). After shape/membership
 > (unknown target → 400) and vend rights (un-vended → 401), a directed **target** not in
@@ -111,7 +111,7 @@ Notes that keep this honest:
 > rule 10). A read-only `GET /chat/visibility` runs the same gate and returns
 > `{"visible":true}` / `{"visible":false,"reason":"target_not_enabled"}`. The backend 403 is the
 > authority; the frontend hide (loader init fetch, then the `obi:hidden` frame→host message) is UX.
-> Retrieval routing (the four-label hard filter, ADR-0020 D5) is **unchanged** — this gate controls
+> Retrieval routing (the four-label hard filter, ADR-directed-source-target-routing-labels D5) is **unchanged** — this gate controls
 > widget *eligibility* only.
 
 ## 5 · Eligibility: one filtered search
@@ -274,7 +274,7 @@ Never Mews–QuickBooks guides (§D.4).
 launch allowlist (only Mews is, as PMS). The backend gate refuses to serve the session too — the
 frontend hiding is UX, not the boundary (§4).
 
-> **Directed-path analogue (ADR-0022, 2026-10-13).** The directed token has no allowlist (§4
+> **Directed-path analogue (ADR-widget-hides-via-visibility-probe, 2026-10-13).** The directed token has no allowlist (§4
 > note), but the same "hidden + backend refuses" shape now holds via target-enablement: a directed
 > `source → target` whose **target** is not in `product_catalog.json`'s `enabled_targets` yields
 > `GET /chat/visibility` → `{"visible":false,"reason":"target_not_enabled"}` (widget hidden) and a

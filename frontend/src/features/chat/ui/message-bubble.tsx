@@ -54,7 +54,7 @@ function UserImages({ images }: { images: MessageImage[] }) {
   );
 }
 
-/** The assistant turn's vision-analysis block (ADR-0009 decision 5) — a separate, labeled
+/** The assistant turn's vision-analysis block (ADR-vision-grounded-image-analysis decision 5) — a separate, labeled
  * section, never merged into `message.text` since it never passes through citation enforcement.
  * Isolated in its own component (same pattern as `Greeting`/`SuggestionChip` in
  * `message-list.tsx`) so `useChatSession` is only required when a turn actually has one. */
@@ -69,12 +69,12 @@ function ImageAnalysisSection({ text }: { text: string }) {
   );
 }
 
-/** Placeholder hand-off address (PLAN 9.6, ADR-0008 decision 6) — a disclosed stub, not a real
+/** Placeholder hand-off address (PLAN 9.6, ADR-ambiguity-clarification-then-fallback-answer decision 6) — a disclosed stub, not a real
  * support channel. See `docs/future-ideas/IDEAS.md` #1: the real address/channel is still an
  * open product decision, alongside the noted eventual Salesforce hand-off integration. */
 const HANDOFF_EMAIL = "test@gmail.com";
 
-/** The "connect me to a human" CTA under a `refused` turn (PLAN 9.6, ADR-0008 decision 6) — a
+/** The "connect me to a human" CTA under a `refused` turn (PLAN 9.6, ADR-ambiguity-clarification-then-fallback-answer decision 6) — a
  * `mailto:` link only, no ticket/webhook integration. */
 function HandoffCta() {
   const { locale } = useChatSession();
@@ -92,7 +92,7 @@ function HandoffCta() {
   );
 }
 
-/** The "clarifying" status pill (PLAN 9.5, ADR-0008 decision 3) — deliberately styled on the
+/** The "clarifying" status pill (PLAN 9.5, ADR-ambiguity-clarification-then-fallback-answer decision 3) — deliberately styled on the
  * accent tokens, never `danger`, since a clarifying turn is a still-open next step, not a
  * failure like `refused` right above it. */
 function ClarifyingBanner() {
@@ -135,7 +135,7 @@ function ClarificationChips({ options }: { options: string[] }) {
 /**
  * Per-slot source attribution (substep 8.3.4, panel mi-attrib): a short, muted badge on each
  * citation saying WHY this customer saw that source — general, one of their named systems, or one
- * of their actual connections. The backend ASSEMBLES the attribution (§D.13 keuze 3 / ADR-0020)
+ * of their actual connections. The backend ASSEMBLES the attribution (§D.13 keuze 3 / ADR-directed-source-target-routing-labels)
  * and sends it on the Citation; the widget only renders it, never inferring or recomputing
  * eligibility. The label maps purely from the contract enum, so it can reveal nothing beyond the
  * customer's own context (no company id, scope, or page the customer couldn't see).

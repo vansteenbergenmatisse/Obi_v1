@@ -1,5 +1,5 @@
 /**
- * Local test-host note-minting endpoint (PLAN 11.1c, ADR-0014) — signs a short-lived RS256 JWT
+ * Local test-host note-minting endpoint (PLAN 11.1c) — signs a short-lived RS256 JWT
  * the way a real platform's own server would, for `/test-hosts/<name>` to fetch via `obi.js`'s
  * `Obi.init({ tokenUrl })`. Never used outside local/dev browser proof — the private keys live in
  * `frontend/.env.local` only (gitignored, generated with `openssl`, see
@@ -25,7 +25,7 @@ export async function GET(
   }
 
   // `?form=directed` mints the directed source → target connection form (substep 9.3.1,
-  // ADR-0020 Option A) instead of the legacy business claims, so a test host can exercise either
+  // ADR-directed-source-target-routing-labels Option A) instead of the legacy business claims, so a test host can exercise either
   // token shape. A host without directedClaims falls back to its legacy note. The two forms are
   // mutually exclusive on a token — the directed note never also carries the legacy trio.
   const wantsDirected = new URL(request.url).searchParams.get("form") === "directed";

@@ -6,18 +6,18 @@ label-driven tags). §10.7's tooling half is built: the corpus-readiness check
 (`verify_knowledge_scope_coverage` + `scripts/verify_knowledge_scope_backfill.py`) is implemented and
 tested; the manual relabel of the live corpus and the flag flip remain an operator action.
 `docs/rag/PLAN.md` Phase 10 §§10.1–10.2, 10.7. Design doc:
-[`docs/adr/0011-Knowledge-Scope-Tagging-And-Retrieval-Filtering.md`](../../adr/0011-Knowledge-Scope-Tagging-And-Retrieval-Filtering.md).
+[`docs/adr/README.md`](../../adr/README.md).
 Only the ingestion-relevant sub-steps are covered here — retrieval-time filtering, request threading,
 and curated knowledge are in [`../retrieval/phase-10.md`](../retrieval/phase-10.md).
 
 Promotes [`../../future-ideas/IDEAS.md`](../../future-ideas/IDEAS.md) idea #8's "knowledge/RAG
 separation" concern, plus the retrieval-side gap idea #2 already flagged from a direct code read:
-`page_source.tags`/`chunk.tags` (ADR-0004, [phase-3.5.md](./phase-3.5.md)) have been written at every
+`page_source.tags`/`chunk.tags` (ADR-source-id-row-security-with-reader-writer-roles, [phase-3.5.md](./phase-3.5.md)) have been written at every
 ingestion activation since Phase 3.5.3 and read by nothing at query time. This phase adds the missing
 **automatic, per-page** tag source; retrieval-side reading of `tags` is Phase 10's other half.
 
 **Terminology note:** this phase calls the concept a "knowledge scope," never a "provider" — see
-ADR-0011's Context for why (this repo's own deployment is itself code-named Toast). **Currently
+ADR-knowledge-scope-tagging-and-filtering's Context for why (this repo's own deployment is itself code-named Toast). **Currently
 recognized scopes: `general`, `mews`, `opera-cloud`, `toast`** — yes, `toast` is a real recognized
 value (Toast POS, a third-party product unrelated to this repo's codename), a deliberate, disclosed
 choice, not an oversight.
@@ -55,7 +55,7 @@ edit to that file plus labeling the matching Confluence pages — never a code c
 
 - `source_scope`'s existing role (which spaces/page-subtrees get synced at all) is unchanged — it
   keeps meaning "sync inclusion," not "knowledge scope." Its tags are unioned in, not replaced.
-- ADR-0004's `source_type`/`source_id`/RLS isolation model is untouched — a different axis (data
+- ADR-source-id-row-security-with-reader-writer-roles's `source_type`/`source_id`/RLS isolation model is untouched — a different axis (data
   connector, e.g. Confluence vs. a future Zendesk), not this phase's concern.
 - `versioning.py`'s activation/rollback/GC logic — the `tags` parameter it already accepts is simply
   given a richer value by the caller.
@@ -69,9 +69,9 @@ Confluence label (at minimum `general`) to each currently-synced page and let a 
 otherwise those pages become invisible to every scoped query the moment filtering is enabled, per this
 phase's own "no recognized tag → does not participate" rule. Deciding *which* scope each page belongs
 to is a content decision, so it stays manual; nothing in code guesses it. **This manual step is the
-single highest-risk point for the `toast`/`mews`-vs-`Muse` naming collisions** (ADR-0011 Context) — the
+single highest-risk point for the `toast`/`mews`-vs-`Muse` naming collisions** (ADR-knowledge-scope-tagging-and-filtering Context) — the
 operator typing a label is the one place no code catches "did you mean the POS platform or this repo's
-codename?", so relabeling should be done with ADR-0011's Context open.
+codename?", so relabeling should be done with ADR-knowledge-scope-tagging-and-filtering's Context open.
 
 **The readiness gate** (built here, §10.7) makes the "did every page get labeled?" question
 mechanical instead of eyeballed:

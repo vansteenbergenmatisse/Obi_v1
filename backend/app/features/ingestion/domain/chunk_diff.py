@@ -2,7 +2,7 @@
 
 Given the previously-indexed child chunks and the freshly planned ones, decide which embeddings
 can be carried over untouched and which chunks must be (re-)embedded — the mechanism that keeps a
-small edit from re-embedding the whole page (plan "stable identity + diff", ADR-0002).
+small edit from re-embedding the whole page (plan "stable identity + diff", ADR-hybrid-retrieval-over-versioned-chunk-store).
 
 Three passes, each consuming from the pool of not-yet-matched old chunks:
 

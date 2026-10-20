@@ -1,8 +1,10 @@
-# 0023 — The Source System Decides Widget Eligibility
+# The Source System Decides Widget Eligibility
+
+Identifier: `ADR-source-system-decides-widget-eligibility` (formerly numbered 0023). File paths updated to the current layout (`backend/`, `frontend/`, `knowledge-base/`) on 2026-10-20; the decision is unchanged.
 
 Status: Accepted
 Date: 2026-10-20
-Supersedes: ADR-0022 Decision on WHICH endpoint gates (target → source). ADR-0022's mechanism — the
+Supersedes: ADR-widget-hides-via-visibility-probe Decision on WHICH endpoint gates (target → source). ADR-widget-hides-via-visibility-probe's mechanism — the
 `GET /chat/visibility` probe, the 403 render, the `obi:hidden` frame→host message, the init-time
 eligibility fetch — stays as decided there.
 Governs: `knowledge-base/config/product_catalog.json` (`enabled_sources`, renamed from
@@ -15,7 +17,7 @@ Governs: `knowledge-base/config/product_catalog.json` (`enabled_sources`, rename
 
 ## Context
 
-ADR-0022 hid Obi when the directed token's TARGET was not enabled, and treated an unknown source or
+ADR-widget-hides-via-visibility-probe hid Obi when the directed token's TARGET was not enabled, and treated an unknown source or
 target as a 400 error. The first real partner token (Base, 2026-10-16) showed why that does not fit:
 Base sends the customer's actual systems (`source_system: "PEP PMS"`, `target_system: "NetSuite"`),
 and a source system can connect to hundreds of targets. Checking every target against our catalog
@@ -34,7 +36,7 @@ checked.
    `source_not_enabled` otherwise). An unknown source is also `source_not_enabled` (403), so Obi
    hides instead of erroring.
 2. **The target is routing input only.** It is resolved with the same resolver. Known: the four
-   routing labels as before (ADR-0020). Unknown: `target_slug = None` and routing falls back to the
+   routing labels as before (ADR-directed-source-target-routing-labels). Unknown: `target_slug = None` and routing falls back to the
    boxes the source alone can fill, `[obi-general, {source}-general]` — never a fabricated system,
    never a wildcard. No vend, enablement, role or allowlist check applies to the target.
 3. **`enabled_targets` is renamed `enabled_sources`** with the same value (`mews`, `toast`,

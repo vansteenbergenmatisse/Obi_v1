@@ -81,7 +81,7 @@ Also `platform/config/tests/`, `platform/clients/tests/`, `shared/tests/`.
 
 ## `apps/automation/scripts/` — one moves, rest stay in backend/scripts
 
-- **seed_curated_knowledge.py** — one-off CLI to add/update/deactivate a `curated_knowledge_entry` row (PLAN 10.6, ADR-0011). **→ MOVES to `knowledge-base/seed`** (seed data).
+- **seed_curated_knowledge.py** — one-off CLI to add/update/deactivate a `curated_knowledge_entry` row (PLAN 10.6, ADR-knowledge-scope-tagging-and-filtering). **→ MOVES to `knowledge-base/seed`** (seed data).
 - rotate_chat_api_key.py — rotate `CHAT_API_KEY` with no outage (PLAN 5). *(stays)*
 - run_reconciliation_once.py — one COMPLETE reconciliation sweep + drain jobs (PLAN 10.7). *(stays)*
 - seed_source_scope.py — add/update a Confluence sync root in `source_scope` (PLAN 3.5.6). *(stays)*

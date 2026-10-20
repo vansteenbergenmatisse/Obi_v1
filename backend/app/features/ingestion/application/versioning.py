@@ -41,7 +41,7 @@ from schema.models import (
 # a fresh re-index from Confluence, the source of truth.
 DEFAULT_RETAIN_SUPERSEDED = 0
 
-# Source-tag activation seam (ADR-0004). Confluence is the only source today, so these are
+# Source-tag activation seam (ADR-source-id-row-security-with-reader-writer-roles). Confluence is the only source today, so these are
 # constants; a second source turns them into a parameter threaded from the sync caller.
 _SOURCE_TYPE = "confluence"
 _SOURCE_ID = "confluence:default"
@@ -96,13 +96,13 @@ def build_chunks(
         cf_version=meta.version_number,
         title=meta.title,
         space_id=meta.space_id,
-        # single source-tag activation seam (ADR-0004): a constant while Confluence is the only
+        # single source-tag activation seam (ADR-source-id-row-security-with-reader-writer-roles): a constant while Confluence is the only
         # source; becomes a parameter threaded from the caller when a second source lands.
         # tags (PLAN 3.5.6): threaded from the covering source_scope root(s), [] when none.
         source_type=_SOURCE_TYPE,
         source_id=_SOURCE_ID,
         tags=list(tags) if tags is not None else [],
-        # raw Confluence labels (ADR-0020 D1, mi-labels); the routing axis, distinct from tags.
+        # raw Confluence labels (ADR-directed-source-target-routing-labels D1, mi-labels); the routing axis, distinct from tags.
         labels=list(labels) if labels is not None else [],
         # validated "Applies to" payload (mi-applies, 8.2.2); None = label-only default.
         applicability=applicability,
@@ -316,10 +316,10 @@ def _activate(
         ps = PageSource(page_id=meta.page_id)
         session.add(ps)
     ps.space_id = meta.space_id
-    ps.source_type = _SOURCE_TYPE  # source-tag seam (ADR-0004), mirrors the chunk stamp above
+    ps.source_type = _SOURCE_TYPE  # source-tag seam (ADR-source-id-row-security-with-reader-writer-roles), mirrors the chunk stamp above
     ps.source_id = _SOURCE_ID
     ps.tags = list(tags) if tags is not None else []
-    ps.labels = list(labels) if labels is not None else []  # raw labels (ADR-0020 D1, mi-labels)
+    ps.labels = list(labels) if labels is not None else []  # raw labels (ADR-directed-source-target-routing-labels D1, mi-labels)
     ps.applicability = applicability  # mi-applies 8.2.2: None = no record = label-only
     ps.parent_id = meta.parent_id
     ps.current_cf_version = meta.version_number

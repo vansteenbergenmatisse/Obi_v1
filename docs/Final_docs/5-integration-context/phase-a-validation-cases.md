@@ -317,7 +317,7 @@ widget, not the preset selector.
 
 **Where expected results come from:** the token claim schema
 (`packages/contracts/src/token-claims.json`), the verification order (`token_verifier.py:146-217`),
-the gate (`auth_context.py:173-230`), ADR-0020 (directed routing), the partner contract
+the gate (`auth_context.py:173-230`), ADR-directed-source-target-routing-labels (directed routing), the partner contract
 (`phase-9-partner-replies.md`), and owner decision round 4 (`plan.md` §D.18).
 
 **How to run — two environments, recorded separately (never merged):**
@@ -374,7 +374,7 @@ flagged for Jasper's expired sample.
 ### Case 13 — Direction is primary: source→target ≠ target→source
 
 Covers: `toast → mews` and `mews → toast` are different connections and the swap resets the chat
-(ADR-0020; `iframe-bridge` scope-change; `answer_service._resolve_directed_routing` re-start).
+(ADR-directed-source-target-routing-labels; `iframe-bridge` scope-change; `answer_service._resolve_directed_routing` re-start).
 
 - **Setup:** `/test-hosts/connection-switch` (drives TOKEN_A `toast → mews`, TOKEN_B
   `opera-cloud → toast`), or mint `toast → mews` then `mews → toast`.
@@ -442,15 +442,15 @@ the `/embed` `frame-ancestors` CSP (`middleware.ts:51-56` from `activeDomains()`
   only `active: true` platforms' domains. (Only the temporary `obi-test` origin is active today, so a
   partner's origin must be added to its `active` entry before its page can embed.)
 
-### Case 18 — Target-enablement widget eligibility (live pass/fail gate — §D.18 item 4, ADR-0022)
+### Case 18 — Target-enablement widget eligibility (live pass/fail gate — §D.18 item 4, ADR-widget-hides-via-visibility-probe)
 
 Covers: the owner decision "the selected target's enablement controls widget eligibility." **Status:
-LIVE GATE.** The eligibility refinement shipped (Task 5, ADR-0022 "Target-Enablement Widget
-Eligibility in the Directed Path", amends ADR-0020 D4/D5): a product-global `enabled_targets` list in
+LIVE GATE.** The eligibility refinement shipped (Task 5, ADR-widget-hides-via-visibility-probe "Target-Enablement Widget
+Eligibility in the Directed Path", amends ADR-directed-source-target-routing-labels D4/D5): a product-global `enabled_targets` list in
 `product_catalog.json`, a `TargetNotEnabledError` → **403** after vend rights in the directed gate
 (`auth_context.py`, `_build_directed_context`), a read-only `GET /chat/visibility` probe, and the
 frontend hide (loader init fetch + the `obi:hidden` frame→host message). This case is now a pass/fail
-gate for Phase A. Retrieval routing (ADR-0020 D5 four-label filter) is unchanged.
+gate for Phase A. Retrieval routing (ADR-directed-source-target-routing-labels D5 four-label filter) is unchanged.
 
 - **Setup:** a directed token whose **target** is a product *not* in `enabled_targets` (e.g.
   `mews → quickbooks-online` while the shipped list is `["mews","toast","opera-cloud"]`). The token
@@ -509,7 +509,7 @@ a partner-staging PASS.
 When all cases pass with evidence, file this document with the step (as the 4.4 browser checks were
 filed) and only then may the owner tick 8.5.2. Recording the evidence here does **not** by itself
 flip the panel or write the ledger — those are separate, owner-gated steps. Case 18 is now a
-**live pass/fail gate** (§D.18 item 4, ADR-0022 — the eligibility refinement shipped in Task 5) and
+**live pass/fail gate** (§D.18 item 4, ADR-widget-hides-via-visibility-probe — the eligibility refinement shipped in Task 5) and
 gates 8.5.2 like any other case.
 
 ---
@@ -539,7 +539,7 @@ gates 8.5.2 like any other case.
 | Vend rights + inactive registration denied | 15 |
 | Customer/connection switch without logout (Marien) | 16 |
 | Embed-origin lock (frame-ancestors) | 17 |
-| Target-enablement widget eligibility (live gate — ADR-0022) | 18 |
+| Target-enablement widget eligibility (live gate — ADR-widget-hides-via-visibility-probe) | 18 |
 
 ## Gaps and assumptions (honest)
 
@@ -574,8 +574,8 @@ gates 8.5.2 like any other case.
    works. The partner-staging leg of each case runs only once that partner confirms its issuer, JWKS
    and token endpoint (`partner-facts.md`: 0/5 confirmed for both today). Record the two legs
    separately; do not call a case fully passed on the local leg alone.
-8. **Case 18 is now a live gate (ADR-0022, 2026-10-13).** The "target-enablement controls widget
-   eligibility" half of §D.18 item 4 shipped in Task 5 (ADR-0022 amends ADR-0020 D4/D5): the directed
+8. **Case 18 is now a live gate (ADR-widget-hides-via-visibility-probe, 2026-10-13).** The "target-enablement controls widget
+   eligibility" half of §D.18 item 4 shipped in Task 5 (ADR-widget-hides-via-visibility-probe amends ADR-directed-source-target-routing-labels D4/D5): the directed
    path now refuses a not-enabled target with a **403** and hides the widget via `GET /chat/visibility`
    + the `obi:hidden` message. Case 18 is a pass/fail gate for Phase A — a disabled target that mounts
-   the widget or is served fails the case. Retrieval routing (ADR-0020 D5) is unchanged.
+   the widget or is served fails the case. Retrieval routing (ADR-directed-source-target-routing-labels D5) is unchanged.

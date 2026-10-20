@@ -55,7 +55,7 @@ asks "why?". Transcribing it and folding that text into the search is what lets 
 right page; without it the search sees only the (often empty) typed text. The transcription must
 never become a citable source (never-bend rule 7): the corpus is the only thing Obi cites, so the
 transcription is deliberately kept out of the numbered evidence and out of citation enforcement.
-It is treated as screenshot PII — memory-only (never-bend rule 10, ADR-0009 C6): it is never
+It is treated as screenshot PII — memory-only (never-bend rule 10, ADR-vision-grounded-image-analysis C6): it is never
 logged, never written to the `query_trace` row (the retriever traces only the text-only
 `trace_query`), and never persisted. The whole flow still obeys the two-read cap (never-bend rule
 8): the vision call is not a retrieval read, so there is still exactly one search plus the single

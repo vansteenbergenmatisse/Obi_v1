@@ -1,13 +1,15 @@
-# 0017 — Edge Token Verification
+# Edge Token Verification
+
+Identifier: `ADR-signed-token-verified-at-the-edge` (formerly numbered 0017). File paths updated to the current layout (`backend/`, `frontend/`, `knowledge-base/`) on 2026-10-20; the decision is unchanged.
 
 Status: Accepted
 Date: 2026-09-18
-Governs: apps/automation (rag_agent/server, rag_agent/application, platform/db, alembic),
-apps/web (chat proxy)
+Governs: backend (rag_agent/server, rag_agent/application, knowledge-base/schema, alembic),
+frontend (chat proxy)
 
 > **Retroactive ADR.** This records a decision already shipped and covered by tests; it
 > documents existing behavior, it does not change it. Written to close a documentation gap
-> (cm-docs). It complements ADR-0014 (RLS isolation backstop): 0014 governs the database
+> (cm-docs). It complements ADR-db-level-customer-scope-isolation-backstop (RLS isolation backstop): 0014 governs the database
 > locks; this ADR governs how the request's identity and scope are established at the gate.
 
 ## Context
@@ -22,7 +24,7 @@ the host API key (caller authentication of the proxy).
 
 1. **Two credentials, two headers.** The frontend proxy authenticates itself to the backend
    with the host key on `Authorization: Bearer <CHAT_API_KEY>` (server-side only, fails
-   closed if unset — `apps/web/src/platform/automation-api/client.ts:23-64`), and forwards
+   closed if unset — `frontend/src/platform/automation-api/client.ts:23-64`), and forwards
    the end-user JWT separately on `x-obi-token`. The incoming `Authorization` from the
    browser is **never** forwarded back out (`route-handlers.ts:61-71`). Backend host-key
    check is a constant-time compare with rotation overlap (`router.py:317-330`).
@@ -67,9 +69,9 @@ the host API key (caller authentication of the proxy).
 - A single `AuthContext` built once at the gate is what every downstream read uses, so no
   read can run under looser rules than the search (never-bend rule #3).
 - v1 embedded users have no per-person ACL: `principal` is `None`; isolation is by
-  company/integration scope plus the RLS backstop (ADR-0014).
+  company/integration scope plus the RLS backstop (ADR-db-level-customer-scope-isolation-backstop).
 
-Cross-references: ADR-0014 (customer-scope isolation backstop / RLS), ADR-0011 (knowledge
+Cross-references: ADR-db-level-customer-scope-isolation-backstop (customer-scope isolation backstop / RLS), ADR-knowledge-scope-tagging-and-filtering (knowledge
 scopes), never-bend rules #2, #3, #10.
 
 Tests: `test_token_verifier.py`, `test_token_claims_contract.py` (schema `required` matches

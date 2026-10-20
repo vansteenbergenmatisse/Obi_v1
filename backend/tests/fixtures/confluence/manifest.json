@@ -92,7 +92,7 @@
       "hasRestrictions": false,
       "hasAttachments": false,
       "file": "page-3001-obi-general.json",
-      "_fixtureCategory": "one page per routing label: obi-general (ADR-0021)"
+      "_fixtureCategory": "one page per routing label: obi-general (ADR-routing-labels-sole-content-axis)"
     },
     {
       "id": "3002",
@@ -106,7 +106,7 @@
       "hasRestrictions": false,
       "hasAttachments": false,
       "file": "page-3002-mews-general.json",
-      "_fixtureCategory": "one page per routing label: mews-general (ADR-0021)"
+      "_fixtureCategory": "one page per routing label: mews-general (ADR-routing-labels-sole-content-axis)"
     },
     {
       "id": "3003",
@@ -120,7 +120,7 @@
       "hasRestrictions": false,
       "hasAttachments": false,
       "file": "page-3003-opera-cloud-general.json",
-      "_fixtureCategory": "one page per routing label: opera-cloud-general (ADR-0021)"
+      "_fixtureCategory": "one page per routing label: opera-cloud-general (ADR-routing-labels-sole-content-axis)"
     },
     {
       "id": "3004",
@@ -134,7 +134,7 @@
       "hasRestrictions": false,
       "hasAttachments": false,
       "file": "page-3004-toast-general.json",
-      "_fixtureCategory": "one page per routing label: toast-general (ADR-0021)"
+      "_fixtureCategory": "one page per routing label: toast-general (ADR-routing-labels-sole-content-axis)"
     },
     {
       "id": "3005",

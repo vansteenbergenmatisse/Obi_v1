@@ -1,9 +1,9 @@
-"""customer-scope isolation backstop: RESTRICTIVE RLS on chunk + curated (Phase 11.1a / ADR-0014)
+"""customer-scope isolation backstop: RESTRICTIVE RLS on chunk + curated (Phase 11.1a / ADR-db-level-customer-scope-isolation-backstop)
 
 The mews/opera/toast/general boundary was enforced only by an app-layer ``tags && :scopes``
 predicate gated behind a fail-OPEN feature flag (``enable_knowledge_scope_filtering``): flag off, or
 one dropped predicate, returned every customer's rows to everyone. Source isolation already fails
-*closed* via the ADR-0004 ``chunk_source_read`` policy; the customer axis did not.
+*closed* via the ADR-source-id-row-security-with-reader-writer-roles ``chunk_source_read`` policy; the customer axis did not.
 
 This adds a second policy on the customer axis, keyed on a new per-transaction GUC
 ``app.allowed_knowledge_scopes`` that mirrors ``app.allowed_sources``:

@@ -45,7 +45,7 @@ def test_two_provider_labels_share_both_scopes_mews_and_opera_cloud():
 
 
 def test_two_provider_labels_share_both_scopes_mews_and_toast():
-    # dedicated case: `toast-general` echoes this repo's own codename (ADR-0006/ADR-0011) — must
+    # dedicated case: `toast-general` echoes this repo's own codename (ADR-defer-product-and-package-extraction/ADR-knowledge-scope-tagging-and-filtering) — must
     # resolve as a normal shared provider scope, not be treated specially/ignored.
     result = resolve_knowledge_scope_tags(["mews-general", "toast-general"], RECOGNIZED)
     assert result.tags == ("mews-general", "toast-general")

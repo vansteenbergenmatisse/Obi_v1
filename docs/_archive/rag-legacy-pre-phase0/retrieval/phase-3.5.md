@@ -19,7 +19,7 @@ parameters — the whitelist is what keeps this injection-safe). Called from
 
 ## 3.5.2 — Cross-encoder reranker (Cohere / Fake)
 
-The reranker client mirrors the embeddings-client abstraction (ADR-0005 decision 2):
+The reranker client mirrors the embeddings-client abstraction (ADR-rerank-then-verify-cited-answers decision 2):
 
 - `app/platform/clients/reranker_client.py` — `Reranker` protocol (`model: str`,
   `rerank(query, docs, top_k) -> list[(page_id, score)]`), `CohereReranker` (`POST
@@ -39,7 +39,7 @@ even though `.env` may carry a live Cohere key.
 
 ## 3.5.3 — RLS enforcement at query time (`rag_reader` role, default-deny)
 
-The retrieval-side half of provider tagging + RLS (ADR-0004). The writer/tagging half — stamping
+The retrieval-side half of provider tagging + RLS (ADR-source-id-row-security-with-reader-writer-roles). The writer/tagging half — stamping
 `source_id`/`tags` at ingestion — is in [`../ingestion/phase-3.5.md`](../ingestion/phase-3.5.md).
 
 - **Non-owner `rag_reader` role** — retrieval reads through a role with no `BYPASSRLS`, unlike the

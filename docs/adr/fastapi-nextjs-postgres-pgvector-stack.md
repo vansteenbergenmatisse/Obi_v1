@@ -1,4 +1,6 @@
-# 0001 — Repository Archetype and Stack
+# Repository Archetype and Stack
+
+Identifier: `ADR-fastapi-nextjs-postgres-pgvector-stack` (formerly numbered 0001). File paths updated to the current layout (`backend/`, `frontend/`, `knowledge-base/`) on 2026-10-20; the decision is unchanged.
 
 Status: Accepted
 Date: 2026-07-28
@@ -8,9 +10,9 @@ Governs: entire repository
 
 Build a new **Application Platform** (per the global Architecture Standard §4B):
 
-- `apps/web` — Next.js + React + TypeScript + Tailwind + semantic design tokens. Renders the
+- `frontend` — Next.js + React + TypeScript + Tailwind + semantic design tokens. Renders the
   streaming chat UI and proxies chat SSE to the automation API (thin route handler).
-- `apps/automation` — Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2.0, Alembic. Owns
+- `backend` — Python 3.12+, FastAPI, Pydantic v2, SQLAlchemy 2.0, Alembic. Owns
   Confluence synchronization, ingestion/indexing, hybrid retrieval, the RAG runtime agent, and
   evaluations. Tooling: uv, Ruff, Pyright, pytest.
 - `packages/contracts` — OpenAPI source of truth for the chat API and the Confluence event
@@ -22,7 +24,7 @@ Build a new **Application Platform** (per the global Architecture Standard §4B)
 The task requires an event-driven ingestion pipeline, document processing, model orchestration,
 and a versioned vector store. Per the global standard's language split, that automation surface
 is Python; the user-facing chat interface and its serving proxy are TypeScript. A single
-`apps/automation` FastAPI service is allowed to expose the chat HTTP endpoint even though it is
+`backend` FastAPI service is allowed to expose the chat HTTP endpoint even though it is
 "automation," so no separate `apps/api` is created.
 
 ## Alternatives considered

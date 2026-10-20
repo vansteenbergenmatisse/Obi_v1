@@ -7,8 +7,8 @@
   + `frontend/src/app/api/chat/visibility/route.ts` (the proxy), `packages/contracts/src/iframe-messages.ts`
   (the `obi:hidden` message)
 - **Design panel:** panel mi-gate (target-enablement visibility gate), directed path
-- **Authorized by:** ADR-0022 "Target-Enablement Widget Eligibility in the Directed Path" (amending
-  ADR-0020 D4/D5) — the backend 403 (`reason: target_not_enabled`) is the authority; this hide is UX
+- **Authorized by:** ADR-widget-hides-via-visibility-probe "Target-Enablement Widget Eligibility in the Directed Path" (amending
+  ADR-directed-source-target-routing-labels D4/D5) — the backend 403 (`reason: target_not_enabled`) is the authority; this hide is UX
 - **Status:** Implemented, needs changing → Unverified (frontend coded + unit/mocked-browser proven;
   the signed-key e2e needs a local key, see below)
 
@@ -34,8 +34,8 @@ that is not in the enabled set (`knowledge-base/config/product_catalog.json` →
 
 ## Why it does it
 
-The directed routing path (ADR-0020) does not itself gate widget visibility; the allowlist lapse let a
-not-yet-enabled target still render Obi. ADR-0022 partially reverses that for **widget eligibility only**
+The directed routing path (ADR-directed-source-target-routing-labels) does not itself gate widget visibility; the allowlist lapse let a
+not-yet-enabled target still render Obi. ADR-widget-hides-via-visibility-probe partially reverses that for **widget eligibility only**
 (retrieval routing is unchanged). The backend's `POST /chat` 403 with `reason: target_not_enabled` is the
 real authority — it never names the product id (never-bend rule 10). The frontend hide is pure UX: show
 nothing rather than a widget that can only refuse. The two-layer split exists so the common case has no
@@ -44,7 +44,7 @@ widget the loader mounted, e.g. when the enabled set was absent at build). Fail-
 signal (missing set, fetch failure, probe outage) is deliberate: an outage must not blank the widget for
 everyone, and the backend 403 still blocks the actual answer.
 
-Two conventions are bent, both authorized by ADR-0022 and isolated to this component:
+Two conventions are bent, both authorized by ADR-widget-hides-via-visibility-probe and isolated to this component:
 - one **eligibility-only token fetch at `init`** in addition to the click-time fetch (`loader.ts`);
 - a **4th `ObiMessage` type, `obi:hidden`** — the only frame→host message (`iframe-messages.ts`,
   `chat-client.ts`). It is validated separately from the three host→frame types: the frame's bridge

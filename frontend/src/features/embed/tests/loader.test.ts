@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The Obi embed loader (`obi.js` source, PLAN 11.1c, ADR-0014). Imported fresh per test
+ * The Obi embed loader (`obi.js` source, PLAN 11.1c). Imported fresh per test
  * (`vi.resetModules` + dynamic import) since it installs `window.Obi` as a side effect and keeps
  * iframe/timer state in module scope. `OBI_ORIGIN` falls back to `window.location.origin`
  * (jsdom's default `http://localhost/`) since `__OBI_ORIGIN__` is only replaced by esbuild's

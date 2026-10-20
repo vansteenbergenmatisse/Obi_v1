@@ -1,4 +1,4 @@
-"""Refusal-threshold decision (ADR-0005 §7): refuse rather than hallucinate.
+"""Refusal-threshold decision (ADR-rerank-then-verify-cited-answers §7): refuse rather than hallucinate.
 
 2026-09-12: a below-threshold refusal is split by `offtopic_threshold` into `off_topic` (a friendly
 redirect, no human hand-off) and `weak_score` (routes to a human). See `domain/refusal.py`.
@@ -82,7 +82,7 @@ def test_allowed_decision_has_no_reason() -> None:
 
 
 def test_has_image_never_refuses_on_no_candidates() -> None:
-    """ADR-0009 decision 3: a turn whose text retrieval found nothing can still produce a real
+    """ADR-vision-grounded-image-analysis decision 3: a turn whose text retrieval found nothing can still produce a real
     answer from an attached image alone."""
     d = _decide(None, threshold=0.10, has_image=True)
     assert d.refuse is False

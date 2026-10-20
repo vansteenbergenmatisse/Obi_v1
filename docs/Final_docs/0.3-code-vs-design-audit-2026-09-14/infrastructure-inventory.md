@@ -126,7 +126,7 @@ a built environment: `docs/rag/PLAN.md:487` asks "embed domain for staging/prod 
 — local-only otherwise." Separately, a **live database** beyond local does exist: `docs/rag/PLAN.md:
 1183-1185` records reader-RLS migration `0009` "✅ APPLIED to live Supabase" (dated 2026-09-09 in the
 surrounding section) — but the repo calls this the **production** vector store by decision
-(`docs/adr/0013-Managed-Postgres-Vector-Store-And-Force-RLS-Drop.md:1,34`), not a staging tier, and the
+(`docs/adr/supabase-postgres-store-without-force-rls.md:1,34`), not a staging tier, and the
 running application itself is still described as local-only against it (`docs/rag/PLAN.md:1202`,
 "the app runs locally").
 
@@ -149,7 +149,7 @@ running application itself is still described as local-only against it (`docs/ra
 |---|---|---|---|
 | **local** | Full stack runs here today: Postgres via docker-compose, backend via `uv run uvicorn`, widget via `pnpm --filter web dev`, `.env` present with `ENV=local` | `infra/foundation/docker-compose.yml:1-27`; `docs/rag/PLAN.md:246,2916,2919`; `.env:86` | Nothing — this is the only environment with working dev tooling in the repo |
 | **staging** | Not built. Only a recognized settings value in tests, and an open question about an embed domain | `docs/rag/PLAN.md:4735-4737,487` | `.env.staging`, any CI job, any deploy script, any staging app deployment |
-| **production** | Database decision made and (per PLAN.md, dated 2026-09-09) partially applied live on Supabase; app deploy target decided (AWS) but not built | `docs/adr/0013-Managed-Postgres-Vector-Store-And-Force-RLS-Drop.md:1,34`; `docs/runbooks/supabase-vector-store-cutover.md:1-9`; `docs/rag/PLAN.md:1183-1185,1201-1202` | No Dockerfile, deploy script, or CI for either app; local migration head (`0012`) is 3 revisions ahead of the last PLAN.md-recorded live-applied head (`0009`) — current live head needs a live check, not provable from files |
+| **production** | Database decision made and (per PLAN.md, dated 2026-09-09) partially applied live on Supabase; app deploy target decided (AWS) but not built | `docs/adr/supabase-postgres-store-without-force-rls.md:1,34`; `docs/runbooks/supabase-vector-store-cutover.md:1-9`; `docs/rag/PLAN.md:1183-1185,1201-1202` | No Dockerfile, deploy script, or CI for either app; local migration head (`0012`) is 3 revisions ahead of the last PLAN.md-recorded live-applied head (`0009`) — current live head needs a live check, not provable from files |
 
 ## Not found
 
@@ -187,7 +187,7 @@ The only design panel naming this folder is `cm-infra` (`python3 apps/automation
 cm-infra`): "docker-compose | pgvector image pinned to 0.8.x" and "Use | local development and the
 test database; production is Supabase." Both claims match the code exactly —
 `infra/foundation/docker-compose.yml:3-7` (pinned pgvector 0.8.5 by digest) and the production-is-
-Supabase decision at `docs/adr/0013-Managed-Postgres-Vector-Store-And-Force-RLS-Drop.md:1,34`. No
+Supabase decision at `docs/adr/supabase-postgres-store-without-force-rls.md:1,34`. No
 contradiction found for `cm-infra`. No other panel names CI, Docker, deploy targets, or a staging
 environment (`--grep staging` returns only `i4-staging`, a `document_version` row-state panel unrelated
 to infrastructure; `--grep deploy` returns only `ks-deploy`, about shipping a knowledge-scope JSON

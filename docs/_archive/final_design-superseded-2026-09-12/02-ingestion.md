@@ -94,7 +94,7 @@ never share a rollback (worker.py:1-15):
 
 Handlers (worker.py:56-75): `_handle_sync_page` → `handle_sync_page` (reads `tags` from the payload);
 `_handle_delete_page` → `handle_delete_page`; `_handle_reconcile_space` → `reconcile_space` (lazily
-imported to avoid a module cycle — the one legal cycle-breaker, ADR-0003). Every handler is
+imported to avoid a module cycle — the one legal cycle-breaker, ADR-features-import-only-through-public-root). Every handler is
 **idempotent and version-guarded**, so re-running a reclaimed/retried job is safe. `drain` processes up
 to `max_jobs=100` (worker.py:131-146).
 
@@ -137,7 +137,7 @@ Two tiers (`ChunkConfig`, chunking.py:31-39):
 Split priority: page → heading section → block (tables/code kept whole) → paragraph → sentence/word →
 token (chunking.py:11). `plan_chunks` (chunking.py:62-117) packs parents (`_pack_parents`,
 token-splitting an oversize unit at `parent_target`) and splits children (`_split_children`, merging a
-trailing sub-`child_min` window back). Each chunk carries **stable identity keys** (ADR-0002):
+trailing sub-`child_min` window back). Each chunk carries **stable identity keys** (ADR-hybrid-retrieval-over-versioned-chunk-store):
 `section_key`, `positional_key`, `content_key` (`sha256_text`), and `stable_key`
 (position + content), so editing one section reuses unchanged embeddings. The parent↔child relation is
 persisted in `_link_chunks` (versioning.py:294-311): parents flushed first, each child mapped to its
@@ -197,7 +197,7 @@ path + text)` — the config is a SQL literal, the text a bound parameter (`_tsv
 
 ## 9. Versioning, activation, rollback, GC (`application/versioning.py`)
 
-An index update is **immutable and atomic** (ADR-0002). `stage_and_activate` runs in the caller's
+An index update is **immutable and atomic** (ADR-hybrid-retrieval-over-versioned-chunk-store). `stage_and_activate` runs in the caller's
 single transaction (versioning.py:187-255):
 
 1. **Ensure the `document`**; compute reusable children (returns `[]` when pipeline config changed — a
@@ -223,7 +223,7 @@ change-detection hashes + pipeline stamps** so the next sync does not falsely re
 (a real Phase 4.6 fix). Fields with no `document_version` counterpart self-heal on the next
 reconciliation.
 
-**Source-tag activation seam (ADR-0004):** the single activation point stamps `source_type =
+**Source-tag activation seam (ADR-source-id-row-security-with-reader-writer-roles):** the single activation point stamps `source_type =
 "confluence"`, `source_id = "confluence:default"` (constants today, a parameter when a second source
 lands) onto both chunks and `page_source` (versioning.py:34-37, 88-92, 352-353).
 
@@ -249,7 +249,7 @@ space get its first sweep (reconciliation.py:312-345).
 
 Two distinct tag systems, **unioned** (never one replacing the other):
 
-**(a) Confluence label → knowledge-scope tag** (`domain/knowledge_scope.py`, ADR-0011). A page's
+**(a) Confluence label → knowledge-scope tag** (`domain/knowledge_scope.py`, ADR-knowledge-scope-tagging-and-filtering). A page's
 native Confluence labels (already fetched every sync for `labels_hash`) are intersected with the
 recognized set (`Settings.knowledge_scope_set`, loaded from repo-root `config/knowledge_scopes.json`:
 `obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test`). `resolve_knowledge_scope_tags`

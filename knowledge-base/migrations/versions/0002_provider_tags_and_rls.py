@@ -1,4 +1,4 @@
-"""provider tagging + row-level security (ADR-0004)
+"""provider tagging + row-level security (ADR-source-id-row-security-with-reader-writer-roles)
 
 Adds the source_type / source_id / tags columns to page_source and chunk, the source index and
 CHECK constraint, and enables default-deny RLS on chunk keyed by source_id.

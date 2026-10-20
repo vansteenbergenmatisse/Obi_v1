@@ -38,7 +38,7 @@ DATABASE_URL=postgresql+psycopg://rag:rag@localhost:5434/omniboost_rag \
 ```
 
 This sweeps Confluence and ingests every published page carrying a recognized **routing label**
-(`obi-general` / `{slug}-general` / `{slug}-to-{kind}`, ADR-0021 Path B — the `obi-general-test`
+(`obi-general` / `{slug}-general` / `{slug}-to-{kind}`, ADR-routing-labels-sole-content-axis Path B — the `obi-general-test`
 knowledge-scope tag is retired and no longer required) — which is every one of your routing test
 pages. Then check one:
 

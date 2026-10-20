@@ -184,7 +184,7 @@ target role**: an accounting target (e.g. `mews → quickbooks-online`) needs **
 `*-to-accounting` pages exist today**. This bears on O9 (accounting products ↔ scopes) above but
 does not close it.
 
-**Target-enablement hide is being built (Task 5 / ADR-0022).** The resolution of the open §D intent
+**Target-enablement hide is being built (Task 5 / ADR-widget-hides-via-visibility-probe).** The resolution of the open §D intent
 is under construction as Task 5 of this work block: a **configurable, backend-enforced
 target-enablement gate on the directed path** with a matching frontend eligibility signal, so a
 token whose target is not enabled (e.g. QuickBooks at launch) yields **no widget** rather than
@@ -192,22 +192,22 @@ today's bare 401 on an already-mounted launcher. Config is a product-global `ena
 in `knowledge-base/config/product_catalog.json` (absent ⇒ all enabled, reversible); the backend
 adds a `TargetNotEnabledError` → **403** after the vend-rights check, plus a read-only
 `GET /chat/visibility` probe; the frontend hides at load time. Retrieval routing (the four-label
-hard-filter, ADR-0020 D5) is **unchanged** — this gate controls widget *eligibility* only. It is
-ratified in **ADR-0022 "Target-Enablement Widget Eligibility in the Directed Path"** (amends
-ADR-0020 D4/D5). Per-platform enablement (R3/R4) is kept as the documented extension beyond the
+hard-filter, ADR-directed-source-target-routing-labels D5) is **unchanged** — this gate controls widget *eligibility* only. It is
+ratified in **ADR-widget-hides-via-visibility-probe "Target-Enablement Widget Eligibility in the Directed Path"** (amends
+ADR-directed-source-target-routing-labels D4/D5). Per-platform enablement (R3/R4) is kept as the documented extension beyond the
 product-global default.
 
-## 7 · Sync note — ADR-0022 ratified and shipped (2026-10-13, Task 5e)
+## 7 · Sync note — ADR-widget-hides-via-visibility-probe ratified and shipped (2026-10-13, Task 5e)
 
 Append-only; nothing above is changed. Task 5 (backend + frontend) is built and green and
-**ADR-0022 is now Accepted** (`docs/adr/0022-Target-Enablement-Widget-Eligibility-In-The-Directed-Path.md`),
+**ADR-widget-hides-via-visibility-probe is now Accepted** (`docs/adr/widget-hides-via-visibility-probe.md`),
 so §6's "being built" is now **done**. As shipped: optional flat `enabled_targets`
 (`["mews","toast","opera-cloud"]`) in `product_catalog.json` (loader rule 6b; absent ⇒ all
 enabled; reversible, no migration); `TargetNotEnabledError` after vend rights → **403** with body
 `{"error":"integration not available","reason":"target_not_enabled"}` (product id never leaked —
 rule 10); new optional `Error.reason` in `chat.yaml`; read-only `GET /chat/visibility`; frontend
 loader init fetch + the 4th `obi:hidden` frame→host message (both bent conventions authorized by
-ADR-0022). Retrieval routing (ADR-0020 D5 four-label hard filter) is **unchanged** — the gate is
+ADR-widget-hides-via-visibility-probe). Retrieval routing (ADR-directed-source-target-routing-labels D5 four-label hard filter) is **unchanged** — the gate is
 widget-eligibility only, so rule 11's gold-set before/after does not apply. `context-contract.md`
 §4/§8.4 and `catalog.md` are synced, and `phase-a-validation-cases.md` Case 18 is flipped from
 decision-dependent to a live pass/fail gate (disabled target ⇒ widget hidden + 403). The §D.18

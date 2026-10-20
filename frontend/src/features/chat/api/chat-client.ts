@@ -5,7 +5,7 @@
  * route (which proxies to the Python automation API). SSE parsing lives here so the UI only
  * ever sees typed events, never raw stream bytes.
  *
- * PLAN 11.1c (ADR-0014): the pilot invite-token header is retired. When this client runs inside
+ * PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): the pilot invite-token header is retired. When this client runs inside
  * the Obi `/embed` frame, `getToken()` (features/embed) returns the platform-signed user JWT
  * handed over by the host's `obi.js` loader via `postMessage`; it rides on `Authorization: Bearer`
  * so the proxy (`server/route-handlers.ts`) can thread it to the backend as `X-Obi-Token`. No
@@ -52,7 +52,7 @@ const unauthorizedListeners = new Set<UnauthorizedListener>();
  * `ObiMessage` postMessage types (`@omniboost/contracts`) do not include a frame->host "please
  * renew" request, so this frame has no defined channel to directly *ask* `obi.js` for a fresh
  * token (that would need its own message type and ADR). The ONE frame->host message that now
- * exists is `obi:hidden` (sync-rules Task 5, ADR-0022), posted by the `/embed` frame after the
+ * exists is `obi:hidden` (sync-rules Task 5, ADR-widget-hides-via-visibility-probe), posted by the `/embed` frame after the
  * `checkVisibility` probe below reports `visible:false`; it is a one-way hide signal, not a token
  * round trip. This hook exists so embed-side code (e.g. the `/embed` page) can still react locally
  * to a 401 — clear stale UI state, prompt a manual retry, etc. — without this module needing to
@@ -155,7 +155,7 @@ function dispatchSseEvent(rawEvent: string, handlers: ChatStreamHandlers): void 
   }
 }
 
-/** The server-authoritative visibility decision (sync-rules Task 5, ADR-0022). `visible:false`
+/** The server-authoritative visibility decision (sync-rules Task 5, ADR-widget-hides-via-visibility-probe). `visible:false`
  * carries a machine-readable `reason` (today only `source_not_enabled`); the shape mirrors the
  * `VisibilityResponse` in `packages/contracts/src/openapi/chat.yaml`. */
 export interface VisibilityResult {
@@ -166,7 +166,7 @@ export interface VisibilityResult {
 /**
  * Probes `GET /api/chat/visibility` (the same-origin proxy that injects the host key) with the
  * embed's platform-signed user JWT, so the `/embed` frame can decide whether Obi should be shown
- * for the verified directed context (source-enablement hide, ADR-0023).
+ * for the verified directed context (source-enablement hide, ADR-source-system-decides-widget-eligibility).
  *
  * Returns the decision on a 200. A HARD failure (400/401/429/503, or a network/parse error) THROWS
  * `ChatRequestError` — it is never coerced to `visible:false`, so a transient outage can't blank

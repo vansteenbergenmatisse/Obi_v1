@@ -7,7 +7,7 @@ exported; concrete HTTP providers, transient-error types, and helpers stay
 internal until a real external consumer needs them.
 
 Unlike `schema` (a large, intrinsically-namespaced ORM vocabulary that is
-deliberately imported by full submodule path — see ADR-0003), this package is a
+deliberately imported by full submodule path — see ADR-features-import-only-through-public-root), this package is a
 handful of client contracts and factories, so a single flat root reads cleanly.
 
 Internal rule: modules inside this package import each other by full submodule

@@ -1,4 +1,4 @@
--- Roles for source-level Row-Level Security (ADR-0004).
+-- Roles for source-level Row-Level Security (ADR-source-id-row-security-with-reader-writer-roles).
 --
 -- Runs once, on a FRESH data volume, via the postgres image's /docker-entrypoint-initdb.d hook.
 -- The compose POSTGRES_USER (`rag`) is the owner/superuser and acts as the WRITER — it bypasses

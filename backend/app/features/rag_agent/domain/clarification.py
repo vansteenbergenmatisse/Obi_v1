@@ -1,5 +1,5 @@
-"""Ambiguity/vagueness detection (PLAN 9.2, ADR-0008 decision 1) + clarifying-reply parsing
-(PLAN 9.3, ADR-0008 decision 3).
+"""Ambiguity/vagueness detection (PLAN 9.2, ADR-ambiguity-clarification-then-fallback-answer decision 1) + clarifying-reply parsing
+(PLAN 9.3, ADR-ambiguity-clarification-then-fallback-answer decision 3).
 
 Structurally mirrors `domain/small_talk.py`'s shape — a pre-pipeline classifier `AnswerService`
 consults before rewrite/retrieval — but cannot be a closed exact-match set: whether a question is
@@ -20,7 +20,7 @@ options — `parse_clarification_reply` below is the separate, pure piece PLAN 9
 says `is_ambiguous=True`: parsing the actual clarifying question and its 2-4 concrete options out of
 `AnthropicAnswerGenerator.generate_clarification`'s raw reply (`infrastructure/llm_client.py`).
 
-`history` is accepted to match the signature ADR-0008 decision 1 locked, but neither the heuristic
+`history` is accepted to match the signature ADR-ambiguity-clarification-then-fallback-answer decision 1 locked, but neither the heuristic
 nor the classifier call consults it yet — both judge the latest query's text alone. A follow-up
 that reads as vague in isolation but is disambiguated by the prior turn (e.g. "what about the
 limits?" right after a message that already named a specific system) is not resolved by this phase
@@ -54,7 +54,7 @@ class ClarificationDecision:
 
 @dataclass(frozen=True)
 class ClarificationReply:
-    """A clarifying question plus 2-4 concrete options (PLAN 9.3, ADR-0008 decision 3) — the
+    """A clarifying question plus 2-4 concrete options (PLAN 9.3, ADR-ambiguity-clarification-then-fallback-answer decision 3) — the
     user-facing payload `AnswerService` puts on `Answer` once `ClarificationDecision.is_ambiguous`
     is True. ``options`` may be empty (e.g. the fail-open fallback) — the question alone is still
     a valid, if less helpful, clarifying reply."""

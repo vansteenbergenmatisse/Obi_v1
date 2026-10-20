@@ -7,7 +7,7 @@ database — Supabase staging or production. **Not needed for the local demo** (
 
 Migration `0010_customer_scope_rls` installs the RESTRICTIVE customer-scope RLS policies
 (`chunk_scope_read` on `chunk`, `curated_knowledge_entry_scope_read` on `curated_knowledge_entry`)
-that are Obi's fail-closed tenant backstop (ADR-0014): a read under an unset or wrong scope GUC
+that are Obi's fail-closed tenant backstop (ADR-db-level-customer-scope-isolation-backstop): a read under an unset or wrong scope GUC
 returns nothing, independent of the application flag. If the reader path is exposed on a database
 where `0010` was never applied (head `< 0010`) or where a downgrade dropped the policies, that
 backstop is silently absent and cross-integration isolation rests on the application layer alone.
@@ -44,9 +44,9 @@ that pipeline exists, this runbook — run by hand — is the gate.
 is a regression canary against the local store; it is explicitly **not** the production gate and
 says nothing about any real target database.
 
-Note it checks RLS **ENABLE**, not **FORCE**: ADR-0013 deliberately keeps `chunk` at `ENABLE` +
+Note it checks RLS **ENABLE**, not **FORCE**: ADR-supabase-postgres-store-without-force-rls deliberately keeps `chunk` at `ENABLE` +
 `NO FORCE` (owner-role exemption on managed Postgres); `ENABLE` is what binds the non-owner reader
-role to the RESTRICTIVE policy, so requiring `FORCE` would contradict ADR-0013.
+role to the RESTRICTIVE policy, so requiring `FORCE` would contradict ADR-supabase-postgres-store-without-force-rls.
 
 ## Local demo: why it is inert, and still mandatory before deploy
 
@@ -58,4 +58,4 @@ isolation. Before any real deployment where a non-owner reader role serves `/cha
 the reader role, not just present in a migration file.
 
 _Automated proof: `backend/app/features/confluence_sync/tests/test_deploy_readiness_check.py`
-(gap MIG-02 / ADR-0014) — ready-when-present and fails-closed-when-absent, both rolled back._
+(gap MIG-02 / ADR-db-level-customer-scope-isolation-backstop) — ready-when-present and fails-closed-when-absent, both rolled back._

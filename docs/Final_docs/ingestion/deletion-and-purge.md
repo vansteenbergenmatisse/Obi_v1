@@ -34,7 +34,7 @@ sweep for source-scope coverage loss (unchanged by this substep).
 **Label-gated membership (rule 2 + never-bend rule 5).** Beyond the four delete surfaces above,
 `handle_sync_page` also gates on the page's **recognized routing labels** — those matching a
 product-catalog routing form (`obi-general`, `{slug}-general`, `{slug}-to-{pos|pms|accounting}`),
-enumerated by `ProductCatalog.all_routing_labels()`. Since ADR-0021 (2026-10-12) these routing
+enumerated by `ProductCatalog.all_routing_labels()`. Since ADR-routing-labels-sole-content-axis (2026-10-12) these routing
 labels are the membership axis; the retired knowledge-scope `-test` tag set
 (`settings.knowledge_scope_set` / `knowledge_scopes.json`) no longer decides membership. After
 reading the labels: if the page carries **no** recognized routing label, then an already-indexed

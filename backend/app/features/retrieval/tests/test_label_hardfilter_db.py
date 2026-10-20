@@ -1,6 +1,6 @@
 """panels mi-hardfilter · mi-match · substep 9.4.1 — the directed-connection hard label filter.
 
-Option A Stage 6 (ADR-0020 D1/D2): ``_base_filters`` gains ``AND labels && :session_labels`` at the
+Option A Stage 6 (ADR-directed-source-target-routing-labels D1/D2): ``_base_filters`` gains ``AND labels && :session_labels`` at the
 same spot as the ``tags`` overlap, threaded through keyword/dense candidate search AND the
 rerank-text fetch, with the ``app.allowed_labels`` GUC set in the same path as the scope GUC so the
 RESTRICTIVE ``chunk_labels_read`` RLS policy (migration 0016, inert until now) and the app predicate
@@ -174,7 +174,7 @@ def test_tags_toast_mews_chat_never_sees_wrong_connection_at_any_similarity(
 
 
 def test_tags_empty_labels_chunk_never_served_under_active_connection(session: Session) -> None:
-    """panel mi-hardfilter · substep 9.4.1 (ADR-0020 D2)
+    """panel mi-hardfilter · substep 9.4.1 (ADR-directed-source-target-routing-labels D2)
     An unlabelled chunk overlaps nothing, so it is invisible under an active connection filter."""
     _seed_page(session, page_id=94201, labels=["obi-general"])
     _seed_page(session, page_id=94202, labels=[])  # empty labels — self-gating

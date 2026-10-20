@@ -1,5 +1,5 @@
 /**
- * Shared config for the local test-host token/JWKS routes (PLAN 11.1c, ADR-0014) — see
+ * Shared config for the local test-host token/JWKS routes (PLAN 11.1c) — see
  * `docs/embedding/obi-embed-local-test-keys.md` for how to generate the matching RS256 key pairs
  * and where they're read from. Not a `features/embed` concern: this is disposable local-browser-
  * proof scaffolding for `config/platforms.local.json`'s `test-*` issuer entries, route-owned by
@@ -22,9 +22,9 @@ export interface TestHostConfig {
   kid: string;
   privateKeyEnv: string;
   publicKeyEnv: string;
-  /** `null` for `none` — a note with no business values (general-only, per ADR-0014). */
+  /** `null` for `none` — a note with no business values (general-only, per ADR-db-level-customer-scope-isolation-backstop). */
   businessClaims: { company_id: string; company_name: string; integration: string } | null;
-  /** Directed source → target connection claims (substep 9.3.1, ADR-0020 Option A). When the mint
+  /** Directed source → target connection claims (substep 9.3.1, ADR-directed-source-target-routing-labels Option A). When the mint
    * route is asked for the directed form (`?form=directed`) it emits THESE instead of
    * `businessClaims`, so the same test host can demonstrate both the legacy note and the directed
    * connection form. Absent on hosts that have no directed demo. */
@@ -85,7 +85,7 @@ export const TEST_HOSTS: readonly TestHostConfig[] = [
     directedClaims: { source_system: "opera-cloud", target_system: "toast", business_id: "B-3075" },
   },
   {
-    // DISABLED-source demo (ADR-0023): a directed connection whose SOURCE is an accounting product
+    // DISABLED-source demo (ADR-source-system-decides-widget-eligibility): a directed connection whose SOURCE is an accounting product
     // (quickbooks-online) that is NOT in product_catalog.json's enabled_sources. The widget must
     // stay hidden. Only exercised by `widget-hidden-when-source-disabled.spec.ts` and only when
     // TEST_OBI_PRIVATE_KEY_QUICKBOOKS is present locally (same signed-key caveat as the other test

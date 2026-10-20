@@ -1,5 +1,5 @@
 /**
- * `/test-hosts/*` pages — PLAN 11.1c, ADR-0014. Proves each page wires the correct `tokenUrl` per
+ * `/test-hosts/*` pages — PLAN 11.1c. Proves each page wires the correct `tokenUrl` per
  * name and renders the exact paste template a real integrator would copy. `next/script`'s actual
  * script injection/`onLoad` firing is a real-browser concern (jsdom doesn't execute script tags),
  * so live-browser verification is the remaining manual step documented in the hand-back report —

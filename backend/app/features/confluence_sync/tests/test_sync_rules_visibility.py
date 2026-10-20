@@ -106,7 +106,7 @@ def test_tags_shared_page_visible_in_both_scopes(gateway, settings):
     retr = _retriever(settings)
     assert str(_PAGE) in retr.retrieve(_QUERY, _SPACE, k=5, knowledge_scopes=[_MEWS])
     assert str(_PAGE) in retr.retrieve(_QUERY, _SPACE, k=5, knowledge_scopes=[_TOAST])
-    # ADR-0021: the scope axis is retired, so `knowledge_scopes` no longer excludes — the page is
+    # ADR-routing-labels-sole-content-axis: the scope axis is retired, so `knowledge_scopes` no longer excludes — the page is
     # visible regardless of the scope arg (it stays indexed and findable). The ingestion tagging
     # (two labels stamped onto chunk.tags) above is the live behavior this test still guards.
     assert str(_PAGE) in retr.retrieve(_QUERY, _SPACE, k=5, knowledge_scopes=[_OPERA])
@@ -152,7 +152,7 @@ def test_tags_remove_shared_tag_keeps_other_scope(gateway, settings, monkeypatch
 
     retr = _retriever(settings)
     assert str(_PAGE) in retr.retrieve(_QUERY, _SPACE, k=5, knowledge_scopes=[_MEWS])
-    # ADR-0021: the scope axis is retired — the remaining-tag page is visible regardless of the
+    # ADR-routing-labels-sole-content-axis: the scope axis is retired — the remaining-tag page is visible regardless of the
     # scope arg. The metadata-only tag removal above (no re-embed, same version) is the live
     # behavior this test guards; scope-based exclusion is gone.
     assert str(_PAGE) in retr.retrieve(_QUERY, _SPACE, k=5, knowledge_scopes=[_TOAST])

@@ -85,7 +85,7 @@ Every feature and `platform/clients` expose one public root that re-exports what
 3. Code inside a feature never imports its own root (a half-built package raises at init).
 4. `platform/` and `shared/` import no feature; `shared/` imports no `platform/`.
 
-Exception: database models and enums are imported by full path, not through a facade (ADR-0003). When another module needs a symbol, export it from the feature root.
+Exception: database models and enums are imported by full path, not through a facade (ADR-features-import-only-through-public-root). When another module needs a symbol, export it from the feature root.
 
 ## Rules that never bend
 
@@ -106,7 +106,7 @@ Exception: database models and enums are imported by full path, not through a fa
 
 - Take one substep from the action plan. Read it and the design panels it names. For an ingestion or retrieval component, also read its doc in `docs/Final_docs/ingestion/` or `docs/Final_docs/retrieval/` (write it from the current code first if it doesn't exist) and the ledger, before you touch it. Run `/obi-change`. Stop when its test is green and the ledger entry is written.
 - Failing test first, with `/obi-test-writer`. Tests are deterministic: fakes for Confluence, embeddings, the reranker and Claude; database tests roll back; no sleeps.
-- Files you touch are brought clean under ruff and pyright. Files you did not touch are not reformatted. Whole-repo counts never rise above the recorded baseline (ADR-0003 D1).
+- Files you touch are brought clean under ruff and pyright. Files you did not touch are not reformatted. Whole-repo counts never rise above the recorded baseline (ADR-features-import-only-through-public-root D1).
 - When a substep is done: flip the panel status and its `today` line on the design page, regenerate the brief from it, update the ingestion or retrieval phase docs, update the touched component's doc in `docs/Final_docs/ingestion/` or `docs/Final_docs/retrieval/` (what / why / how we know), append the ledger entry.
 - Anything marked "Decision needed" is built to the default in `docs/plan/` and named as such in the pull request.
 - Stop after every substep. Hand back a short summary and ask for `/compact-ultra`. Do not start the next substep without a go-ahead.

@@ -4,7 +4,7 @@ This is the go-live canary for the deployed backend. It does NOT touch Confluenc
 nothing — it is the *polling + assertion* half of the smoke test. The operator supplies the event
 (the half a script cannot fake convincingly):
 
-    1. In Confluence, add a recognized routing label (e.g. ``toast-general``, ADR-0021) to a known
+    1. In Confluence, add a recognized routing label (e.g. ``toast-general``, ADR-routing-labels-sole-content-axis) to a known
        published page (or edit its body).
        Confluence delivers a webhook to the deployed ``POST /confluence/events``; the endpoint
        enqueues a job; the in-process worker drains it and (re)ingests the page.

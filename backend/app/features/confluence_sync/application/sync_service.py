@@ -55,7 +55,7 @@ def handle_sync_page(
         labels=labels,
         space_rows=space_rows,
         self_and_ancestor_ids=ancestor_ids,
-        # ADR-0021: membership is the routing-label axis (the retired knowledge-scope set is empty).
+        # ADR-routing-labels-sole-content-axis: membership is the routing-label axis (the retired knowledge-scope set is empty).
         recognized=settings.product_catalog.all_routing_labels(),
         reason=reason,
     )

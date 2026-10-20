@@ -1,4 +1,6 @@
-# 0018 — One-Way Folder Dependency Direction
+# One-Way Folder Dependency Direction
+
+Identifier: `ADR-folder-dependencies-point-one-way` (formerly numbered 0018). File paths updated to the current layout (`backend/`, `frontend/`, `knowledge-base/`) on 2026-10-20; the decision is unchanged.
 
 Status: Accepted
 Date: 2026-09-18
@@ -9,7 +11,7 @@ Governs: the three top folders `frontend/`, `backend/`, `knowledge-base/`; `back
 Phase 1 (substep 1.1.1) split the code into three top folders — `frontend/`, `backend/`,
 `knowledge-base/` — so the three parts can eventually become separate repositories. For that split
 to hold, the dependency arrow must point one way only: `frontend → backend → knowledge-base`. A rule
-with no checker erodes by the third pull request (the same reasoning as ADR-0003 for the intra-backend
+with no checker erodes by the third pull request (the same reasoning as ADR-features-import-only-through-public-root for the intra-backend
 feature boundaries). Substep 1.1.2 adds the enforcement.
 
 During 1.1.1 the DB layer (`engine.py`, `models.py`) and `alembic/env.py` still imported
@@ -19,7 +21,7 @@ is standalone before this rule is enforced.
 
 ## Decision
 
-Extend the existing ADR-0003 checker (`backend/tools/check_feature_boundaries.py`) — do not add a
+Extend the existing ADR-features-import-only-through-public-root checker (`backend/tools/check_feature_boundaries.py`) — do not add a
 second script — with a repo-root pass carrying three rules, as data (a fifth rule later is one line):
 
 1. **knowledge-base/** (`*.py`) must not import `app`, `features`, `platform` or `shared`. Its own
@@ -29,7 +31,7 @@ second script — with a repo-root pass carrying three rules, as data (a fifth r
    or ends in `.py`. It may still *read* `knowledge-base/config/knowledge_scopes.json` at build/run
    time via a filesystem path (a `resolve()` string, not an import), which this rule does not touch.
 
-The four intra-backend feature rules from ADR-0003 are unchanged and still run. The checker runs
+The four intra-backend feature rules from ADR-features-import-only-through-public-root are unchanged and still run. The checker runs
 inside `make test-unit` (via a `boundaries` prerequisite) and therefore in the CI unit job.
 
 ## Consequences
@@ -41,4 +43,4 @@ inside `make test-unit` (via a `boundaries` prerequisite) and therefore in the C
   `test_sec_boundary_clean_tree_passes`.
 - The frontend rule scans import specifiers only (a lightweight regex, since the checker parses no
   TypeScript); a filesystem read of the tag list is intentionally allowed.
-- Related: ADR-0003 (feature/platform/shared boundaries, the checker this extends).
+- Related: ADR-features-import-only-through-public-root (feature/platform/shared boundaries, the checker this extends).

@@ -1,5 +1,5 @@
 /**
- * Obi `/embed` frame page (PLAN 11.1c, ADR-0014) — server component so it can read the active
+ * Obi `/embed` frame page (PLAN 11.1c) — server component so it can read the active
  * platform registry (`features/embed`'s `activeDomains`, node `fs`-backed) without shipping that
  * read into the client bundle. Turns bare domains (`knowledge-base/config/platforms.json`'s `domains`, e.g.
  * `"app.mews.com"`) into full origins for the frame-side bridge's allow-list via the SHARED

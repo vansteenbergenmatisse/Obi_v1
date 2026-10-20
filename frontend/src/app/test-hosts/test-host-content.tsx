@@ -1,5 +1,5 @@
 /**
- * Shared content for the four `/test-hosts/<name>` pages (PLAN 11.1c, ADR-0014) — route-owned,
+ * Shared content for the four `/test-hosts/<name>` pages (PLAN 11.1c) — route-owned,
  * colocated beside its four sibling `page.tsx` files rather than promoted to `components/` (it is
  * specific to this one small route family, never reused elsewhere). Renders exactly the "paste
  * template" a real platform integrator would add to their own page: one `obi.js` script tag plus

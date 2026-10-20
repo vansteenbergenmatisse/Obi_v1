@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /**
- * Frame-side bridge — PLAN 11.1c, ADR-0014. Uses `window.dispatchEvent(new MessageEvent(...))`
+ * Frame-side bridge — PLAN 11.1c. Uses `window.dispatchEvent(new MessageEvent(...))`
  * with an explicit `source` so both the allowed-parent and rejected-non-parent cases are under
  * direct control (jsdom's top-level `window.parent` is `window` itself, since there is no real
  * outer frame in a test).
@@ -306,7 +306,7 @@ describe("initIframeBridge", () => {
   it("widget · 9.3.1: a renewal that switches the directed connection resets the conversation", () => {
     // panel mi-contract/mi-gate · substep 9.3.1 — two directed notes for the SAME business_id,
     // differing only in which systems the connection joins, crossed into a different connection
-    // context (ADR-0020 Option A) → reset. Without source/target in the scope signature these two
+    // context (ADR-directed-source-target-routing-labels Option A) → reset. Without source/target in the scope signature these two
     // would look identical and NO reset would fire (the red state this proves fixed).
     const onScopeChange = vi.fn();
     teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN], onScopeChange });
@@ -340,7 +340,7 @@ describe("initIframeBridge", () => {
   });
 
   it("widget · 9.3.1: a direction swap (source↔target) resets the conversation", () => {
-    // panel mi-gate · substep 9.3.1 — direction is primary (ADR-0020 D4): toast→mews is NOT the
+    // panel mi-gate · substep 9.3.1 — direction is primary (ADR-directed-source-target-routing-labels D4): toast→mews is NOT the
     // same connection as mews→toast, so a renewal that swaps the direction must reset the thread.
     const onScopeChange = vi.fn();
     teardown = initIframeBridge({ allowedOrigins: [ALLOWED_ORIGIN], onScopeChange });

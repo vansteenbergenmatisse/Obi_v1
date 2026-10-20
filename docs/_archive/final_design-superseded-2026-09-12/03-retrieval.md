@@ -1,7 +1,7 @@
 # 03 — Retrieval and Answer (the read path)
 
 The read path turns a user question into a grounded, cited, streamed answer. It is a **fixed
-workflow, not an agent loop** (ADR-0005): every stage is a plain function, so refusal and citation
+workflow, not an agent loop** (ADR-rerank-then-verify-cited-answers): every stage is a plain function, so refusal and citation
 enforcement are auditable and latency is bounded. Two features own it:
 `app/features/retrieval` (hybrid search + rerank + permission) and `app/features/rag_agent` (the
 answer runtime + `POST /chat`). The search runs as the non-owner **reader** role, so RLS is actually
@@ -25,7 +25,7 @@ reflects the runtime order.
 
 Handler `post_chat` (`router.py:428-450`), `@router.post("/chat")`, returns a
 `StreamingResponse(media_type="text/event-stream")` (router.py:447-450). Both an HTTP and an LLM
-surface, so it carries the full `securing-http-and-llm-endpoints` control set (ADR-0005 decision 10):
+surface, so it carries the full `securing-http-and-llm-endpoints` control set (ADR-rerank-then-verify-cited-answers decision 10):
 
 | Control | Mechanism | Anchor |
 |---|---|---|
@@ -58,9 +58,9 @@ Before any retrieval, `AnswerService.answer` checks two branches (both skip retr
   whole normalized message (trailing `!.?` stripped, whitespace collapsed). A match returns a
   `generate_small_talk` reply (answer_service.py:177-179). A real question that merely happens to be
   short does **not** match (whole-message exact match, not substring). Small talk runs **first**, so a
-  message that is arguably both small talk and ambiguous resolves as small talk (ADR-0008 tie-break).
+  message that is arguably both small talk and ambiguous resolves as small talk (ADR-ambiguity-clarification-then-fallback-answer tie-break).
 - **Clarification** (`decide_clarification`, clarification.py:100-116) — gated behind
-  `enable_clarification_branch` (default off, ADR-0008). Heuristic first: empty ⇒ not ambiguous;
+  `enable_clarification_branch` (default off, ADR-ambiguity-clarification-then-fallback-answer). Heuristic first: empty ⇒ not ambiguous;
   ≥12 words ⇒ not ambiguous; otherwise one cheap LLM classifier call. If ambiguous, returns
   `Answer(needs_clarification=True, refused=False)` with a clarifying question — an open conversation
   turn, deliberately **not** a refusal. Both classifier and generator fail *open* to non-ambiguous /
@@ -85,7 +85,7 @@ stored on the trace.
    `hnsw.iterative_scan='relaxed_order'` (whitelisted mode, search_repo.py:21-35); `apply_source_scope`
    runs `SELECT set_config('app.allowed_sources', :s, true)` with the **bound** comma-joined source
    list (search_repo.py:38-49); `apply_knowledge_scope` sets `app.allowed_knowledge_scopes` the same
-   bound way (the customer-axis GUC that drives the ADR-0014 `RESTRICTIVE` RLS backstop, set on **every**
+   bound way (the customer-axis GUC that drives the ADR-db-level-customer-scope-isolation-backstop `RESTRICTIVE` RLS backstop, set on **every**
    reader transaction regardless of the feature flag). An empty source list ⇒ default-deny (zero rows);
    an unset knowledge-scope GUC ⇒ tagged rows default-denied (fail closed).
 3. **Dense ∥ keyword** — the `∥` is *conceptual*: the two are independent ranking signals, but they
@@ -118,12 +118,12 @@ retriever.py:158). Ties broken by keyword rank then page id
    source systems. Default-deny.
 2. **Knowledge-scope isolation** — two mutually-reinforcing parts on the customer axis (see
    [`05-security-isolation.md`](./05-security-isolation.md) Layer 2). The **DB backstop** is a
-   `RESTRICTIVE` scope-GUC RLS policy (`chunk_scope_read`, ADR-0014) driven by the
+   `RESTRICTIVE` scope-GUC RLS policy (`chunk_scope_read`, ADR-db-level-customer-scope-isolation-backstop) driven by the
    `app.allowed_knowledge_scopes` GUC set in §4 step 2 on **every** reader transaction — so tagged
    content fails *closed* independent of the feature flag. On top of that, the **app predicate**
    `tags && :knowledge_scopes` (search_repo.py:64-69, backed by `ix_chunk_tags_gin`) is double-gated —
    applied only when `enable_knowledge_scope_filtering` is on AND the caller passed scopes
-   (retriever.py:116, 128-132) — and adds recall/planner benefit plus the ADR-0011 untagged-drop. A
+   (retriever.py:116, 128-132) — and adds recall/planner benefit plus the ADR-knowledge-scope-tagging-and-filtering untagged-drop. A
    chunk with empty `tags` is treated as global by the backstop; the app predicate drops it when the
    flag is on.
 3. **Page-principal ACL** — after fusion, on the candidate set only: `fetch_page_scopes(session,
@@ -135,11 +135,11 @@ retriever.py:158). Ties broken by keyword rank then page id
    unrestricted OR the principal is in the page's restriction set.
 
 **Security-critical invariant:** permission filtering runs **before** rerank — the cross-encoder never
-scores a document the principal cannot see (retriever.py:173-176; ADR-0005 decision 3).
+scores a document the principal cannot see (retriever.py:173-176; ADR-rerank-then-verify-cited-answers decision 3).
 
 **Recall note — the page-principal ACL is a *post-fusion* filter.** Source RLS is correctly
 *pre-filtered* (in-SQL during search, §6.1), but the principal ACL runs *after* fusion and before
-rerank (ADR-0005), on the already-fused candidate set. The implication: a heavily-restricted principal
+rerank (ADR-rerank-then-verify-cited-answers), on the already-fused candidate set. The implication: a heavily-restricted principal
 can be left with **fewer than k candidates** if most of the top-fused pages are filtered out. This is
 accepted today — measure before changing; over-fetch `candidate_k` only if thin results are actually
 observed.
@@ -169,7 +169,7 @@ refusal.py:41-58): if `has_image` ⇒ never refuse (the image alone may answer);
 ⇒ refuse `no_candidates`; if `top_score < threshold` ⇒ refuse `weak_score`; else proceed. `top_score`
 is the top reranked hit's score (retriever.py:73-74). A refusal skips generation entirely, logs a
 `human_handoff` record, and renders **distinct copy per reason** (the three-value taxonomy
-`no_candidates | weak_score | no_citations`, refusal.py:30; ADR-0008). The `0.10` threshold is a
+`no_candidates | weak_score | no_citations`, refusal.py:30; ADR-ambiguity-clarification-then-fallback-answer). The `0.10` threshold is a
 **conservative provisional** set from the Phase 3.5.5 fixture and explicitly flagged for re-tuning on
 a real Phase-5 gold set (DESIGN §5).
 
@@ -180,7 +180,7 @@ the refusal check**. No-op if retries ≤ 0, if the rewrite equalled the origina
 result already scored ≥ threshold. Otherwise it retries once with the **user's verbatim
 `original_query`** (in case the rewrite hurt retrieval), same scope, same `k`, same already-resolved
 knowledge-scope allow-list, and keeps whichever result scored higher (answer_service.py:347-357). Not
-an agent loop — a fixed, bounded workflow (ADR-0005 decision 8).
+an agent loop — a fixed, bounded workflow (ADR-rerank-then-verify-cited-answers decision 8).
 
 ## 10. Parent-context expansion
 
@@ -224,12 +224,12 @@ gets a synthetic `page_id="curated:<id>"` and a **negative** `chunk_id = -entry.
 collides with real ids (curated_knowledge.py:33-54), and its body is injected into `parent_texts`
 under that negative id. It rides through the identical evidence/citation machinery — so curated
 knowledge is grounded and citation-enforced exactly like retrieved evidence, with zero new citation
-logic (ADR-0011 decision 7). **Isolation:** `curated_knowledge_entry` is protected on the customer axis
-by its own `RESTRICTIVE` scope-GUC RLS policy (`curated_knowledge_entry_scope_read`, ADR-0014 / migration
+logic (ADR-knowledge-scope-tagging-and-filtering decision 7). **Isolation:** `curated_knowledge_entry` is protected on the customer axis
+by its own `RESTRICTIVE` scope-GUC RLS policy (`curated_knowledge_entry_scope_read`, ADR-db-level-customer-scope-isolation-backstop / migration
 `0010`) driven by the same `app.allowed_knowledge_scopes` GUC, so it fails closed like `chunk`; the app
 predicate here (`tags = '{}' OR tags && :allowed_scopes`) is defense-in-depth on top.
 
-## 13. Vision / image analysis (ADR-0009)
+## 13. Vision / image analysis (ADR-vision-grounded-image-analysis)
 
 `has_image = bool(history[-1].images)` (answer_service.py:174). An image-bearing turn still runs the
 full text-retrieval path; what changes is (a) `decide_refusal` will not refuse on `weak_score`/
@@ -284,6 +284,6 @@ starve recall).
 
 **Adaptive / query-complexity routing** and **MMR / contextual-compression** were evaluated and are
 **not** adopted. They are 2026-emerging techniques aimed at large, noisy, high-variance-traffic corpora;
-our design is the opposite — a fixed, auditable workflow (ADR-0005) plus CRAG (§9) over a curated,
+our design is the opposite — a fixed, auditable workflow (ADR-rerank-then-verify-cited-answers) plus CRAG (§9) over a curated,
 deduplicated, modest-scale corpus with an accuracy-first posture. The complexity they add is not
 justified until an eval shows retrieval quality or diversity is actually the bottleneck.

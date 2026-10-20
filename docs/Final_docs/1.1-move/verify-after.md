@@ -25,7 +25,7 @@ CLAUDE.md rule "files you touch are brought clean under ruff and pyright," those
 (`ruff check --fix` + `ruff format`, scoped to modified files only — untouched files were not
 reformatted) and `schema` was pinned first-party in both `pyproject.toml`s. The net effect is
 **fewer** lint errors (45→19) and **fewer** unformatted files (11→0); pyright is unchanged at 57.
-Counts only dropped — the no-regression floor (ADR-0003 D1) is satisfied, and `baseline.md` still
+Counts only dropped — the no-regression floor (ADR-features-import-only-through-public-root D1) is satisfied, and `baseline.md` still
 carries "no baseline yet" so every count-tracked level PASSes by rule.
 
 ### Additional proofs (Step 7)

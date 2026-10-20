@@ -1,7 +1,7 @@
-"""SUPERSEDED by ADR-0021. This was PLAN 10.7's read-only guard: verify every live chunk carried a
+"""SUPERSEDED by ADR-routing-labels-sole-content-axis. This was PLAN 10.7's read-only guard: verify every live chunk carried a
 recognized knowledge-scope tag before the (now-retired) knowledge-scope filter was turned on.
 
-ADR-0021 retired the knowledge-scope axis entirely — retrieval no longer filters on ``tags`` and the
+ADR-routing-labels-sole-content-axis retired the knowledge-scope axis entirely — retrieval no longer filters on ``tags`` and the
 ``recognized`` set is empty — so this check no longer gates anything. It is kept only so its callers
 and tests still import, and it now reports every active chunk as "unscoped" against the empty set,
 which is expected. The routing-label membership/backfill equivalent is

@@ -2,7 +2,7 @@ services:
   postgres:
     # pgvector 0.8.5 on Postgres 16. 0.8+ is REQUIRED for hnsw.iterative_scan, the safety
     # valve that stops a narrow RLS/source scope from silently under-returning HNSW rows
-    # (ADR-0004; PLAN.md 3.5.1). Pinned by digest because the rolling :pg16 tag drifts
+    # (ADR-source-id-row-security-with-reader-writer-roles; PLAN.md 3.5.1). Pinned by digest because the rolling :pg16 tag drifts
     # across pgvector versions — reproducibility beats "latest". Digest verified = 0.8.5.
     image: pgvector/pgvector:pg16@sha256:1d533553fefe4f12e5d80c7b80622ba0c382abb5758856f52983d8789179f0fb
     container_name: omniboost_rag_pg
@@ -15,7 +15,7 @@ services:
       - "5434:5432"
     volumes:
       - rag_pg_data:/var/lib/postgresql/data
-      # creates the non-owner rag_reader role on a fresh volume (source-level RLS, ADR-0004)
+      # creates the non-owner rag_reader role on a fresh volume (source-level RLS, ADR-source-id-row-security-with-reader-writer-roles)
       - ./init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U rag -d omniboost_rag"]

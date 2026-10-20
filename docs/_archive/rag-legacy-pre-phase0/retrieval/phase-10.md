@@ -9,19 +9,19 @@ live. Confirmed end-to-end after the flip: a `mews`-scoped request (`resolve_all
 `['general','mews']`) returns grounded hits, while a `['mews']`-only filter returns none. The
 migration/flip half is ingestion-side ([`../ingestion/phase-10.md`](../ingestion/phase-10.md)'s §10.7).
 `docs/rag/PLAN.md` Phase 10 §§10.3–10.7. Design doc:
-[`docs/adr/0011-Knowledge-Scope-Tagging-And-Retrieval-Filtering.md`](../../adr/0011-Knowledge-Scope-Tagging-And-Retrieval-Filtering.md).
+[`docs/adr/README.md`](../../adr/README.md).
 The writer/tagging half — deriving tags from Confluence labels — is in
 [`../ingestion/phase-10.md`](../ingestion/phase-10.md).
 
 Promotes [`../../future-ideas/IDEAS.md`](../../future-ideas/IDEAS.md) idea #8's "knowledge/RAG
 separation" concern. The concrete gap this closes, confirmed by direct code read (idea #2, then
-ADR-0011's Context): `app/features/retrieval/infrastructure/search_repo.py::_base_filters()` filters
+ADR-knowledge-scope-tagging-and-filtering's Context): `app/features/retrieval/infrastructure/search_repo.py::_base_filters()` filters
 `is_active`/`kind`/`page_status`/`space_id`/`source_id` — `tags` is written at every ingestion
-activation ([phase-3.5.md](./phase-3.5.md), ADR-0004) and read by nothing at query time.
+activation ([phase-3.5.md](./phase-3.5.md), ADR-source-id-row-security-with-reader-writer-roles) and read by nothing at query time.
 
-**Terminology note:** "knowledge scope," never "provider" — see ADR-0011's Context. **Currently
+**Terminology note:** "knowledge scope," never "provider" — see ADR-knowledge-scope-tagging-and-filtering's Context. **Currently
 recognized scopes: `general`, `mews`, `opera-cloud`, `toast`** (the `toast` value means Toast POS, not
-this repo's own codename — disclosed and deliberate, see ADR-0011's Context).
+this repo's own codename — disclosed and deliberate, see ADR-knowledge-scope-tagging-and-filtering's Context).
 
 **Operator: adding a new knowledge scope.** The recognized set lives in
 [`config/knowledge_scopes.json`](../../../config/knowledge_scopes.json) — at the true **repo
@@ -55,7 +55,7 @@ exact tag — nothing in `app/` needs to change. `.env`'s `DEFAULT_KNOWLEDGE_SCO
   of what any caller passes, so a premature/mistaken caller can't accidentally leak the filter live
   before an operator deliberately flips it on. A chunk with an empty `tags` array (the live
   `base`-only pages, pre-relabel) matches no non-empty scope filter — proven live against the real
-  DB, not just asserted (ADR-0011 Decision 1). `QueryTrace.allowed_knowledge_scopes` (§10.3's
+  DB, not just asserted (ADR-knowledge-scope-tagging-and-filtering Decision 1). `QueryTrace.allowed_knowledge_scopes` (§10.3's
   column) is populated with whatever the retriever actually applied (`None` when the flag is off or
   no scopes were requested), mirroring `allowed_sources`. `EXPLAIN` against a forced plan (competing
   `is_active`-partial indexes dropped inside an uncommitted test transaction, `enable_seqscan` off)
@@ -84,7 +84,7 @@ exact tag — nothing in `app/` needs to change. `.env`'s `DEFAULT_KNOWLEDGE_SCO
   before this phase. **No visible way to set that prop to a real value yet** — that UI switcher is
   §10.8, not this sub-step; `layout.tsx` is deliberately untouched here.
   **Two corrections beyond the plan's own file list, both required for correctness, not named in
-  ADR-0011's Decision 6 text:** (1) `CachingAnswerService`'s exact-match cache key
+  ADR-knowledge-scope-tagging-and-filtering's Decision 6 text:** (1) `CachingAnswerService`'s exact-match cache key
   (`answer_cache.py::_cache_key`) now also binds `knowledge_scope`, mirroring the pre-existing
   `scope`/principal binding — without it, two requests with identical history/principal but
   different `knowledge_scope` would collide on the same cache entry and replay evidence scoped to
@@ -106,11 +106,11 @@ exact tag — nothing in `app/` needs to change. `.env`'s `DEFAULT_KNOWLEDGE_SCO
 
 ## Why a hard filter, and why it's gated
 
-ADR-0011 Decision 5 chose a **hard** SQL filter (not a soft rerank bias) because this phase's scope is
+ADR-knowledge-scope-tagging-and-filtering Decision 5 chose a **hard** SQL filter (not a soft rerank bias) because this phase's scope is
 *declared* by the deployment/embed context, not *inferred* about a customer — unlike
 `docs/future-ideas/IDEAS.md` idea #2's client-integration case, which explicitly needs a soft bias so
 switching/comparison questions ("we're on Mews, does this also work on Opera?") stay answerable. That
-soft-scoping need, and any explicit "search all scopes" mode, are deliberately deferred (ADR-0011
+soft-scoping need, and any explicit "search all scopes" mode, are deliberately deferred (ADR-knowledge-scope-tagging-and-filtering
 Decision 8) — see idea #8's updated notes in `IDEAS.md`.
 
 The filter ships behind `enable_knowledge_scope_filtering` — the code default is `false` (ships dark)
@@ -206,7 +206,7 @@ Two build outputs, both thin — no new backend mechanism (§§10.1–10.7 alrea
 
 - **Widget scope switcher (frontend).** A dev/verification-only control in the panel header that
   sets §10.5's `knowledgeScope` on the outgoing chat request, so a tester can prove the four scopes
-  return isolated evidence live in the UI (the real negative-test proof for ADR-0011's isolation,
+  return isolated evidence live in the UI (the real negative-test proof for ADR-knowledge-scope-tagging-and-filtering's isolation,
   run against a live UI, not just §10.4's SQL unit test). Files:
   - `apps/web/src/features/chat/model/knowledge-scopes.ts` (new) — `KNOWLEDGE_SCOPES`, a hand-mirror
     of the repo-root [`config/knowledge_scopes.json`](../../../config/knowledge_scopes.json) (Next

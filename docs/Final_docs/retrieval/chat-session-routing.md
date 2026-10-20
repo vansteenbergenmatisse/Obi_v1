@@ -37,9 +37,9 @@ subject — a different subject resolves to a different composite primary key an
 nor mutate another's session, so the request body never decides the connection (rules 2–3). The
 subject is hashed before storage so no raw subject or secret lands in a row (rule 10). The
 directed model, the four boxes, the once-per-chat resolution and the partner-switch refire are
-the locked Option A parameters D4/D7 and chat-start steps 3/5 of ADR-0020. The `chat_session`
+the locked Option A parameters D4/D7 and chat-start steps 3/5 of ADR-directed-source-target-routing-labels. The `chat_session`
 table has RLS enabled with no policy (migration 0017), so the Supabase public REST roles are
-default-denied while the writer (owner) path bypasses it (ADR-0013) — the Phase 13.1 rationale
+default-denied while the writer (owner) path bypasses it (ADR-supabase-postgres-store-without-force-rls) — the Phase 13.1 rationale
 that fences every non-chunk table (rule 1).
 
 ## How we know it works

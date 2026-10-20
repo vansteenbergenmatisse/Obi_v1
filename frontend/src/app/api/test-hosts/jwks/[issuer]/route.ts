@@ -1,6 +1,6 @@
 /**
  * Serves the PUBLIC half of a local test issuer's key pair as a JWKS document (PLAN 11.1c,
- * ADR-0014) — the actual implementation behind the public `/.well-known/<issuer>/obi-jwks.json`
+ * ADR-db-level-customer-scope-isolation-backstop) — the actual implementation behind the public `/.well-known/<issuer>/obi-jwks.json`
  * URL recorded in `config/platforms.local.json` (reached via `next.config.ts`'s rewrite, since
  * relying on a literal dot-prefixed `.well-known` App Router folder being treated as an ordinary
  * segment is unverified Next.js behavior — this route is the one actually exercised). Only ever

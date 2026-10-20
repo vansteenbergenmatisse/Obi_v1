@@ -1,8 +1,10 @@
-# 0020 — Directed-Connection Retrieval Routing (Option A)
+# Directed-Connection Retrieval Routing (Option A)
+
+Identifier: `ADR-directed-source-target-routing-labels` (formerly numbered 0020). File paths updated to the current layout (`backend/`, `frontend/`, `knowledge-base/`) on 2026-10-20; the decision is unchanged.
 
 Status: Accepted
 Date: 2026-10-09
-Governs: the retrieval routing axis — `backend/app/features/retrieval/infrastructure/search_repo.py` (`_base_filters`), `backend/app/features/retrieval/application/retriever.py`, `backend/app/features/rag_agent/application/auth_context.py` + `server/token_verifier.py`, `backend/app/features/rag_agent/domain/prompt.py` (connection block), `backend/app/platform/config/product_catalog.py` (`build_labels`/`resolve_system`), `knowledge-base/schema/models.py` (`Chunk.labels`), the next ingestion migration (`0016_*`), `packages/contracts/src/token-claims.json`. Supersedes the routing semantics of ADR-0011; amends the tagging model of ADR-0004 and ADR-0016. Does NOT touch ADR-0013/0014/0017/0019 (customer isolation, scope backstop, edge-token, page-principal ACL) — those invariants stand.
+Governs: the retrieval routing axis — `backend/app/features/retrieval/infrastructure/search_repo.py` (`_base_filters`), `backend/app/features/retrieval/application/retriever.py`, `backend/app/features/rag_agent/application/auth_context.py` + `server/token_verifier.py`, `backend/app/features/rag_agent/domain/prompt.py` (connection block), `backend/app/platform/config/product_catalog.py` (`build_labels`/`resolve_system`), `knowledge-base/schema/models.py` (`Chunk.labels`), the next ingestion migration (`0016_*`), `packages/contracts/src/token-claims.json`. Supersedes the routing semantics of ADR-knowledge-scope-tagging-and-filtering; amends the tagging model of ADR-source-id-row-security-with-reader-writer-roles and ADR-scope-state-materialized-as-tags. Does NOT touch ADR-supabase-postgres-store-without-force-rls / ADR-db-level-customer-scope-isolation-backstop / ADR-signed-token-verified-at-the-edge / ADR-page-acl-enforced-in-app-layer-only (customer isolation, scope backstop, edge-token, page-principal ACL) — those invariants stand.
 
 ## Context
 
@@ -51,11 +53,11 @@ parameters; it does not itself land code (implementation is staged and gated by 
 2. **Locked parameters (D0–D7).** These are the owner-confirmed defaults as of 2026-10-09:
    - **D0 — Labels replace scope tags as the content-routing axis.** The four routing labels become
      the content-routing dimension; the per-integration knowledge-scope tags (`obi-mews-test`, …)
-     are retired for routing. Company/source isolation (ADR-0004 source RLS, ADR-0014 scope backstop,
+     are retired for routing. Company/source isolation (ADR-source-id-row-security-with-reader-writer-roles source RLS, ADR-db-level-customer-scope-isolation-backstop scope backstop,
      `source_scope`, locks 0–2) is unchanged. Consequence: the Confluence corpus is relabelled to
      `obi-general` / `{slug}-general` / `{slug}-to-{kind}` (owner/content task).
-     > **Updated 2026-10-12 by ADR-0021.** D0 originally kept the knowledge-scope tags as a
-     > membership tag (a page still needed `obi-general-test` to index). ADR-0021 retires that axis
+     > **Updated 2026-10-12 by ADR-routing-labels-sole-content-axis.** D0 originally kept the knowledge-scope tags as a
+     > membership tag (a page still needed `obi-general-test` to index). ADR-routing-labels-sole-content-axis retires that axis
      > **outright**: index membership is now "published + ≥1 recognized routing label + not
      > `classified`", with no base `-test` tag. The routing-label axis (`chunk.labels`,
      > `app.allowed_labels`, `chunk_labels_read`) is the sole content axis; `chunk_source_read`
@@ -90,20 +92,20 @@ parameters; it does not itself land code (implementation is staged and gated by 
 
 4. **Supersession is explicit, never silent.** Every superseded statement in `plan.md` §D,
    `decision-memo.md` (O1/O4/O5), `context-contract.md` §5.2 and `docs/plan/decisions.md`
-   (`partner-token-handover`) carries a dated "SUPERSEDED by Option A (ADR-0020)" note; the old text
+   (`partner-token-handover`) carries a dated "SUPERSEDED by Option A (ADR-directed-source-target-routing-labels)" note; the old text
    is kept for provenance. A new `decisions.md` row (`connection-routing`) supersedes
    `partner-token-handover`.
 
 5. **Invariants that MUST hold.** The eight sync rules; RLS locks 0–2 and the §D access invariants;
    never-bend rule 3 (no read looser than the search — hence D1); rule 8 (at most two extra reads);
-   lock-0 edge-JWT verification (ADR-0017). Any Stage that would weaken these is a blocking
+   lock-0 edge-JWT verification (ADR-signed-token-verified-at-the-edge). Any Stage that would weaken these is a blocking
    regression, not an increment.
 
 ## Consequences
 
-- **Supersedes** the routing semantics of ADR-0011 (knowledge-scope tagging drove retrieval
+- **Supersedes** the routing semantics of ADR-knowledge-scope-tagging-and-filtering (knowledge-scope tagging drove retrieval
   filtering by per-integration scope; routing now uses directed connection labels). **Amends**
-  ADR-0004 and ADR-0016 (the `tags` axis gains a sibling `labels` axis with its own RLS policy;
+  ADR-source-id-row-security-with-reader-writer-roles and ADR-scope-state-materialized-as-tags (the `tags` axis gains a sibling `labels` axis with its own RLS policy;
   the tag taxonomy changes). The source-isolation and scope-backstop *mechanisms* they establish are
   reused, not removed.
 - **Closes** decision-memo O1 (connection records beyond the three slots now exist, as directed

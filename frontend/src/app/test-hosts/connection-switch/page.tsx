@@ -1,6 +1,6 @@
 /**
  * Route-owned test host for the directed-connection switch browser proof (substep 9.3.1,
- * ADR-0020 Option A) — disposable local-browser scaffolding, colocated under `app/test-hosts/**`
+ * ADR-directed-source-target-routing-labels Option A) — disposable local-browser scaffolding, colocated under `app/test-hosts/**`
  * like the other test hosts, never imported by product code.
  *
  * It renders the REAL embed frame (`EmbedFrame` — the same `initIframeBridge` + `ChatSessionProvider`

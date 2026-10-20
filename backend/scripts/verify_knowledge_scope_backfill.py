@@ -4,7 +4,7 @@
 Read-only. Counts every ``is_active`` chunk whose tags overlap none of the recognized knowledge
 scopes (loaded from ``config/knowledge_scopes.json`` — ``general``/``mews``/``opera-cloud``/
 ``toast``). Such a chunk would silently vanish from every scoped result once the flag is on
-(ADR-0011 Decision 1), so this must report **ready** — zero untagged live chunks — before the flag
+(ADR-knowledge-scope-tagging-and-filtering Decision 1), so this must report **ready** — zero untagged live chunks — before the flag
 is set ``true`` in any environment with real content.
 
 Exit status is the gate: ``0`` when ready, ``1`` when one or more live chunks still lack a

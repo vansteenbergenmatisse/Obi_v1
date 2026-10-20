@@ -6,7 +6,7 @@ side — despite the "attachments" in its title, this phase is about images a us
 screenshots in the chat widget**, not Confluence page attachments (PDF/DOCX ingestion — that's
 `ingestion/domain/attachment_extraction.py`, documented in
 [`../ingestion/phase-4.6.md`](../ingestion/phase-4.6.md)'s 4.6.13 entry). Governed by
-`docs/adr/0009-Vision-Grounded-Image-Analysis.md` and `docs/rag/DESIGN.md` §12.
+`docs/adr/vision-grounded-image-analysis.md` and `docs/rag/DESIGN.md` §12.
 
 ## What happened
 
@@ -14,7 +14,7 @@ An image attached via the widget's file picker or its "screenshot this page" cap
 a vision-capable model call, and the resulting description is folded into the answer as a distinct,
 independent field — separate from (not merged into) the grounded, citation-enforced answer.
 
-**ADR-0009's locked contract shape:**
+**ADR-vision-grounded-image-analysis's locked contract shape:**
 
 1. **Inline base64 on the newest `ChatTurn` only** — no separate upload endpoint, no replay on every
    history resend (bounds resend cost, no new persistent storage).
@@ -45,7 +45,7 @@ independent field — separate from (not merged into) the grounded, citation-enf
 
 ## Sub-steps
 
-- **7.1** — Design doc + ADR-0009. No code.
+- **7.1** — Design doc + ADR-vision-grounded-image-analysis. No code.
 - **7.2** — Contract change only (`packages/contracts`: `ImageAttachment`, `ChatTurn.images`,
   `ChatDoneEvent.imageAnalysis`, both optional). Zero backend/frontend behavior change.
 - **7.3+7.4** — Backend multimodal wiring + input caps, built together (implementing 7.3 alone would
@@ -58,7 +58,7 @@ independent field — separate from (not merged into) the grounded, citation-enf
   embedded instructions as content, and the benign control returned an accurate ungrounded
   description. Caps confirmed live (5th image → 400; >5MB image → 400; cap enforced on an older,
   non-newest turn too).
-- **7.7** — Exit gate. Zero regressions; ADR-0009 confirmed matching shipped code across all 8
+- **7.7** — Exit gate. Zero regressions; ADR-vision-grounded-image-analysis confirmed matching shipped code across all 8
   decisions.
 - **7.8** — Five post-closure bugs found and fixed via real-browser (not curl) testing: a stale proxy
   body-size ceiling that silently rejected real screenshots; the proxy rejecting a genuine
@@ -82,7 +82,7 @@ independent field — separate from (not merged into) the grounded, citation-enf
 - `app/features/rag_agent/server/router.py` — `_validate_history`'s per-turn image caps,
   `_stream_answer`'s `imageAnalysis` on the `done` payload.
 - `app/features/rag_agent/domain/pii.py` — module docstring disclosing the C6 image-bytes gap.
-- `docs/adr/0009-Vision-Grounded-Image-Analysis.md`, `docs/rag/DESIGN.md` §12.
+- `docs/adr/vision-grounded-image-analysis.md`, `docs/rag/DESIGN.md` §12.
 
 `apps/web` files (composer, message bubble, image lightbox) are documented in
 [`../OBI-WIDGET-DESIGN.md`](../OBI-WIDGET-DESIGN.md), not here.

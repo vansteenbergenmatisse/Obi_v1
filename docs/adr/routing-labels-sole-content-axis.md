@@ -1,4 +1,6 @@
-# 0021 — Retire the Knowledge-Scope `-test` Tags; Routing Labels Are the Sole Content Axis
+# Retire the Knowledge-Scope `-test` Tags; Routing Labels Are the Sole Content Axis
+
+Identifier: `ADR-routing-labels-sole-content-axis` (formerly numbered 0021). File paths updated to the current layout (`backend/`, `frontend/`, `knowledge-base/`) on 2026-10-20; the decision is unchanged.
 
 Status: Accepted
 Date: 2026-10-12
@@ -13,20 +15,20 @@ Governs: `knowledge-base/config/knowledge_scopes.json`, `knowledge-base/config/p
 `backend/app/features/rag_agent/infrastructure/curated_knowledge_repo.py`,
 `backend/app/features/confluence_sync/domain/ingest_decision.py`,
 `knowledge-base/migrations/versions/0018_*` (new), the widget's dead `knowledgeScope` prop.
-Supersedes ADR-0011 in full (its `obi-…-test` knowledge-scope axis is retired). Completes ADR-0020
+Supersedes ADR-knowledge-scope-tagging-and-filtering in full (its `obi-…-test` knowledge-scope axis is retired). Completes ADR-directed-source-target-routing-labels
 D0 (it said the scope tags were "retired for routing"; this retires them outright and makes labels
-the only content axis). Does NOT touch source/company isolation (ADR-0004 `chunk_source_read`),
-the Supabase anon fences (ADR-0009), the edge-token verification (ADR-0017), or the label routing
-axis (ADR-0020 migration 0016).
+the only content axis). Does NOT touch source/company isolation (ADR-source-id-row-security-with-reader-writer-roles `chunk_source_read`),
+the Supabase anon fences (ADR-vision-grounded-image-analysis), the edge-token verification (ADR-signed-token-verified-at-the-edge), or the label routing
+axis (ADR-directed-source-target-routing-labels migration 0016).
 
 ## Context
 
-ADR-0011 introduced a knowledge-scope axis: a page had to carry a recognized Confluence label
+ADR-knowledge-scope-tagging-and-filtering introduced a knowledge-scope axis: a page had to carry a recognized Confluence label
 (`obi-general-test`, `obi-mews-test`, `obi-operacloud-test`, `obi-toast-test`) to enter the index,
 those labels were stamped on `chunk.tags`, and retrieval hard-filtered on `tags && :knowledge_scopes`
 behind a RESTRICTIVE RLS policy (`chunk_scope_read`, GUC `app.allowed_knowledge_scopes`).
 
-ADR-0020 (directed-connection routing) added a second, independent axis: routing labels on a
+ADR-directed-source-target-routing-labels (directed-connection routing) added a second, independent axis: routing labels on a
 separate `chunk.labels` column, filtered by `labels && :session_labels` behind its own RESTRICTIVE
 policy (`chunk_labels_read`, GUC `app.allowed_labels`). D0 said the knowledge-scope tags were
 "retired **for routing**" but kept them as a membership/isolation axis, so a page still needed
@@ -61,6 +63,13 @@ are both RESTRICTIVE and AND on top of it.
    isolation (`app.allowed_sources`) and label routing are set on every reader transaction exactly
    as before (never-bend rule 3 — no read looser than the search).
 
+   *As-built note (2026-10-20):* the scope **filter** is gone, but `apply_knowledge_scope` still
+   exists in `search_repo.py` and still sets the `app.allowed_knowledge_scopes` GUC (to the
+   wildcard) on each reader transaction, because the downgrade of migration
+   `0018_retire_knowledge_scope_rls.py` re-creates policies that read it. It filters nothing at
+   head. The `tags && :knowledge_scopes` predicate is likewise inert, since `allowed_scopes` is always
+   empty.
+
 3. **Config.** `knowledge_scopes.json` keeps only the reserved `classified` entry (the delete
    signal); the four `obi-…-test` scopes are removed. Startup validation no longer requires a
    general scope; it still requires `classified` present, still rejects uppercase and duplicates.
@@ -91,10 +100,10 @@ are both RESTRICTIVE and AND on top of it.
 
 ## Consequences
 
-- **Supersedes ADR-0011 in full.** Its knowledge-scope tagging, retrieval scope-filter, and the
+- **Supersedes ADR-knowledge-scope-tagging-and-filtering in full.** Its knowledge-scope tagging, retrieval scope-filter, and the
   `obi-…-test` names no longer exist in code or config. The `curated_knowledge_entry` table, its
-  `tags` column and the curated-prompt layer remain (ADR-0011 Decision 7), now unscoped.
-- **Completes ADR-0020 D0.** D0's "retired for routing" becomes "retired outright"; the corpus needs
+  `tags` column and the curated-prompt layer remain (ADR-knowledge-scope-tagging-and-filtering Decision 7), now unscoped.
+- **Completes ADR-directed-source-target-routing-labels D0.** D0's "retired for routing" becomes "retired outright"; the corpus needs
   no `-test` membership tag. The nine relabelled routing-label pages now index on their routing
   label alone.
 - **Data.** The live vector store was wiped to 0 for the relabel (owner-attested; independent
@@ -103,7 +112,7 @@ are both RESTRICTIVE and AND on top of it.
   config and test fixtures, which are updated. The `chunk.tags` column is left in place as inert
   data.
 - **Widget.** The dead `knowledgeScope` request-body field (already ignored by the backend since
-  ADR-0014) is removed from the widget provider and its tests.
+  ADR-db-level-customer-scope-isolation-backstop) is removed from the widget provider and its tests.
 - **Reversibility.** `0018` downgrade restores both scope policies. The config change is a text
   edit. No embeddings change.
 - **Invariants that MUST hold (unchanged):** never-bend rule 1 (RLS never disabled on Supabase —

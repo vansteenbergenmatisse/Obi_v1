@@ -1,10 +1,14 @@
-# 0014 — Customer/Knowledge-Scope Isolation Backstop (DB-level, fail-closed)
+# Customer/Knowledge-Scope Isolation Backstop (DB-level, fail-closed)
 
-Status: Accepted
+Identifier: `ADR-db-level-customer-scope-isolation-backstop` (formerly numbered 0014). File paths updated to the current layout (`backend/`, `frontend/`, `knowledge-base/`) on 2026-10-20; the decision is unchanged.
+
+Status: Accepted — the knowledge-scope policy half is RETIRED by `ADR-routing-labels-sole-content-axis`
+(migration `0018_retire_knowledge_scope_rls.py` drops its two RESTRICTIVE scope policies; source
+isolation and `curated_knowledge_entry`'s reader policy remain)
 Date: 2026-09-10
-Governs: apps/automation (platform/db, alembic, retrieval, rag_agent)
-Relates to: ADR-0004 (source-keyed RLS isolation — the pattern this mirrors), ADR-0011 (knowledge-scope
-tagging + the app-layer predicate — kept as defense-in-depth), ADR-0013 (managed Postgres, NO FORCE)
+Governs: backend (knowledge-base/schema, alembic, retrieval, rag_agent)
+Relates to: ADR-source-id-row-security-with-reader-writer-roles (source-keyed RLS isolation — the pattern this mirrors), ADR-knowledge-scope-tagging-and-filtering (knowledge-scope
+tagging + the app-layer predicate — kept as defense-in-depth), ADR-supabase-postgres-store-without-force-rls (managed Postgres, NO FORCE)
 
 ## Context
 
@@ -13,7 +17,7 @@ knowledge-scope tags) was enforced **only** by an app-layer predicate `tags && :
 sites, gated behind the `enable_knowledge_scope_filtering` feature flag — which **failed open**: flag
 off, or a single dropped predicate, added no filter and returned **every customer's content to
 everyone** (`retriever.py`, `curated_knowledge_repo.py`). All four scopes share one `source_id`, so the
-ADR-0004 source policy does not separate them, and `curated_knowledge_entry` had no tenant policy at
+ADR-source-id-row-security-with-reader-writer-roles source policy does not separate them, and `curated_knowledge_entry` had no tenant policy at
 all. Source isolation fails *closed*; the customer axis did not. This is Phase 11.1a, a gate before any
 public deploy (the only per-request auth is one shared `CHAT_API_KEY` with no per-user→customer
 binding).
@@ -21,7 +25,7 @@ binding).
 Two options were considered:
 
 - **(i) per-customer `source_id`** — stamp each customer's pages with their own `source_id` and reuse
-  the ADR-0004 `chunk_source_read` policy. Rejected: needs a data migration re-stamping every customer
+  the ADR-source-id-row-security-with-reader-writer-roles `chunk_source_read` policy. Rejected: needs a data migration re-stamping every customer
   page plus an ingestion change, and it **collapses the source axis into the customer axis**, which the
   design elsewhere deliberately keeps independent (a page can be re-sourced without touching its
   customer, and vice-versa).
@@ -48,7 +52,7 @@ string_to_array(current_setting(...), ',')`:
   closed** for the content that needs isolating.
 - **A scope list** → tag-overlap, exactly like the app predicate.
 - **`cardinality(tags) = 0`** → an **untagged chunk is global** (visible under any scope). This is the
-  security floor, and it is deliberately *looser* than ADR-0011 Decision 1 (whose app-layer predicate
+  security floor, and it is deliberately *looser* than ADR-knowledge-scope-tagging-and-filtering Decision 1 (whose app-layer predicate
   drops untagged chunks when scope-filtering is ON): the backstop's job is only to guarantee no *tagged*
   customer content crosses, while keeping an untagged / single-tenant corpus and the always-on `general`
   base working. When the flag is on, the stricter app predicate ANDs on top.
@@ -59,14 +63,14 @@ string_to_array(current_setting(...), ',')`:
 **D3 — Enforcement is independent of the feature flag.** The retriever and curated read set
 `app.allowed_knowledge_scopes` on **every** reader transaction (`apply_knowledge_scope`, from the raw
 `knowledge_scopes` argument), regardless of `enable_knowledge_scope_filtering`. The flag now governs
-**only** the redundant app-layer `tags && :scopes` predicate (recall/planner + the ADR-0011 Decision-1
+**only** the redundant app-layer `tags && :scopes` predicate (recall/planner + the ADR-knowledge-scope-tagging-and-filtering Decision-1
 untagged-drop), not the security boundary. Consequence — an intentional contract change: passing
 `knowledge_scopes` now isolates tagged content at the DB even with the flag off (previously it was
 ignored). The GUC is set with a **bound** `set_config(..., true)` parameter, never interpolated — same
 injection discipline as `apply_source_scope`.
 
 **D4 — The owner is unaffected.** `chunk`/`curated` are owned by the writer, which is exempt from RLS by
-ownership + `NO FORCE` (ADR-0013), so ingestion and trace writes are untouched. Only the non-owner
+ownership + `NO FORCE` (ADR-supabase-postgres-store-without-force-rls), so ingestion and trace writes are untouched. Only the non-owner
 `rag_reader` (the read path) is subject to the policy.
 
 ## Consequences
