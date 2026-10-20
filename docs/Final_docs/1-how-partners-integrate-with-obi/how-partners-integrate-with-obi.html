@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How partners integrate with Obi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#16202B;--ink-soft:#42525F;--ink-faint:#7C8A95;--paper:#F3F5F4;--card:#FFFFFF;--rule:#DDE3E1;
+--petrol:#0F6E6B;--petrol-wash:#E4F0EF;--amber:#A9701A;--amber-wash:#FAF0DE;--rust:#A63D2F;--rust-wash:#FAE7E4;
+--moss:#2E6E48;--moss-wash:#E3F0E8;--slate:#4A6076;--slate-wash:#E7ECF1;
+--shadow:0 1px 2px rgba(22,32,43,.05),0 8px 24px -14px rgba(22,32,43,.22);}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.6 "IBM Plex Sans",system-ui,sans-serif}
+a{color:var(--petrol)}
+code{font:0.88em "IBM Plex Mono",ui-monospace,monospace;background:var(--slate-wash);padding:.08em .35em;border-radius:4px;overflow-wrap:anywhere}
+pre{font:13px/1.55 "IBM Plex Mono",ui-monospace,monospace;background:#16202B;color:#E8EEF0;padding:14px 16px;border-radius:10px;overflow-x:auto;margin:12px 0}
+pre code{background:none;padding:0;color:inherit}
+h1,h2,h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;line-height:1.15;margin:0}
+h1{font-size:clamp(30px,6vw,52px);font-weight:800;letter-spacing:-.02em}
+h2{font-size:clamp(22px,3.6vw,30px);font-weight:700;margin-bottom:6px}
+h3{font-size:18px;font-weight:600;margin:18px 0 6px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 16px}
+header.hero{padding:48px 0 28px;border-bottom:1px solid var(--rule)}
+.kicker{font:600 12px/1 "IBM Plex Mono",monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--petrol)}
+.lede{font-size:clamp(17px,2.2vw,20px);color:var(--ink-soft);max-width:760px;margin:14px 0 0}
+.note{font-size:13px;color:var(--ink-faint);margin-top:14px}
+.badges{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}
+.badge{display:flex;gap:10px;align-items:flex-start;background:var(--card);border:1px solid var(--rule);border-radius:12px;padding:12px 14px;box-shadow:var(--shadow);flex:1 1 220px}
+.badge b{display:block;font-family:"Bricolage Grotesque",sans-serif;font-size:17px}
+.badge span{font-size:14px;color:var(--ink-soft)}
+.dot{flex:none;width:12px;height:12px;border-radius:50%;margin-top:6px}
+section{padding:36px 0;border-bottom:1px solid var(--rule)}
+section>.wrap>p.sub{color:var(--ink-soft);margin:4px 0 18px;max-width:760px}
+.card{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:18px;box-shadow:var(--shadow)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+.diagram{background:var(--card);border:1px solid var(--rule);border-radius:14px;padding:12px;box-shadow:var(--shadow)}
+.diagram svg{width:100%;height:auto;display:block}
+.svg-scroll{overflow-x:auto}
+.svg-scroll svg{min-width:640px}
+.tbl{overflow-x:auto;border:1px solid var(--rule);border-radius:12px;background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:14.5px}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--rule)}
+th{font:600 12px/1.3 "IBM Plex Mono",monospace;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);background:#FAFBFB}
+tr:last-child td{border-bottom:0}
+.pill{display:inline-block;font:600 12px/1 "IBM Plex Mono",monospace;padding:5px 8px;border-radius:999px;white-space:nowrap}
+.ok{background:var(--moss-wash);color:var(--moss)}.warn{background:var(--amber-wash);color:var(--amber)}.bad{background:var(--rust-wash);color:var(--rust)}.info{background:var(--petrol-wash);color:var(--petrol)}
+ol.steps{list-style:none;counter-reset:s;padding:0;margin:0;display:grid;gap:12px}
+ol.steps>li{counter-increment:s;position:relative;padding:14px 16px 14px 56px;background:var(--card);border:1px solid var(--rule);border-radius:12px}
+ol.steps>li::before{content:counter(s);position:absolute;left:14px;top:13px;width:28px;height:28px;border-radius:50%;background:var(--petrol);color:#fff;font:700 14px/28px "Bricolage Grotesque",sans-serif;text-align:center}
+ol.steps b{font-family:"Bricolage Grotesque",sans-serif;font-size:17px}
+.need{margin-top:8px;font-size:14px;background:var(--amber-wash);border-left:3px solid var(--amber);padding:6px 10px;border-radius:0 6px 6px 0}
+ul.check{list-style:none;padding:0;margin:0}
+ul.check li{padding:7px 0 7px 26px;position:relative;border-bottom:1px dashed var(--rule);font-size:15px}
+ul.check li:last-child{border-bottom:0}
+ul.check li::before{content:"";position:absolute;left:2px;top:12px;width:12px;height:12px;border:2px solid var(--petrol);border-radius:3px}
+.part{display:inline-block;margin-bottom:10px}
+footer{padding:28px 0 48px;color:var(--ink-faint);font-size:14px}
+footer ul{padding-left:18px}
+@media (max-width:560px){ol.steps>li{padding-left:50px}th,td{padding:8px 9px}}
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="kicker">Obi · partner integration</div>
+    <h1>How partners integrate with Obi</h1>
+    <p class="lede">A partner page loads Obi's script and hands Obi a short-lived signed token that names
+      the customer and the connection: a <b>source system</b> and a <b>target system</b>. The source decides
+      whether Obi appears.</p>
+    <div class="badges">
+      <div class="badge"><i class="dot" style="background:var(--petrol)"></i><div><b>The source decides</b><span>Mews, Toast or Opera Cloud as source → Obi shows. Anything else → Obi hides.</span></div></div>
+      <div class="badge"><i class="dot" style="background:var(--moss)"></i><div><b>The target is never checked</b><span>Any target is accepted. One we have no pages for falls back to the source's pages.</span></div></div>
+      <div class="badge"><i class="dot" style="background:var(--slate)"></i><div><b>No token = no connection</b><span>Without a token the widget still works, but answers are not narrowed to the customer's connection.</span></div></div>
+    </div>
+    <p class="note">Visual companion of <a href="how-partners-integrate-with-obi.md">how-partners-integrate-with-obi.md</a>. When the two disagree, the Markdown wins. Last checked against the code: 2026-10-20.</p>
+  </div>
+</header>
+
+<section id="status">
+  <div class="wrap">
+    <h2>Status today</h2>
+    <p class="sub">The only partners that embed Obi are Base and Data Hub. Mews, Toast and Opera Cloud are systems a customer has, never partners.</p>
+    <div class="tbl"><table>
+      <thead><tr><th></th><th>Base (Marien)</th><th>Data Hub (Jasper)</th></tr></thead>
+      <tbody>
+        <tr><td>Embed hosts allowed</td><td><code>base.development.omniboost.io</code> (dev)<br><code>app.omniboost.io</code> (live)</td><td><code>datahub.omniboost.io</code></td></tr>
+        <tr><td>What works now</td><td><span class="pill ok">widget + answers without a connection</span></td><td><span class="pill ok">widget + answers without a connection</span></td></tr>
+        <tr><td>Signing entry</td><td><code>base</code> <span class="pill warn">inactive</span></td><td><code>datahub</code> <span class="pill warn">inactive</span></td></tr>
+        <tr><td>Blocking activation</td><td><span class="pill bad">JWKS returns HTTP 500</span> and no token from the deployed dev environment yet</td><td><span class="pill bad">issuer + JWKS not received</span></td></tr>
+      </tbody>
+    </table></div>
+    <p class="note">Live facts per partner: <a href="../5-integration-context/partner-facts.md">partner-facts.md</a> · partner pages: <a href="../../embedding/base.md">Base</a>, <a href="../../embedding/datahub.md">Data Hub</a> · services: frontend <code>obi-web-production.up.railway.app</code>, backend <code>obi-backend-production.up.railway.app</code>.</p>
+  </div>
+</section>
+
+<section id="flow">
+  <div class="wrap">
+    <h2>How a question travels</h2>
+    <p class="sub">The partner's server signs the token; Obi's backend verifies it. Nothing in the request body decides access.</p>
+    <div class="diagram svg-scroll">
+      <svg viewBox="0 0 980 300" role="img" aria-label="Architecture: the partner page loads obi.js, which mounts the Obi frame; the frame calls the Obi proxy, which forwards the token to the Obi backend; the backend verifies the token against the partner's JWKS and searches Postgres.">
+        <defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#42525F"/></marker></defs>
+        <rect x="10" y="20" width="300" height="260" rx="14" fill="#FAF0DE" stroke="#A9701A" stroke-dasharray="5 4"/>
+        <text x="26" y="44" font-family="IBM Plex Mono" font-size="12" fill="#A9701A" font-weight="600">PARTNER (Base / Data Hub)</text>
+        <rect x="30" y="64" width="260" height="80" rx="10" fill="#fff" stroke="#DDE3E1"/>
+        <text x="46" y="92" font-family="Bricolage Grotesque" font-size="17" font-weight="600" fill="#16202B">Partner page</text>
+        <text x="46" y="114" font-family="IBM Plex Mono" font-size="12" fill="#42525F">obi.js + Obi.init({ tokenUrl })</text>
+        <rect x="30" y="170" width="260" height="90" rx="10" fill="#fff" stroke="#DDE3E1"/>
+        <text x="46" y="198" font-family="Bricolage Grotesque" font-size="17" font-weight="600" fill="#16202B">Partner server</text>
+        <text x="46" y="220" font-family="IBM Plex Mono" font-size="12" fill="#42525F">tokenUrl → { token }</text>
+        <text x="46" y="240" font-family="IBM Plex Mono" font-size="12" fill="#42525F">JWKS (public key, kid)</text>
+        <line x1="160" y1="144" x2="160" y2="168" stroke="#42525F" stroke-width="1.6" marker-end="url(#ar)"/>
+        <rect x="350" y="20" width="620" height="260" rx="14" fill="#E4F0EF" stroke="#0F6E6B"/>
+        <text x="366" y="44" font-family="IBM Plex Mono" font-size="12" fill="#0F6E6B" font-weight="600">OBI</text>
+        <rect x="370" y="64" width="170" height="80" rx="10" fill="#fff" stroke="#DDE3E1"/>
+        <text x="384" y="92" font-family="Bricolage Grotesque" font-size="17" font-weight="600" fill="#16202B">Frame /embed</text>
+        <text x="384" y="114" font-family="IBM Plex Mono" font-size="12" fill="#42525F">token in memory</text>
+        <rect x="570" y="64" width="170" height="80" rx="10" fill="#fff" stroke="#DDE3E1"/>
+        <text x="584" y="92" font-family="Bricolage Grotesque" font-size="17" font-weight="600" fill="#16202B">Proxy</text>
+        <text x="584" y="114" font-family="IBM Plex Mono" font-size="12" fill="#42525F">+ server key</text>
+        <text x="584" y="132" font-family="IBM Plex Mono" font-size="12" fill="#42525F">X-Obi-Token</text>
+        <rect x="770" y="64" width="180" height="196" rx="10" fill="#fff" stroke="#DDE3E1"/>
+        <text x="784" y="92" font-family="Bricolage Grotesque" font-size="17" font-weight="600" fill="#16202B">Backend</text>
+        <text x="784" y="116" font-family="IBM Plex Mono" font-size="12" fill="#42525F">1 verify token</text>
+        <text x="784" y="136" font-family="IBM Plex Mono" font-size="12" fill="#42525F">2 gate: source ok?</text>
+        <text x="784" y="156" font-family="IBM Plex Mono" font-size="12" fill="#42525F">3 four labels</text>
+        <text x="784" y="176" font-family="IBM Plex Mono" font-size="12" fill="#42525F">4 search + answer</text>
+        <rect x="784" y="196" width="150" height="48" rx="8" fill="#E7ECF1"/>
+        <text x="798" y="225" font-family="IBM Plex Mono" font-size="12" fill="#4A6076">Postgres + pgvector</text>
+        <line x1="290" y1="104" x2="366" y2="104" stroke="#42525F" stroke-width="1.6" marker-end="url(#ar)"/>
+        <text x="296" y="96" font-family="IBM Plex Mono" font-size="11" fill="#42525F">postMessage</text>
+        <line x1="540" y1="104" x2="566" y2="104" stroke="#42525F" stroke-width="1.6" marker-end="url(#ar)"/>
+        <line x1="740" y1="104" x2="766" y2="104" stroke="#42525F" stroke-width="1.6" marker-end="url(#ar)"/>
+        <path d="M770 236 C 600 300, 420 300, 292 236" fill="none" stroke="#A63D2F" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#ar)"/>
+        <text x="470" y="276" font-family="IBM Plex Mono" font-size="11" fill="#A63D2F">backend fetches the public key (JWKS)</text>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<section id="sequence">
+  <div class="wrap">
+    <h2>The token's life</h2>
+    <p class="sub">The token is fetched fresh, held in memory only, and renewed 60 seconds before it expires.</p>
+    <div class="diagram svg-scroll">
+      <svg viewBox="0 0 980 330" role="img" aria-label="Sequence: init fetches the token once to decide visibility; a click opens the frame and fetches the token again; the loader posts it to the frame; the frame calls the backend; the loader renews the token before expiry.">
+        <defs><marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#42525F"/></marker></defs>
+        <g font-family="IBM Plex Mono" font-size="12" fill="#16202B">
+          <text x="70" y="30" text-anchor="middle" font-weight="600">Partner page</text>
+          <text x="330" y="30" text-anchor="middle" font-weight="600">tokenUrl</text>
+          <text x="600" y="30" text-anchor="middle" font-weight="600">Obi frame</text>
+          <text x="870" y="30" text-anchor="middle" font-weight="600">Obi backend</text>
+        </g>
+        <g stroke="#DDE3E1" stroke-width="2"><line x1="70" y1="42" x2="70" y2="320"/><line x1="330" y1="42" x2="330" y2="320"/><line x1="600" y1="42" x2="600" y2="320"/><line x1="870" y1="42" x2="870" y2="320"/></g>
+        <g font-family="IBM Plex Sans" font-size="13" fill="#42525F" stroke="#42525F" stroke-width="1.5">
+          <line x1="70" y1="70" x2="326" y2="70" marker-end="url(#ar2)"/><text x="80" y="62" stroke="none">1 · init: fetch token once</text>
+          <line x1="330" y1="96" x2="74" y2="96" marker-end="url(#ar2)"/><text x="120" y="90" stroke="none">read source_system → hide if unsupported</text>
+          <line x1="70" y1="136" x2="326" y2="136" marker-end="url(#ar2)"/><text x="80" y="128" stroke="none">2 · click: fetch fresh token</text>
+          <line x1="70" y1="170" x2="596" y2="170" marker-end="url(#ar2)"/><text x="160" y="162" stroke="none">3 · post token to the exact Obi origin</text>
+          <line x1="600" y1="206" x2="866" y2="206" marker-end="url(#ar2)"/><text x="620" y="198" stroke="none">4 · ask (token as X-Obi-Token)</text>
+          <line x1="870" y1="240" x2="604" y2="240" marker-end="url(#ar2)"/><text x="640" y="232" stroke="none">answer with citations</text>
+          <line x1="70" y1="290" x2="326" y2="290" marker-end="url(#ar2)" stroke-dasharray="5 4"/><text x="80" y="282" stroke="none">5 · renew 60 s before exp</text>
+        </g>
+      </svg>
+    </div>
+  </div>
+</section>
+
+<section id="decision">
+  <div class="wrap">
+    <h2>What Obi does with the token</h2>
+    <p class="sub">One question decides visibility: is the source system one we support?</p>
+    <div class="diagram svg-scroll">
+      <svg viewBox="0 0 980 300" role="img" aria-label="Decision tree: no token searches all pages without narrowing; an invalid token is refused; an unsupported or unknown source hides Obi; a supported source shows Obi for any target, with an unknown target falling back to the source's pages.">
+        <defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#42525F"/></marker></defs>
+        <g font-family="IBM Plex Sans" font-size="14">
+          <rect x="390" y="14" width="200" height="44" rx="22" fill="#16202B"/><text x="490" y="41" text-anchor="middle" fill="#fff" font-weight="600">Token?</text>
+          <rect x="20" y="110" width="200" height="60" rx="10" fill="#E7ECF1" stroke="#4A6076"/><text x="120" y="136" text-anchor="middle" fill="#4A6076" font-weight="600">No token</text><text x="120" y="156" text-anchor="middle" fill="#4A6076" font-size="12">all pages, no narrowing</text>
+          <rect x="250" y="110" width="200" height="60" rx="10" fill="#FAE7E4" stroke="#A63D2F"/><text x="350" y="136" text-anchor="middle" fill="#A63D2F" font-weight="600">Invalid token</text><text x="350" y="156" text-anchor="middle" fill="#A63D2F" font-size="12">refused (401)</text>
+          <rect x="560" y="110" width="220" height="60" rx="10" fill="#fff" stroke="#16202B"/><text x="670" y="136" text-anchor="middle" fill="#16202B" font-weight="600">Valid token</text><text x="670" y="156" text-anchor="middle" fill="#42525F" font-size="12">source supported?</text>
+          <rect x="470" y="220" width="200" height="60" rx="10" fill="#FAF0DE" stroke="#A9701A"/><text x="570" y="246" text-anchor="middle" fill="#A9701A" font-weight="600">No / unknown</text><text x="570" y="266" text-anchor="middle" fill="#A9701A" font-size="12">Obi hidden</text>
+          <rect x="700" y="220" width="260" height="60" rx="10" fill="#E3F0E8" stroke="#2E6E48"/><text x="830" y="246" text-anchor="middle" fill="#2E6E48" font-weight="600">Yes — Obi shows</text><text x="830" y="266" text-anchor="middle" fill="#2E6E48" font-size="12">any target; unknown → source's pages</text>
+        </g>
+        <g stroke="#42525F" stroke-width="1.5" fill="none">
+          <path d="M440 58 L120 106" marker-end="url(#ar3)"/><path d="M470 58 L350 106" marker-end="url(#ar3)"/><path d="M540 58 L670 106" marker-end="url(#ar3)"/>
+          <path d="M640 170 L575 216" marker-end="url(#ar3)"/><path d="M700 170 L825 216" marker-end="url(#ar3)"/>
+        </g>
+      </svg>
+    </div>
+    <p class="note">Recorded in <a href="../../adr/source-system-decides-widget-eligibility.md">ADR-source-system-decides-widget-eligibility</a>. Hiding uses the visibility probe from <a href="../../adr/widget-hides-via-visibility-probe.md">ADR-widget-hides-via-visibility-probe</a>.</p>
+  </div>
+</section>
+
+<section id="partner">
+  <div class="wrap">
+    <span class="pill info part">Part A · for the partner</span>
+    <h2>What the partner builds</h2>
+    <p class="sub">Five steps, in order. Each names what we need back.</p>
+    <ol class="steps">
+      <li><b>Tell us where the widget loads.</b> Every https origin, e.g. <code>https://base.development.omniboost.io</code>. Every page on the host is covered.<div class="need">We need: the exact origins.</div></li>
+      <li><b>Publish a signing key (JWKS).</b> RS256 or ES256, each key with a <code>kid</code>. Rotate by publishing the new <code>kid</code> before signing with it.
+<pre><code>{ "keys": [ { "kid": "base-2026-10", "kty": "RSA", "alg": "RS256",
+              "use": "sig", "n": "&lt;modulus&gt;", "e": "AQAB" } ] }</code></pre>
+        <div class="need">We need: the JWKS URL and the exact <code>iss</code> string.</div></li>
+      <li><b>Build the token endpoint.</b> Same origin as the page, uses the user's session, returns <code>{"token": "&lt;jwt&gt;"}</code>.
+<pre><code>{ "iss": "https://base.development.omniboost.io", "aud": "obi", "sub": "5",
+  "iat": 1792072431, "exp": 1792072731,
+  "source_system": "Toast", "target_system": "NetSuite", "business_id": 2108 }</code></pre>
+        <code>iss</code> letter for letter · <code>aud</code> is <code>"obi"</code> · <code>exp − iat</code> ≤ 60 min · names in any case or spacing · <code>business_id</code> string or number · 60 s clock skew tolerated.
+        <div class="need">We need: the deployed <code>tokenUrl</code> (not <code>.test</code>) and one fresh token.</div></li>
+      <li><b>Add the widget.</b>
+<pre><code>&lt;script src="https://obi-web-production.up.railway.app/obi.js"&gt;&lt;/script&gt;
+&lt;script&gt;Obi.init({ tokenUrl: "/obi/token" });&lt;/script&gt;</code></pre>
+        <code>Obi.init</code> again to switch customer (fresh chat) · <code>Obi.clear()</code> on logout · <code>Obi.destroy()</code> removes it.</li>
+      <li><b>Test it.</b> Load a page on a listed origin, ask a question, send us a fresh token, then test again after we activate your entry.</li>
+    </ol>
+  </div>
+</section>
+
+<section id="checklists">
+  <div class="wrap">
+    <h2>Who does what</h2>
+    <div class="grid2">
+      <div class="card"><h3>Partner</h3><ul class="check">
+        <li>List the https embed origins</li>
+        <li>Publish the JWKS (RS256/ES256, <code>kid</code>)</li>
+        <li>Give us the exact <code>iss</code></li>
+        <li>Deploy <code>tokenUrl</code> returning <code>{"token": …}</code></li>
+        <li>Put the real <code>source_system</code>, <code>target_system</code>, <code>business_id</code> in each token</li>
+        <li>Add the snippet; re-init on customer switch; <code>clear()</code> on logout</li>
+        <li>Send one fresh token from the deployed environment</li>
+      </ul></div>
+      <div class="card"><h3>Obi team</h3><ul class="check">
+        <li>Add the origins to an active entry's <code>domains</code></li>
+        <li>Fill <code>issuer</code>, <code>jwks_url</code>, <code>algs</code> in <code>platforms.json</code></li>
+        <li>Check the JWKS returns keys; verify the fresh token</li>
+        <li>Validate under production settings</li>
+        <li>Set <code>active: true</code>; remove the hosts from <code>obi-test</code></li>
+        <li>Redeploy backend and frontend; check <code>/health</code> and the <code>/embed</code> header</li>
+        <li>Run the test with the partner</li>
+      </ul></div>
+    </div>
+  </div>
+</section>
+
+<section id="ours">
+  <div class="wrap">
+    <span class="pill info part">Part B · for us</span>
+    <h2>Our side</h2>
+    <h3>What we register per partner</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Field in <code>platforms.json</code></th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>issuer</code></td><td>Looks up the partner from the token's <code>iss</code>. Must match exactly.</td></tr>
+        <tr><td><code>jwks_url</code></td><td>Where Obi fetches the public keys, by <code>kid</code>.</td></tr>
+        <tr><td><code>domains</code></td><td>Embed hosts, no scheme. Only active entries count: they feed the <code>/embed</code> <code>frame-ancestors</code> header and the frame's message allow-list.</td></tr>
+        <tr><td><code>lifetime_minutes</code></td><td>Longest accepted <code>exp − iat</code> (1–1440; we use 60).</td></tr>
+        <tr><td><code>algs</code></td><td><code>RS256</code> and/or <code>ES256</code>.</td></tr>
+        <tr><td><code>active</code></td><td>Only active entries are served; a token from an inactive entry is refused (401).</td></tr>
+        <tr><td><code>allowed_integrations</code></td><td>The source systems this partner may assert; any other source is refused (401).</td></tr>
+      </tbody>
+    </table></div>
+    <h3>Supported sources and routing</h3>
+    <p><code>enabled_sources</code> in <a href="../../../knowledge-base/config/product_catalog.json"><code>product_catalog.json</code></a> lists the sources that make Obi appear: <code>mews</code>, <code>toast</code>, <code>opera-cloud</code>. For <code>Toast → Mews</code> Obi searches only pages labelled <code>obi-general</code>, <code>toast-general</code>, <code>mews-general</code>, <code>toast-to-pms</code>; an unknown target keeps the first two. See <a href="../5-integration-context/product-catalog.md">product-catalog.md</a> and <a href="../sync-rules/routing-test-labels.md">the labels in use</a>.</p>
+    <h3>Deploying</h3>
+    <p>A git push does not deploy. Backend: <code>railway up --service obi-backend --detach</code> (<a href="../../runbooks/railway-backend-deploy.md">runbook</a>). Frontend: <code>scripts/deploy-frontend.sh</code> (<a href="../../runbooks/railway-frontend-deploy.md">runbook</a>). <code>obi.js</code> bakes in the Obi origin and the source names, so catalog changes need a frontend redeploy; <code>platforms.json</code> changes need both.</p>
+    <h3>Troubleshooting</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Symptom</th><th>Cause</th><th>Fix</th></tr></thead>
+      <tbody>
+        <tr><td><code>frame-ancestors</code> violation in the browser</td><td>The page's host is not on an active entry</td><td>Add the host, redeploy</td></tr>
+        <tr><td>Widget never appears</td><td>Unsupported source, or the token fetch failed</td><td>Check <code>source_system</code>; open <code>tokenUrl</code> directly</td></tr>
+        <tr><td>Session refused (401)</td><td>Bad signature, <code>iss</code> mismatch, expired, lifetime over 60 min, source not allowed, or entry inactive</td><td>Compare with Part A and the entry</td></tr>
+        <tr><td>Answers not specific to the connection</td><td>No token was sent, so no routing labels apply</td><td>Check that <code>tokenUrl</code> returns <code>{"token": …}</code></td></tr>
+        <tr><td>Activation fails</td><td>JWKS errors (e.g. HTTP 500) or has no <code>kid</code></td><td>The partner fixes the JWKS</td></tr>
+        <tr><td>Token URL ends in <code>.test</code></td><td>The partner's local machine</td><td>Ask for the deployed URL</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <b>Where the truth lives</b>
+    <ul>
+      <li>Decisions: <a href="../../adr/README.md">ADR index</a> · <a href="../../adr/source-system-decides-widget-eligibility.md">source system decides widget eligibility</a> · <a href="../../adr/directed-source-target-routing-labels.md">directed source/target routing labels</a> · <a href="../../adr/routing-labels-sole-content-axis.md">routing labels are the sole content axis</a> · <a href="../../adr/widget-hides-via-visibility-probe.md">widget hides via visibility probe</a> · <a href="../../adr/signed-token-verified-at-the-edge.md">signed token verified at the edge</a></li>
+      <li>Status per partner: <a href="../5-integration-context/partner-facts.md">partner-facts.md</a> · activation blocks: <a href="../5-integration-context/partner-activation-patch.md">partner-activation-patch.md</a></li>
+      <li>The gate as built: <a href="../retrieval/auth-context-gate.md">auth-context-gate.md</a> · token claims: <a href="../../../packages/contracts/src/token-claims.json">token-claims.json</a></li>
+      <li>Code: <a href="../../../frontend/src/features/embed/loader.ts">loader.ts</a> · <a href="../../../frontend/src/features/embed/csp.ts">csp.ts</a> · <a href="../../../backend/app/features/rag_agent/application/auth_context.py">auth_context.py</a> · <a href="../../../backend/app/features/rag_agent/server/token_verifier.py">token_verifier.py</a></li>
+      <li>Local testing: <a href="../../embedding/obi-embed-local-test-keys.md">obi-embed-local-test-keys.md</a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>
