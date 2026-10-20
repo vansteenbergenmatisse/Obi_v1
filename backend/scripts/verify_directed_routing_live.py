@@ -17,7 +17,7 @@ Then a plain ``SELECT ... FROM chunk WHERE is_active`` — whatever comes back i
 Toast->Mews (etc.) chat could retrieve, because the three RLS policies (source, customer-scope,
 routing-label) have already filtered it. No Confluence, no writes, no vectors, no ranking — pure
 visibility. It is NOT part of pytest (it needs a real DB + the reader role), the same ownership
-pattern as ``verify_knowledge_scope_live.py`` / ``page_state.py``.
+pattern as ``page_state.py``.
 
 For the proof to be real the reader must run as the non-owner role: ``DATABASE_READER_URL`` must be
 set to the ``rag_reader`` DSN (production is; the local compose sets it too). If the reader resolves

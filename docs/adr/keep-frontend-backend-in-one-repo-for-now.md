@@ -4,7 +4,7 @@ Identifier: `ADR-keep-frontend-backend-in-one-repo-for-now` (formerly numbered 0
 
 Status: Accepted
 Date: 2026-08-12
-Governs: frontend, backend, packages/**, docs/adr/0006*, docs/adr/0007*, docs/rag/PLAN.md,
+Governs: frontend, backend, packages/**, docs/adr/defer-product-and-package-extraction.md, ADR-separate-frontend-backend-repos (deleted), docs/rag/PLAN.md (removed),
 docs/future-ideas/IDEAS.md
 
 ## Context
@@ -81,4 +81,4 @@ CI/secrets split, doc updates) from being lost, without it blocking Phase 9 or f
 ## Paths governed
 
 `frontend/**`, `backend/**`, `packages/contracts/**`, `packages/design-tokens/**`,
-`docs/rag/PLAN.md`, `docs/future-ideas/IDEAS.md`, `docs/adr/0006*`, `docs/adr/0007*`.
+`docs/rag/PLAN.md`, `docs/future-ideas/IDEAS.md`, `docs/adr/defer-product-and-package-extraction.md`, ADR-separate-frontend-backend-repos (deleted).

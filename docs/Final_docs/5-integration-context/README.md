@@ -6,16 +6,32 @@ Same rule as `4-test-foundation/`: anything about the shared integration-context
 here; look here first. This folder began as design documentation plus one data file
 (`knowledge-base/config/product_catalog.json`).
 
-> **Status update (2026-10-09).** The §D.1 design has since been **implemented** — the three-slot
-> token/`context.slots` contract, the catalog loader, the gate's slot checks, chunk applicability
-> (migration 0015) and the launch allowlist all landed in substeps 8.1.1–8.5.1 (see the ledger).
-> The "What this does NOT change yet" section below describes the original design-only pass and is
-> kept for history; where it says a change is not wired, read it as **now wired**. The frontend is
-> also deployed (8.4.3). The design docs here still describe the contract of record; the ledger and
-> the design page are authoritative for current state.
+> **Current contract (2026-10-20).** Partners (Base and the Data Hub, the only two that embed Obi)
+> send the **directed token**: `iss`, `aud: "obi"`, `sub`, `iat`, `exp` (at most the platform's
+> `lifetime_minutes`, 60), `source_system`, `target_system`, `business_id` (string or integer;
+> integers are normalized to a string). Display names resolve case- and space-insensitively.
+> Routing rides the routing labels (ADR-directed-source-target-routing-labels); the knowledge-scope
+> axis is retired (ADR-routing-labels-sole-content-axis).
+>
+> **Only the source decides whether Obi shows** (ADR-source-system-decides-widget-eligibility,
+> 2026-10-20). `enabled_sources` in `knowledge-base/config/product_catalog.json` is `mews`, `toast`,
+> `opera-cloud`. An unknown or disabled source hides the widget (403 `source_not_enabled`; the
+> visibility probe answers `visible: false`). The target is never checked; an unknown target routes
+> on `[obi-general, {source}-general]`.
+>
+> The three-slot `context.slots` contract and the single `integration` claim described in
+> `context-contract.md` and `decision-memo.md` are **legacy**: still accepted, no longer routing.
+>
+> How a partner integrates, step by step:
+> [`how-partners-integrate-with-obi.md`](../1-how-partners-integrate-with-obi/how-partners-integrate-with-obi.md).
 
-- `context-contract.md` — THE shared context contract for all environments (Base, Data Hub,
-  standalone): the three-slot token (POS/PMS from Data Hub, Accounting from Base), company-ID-only
+> **History (2026-10-09).** The §D.1 design was implemented in substeps 8.1.1–8.5.1 (the three-slot
+> token, the catalog loader, the gate's slot checks, chunk applicability in migration 0015, the
+> launch allowlist); the frontend was deployed in 8.4.3. Phase 9 then replaced slot routing with the
+> directed form above. The "What this did NOT change" section below is kept for history only.
+
+- `context-contract.md` — **legacy** (superseded by the directed form): the original shared
+  context contract for all environments (Base, Data Hub, standalone): the three-slot token (POS/PMS from Data Hub, Accounting from Base), company-ID-only
   identity, token-over-body trust (never-bend rules 2–3), known/absent/unknown configuration, the
   launch allowlist (Toast=POS, Mews=PMS) with the exact visibility rule, eligibility derivation
   (general + filled slots + the pairs the company actually has), how the §D.2 flow types map onto
@@ -37,12 +53,17 @@ here; look here first. This folder began as design documentation plus one data f
   `rerank-v3.5` via v2, string-documents only, **no instruction field exists**), the
   eligibility-before-rerank invariant, and the ranked options for the §D.6 build (enrich the
   query string + YAML metadata in document strings; `rank_fields` is v1-only escalation).
-- `research-jasper-handoff.md` — the §D.9 Jasper-handoff verification (written **before** 8.4.3):
-  it recorded that no deployed `obi.js` URL existed yet. As of 8.4.3 (2026-10-09) obi.js **is**
-  deployed at `https://obi-web-production.up.railway.app/obi.js` (frame at `/embed`); the eventual
-  `obi.omniboost.com` host is deferred. The file still holds the embed contract and JWT/JWKS
-  requirements per side, the four-case test matrix (works-today vs future), and the draft reply
-  skeleton the owner edits before sending.
+- `partner-facts.md` — per partner (Base/Marien, Data Hub/Jasper): which of the five
+  integration facts are confirmed and which are missing. The status page to check first.
+- `partner-activation-patch.md` — the pre-staged `platforms.json` block per partner; not applied.
+- `phase-9-partner-replies.md` — the owner's drafts of the directed-contract replies to the partners.
+- `phase-9-directed-connection-security-review.md`, `phase-9-isolation-run.txt` — Phase 9
+  security review and isolation/reversibility proof for the directed form.
+- `phase-a-validation-cases.md`, `phase-a-run-sheet.md` — Phase A human validation cases and the
+  fill-in run sheet (prepared, not run).
+- `applies-to-authoring.md` — how page authors fill the "Applies to" table.
+- `embed-check-8.4.3-run.txt` — the 8.4.3 live embed check output. obi.js is served at
+  `https://obi-web-production.up.railway.app/obi.js` (frame at `/embed`).
 
 ## What this did NOT change in the original design pass (now superseded — all landed)
 

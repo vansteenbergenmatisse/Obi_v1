@@ -3,8 +3,8 @@
 Public surface: `HybridRetriever` (the entry point), `PrincipalPermissionPolicy` (the policy
 callers construct), the `RetrievedHit`/`RetrievalResult` DTOs `retrieve_with_context` returns
 (the Phase 4.2 answer workflow's real external consumer), the `query_trace` answer/feedback
-writers Phase 4 UPDATEs with once an answer is grounded, and `resolve_allowed_scopes` (PLAN 10.4)
-which `rag_agent` will call once a chat request carries a `knowledge_scope` field (PLAN 10.5).
+writers Phase 4 UPDATEs with once an answer is grounded, and `apply_knowledge_scope` (a no-op
+wildcard GUC setter kept only because the migration-0018 downgrade re-applies policies that read it).
 Since substep 8.2.3 it also exposes the deterministic applicability matcher (panel mi-match):
 `match_applicability`/`derive_connections` with their `CustomerContext`/`ConnectionRecord`/
 `MatchResult` types — the pure §D.4 predicate 8.3.1 mirrors in SQL and 8.3.4 reads reasons from.
@@ -33,7 +33,6 @@ from .domain.applicability_match import (
     eligibility_params,
     match_applicability,
 )
-from .domain.knowledge_scope import resolve_allowed_scopes
 from .domain.permission import PrincipalPermissionPolicy, classify_scope
 from .infrastructure.search_repo import apply_knowledge_scope
 from .infrastructure.trace_repo import update_query_trace_answer, update_query_trace_feedback
@@ -54,7 +53,6 @@ __all__ = [
     "derive_connections",
     "eligibility_params",
     "match_applicability",
-    "resolve_allowed_scopes",
     "update_query_trace_answer",
     "update_query_trace_feedback",
 ]

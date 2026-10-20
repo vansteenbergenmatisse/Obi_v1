@@ -1,7 +1,7 @@
 /**
  * ContourBackground — the message thread's ambient wavy-line decoration (a pixel-exact copy of
  * the original Obi mockup's body SVG, `stroke: #edeff6`; the mockup was reference art and has been
- * removed — the as-built widget doc is `docs/rag/OBI-WIDGET-DESIGN.md`).
+ * removed — the as-built widget doc is `docs/design/obi-widget-design.md`).
  *
  * Pure decoration, no state, no behavior — feature-internal, used once by `panel-body.tsx`.
  * `pointer-events: none` so it never intercepts clicks/scroll from the message list above it.

@@ -1,5 +1,11 @@
 # CI gate proof — substep 0.5.4
 
+> **Note (2026-10-20).** This is a record of what ran at the time; results are unchanged. Since then
+> the knowledge-scope `-test` tag axis it mentions (`obi-general-test`, `obi-mews-test`, …,
+> `app.allowed_knowledge_scopes`) was retired by ADR-routing-labels-sole-content-axis — routing
+> labels are the only content axis — and the `apps/automation`, `apps/web` and `infra/foundation`
+> folders were renamed to `backend/`, `frontend/` and `knowledge-base/local/`.
+
 Date: 2026-09-16
 Repo: https://github.com/vansteenbergenmatisse/Obi_v1 (public — required for free-tier branch
 protection; see "Deviations" below)

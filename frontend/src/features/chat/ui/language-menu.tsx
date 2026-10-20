@@ -4,7 +4,7 @@
  * Switches the widget's own six-locale UI copy (`model/i18n.ts`) for real — greeting, suggestion
  * chip, composer placeholder, footer, teaser, menu labels all follow the selected locale. Does
  * NOT translate the RAG agent's actual answers; that stays unscoped backend work (see
- * `docs/rag/OBI-WIDGET-DESIGN.md` §5).
+ * `docs/design/obi-widget-design.md` §5).
  */
 "use client";
 

@@ -69,7 +69,6 @@ Required service variables:
 - `OBI_ORIGIN` = the deployed origin, present **at build time** (baked by esbuild).
 - `OBI_INTERNAL_ORIGIN` = a loopback (e.g. `http://127.0.0.1:${PORT}`) so the Edge middleware's
   internal active-domains fetch does not loop back through the public host and 403 the frame.
-- Leave `NEXT_PUBLIC_SHOW_SCOPE_SWITCHER` unset for real embeds.
 
 Must-be-true after deploy (re-run `frontend/scripts/embed-check-live.mjs`):
 - `/obi.js` + `/embed` served from the stable origin.
@@ -79,15 +78,19 @@ Must-be-true after deploy (re-run `frontend/scripts/embed-check-live.mjs`):
 
 ## Who can embed (and the external-domain caveat)
 
-`/embed`'s `frame-ancestors` lists only the domains of **active** `platforms.json` entries. Today the
-only active entry (`obi-test`) carries `obi-web-production.up.railway.app` as a **TEMPORARY test
-allow-list** (added so `/embed` renders on the Railway host during testing — see the 8.4.3 ledger
-entry, deviation 6); it is **not** a durable production domain and is to be removed when the real
-integration lands. So the app can frame itself for testing, but **no external customer domain is
-authorized yet, by design.** A real external host becomes embeddable only when its domain is added to
-an active entry and the backend + frontend redeploy. The confirmed real embed targets (for 8.5.3) are
-**`base.omniboost.io`** (Base) and **`datahub.omniboost.io`** (Data Hub). That positive
-external-domain embed, plus the single/multiple/unsupported/revoked matrix, is substep **8.5.3**.
+`/embed`'s `frame-ancestors` lists only the domains of **active** `platforms.json` entries. The
+embedding partners are **Base** (Marien) and **Data Hub** (Jasper); Mews, Toast and Opera Cloud are
+source/target systems inside a token, never platforms. Today `platforms.json` holds three entries:
+
+- `obi-test` — **active, temporary** (Supabase Auth issuer). Its domains are
+  `obi-web-production.up.railway.app`, `base.development.omniboost.io`, `app.omniboost.io` and
+  `datahub.omniboost.io`. Remove it once a real partner entry is live.
+- `base` — inactive (issuer `https://base.development.omniboost.io`).
+- `datahub` — inactive (issuer and JWKS still TODO).
+
+A domain becomes embeddable only when it is on an active entry and the backend + frontend redeploy.
+The partner integration guide is
+`docs/Final_docs/1-how-partners-integrate-with-obi/how-partners-integrate-with-obi.md`.
 
 ## Known caveats carried from the 8.4.3 deploy (see the ledger entry)
 

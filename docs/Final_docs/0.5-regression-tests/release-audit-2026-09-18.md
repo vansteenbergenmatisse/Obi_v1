@@ -1,5 +1,11 @@
 # Release audit — regression phase 0.5
 
+> **Note (2026-10-20).** This is a record of what ran at the time; results are unchanged. Since then
+> the knowledge-scope `-test` tag axis it mentions (`obi-general-test`, `obi-mews-test`, …,
+> `app.allowed_knowledge_scopes`) was retired by ADR-routing-labels-sole-content-axis — routing
+> labels are the only content axis — and the `apps/automation`, `apps/web` and `infra/foundation`
+> folders were renamed to `backend/`, `frontend/` and `knowledge-base/local/`.
+
 **Date:** 2026-09-18
 **Branch:** `feat/rag-phase-3.5`
 **Commit:** `9a9ab3b` (`chore(rag): update Obi agent/skill harness + project docs for the 0.5 workflow`), plus an uncommitted working tree (the `p0-s0_5-reg-system-overview` regression batch + doc updates).

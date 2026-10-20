@@ -16,10 +16,6 @@ reconciliation (the worker<->reconciliation cycle-breaker); do not hoist it.
 from __future__ import annotations
 
 from .application.event_service import IngestResult, ingest_event
-from .application.knowledge_scope_backfill import (
-    KnowledgeScopeCoverage,
-    verify_knowledge_scope_coverage,
-)
 from .application.ports import IngestionSink, set_ingestion_sink
 from .application.reconciliation import (
     KIND_COMPLETE,
@@ -32,7 +28,6 @@ from .application.reindex import (
     run_reindex,
 )
 from .application.worker import drain, reap
-from .domain.knowledge_scope import KnowledgeScopeResult, resolve_knowledge_scope_tags
 from .domain.scope_resolver import (
     ROOT_TYPE_PAGE,
     ROOT_TYPE_SPACE,
@@ -50,8 +45,6 @@ __all__ = [
     "KIND_COMPLETE",
     "KIND_LIGHTWEIGHT",
     "KIND_REINDEX",
-    "KnowledgeScopeCoverage",
-    "KnowledgeScopeResult",
     "ROOT_TYPE_PAGE",
     "ROOT_TYPE_SPACE",
     "ScopeResolution",
@@ -59,12 +52,10 @@ __all__ = [
     "enqueue_reindex_job",
     "ingest_event",
     "reap",
-    "resolve_knowledge_scope_tags",
     "resolve_scope_roots",
     "resolve_space_scope",
     "router",
     "run_reconciliation",
     "run_reindex",
     "set_ingestion_sink",
-    "verify_knowledge_scope_coverage",
 ]

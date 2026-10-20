@@ -3,7 +3,7 @@
 panel i1-webhook · sync-rules live runner (roadmap substep 4.3)
 
 The runner itself needs a real Confluence + the deployed webhook path, so it has no hermetic
-happy-path test (same stance as ``verify_sync_rules.py`` / ``verify_knowledge_scope_live.py``).
+happy-path test (same stance as ``verify_sync_rules.py``).
 What IS hermetically provable are its refusals — the two gates that keep it from ever mutating
 anything by accident: no ``--yes`` → exit 2 before any client is built; Confluence unconfigured
 (the offline fixture env, exactly what the test settings provide) → exit 2 before any mutation.

@@ -1,5 +1,11 @@
 # The test harness — substep 0.5.1
 
+> **Note (2026-10-20).** This is a record of what ran at the time; results are unchanged. Since then
+> the knowledge-scope `-test` tag axis it mentions (`obi-general-test`, `obi-mews-test`, …,
+> `app.allowed_knowledge_scopes`) was retired by ADR-routing-labels-sole-content-axis — routing
+> labels are the only content axis — and the `apps/automation`, `apps/web` and `infra/foundation`
+> folders were renamed to `backend/`, `frontend/` and `knowledge-base/local/`.
+
 Four commands run on every commit: unit, database, browser, eval. This document names them,
 what each starts and runs, the fixture pages, and the coverage floor. It matches the root
 `Makefile` and `.github/workflows/ci.yml` line for line — the CI file's four steps call these
@@ -246,7 +252,7 @@ carries no override — 1001-2003 are unaffected. See
 
 Run from the repository root, 2026-09-16, after closing out 0.5.1 (the `db` marker split,
 the `tg-deactivate` xfail, and the `.claude/skills/obi-verify/SKILL.md` update to call the
-four root targets — see `docs/Final_docs/0.4-design-review/plan-corrections.md`, p0-s0_2-4,
+four root targets — see the 0.4 design-review plan corrections (removed), p0-s0_2-4,
 mark "changed"). `docs/plan/baseline.md` has no numbers yet, so lint+types and eval report
 PASS with note "no baseline yet" per the skill's own rule. `STAGING_DATABASE_URL` is unset,
 so live is skipped.

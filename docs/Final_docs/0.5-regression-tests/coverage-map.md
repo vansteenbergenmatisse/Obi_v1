@@ -1,8 +1,15 @@
 # Coverage map — substep 0.5.2 (built from substep 0.5.1's test-suite-inventory.md)
 
+> **Note (2026-10-20).** The table rows below point at today's code roots (`backend/`, `frontend/`,
+> `knowledge-base/`). The batch narratives further down are the record of what ran at the time and
+> keep the old `apps/automation`, `apps/web` and `infra/foundation` names; those folders were renamed
+> to `backend/`, `frontend/` and `knowledge-base/local/`. The knowledge-scope `-test` tag axis those
+> narratives describe was retired by ADR-routing-labels-sole-content-axis (routing labels are the
+> only content axis); rows that protected it are marked retired.
+
 Date: 2026-09-16
-Source: `docs/Final_docs/0.3-code-vs-design-audit-2026-09-14/test-suite-inventory.md` (the current, authoritative
-"tests.md" for this repo — the older `docs/Final_docs/0.3-code-vs-design-audit-2026-09-14/tests.md`
+Source: the 0.3 code-vs-design audit's test-suite-inventory.md (removed; the authoritative
+"tests.md" for this repo at the time — the older 0.3 audit tests.md (removed)
 audited against a stale 101-`built`-panel snapshot; 0.4.2 corrected 52 panels' status fields since
 then, and the panel set is now 108 `built`). One row per currently-`built` panel: panel id, title,
 test file, test name, level, green (yes/no). Rows for panels that already have a test copy the
@@ -13,7 +20,7 @@ substep) — not all of them belong to 0.5.2.
 
 **Level note on the frontend rows:** CLAUDE.md's test-level table calls the browser level "Playwright
 against a stub host page." No such suite existed anywhere in this repo before 0.5.1's own new
-`apps/web/e2e/widget-mounts.spec.ts`. Every frontend row below with a `.test.ts`/`.test.tsx` file is
+`frontend/e2e/widget-mounts.spec.ts`. Every frontend row below with a `.test.ts`/`.test.tsx` file is
 actually a **vitest + jsdom component test**, not a real browser — labeled honestly as `component
 (jsdom, not a real browser)` rather than mislabeled `browser`, per the same drift the 0.3.2 audit
 already flagged.
@@ -28,7 +35,7 @@ for 0.5.2 and stay empty here for 0.5.3 or a later substep to fill.
 | `ov-confluence` | Confluence, the source of truth | app/platform/clients/tests/test_confluence_client.py | test_ov_confluence_reads_page_meta_body_labels_restrictions_and_attachments (+2 more: test_ov_confluence_apis_used_v2_for_pages_v1_for_restrictions_members_and_download, test_ov_confluence_client_has_timeout_retries_5xx_and_breaks_after_five_failures) | unit | yes |
 | `ov-auth` | The auth host: the host backend or an agreed auth service | app/features/confluence_sync/tests/test_router_auth_context.py; app/features/rag_agent/tests/test_token_verifier.py | test_bad_token_is_401_before_search, test_body_scope_disagreeing_with_token_is_ignored (+ 7 verifier rejections: test_expired_rejected, test_unknown_issuer_rejected, test_wrong_audience_rejected, test_hs256_rejected, test_missing_iat_rejected, test_partial_business_claims_rejected, test_lifetime_over_platform_max_rejected) | database, unit | yes (in-repo checks) — live-key check tracked red under `ov-auth` step 5 in "needs live" |
 | `ov-corpus` | The Postgres corpus | app/platform/db/tests/test_models_indexes.py | test_ov_corpus_engine_is_postgres16_with_pgvector_and_fulltext_search (+2 more: test_ov_corpus_dense_index_is_hnsw_cosine_m16_ef200, test_ov_corpus_keyword_index_is_gin_over_tsvector) | database | yes |
-| `ov-widget` | The Obi widget | apps/web/src/features/chat/tests/chat-session-provider.test.tsx; chat-client.test.ts; route-handlers.test.ts | ov_widget_embedded_with_scope_from_its_mount_config (+2 more: ov_widget_user_asks_calls_its_own_proxy_route_not_the_backend_directly, ov_widget_proxy_adds_the_server_key_and_streams_the_answer_back) | jsdom | yes |
+| `ov-widget` | The Obi widget | frontend/src/features/chat/tests/chat-session-provider.test.tsx; chat-client.test.ts; route-handlers.test.ts | ov_widget_embedded_with_scope_from_its_mount_config (+2 more: ov_widget_user_asks_calls_its_own_proxy_route_not_the_backend_directly, ov_widget_proxy_adds_the_server_key_and_streams_the_answer_back) | jsdom | yes |
 | `cm-root` | app/main.py: the wiring | app/tests/test_cm_root_wiring.py | test_cm_root_reads_settings (+2 more) | unit | yes |
 | `cm-sync` | features/confluence_sync |  |  |  |  |
 | `cm-ingest` | features/ingestion |  |  |  |  |
@@ -36,12 +43,12 @@ for 0.5.2 and stay empty here for 0.5.3 or a later substep to fill.
 | `cm-agent` | features/rag_agent |  |  |  |  |
 | `cm-platform` | platform/: shared technical capabilities | app/platform/db/tests/test_models_constraints.py | test_chunk_has_exactly_one_canonically_named_source_type_check (+2 more) | unit | yes |
 | `cm-shared` | shared/: small generic helpers | app/shared/tests/test_ttl_cache.py | test_hit_returns_the_stored_value (+13 more) | unit | yes |
-| `cm-scripts` | scripts/: operator tools | app/features/confluence_sync/tests/test_knowledge_scope_backfill.py | test_all_active_chunks_scope_tagged_is_ready (+8 more) | database | yes |
+| `cm-scripts` | scripts/: operator tools | app/features/confluence_sync/tests/test_knowledge_scope_backfill.py (retired: the knowledge-scope backfill and its test were removed with the scope axis) | test_all_active_chunks_scope_tagged_is_ready (+8 more) | database | retired |
 | `cm-docs` | docs/adr: the decisions of record | tests/test_cm_docs.py | test_cm_docs_0001_stack_names_postgres_pgvector_fastapi_nextjs (+2 more) | unit | yes |
-| `cm-web` | apps/web: the widget |  |  |  |  |
+| `cm-web` | frontend: the widget |  |  |  |  |
 | `cm-contracts` | packages/contracts | app/features/rag_agent/tests/test_cm_contracts.py | test_data_cm_contracts_openapi_chat_yaml_is_the_source_of_truth (+2 more) | unit | yes |
 | `cm-tokens` | packages/design-tokens | tests/code_map/test_cm_tokens.py | test_cm_tokens_holds_colors_type_and_tailwind_theme_mapping (+1 more) | unit | yes |
-| `cm-infra` | infra/foundation: local Postgres | tests/tools/test_cm_infra.py | test_cm_infra_pgvector_image_pinned_to_0_8_x (+2 more) | unit | yes |
+| `cm-infra` | knowledge-base/local: local Postgres | tests/tools/test_cm_infra.py | test_cm_infra_pgvector_image_pinned_to_0_8_x (+2 more) | unit | yes |
 | `i1-checks` | Rate limit, size cap, HMAC, parse | app/features/confluence_sync/tests/test_webhook.py | test_missing_signature_is_rejected (+4 more) | database | yes |
 | `i1-ledger` | The event ledger | app/features/confluence_sync/tests/test_webhook.py | test_duplicate_delivery_is_deduped (+3 more) | database | yes |
 | `i1-self` | Was this our own write? | app/features/confluence_sync/tests/test_webhook.py | test_i1_self_ledger_row_marked_done_and_self_generated (+1 more) | database | yes |
@@ -70,7 +77,7 @@ for 0.5.2 and stay empty here for 0.5.3 or a later substep to fill.
 | `tg-change` | Change a label | app/features/confluence_sync/tests/test_scope_tagging_change.py | test_tg_change_label_swap_leaves_no_stale_double_tag (+1 more) | database | yes |
 | `tg-first` | The page is in the index | app/features/confluence_sync/tests/test_scope_tagging_first.py | test_tg_first_page_indexed_with_tags_already_resolved (+1 more) | database | yes |
 | `tg-retag` | Tags updated without a re-embed | app/features/confluence_sync/tests/test_scope_tagging_retag.py | test_tg_retag_metadata_only_touches_tags_and_scope_state_not_version_or_embeddings | database | yes |
-| `r1-proxy` | The widget's proxy route | apps/web/src/platform/automation-api/tests/client.test.ts | r1_proxy_forwards_chat_api_key_as_bearer_auth (+1 more) | jsdom | yes |
+| `r1-proxy` | The widget's proxy route | frontend/src/platform/automation-api/tests/client.test.ts | r1_proxy_forwards_chat_api_key_as_bearer_auth (+1 more) | jsdom | yes |
 | `r1-auth` | Verify who is asking | app/platform/config/tests/test_platforms.py | test_hs256_alg_is_forbidden (+15 more) | unit | yes |
 | `r1-limits` | Limits and validation | app/features/confluence_sync/tests/test_chat_endpoint.py + app/features/rag_agent/tests/test_edge_auth.py | test_r1_limits_rate_limit_keyed_on_token_subject_when_tokened, test_r1_limits_untokened_key_is_client_host_and_ignores_x_forwarded_for (+25 more) | unit, database | yes |
 
@@ -290,7 +297,7 @@ updated to cite the panel-id-named test proving each check.
 9 new tests total (0 + 2 + 3 + 1 + 3). No production code changed — every check in scope was already
 true today; this batch only closed gaps in what proved it.
 
-## p0-s0_5-reg-knowledge-scopes — Protect: Knowledge scopes (5 panels)
+## p0-s0_5-reg-knowledge-scopes — Protect: Knowledge scopes (5 panels) — retired axis, historical record
 
 Done 2026-09-17, one obi-implementer subagent per panel (`tg-add`, `tg-change`, `tg-first`,
 `tg-retag`, `ks-index` — none shared a test file, so 5 subagents ran fully in parallel). `make

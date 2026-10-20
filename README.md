@@ -10,21 +10,28 @@ Confluence webhooks plus scheduled reconciliation.
 This repository is an **Application Platform** monorepo (pnpm + Turbo workspace).
 
 ```text
-apps/
-  web/            Next.js 15 + React 19 + Tailwind. Chat UI; proxies chat SSE to the API.
-  automation/     Python 3.12 + FastAPI. Confluence sync, ingestion, retrieval, RAG runtime, eval.
+backend/          Python 3.12 + FastAPI. Confluence sync, ingestion, retrieval, the RAG runtime, eval.
+frontend/         Next.js 15 + React 19 + Tailwind. The chat widget, the embed frame and loader,
+                  and the proxy that forwards chat to the backend.
+knowledge-base/   The data layer: database schema, Alembic migrations, JSON config
+                  (product catalog, platforms), seeds, and the local pgvector docker-compose.
 packages/
   contracts/      OpenAPI source of truth + generated/hand-written types (chat + Confluence events).
   design-tokens/  Semantic design tokens and the Tailwind theme extension.
-infra/
-  foundation/     Shared infra (Postgres + pgvector via docker-compose).
+services/
+  obi-confluence-sync/  Forge app that forwards Confluence page and label events to the backend.
 docs/
-  adr/            Architecture Decision Records.
+  adr/            Architecture Decision Records (named, not numbered; see docs/adr/README.md).
 ```
 
 TypeScript owns everything a human looks at (and the proxy that serves it). Python owns the
-automation: sync, pipelines, model orchestration, and evaluation. The two languages never
+backend: sync, pipelines, model orchestration, and evaluation. The two languages never
 share code — they agree through `packages/contracts`.
+
+Both apps run on Railway: the frontend at `https://obi-web-production.up.railway.app`
+(deploy with `scripts/deploy-frontend.sh`) and the backend at
+`https://obi-backend-production.up.railway.app` (deploy with `railway up --service obi-backend`
+from the repo root). A git push does not deploy. See `docs/runbooks/`.
 
 ## Prerequisites
 
@@ -47,7 +54,7 @@ Start Postgres (pgvector on host port 5434):
 docker compose -f knowledge-base/local/docker-compose.yml up -d
 ```
 
-Set up the Python automation app:
+Set up the Python backend:
 
 ```bash
 cd backend && uv venv --python 3.12 && uv pip install -e ".[dev]"
@@ -56,10 +63,10 @@ cd backend && uv venv --python 3.12 && uv pip install -e ".[dev]"
 Run database migrations:
 
 ```bash
-uv run alembic upgrade head
+uv run alembic -c ../knowledge-base/migrations/alembic.ini upgrade head   # or `make migrate` from the repo root
 ```
 
-Run the automation test suite:
+Run the backend test suite:
 
 ```bash
 uv run pytest
@@ -72,7 +79,7 @@ make eval
 ```
 
 Run the web app. Next.js does not read the repo-root `.env`, so the chat proxy needs its own
-copy (same `CHAT_API_KEY` value as the root `.env`, plus the automation API's base URL):
+copy (same `CHAT_API_KEY` value as the root `.env`, plus the backend's base URL in `AUTOMATION_API_BASE_URL`):
 
 ```bash
 cp frontend/.env.example frontend/.env.local  # then fill in CHAT_API_KEY to match the root .env
@@ -93,5 +100,4 @@ reranker settings, `DATABASE_URL`, retrieval budgets, and reconciliation schedul
 **`docs/Final_docs/ledger.md` is the single source of truth for current progress** — one line
 per finished substep with commit, tests, and deviations. `docs/Final_docs/obi-action-plan.html`
 is the work list; `docs/plan/decisions.md` and `docs/plan/delta.md` hold open decisions and the
-design-vs-code gap. The pre-Phase-0 `docs/rag/PLAN.md` this section used to point to is archived
-under `docs/_archive/rag-legacy-pre-phase0/` and is no longer authoritative.
+design-vs-code gap.

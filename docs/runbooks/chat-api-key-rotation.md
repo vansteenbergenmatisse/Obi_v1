@@ -64,11 +64,11 @@ ideally from a scheduler once there's a real deploy target (Phase 6).
    once more to pick this up (an empty `chat_api_key_previous` never matches, since
    `_verify_api_key` requires a non-empty token).
 
-## On a real deployment (Phase 6+)
+## On Railway (the live deployment)
 
-Steps 1–4 assume local `.env` files. Once there's a real deploy target, replace the file-editing
-half of `scripts/rotate_chat_api_key.py` with whatever secret store the platform uses (e.g. a
-secrets manager), keeping the same two-step overlap-window shape — generate a new key, set
+Steps 1–4 assume local `.env` files. Both apps now run on Railway (`obi-backend`, `obi-web`), so in
+production the keys are Railway service variables instead of files. Replace the file-editing half
+of `scripts/rotate_chat_api_key.py` with setting those variables (never print their values), keeping the same two-step overlap-window shape — generate a new key, set
 `CHAT_API_KEY_PREVIOUS`/`CHAT_API_KEY`, redeploy, verify, then close the window. Do not skip the
 overlap step even in a "fast" deploy pipeline; that is exactly the naive swap this runbook exists
 to avoid.

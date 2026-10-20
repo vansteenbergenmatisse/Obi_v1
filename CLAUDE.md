@@ -13,7 +13,6 @@ Obi is an accuracy-first RAG chatbot over Omniboost's Confluence pages. It answe
 - `docs/Final_docs/0.5-regression-tests/` is the single home for everything about the 0.5 regression phase — what was done and its proof. Start at its `README.md`, the index to every evidence file: the harness, the per-panel coverage map, the CI gate proof, the live isolation run, the release audit, and `regression-decisions.md` (the owner's settled calls the regression panels build their defaults to). Anything about regression goes here; look here first.
 - `docs/adr/` holds decisions of record. Changing one needs a new ADR.
 - `docs/future-ideas.md` holds deferred ideas: what each is, why it is deferred, where in this plan it would land, and the date added. Not scheduled work.
-- `docs/_archive/` holds superseded docs (pre-Phase-0 legacy, a frozen design snapshot). Not authoritative, never edited. Everything else under `docs/` is archived in Phase 0 and is not authoritative until reviewed.
 
 ## Commands
 
@@ -38,7 +37,7 @@ Three runnable roots plus shared packages. Every new file belongs to exactly one
 
 `backend/` (Python, FastAPI) — business logic and the worker:
 - `app/main.py` is wiring only: settings, engines, services, routers, scheduler. No business rules.
-- `app/features/confluence_sync/` owns ingestion stages 1 and 2: webhook, event ledger, job queue and worker, sweeps, change classification, labels to scope state.
+- `app/features/confluence_sync/` owns ingestion stages 1 and 2: webhook, event ledger, job queue and worker, sweeps, change classification, labels to the index decision.
 - `app/features/ingestion/` owns stages 3 and 4: normalize, chunk, contextualize, attachments, embed, version, swap, garbage collection, rollback.
 - `app/features/retrieval/` owns retrieval stages 2 to 4: hybrid search, fusion, page permissions, rerank wiring, trace writes.
 - `app/features/rag_agent/` owns stages 1 and 5: the chat endpoint, token and key checks, limits, small talk, rewrite, refusal, generation, citations, the support check, prompts, curated knowledge.
@@ -51,7 +50,7 @@ Three runnable roots plus shared packages. Every new file belongs to exactly one
 `knowledge-base/` — the data layer; imports nothing from `backend/`:
 - `schema/` owns database models, enums, roles and policies.
 - `migrations/versions/` holds numbered migrations, each with a downgrade; every schema change on the design page lives in one migration.
-- `config/` holds the tag map and the platform list as JSON. Nothing else may define a tag or a platform.
+- `config/` holds the product catalog (which routing labels exist), the platform list and the reserved `classified` label as JSON. Nothing else may define a routing label or a platform.
 - `seed/` and `local/` hold the curated-knowledge seed and the local pgvector compose.
 
 `frontend/` (Next.js) — the only place UI components live:
@@ -69,7 +68,7 @@ Tests: unit tests with fakes and database tests next to the feature they cover; 
 ### Where a new file goes
 
 Before creating a file, place it by the first rule that fits:
-1. A data concern (a model, a migration, a tag, a seed) → `knowledge-base/`.
+1. A data concern (a model, a migration, a label, a seed) → `knowledge-base/`.
 2. User-facing UI or the widget proxy → `frontend/src/features/<feature>/` when it is feature-owned, or `frontend/src/components/` when it is reused across features.
 3. Owns a backend capability end to end → `backend/app/features/<feature>/`. Extend the owning feature; add a new feature folder only for a genuinely new capability.
 4. A generic technical capability used across features (a client, settings, the queue, logging) → `backend/app/platform/`.
@@ -90,10 +89,10 @@ Exception: database models and enums are imported by full path, not through a fa
 ## Rules that never bend
 
 1. Never disable row security on any Supabase table. Never run the 0009 downgrade on Supabase. Both expose the corpus through the public REST roles.
-2. The request body never decides access. Scope, company, integration and identity come from the verified token. A body scope is checked for shape and membership only: unknown is a 400 before any search; a known value that disagrees with the token is ignored and logged.
-3. One authorization context per request, built at the gate. Every database read (search, rerank text, curated lookup, parent expansion) sets both scope settings from it. No read runs under looser rules than the search.
+2. The request body never decides access. Source and target system, company, integration and identity come from the verified token. A body `knowledge_scope` is checked for shape only and then ignored; it filters nothing.
+3. One authorization context per request, built at the gate. Every database read (search, rerank text, curated lookup, parent expansion) sets its row-security settings (allowed sources, and allowed labels on chunk reads) from it. No read runs under looser rules than the search.
 4. A rebuild embeds the whole page. No vector is reused from an old version.
-5. A page is in the index for one reason: it is published and carries a tag from the tag map. Losing the last tag deactivates it; `classified` deletes it. Folder roots decide nothing.
+5. A page is in the index for one reason: it is published and carries at least one recognized routing label (`obi-general`, `{product}-general`, `{product}-to-{pos|pms|accounting}`, checked against `product_catalog.json`). Losing the last routing label deactivates it; `classified` deletes it. Folder roots decide nothing.
 6. The exact chunk that matched is what the reranker scores and what expands to a parent. Never a stand-in from the same page.
 7. Nothing is sent before every sentence cites a real source and every cited source backs its sentence. Refuse with a reason rather than guess.
 8. At most two extra reads per question: the thin-results refetch and the weak-score fallback. Never a loop.
@@ -128,4 +127,4 @@ Exception: database models and enums are imported by full path, not through a fa
 
 - **Implemented**: deployed and tested on the live store. **Implemented, needs changing**: runs today, the target changes it. **Planned**: not in code. **Unverified**: coded, not applied or not proven live. **Decision needed**: blocked on the owner.
 - **Priority 1**: the exact chunk from search to answer. **Priority 2**: the batched support check before send.
-- **Parent** (about 1200 tokens) is what the answer model reads; **child** (about 400) is what search matches. **Knowledge scope**: a tag from the tag map. **Authorization context**: the one object built at the gate. **The note**: the signed JWT a platform hands the widget. **Locks 0 to 3**: the edge, source row security, scope row security, page permissions.
+- **Parent** (about 1200 tokens) is what the answer model reads; **child** (about 400) is what search matches. **Routing label**: a Confluence label from the product catalog that puts a page in the index and routes it to a directed connection. **Authorization context**: the one object built at the gate. **The note**: the signed JWT a platform hands the widget. **Locks 0 to 3**: the edge, source row security, routing-label row security, page permissions.

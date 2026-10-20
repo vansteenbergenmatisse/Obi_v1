@@ -8,7 +8,7 @@ boundaries before editing.
 
 The FastAPI application (`app/main.py` is wiring only) and its **in-process ingestion worker**:
 
-- `app/features/confluence_sync/` — stages 1–2: webhook receiver, event ledger, job queue + worker, sweeps, label→scope.
+- `app/features/confluence_sync/` — stages 1–2: webhook receiver, event ledger, job queue + worker, sweeps, label→index decision.
 - `app/features/ingestion/` — stages 3–4: normalize, chunk, contextualize, attachments, embed, version, swap, GC.
 - `app/features/retrieval/` — hybrid search, fusion, permissions, rerank, trace writes.
 - `app/features/rag_agent/` — the `/chat` endpoint, token/key checks, limits, refusal, generation, citations, prompts. **Every prompt lives here — no prompt text anywhere else.**
@@ -19,7 +19,7 @@ The FastAPI application (`app/main.py` is wiring only) and its **in-process inge
 
 ## Contracts it shares with the other roots
 
-- **Depends on `knowledge-base/` (upward-facing, hard):** imports the `schema` package (editable path dep, `pyproject.toml` → `../knowledge-base`) for the DB engine/models/enums/RLS; reads `knowledge-base/config/platforms.json` + `knowledge_scopes.json` at boot (via `Path(__file__).resolve().parents[4]`); its Alembic migrations live under `knowledge-base/migrations/`. **The backend cannot build, boot, or migrate without `knowledge-base/` present as a sibling.** It ships *with* the backend in the deploy image.
+- **Depends on `knowledge-base/` (upward-facing, hard):** imports the `schema` package (editable path dep, `pyproject.toml` → `../knowledge-base`) for the DB engine/models/enums/RLS; reads `knowledge-base/config/platforms.json`, `product_catalog.json` and `knowledge_scopes.json` at boot (via `Path(__file__).resolve().parents[4]`); its Alembic migrations live under `knowledge-base/migrations/`. **The backend cannot build, boot, or migrate without `knowledge-base/` present as a sibling.** It ships *with* the backend in the deploy image.
 - **Serves the frontend over HTTP:** the frontend's Next.js proxy calls `POST /chat` server-to-server with the shared `CHAT_API_KEY`. The wire contract is `packages/contracts/src/openapi/chat.yaml` (source of truth; the backend does not import the TS package).
 - **Never imports `frontend/`** — the `make boundaries` gate fails the build on any backend→frontend import.
 

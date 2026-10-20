@@ -36,3 +36,15 @@ production).
 > current "2+ provider labels ⇒ conflict, zero tags" behavior (`resolve_knowledge_scope_tags`),
 > which requirement (4) changes to "ingest once, associate with all". Not built in 1.2.2 (widget
 > display only); to be built in 2.2.4.
+
+> Update 2026-10-20 (state of the code today). The three rows above describe the pre-sync-rules
+> code and are no longer the live gap. The knowledge-scope axis is retired
+> (ADR-routing-labels-sole-content-axis): `knowledge_scopes.json` now holds only the reserved
+> `classified` label, and `confluence_sync/domain/knowledge_scope.py` (with
+> `resolve_knowledge_scope_tags`) no longer exists. Index membership is decided by
+> `confluence_sync/domain/ingest_decision.py`: a page is in the index only while it is published and
+> carries at least one recognized routing label (`obi-general`, `{product}-general`,
+> `{product}-to-{kind}`, from `product_catalog.json`); losing the last one, or carrying
+> `classified`, emits a `delete`. The `scope_state` enum stays unbuilt by owner choice (tags over
+> enum; see `decisions.md` `live-0.5.3-cm-docs`). The one wording nuance — rule 5 says
+> "deactivates", the code purges — is the deliberate choice recorded there.

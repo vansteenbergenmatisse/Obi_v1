@@ -4,7 +4,7 @@
  * Scope: the widget's *own* static strings only (greeting, suggestion chip, composer
  * placeholder, footer disclaimer, teaser, "···" menu labels). It does NOT translate the RAG
  * agent's actual answers — those come back from `backend` in whatever language the model
- * responded in, which is a separate, unscoped backend concern (see `docs/rag/OBI-WIDGET-DESIGN.md`
+ * responded in, which is a separate, unscoped backend concern (see `docs/design/obi-widget-design.md`
  * §5). Translations here are direct, unreviewed renderings of the already-resolved English copy —
  * the same quality bar the mockup's own six-locale table set, not a professionally localized
  * product string set.

@@ -1,5 +1,11 @@
 # Obi Embed Security Core — Requirement Traceability Matrix
 
+> **Note (2026-10-20).** This is a record of what ran at the time; results are unchanged. Since then
+> the knowledge-scope `-test` tag axis it mentions (`obi-general-test`, `obi-mews-test`, …,
+> `app.allowed_knowledge_scopes`) was retired by ADR-routing-labels-sole-content-axis — routing
+> labels are the only content axis — and the `apps/automation`, `apps/web` and `infra/foundation`
+> folders were renamed to `backend/`, `frontend/` and `knowledge-base/local/`.
+
 Synthesis of five independent read-only audits (Browser/iframe, Authorization/retrieval isolation, Confluence/identity permissions, Lifecycle/concurrency/stale-state, Config/migration/CI). One row per requirement, grouped by domain. Status vocabulary: **working** (implemented + tested), **partial** (implemented but a defense-in-depth or test gap), **missing** (a required behavior or its only-enforcement is absent).
 
 > Note on the "15 mandated test-contract items": the mandate's verbatim 15-item list was not supplied in this synthesis run's inputs. Section 1 reconstructs the 15 contracts from the union of mandated security behaviors across the five audits and maps each to covered/partial/missing with evidence. Every mapping is anchored to a concrete requirement row and file evidence below.

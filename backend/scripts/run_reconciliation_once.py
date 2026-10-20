@@ -21,8 +21,7 @@ Usage (from ``backend``, with the DB reachable and Confluence configured):
 
     uv run python scripts/run_reconciliation_once.py
 
-After it reports success, run ``scripts/verify_knowledge_scope_backfill.py`` to confirm the corpus
-is READY before flipping ``enable_knowledge_scope_filtering=true``. This script never flips it.
+It reports how many pages it synced and any errors; a non-zero exit means at least one failed.
 """
 
 from __future__ import annotations
@@ -88,7 +87,7 @@ def main() -> int:
             print(f"  {f}", file=sys.stderr)
 
     ok = not failures and errors == 0
-    print("done — now run scripts/verify_knowledge_scope_backfill.py to confirm READY.")
+    print("done.")
     return 0 if ok else 1
 
 

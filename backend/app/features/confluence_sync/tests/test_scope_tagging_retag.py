@@ -8,13 +8,6 @@ and must leave every other surface untouched: no re-embed (`Chunk.embedding` byt
 new `document_version` row, no pointer swap (`active_doc_version_id` unchanged), and the body
 hashes (`content_hash`/`structure_hash`) unchanged, confirming the body was never touched either.
 
-Not duplicated here: `test_knowledge_scope.py` covers `resolve_knowledge_scope_tags` in isolation
-(pure function, no sync path); `test_scope_resolver.py` covers folder/space roots (unrelated);
-`test_knowledge_scope_backfill.py` covers an already-tagged corpus's retrieval readiness, not this
-transition. `test_scope_tagging_change.py` (panel tg-change) and `test_scope_tagging_add.py`
-(panel tg-add) already prove the "no rebuild" outcome via the `active_doc_version_id` proxy; this
-file is the fuller, more precise version for tg-retag -- it enumerates every touched and untouched
-surface the panel names, not just that one proxy.
 """
 
 from __future__ import annotations

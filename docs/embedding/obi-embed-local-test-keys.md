@@ -1,12 +1,15 @@
-# Obi embed — local test-host keys (PLAN 11.1c, ADR-db-level-customer-scope-isolation-backstop)
+# Obi embed — local test-host keys (ADR-db-level-customer-scope-isolation-backstop)
 
-How to generate the throwaway RS256 key pairs the four `/test-hosts/*` pages use to sign a note
+How to generate the throwaway RS256 key pairs the `/test-hosts/*` pages use to sign a note
 locally, and how the pieces wire together. Nothing here is a real secret — these are local-only
 test issuers, never committed, never reachable outside your machine.
 
+For how a real partner (Base, Data Hub) integrates, see
+[`docs/Final_docs/1-how-partners-integrate-with-obi/how-partners-integrate-with-obi.md`](../Final_docs/1-how-partners-integrate-with-obi/how-partners-integrate-with-obi.md).
+
 ## 1. Generate the key pairs
 
-One RSA key pair per fake platform (`mews`, `toast`, `opera`, `none`):
+One RSA key pair per fake host (`mews`, `toast`, `opera`, `none`, and optionally `quickbooks`):
 
 ```bash
 for name in mews toast opera none; do
@@ -15,7 +18,7 @@ for name in mews toast opera none; do
 done
 ```
 
-## 2. Put them in `apps/web/.env.local`
+## 2. Put them in `frontend/.env.local`
 
 Paste each PEM (including the `BEGIN`/`END` lines) as a double-quoted, multi-line value:
 
@@ -28,58 +31,72 @@ TEST_OBI_PUBLIC_KEY_MEWS="-----BEGIN PUBLIC KEY-----
 -----END PUBLIC KEY-----"
 ```
 
-Repeat for `TOAST`, `OPERA`, `NONE`. See `apps/web/.env.example` for the full list of variable
-names. `apps/web/.env.local` is gitignored — nothing here ever gets committed.
+Repeat for `TOAST`, `OPERA`, `NONE`. See `frontend/.env.example` for the variable names.
+`frontend/.env.local` is gitignored — nothing here ever gets committed.
+
+`TEST_OBI_PRIVATE_KEY_QUICKBOOKS` / `TEST_OBI_PUBLIC_KEY_QUICKBOOKS` are optional: they only
+feed the disabled-source demo (`/test-hosts/quickbooks`, see below). They are not listed in
+`frontend/.env.example`, and `platforms.local.json` has no `test-quickbooks` issuer, so the
+backend cannot verify that token — the loader hides the widget from the decoded
+`source_system` alone.
 
 ## 3. Point both apps at the local platform registry
 
-`config/platforms.local.json` (committed — it holds only public issuer metadata, no keys) defines
-four test issuer entries (`test-mews`/`test-toast`/`test-opera`/`test-none`, all `active: true`,
-domain `localhost:3000`) and maps the JWT `integration` claim values (`mews`/`toast`/`opera-cloud`)
-to the live `obi-*-test` knowledge scopes — the same `integrations` map shape as the real committed
-`config/platforms.json`.
+`knowledge-base/config/platforms.local.json` (committed — it holds only public issuer metadata,
+no keys) defines four test issuer entries (`test-mews`/`test-toast`/`test-opera`/`test-none`,
+all `active: true`, domains `localhost:3000` and `localhost:3100`, JWKS served from
+`http://localhost:3100/.well-known/<issuer>/obi-jwks.json`).
 
 Point the **frontend** at it (same env var name as the backend's `PLATFORMS_PATH` setting):
 
 ```bash
-# apps/web/.env.local
-PLATFORMS_PATH=/absolute/path/to/repo/config/platforms.local.json
+# frontend/.env.local
+PLATFORMS_PATH=/absolute/path/to/repo/knowledge-base/config/platforms.local.json
 ```
 
-Point the **backend** at it too, so `apps/automation`'s `TokenVerifier` trusts the same test
-issuers (its own `Settings.platforms_path` / `PLATFORMS_PATH` env var, `allow_empty_platforms`
-already defaults true in local/test):
+Point the **backend** at it too, so its `TokenVerifier` trusts the same test issuers
+(`Settings.platforms_path` / `PLATFORMS_PATH`, read from `backend/.env`, the root `.env`, or the
+shell; `allow_empty_platforms` already defaults true in local/test):
 
 ```bash
-# apps/automation/.env or shell
-PLATFORMS_PATH=/absolute/path/to/repo/config/platforms.local.json
+# root .env or shell
+PLATFORMS_PATH=/absolute/path/to/repo/knowledge-base/config/platforms.local.json
 ```
 
 ## 4. Run it
 
 ```bash
-# backend
-cd apps/automation && PLATFORMS_PATH=.../config/platforms.local.json uvicorn app.main:app
-
-# frontend
-cd apps/web && CHAT_API_KEY=<matches backend chat_api_key> APP_ENV=local \
-  PLATFORMS_PATH=.../config/platforms.local.json pnpm run dev
+make api        # backend on :8000
+make embed-dev  # frontend on :3100 (rebuilds public/obi.js first)
 ```
 
-Open `http://localhost:3000/test-hosts/{none,mews,toast,opera-cloud}` — each is a bare page
-simulating a third-party site with nothing but the `obi.js` paste template. Click the round
-launcher button in the corner to open the chat, scoped by that page's token.
+Use port 3100, not 3000: the JWKS URLs in `platforms.local.json` point at `localhost:3100`, so a
+token minted on another port does not verify.
+
+Open `http://localhost:3100/test-hosts/{none,mews,toast,opera-cloud}` — each is a bare page
+simulating a host site with nothing but the `obi.js` paste template. Click the round launcher
+in the corner to open the chat. Also available: `/test-hosts/multi`,
+`/test-hosts/connection-switch`, and `/test-hosts/quickbooks` (the widget must stay hidden).
 
 ## How the pieces fit
 
-- `apps/web/src/app/api/test-hosts/[name]/obi-token/route.ts` signs a 60-minute RS256 JWT with
-  `TEST_OBI_PRIVATE_KEY_<NAME>`, `kid: "test-<name>-1"`, `iss` = that test issuer, `aud: "obi"`,
-  and (except for `none`) `company_id`/`company_name`/`integration` business claims.
-- `apps/web/src/app/.well-known/<issuer>/obi-jwks.json` (via a `next.config.ts` rewrite to
-  `/api/test-hosts/jwks/[issuer]`, a real Node.js route) serves the matching PUBLIC key
+- `frontend/src/app/api/test-hosts/[name]/obi-token/route.ts` signs a 60-minute RS256 JWT with
+  `TEST_OBI_PRIVATE_KEY_<NAME>`, `kid: "test-<name>-1"`, `iss` = that test issuer, `aud: "obi"`.
+  - With `?form=directed` it emits the directed claims (`source_system`, `target_system`,
+    `business_id`) — the current contract. The `toast`, `opera-cloud` and `quickbooks` hosts
+    have a directed demo.
+  - Without it, it emits the legacy `company_id`/`company_name`/`integration` claims (none for
+    `none`). The backend still accepts that form, but it no longer routes content.
+- Per ADR-source-system-decides-widget-eligibility only the token's `source_system` decides
+  whether Obi shows: `enabled_sources` in `knowledge-base/config/product_catalog.json` is
+  `mews`, `toast`, `opera-cloud`. The `quickbooks` host's source (`quickbooks-online`) is not
+  enabled, so the widget stays hidden.
+- `/.well-known/<issuer>/obi-jwks.json` is rewritten in `frontend/next.config.ts` to
+  `frontend/src/app/api/test-hosts/jwks/[issuer]/route.ts`, which serves the matching PUBLIC key
   (`TEST_OBI_PUBLIC_KEY_<NAME>`) as a JWKS document, `kid`-matched to the token.
-- The backend's `TokenVerifier` fetches that JWKS URL (recorded in `config/platforms.local.json`)
-  to verify the token's signature, exactly like a real platform's issuer.
+- The backend's `TokenVerifier` fetches that JWKS URL (recorded in `platforms.local.json`) to
+  verify the token's signature, exactly like a real platform's issuer.
+- Host configuration (issuers, kids, claims) lives in `frontend/src/app/api/test-hosts/config.ts`.
 
 ## Regenerating
 

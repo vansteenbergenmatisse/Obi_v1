@@ -82,11 +82,11 @@ manifest change and the generated `package-lock.json`.
 1. **Signed curl** straight at Railway proves secret parity before touching Confluence: build any
    valid JSON body, sign it with the secret, expect 200 `{"accepted": …}`; then flip one body
    byte and expect 401.
-2. **Label smoke**: add label `obi-toast-test` to Toast Testpage `1670873122`, watch
+2. **Label smoke**: add the routing label `toast-general` to Toast Testpage `1670873122`, watch
    `forge logs -e production` for `delivered label_added page=1670873122`, and run (from
    `backend/`): `DATABASE_URL=<supabase> uv run python scripts/smoke_webhook.py 1670873122
-   --require-tag obi-toast-test`. Remove the label; confirm the purge with
-   `scripts/page_state.py`.
+   --require-tag toast-general`. Remove the label; if it was the page's only routing label, confirm
+   the purge with `scripts/page_state.py`.
 3. **Trash → restore** the test page (manual UI legs); confirm purge then rebuild.
 4. Only then the full 8-rule live run (Toast changed, Mews `1670971395` untouched) — owner
    sign-off required first: `scripts/verify_sync_rules.py` is stamped STAGING ONLY.

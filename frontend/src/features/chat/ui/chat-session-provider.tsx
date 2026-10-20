@@ -44,7 +44,7 @@ export interface ChatSession {
   restart: () => void;
   /** The widget's own UI-copy locale (PLAN 4.7.7) — greeting, chip, placeholder, footer, teaser,
    * menu labels. Does not affect the language the RAG agent answers in; that is unscoped backend
-   * work (see `docs/rag/OBI-WIDGET-DESIGN.md` §5). Lives here, not in a component, because both
+   * work (see `docs/design/obi-widget-design.md` §5). Lives here, not in a component, because both
    * `PanelHeader` (which changes it) and `ChatWidget`'s `TeaserPopup` (which reads it, outside
    * `PanelBody`'s subtree) need the same value. */
   locale: Locale;

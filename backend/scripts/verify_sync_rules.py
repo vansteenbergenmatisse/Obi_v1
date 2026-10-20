@@ -3,7 +3,7 @@
 Proves, against a **real Confluence + a real Postgres**, that a Confluence change makes the vector
 store do what the eight sync rules require — the live leg the automated fixture-gateway tests
 (``test_sync_rules_*.py``, all green) mirror offline. Same ownership pattern as
-``verify_knowledge_scope_live.py`` / ``run_reconciliation_once.py``: a one-off operator tool, NOT
+``run_reconciliation_once.py``: a one-off operator tool, NOT
 part of pytest (it needs real network + real credentials + it mutates live Confluence).
 
     ┌─────────────────────────────────────────────────────────────────────────────────────────┐
@@ -29,7 +29,7 @@ scope ``-test`` axis is retired. Membership = published + >=1 recognized routing
              read before and after and must be byte-identical throughout.
 
 The label-driven rules run automatically via the Confluence v1 label API (the read gateway is
-read-only, so writes use a small dedicated client, exactly like ``verify_knowledge_scope_live.py``).
+read-only, so writes use a small dedicated client).
 The physical actions no API here can perform — trash, restore, body edit, rename — pause and prompt
 you to do them in the Confluence UI, then continue on Enter.
 

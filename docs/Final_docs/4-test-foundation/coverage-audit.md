@@ -1,5 +1,11 @@
 # 4.2 · Coverage audit — every contract mapped to a test, and the gaps
 
+> **Note (2026-10-20).** This is a record of what ran at the time; results are unchanged. Since then
+> the knowledge-scope `-test` tag axis it mentions (`obi-general-test`, `obi-mews-test`, …,
+> `app.allowed_knowledge_scopes`) was retired by ADR-routing-labels-sole-content-axis — routing
+> labels are the only content axis — and the `apps/automation`, `apps/web` and `infra/foundation`
+> folders were renamed to `backend/`, `frontend/` and `knowledge-base/local/`.
+
 Date: 2026-10-05 · substep 4.2 (roadmap Step 4, sync-rules §15.2 golf 1) · four read-only
 obi-auditor passes (sync+events · authorization context · RLS/isolation · cache/limits), each
 mapping its contracts to the existing tests with file:line evidence. This file is the distilled,

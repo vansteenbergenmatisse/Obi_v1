@@ -1,5 +1,11 @@
 # Phase-4 embed security loop — wave log
 
+> **Note (2026-10-20).** This is a record of what ran at the time; results are unchanged. Since then
+> the knowledge-scope `-test` tag axis it mentions (`obi-general-test`, `obi-mews-test`, …,
+> `app.allowed_knowledge_scopes`) was retired by ADR-routing-labels-sole-content-axis — routing
+> labels are the only content axis — and the `apps/automation`, `apps/web` and `infra/foundation`
+> folders were renamed to `backend/`, `frontend/` and `knowledge-base/local/`.
+
 Append-only. One section per wave. Never edit a prior wave; a correction is a new dated note.
 
 ## Wave 0 — Research & requirement-traceability matrix (2026-09-22)

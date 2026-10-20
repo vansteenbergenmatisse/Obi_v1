@@ -2,7 +2,7 @@
  * useWidgetVisibility — the launcher/teaser timing state machine (PLAN 4.7.4).
  *
  * Mirrors the original Obi mockup's own `scheduleTeaser`/`onOpen`/`onClose`/`onDismissTeaser`
- * behavior exactly (mockup since removed; see `docs/rag/OBI-WIDGET-DESIGN.md`): the teaser appears 3000ms
+ * behavior exactly (mockup since removed; see `docs/design/obi-widget-design.md`): the teaser appears 3000ms
  * after mount if the panel is still closed; opening the panel cancels any pending teaser and
  * hides it; closing the panel or dismissing the teaser reschedules it to reappear after
  * 20000ms of being closed.

@@ -11,6 +11,11 @@
 > Created 2026-10-13 (Task 3, `docs/Final_docs/sync-rules/plan.md`). Source of the facts and blanks:
 > `partner-facts.md`. Registry shape confirmed against `platforms.json` and `platforms.local.json`;
 > accounting-id check confirmed against `product_catalog.json`.
+>
+> **Update 2026-10-20.** Base's entry is now in `platforms.json` (written 2026-10-16, `active: false`),
+> so the Base section below shows that entry instead of a blank block. Since
+> ADR-source-system-decides-widget-eligibility only the token's **source** is vend-checked and
+> enablement-checked; the target is never checked. Current per-partner state: `partner-facts.md`.
 
 ## The five facts (which map into the block, which do not)
 
@@ -22,29 +27,30 @@
 | 4 | Source/target vend ids | yes | `allowed_integrations` (every value must be a key of the top-level `integrations` map) |
 | 5 | Token-minting endpoint (`tokenUrl`) | **no — partner-side, not stored by us** | used only in the verify sequence below |
 
-Four blanks live inside each JSONC block; the fifth (the token endpoint) is a partner-side blank the
-verify sequence consumes. Both partners are **0 of 5 confirmed** today.
+Three blanks live inside the Data Hub block (its domain came from the owner; Base's entry is already written); the fifth (the token endpoint) is a partner-side blank the
+verify sequence consumes. Which facts each partner has supplied: `partner-facts.md`.
 
 ---
 
-## Base — Marien (NEW entry — add once facts land)
+## Base — Marien (entry already in `platforms.json`, inactive)
 
-Add this key under `"platforms"` in `platforms.json`:
+The entry as written on 2026-10-16:
 
 ```jsonc
 "base": {
-  "issuer": "<<BLANK: issuer — Marien: the exact https iss string Base's tokens carry; a hostname is not an issuer>>",
-  "jwks_url": "<<BLANK: jwks_url — Marien: reachable https JWKS URL, keyed by kid, RS256/ES256>>",
-  "domains": ["<<BLANK: domains — Marien: RECONFIRM exact HTTPS origins, bare host[:port] no scheme (earlier, unconfirmed: app.omniboost.io, base.development.omniboost.io)>>"],
+  "issuer": "https://base.development.omniboost.io",
+  "jwks_url": "https://base.development.omniboost.io/obi/jwks",
+  "domains": ["base.development.omniboost.io", "app.omniboost.io"],
   "lifetime_minutes": 60,
-  "algs": ["RS256", "ES256"],        // confirm which Base signs with; drop the one they don't use
+  "algs": ["RS256"],
   "active": false,                   // flip true only at step 4 of the verify sequence
-  "allowed_integrations": ["<<BLANK: allowed_integrations — Marien: canonical source + target ids Base vends, per customer; every value MUST be a key of the integrations map>>"]
+  "allowed_integrations": ["mews", "toast", "opera-cloud"]   // owner trust decision (decision-needed)
 }
 ```
 
-Fifth blank (partner-side, not in the block):
-`<<BLANK: tokenUrl — Marien: confirmed deployed token-minting endpoint URL (/obi/token was the suggested path; same origin as the embedding page)>>`
+Still open before step 4: the JWKS URL returned HTTP 500 (rechecked 2026-10-20) and must serve JSON
+`keys`; the deployed token endpoint (the one Marien sent is on his local machine); the live issuer and
+JWKS for `app.omniboost.io`.
 
 **Multi-customer context switch (confirmed, supported today).** On a customer/connection switch Base
 re-mints the token for the newly-selected customer (new `business_id` + new source/target) and either
@@ -62,11 +68,11 @@ Replace the current `datahub` entry (`issuer`/`jwks_url` = `"TODO until 4.x"`) w
 "datahub": {
   "issuer": "<<BLANK: issuer — Jasper: real staging iss (local fixture https://pos-pms-laravel.test is a fixture only, not staging)>>",
   "jwks_url": "<<BLANK: jwks_url — Jasper: deployed staging JWKS URL (proposed https://<staging-domain>/.well-known/jwks.json; sample kid datahub-local-1)>>",
-  "domains": ["<<BLANK: domains — Jasper: exact HTTPS staging origin(s), bare host[:port] no scheme (www.datahub.be appeared in our example, NOT confirmed)>>"],
+  "domains": ["datahub.omniboost.io"],   // from the owner 2026-10-16; Jasper to confirm, and whether staging uses another host
   "lifetime_minutes": 60,            // sample used 600 s — within the 60-min cap, fine
   "algs": ["RS256"],                 // sample is RS256; add "ES256" only if they sign with it
   "active": false,                   // flip true only at step 4 of the verify sequence
-  "allowed_integrations": ["<<BLANK: allowed_integrations — Jasper: explicit directed source id → target id + category, per customer; do NOT auto-map toast-opera; every value MUST be a key of the integrations map>>"]
+  "allowed_integrations": ["<<BLANK: allowed_integrations — Jasper: the canonical SOURCE ids the hub vends (only the source is vend-checked); do NOT auto-map toast-opera; every value MUST be a key of the integrations map>>"]
 }
 ```
 
@@ -74,7 +80,8 @@ Fifth blank (partner-side, not in the block):
 `<<BLANK: tokenUrl — Jasper: confirmed deployed staging token-minting endpoint URL (/obi/token example only)>>`
 
 **On `toast-opera`:** do not infer. `legacy_aliases` is `{}` in `product_catalog.json`, so a compound
-claim 400/401s at the gate before any search. Jasper must send `toast` and the PMS/accounting target
+value is refused before any search: as a legacy `integration` claim it is a 400; as `source_system`
+it resolves to nothing, so Obi stays hidden (403 `source_not_enabled`). Jasper must send `toast` and the PMS/accounting target
 as two separate canonical ids with an explicit direction. Request a **fresh** token when staging is
 ready — the sample is expired and locally signed, so decoding it proves nothing about staging auth.
 Keep expiry validation on.
@@ -88,7 +95,9 @@ holds only `mews`, `toast`, `opera-cloud` (`platforms.json` lines 10–14). The 
 `quickbooks-online` and `xero` exist in `product_catalog.json` but are **not** in the `integrations`
 map.
 
-**If a hub vends an accounting target** (`quickbooks-online` or `xero`), add that id as a key to the
+Since ADR-source-system-decides-widget-eligibility only the **source** is vend-checked, so an
+accounting **target** needs no entry here. **If a hub is ever trusted to vend an accounting source**
+(`quickbooks-online` or `xero`; it would also need adding to `enabled_sources`), add that id as a key to the
 top-level `integrations` map **in the same change** that activates the partner — otherwise the
 registry fails to load at startup (every `allowed_integrations` value must be a key of `integrations`).
 The value is an empty list `[]` (the knowledge-scope value lists are retired and empty per ADR-routing-labels-sole-content-axis):
@@ -112,8 +121,8 @@ Add only the accounting id(s) a partner actually vends; do not add ids nothing r
 2. **Endpoint mints a conforming directed JWT.** The partner's token endpoint mints a fresh token
    carrying `iss`, `aud:"obi"`, `sub`, `iat`, `exp` (≤ `lifetime_minutes`), plus `business_id` +
    `source_system` + `target_system`.
-3. **Vend rights.** Every `source_system`/`target_system` the token asserts is in the entry's
-   `allowed_integrations`, and every `allowed_integrations` value is a key of the `integrations` map
+3. **Vend rights.** Every `source_system` the token asserts is in the entry's
+   `allowed_integrations` (the target is never checked), and every `allowed_integrations` value is a key of the `integrations` map
    (add accounting ids per note (a) first).
 4. **Flip `active:true`.** Set the entry's `active` to `true`.
 5. **Redeploy BE + FE.** Redeploy backend and frontend so both pick up the registry change (active

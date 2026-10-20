@@ -83,8 +83,8 @@ thread resets to a fresh chat, and now it cites `mews-to-pos` (*bronze plums*) a
 `toast-to-pms` (*silver pears*). That one flip proves direction and isolation at once.
 
 **Fast cross-check (DB only, one command):** `scripts/verify_directed_routing_live.py` sets a
-`rag_reader` session exactly as the gate does (`app.allowed_sources` / `allowed_knowledge_scopes` /
-`allowed_labels`) and prints, per page, whether the connection can see it versus whether it should:
+`rag_reader` session exactly as the gate does (`app.allowed_sources` / `allowed_labels`;
+the retired `allowed_knowledge_scopes` is set empty and filters nothing) and prints, per page, whether the connection can see it versus whether it should:
 
 ```
 cd backend

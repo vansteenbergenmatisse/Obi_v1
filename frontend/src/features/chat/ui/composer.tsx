@@ -1,6 +1,6 @@
 /**
  * Composer — chat message input (PLAN 4.7.2, pixel-exact reference in `docs/rag/PLAN.md`
- * Phase 4.7's design spec; image attachment added per `docs/rag/OBI-WIDGET-DESIGN.md` §6, sent for
+ * Phase 4.7's design spec; image attachment added per `docs/design/obi-widget-design.md` §6, sent for
  * real vision analysis as of PLAN 7.5).
  *
  * Feature-internal (used once, only by ChatPanel).

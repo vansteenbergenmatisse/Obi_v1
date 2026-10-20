@@ -3,6 +3,23 @@
 > **REOPENED 2026-10-13** — the "CLOSED / fully done" status below is superseded by the active-work
 > block immediately following (target-enablement gate + consolidated integration verification). The
 > historical CLOSED record is kept intact beneath it. Start here.
+>
+> **UPDATE 2026-10-20 — the gate is on the SOURCE, not the target.** ADR-source-system-decides-widget-eligibility
+> (owner, 2026-10-20) supersedes which endpoint the Task 5 gate checks: `enabled_targets` is renamed
+> **`enabled_sources`** (same value, `mews`, `toast`, `opera-cloud`), `TargetNotEnabledError` →
+> **`SourceNotEnabledError`**, reason `target_not_enabled` → **`source_not_enabled`**. An unknown or
+> disabled source → 403 (visibility probe `visible:false`); the target is never checked, and an
+> unknown target routes on `[obi-general, {source}-general]`. The Task 5 text below records what was
+> built on 2026-10-13 and is kept as written; read "target" in its gate wording as "source" for
+> current behaviour. Current status per gate: `widget-target-enablement-hide.md` (frontend) and
+> `5-integration-context/phase-a-validation-cases.md` Case 18. How a partner integrates:
+> `docs/Final_docs/1-how-partners-integrate-with-obi/how-partners-integrate-with-obi.md`.
+>
+> **Removed docs cited below.** `sync-rules/test-proof.md`, `sync-rules/path-b-audit.md`,
+> `0.2-agent-quality/`, `0.4-design-review/` and `5-integration-context/jasper-reply-draft.md` were
+> deleted on 2026-10-20. Mentions of them in the historical sections are kept as provenance; the
+> ledger entries remain the record of what they proved. Old `apps/web` / `apps/automation` paths
+> mean `frontend/` / `backend/`.
 
 ---
 
@@ -206,7 +223,8 @@ remove/empty `enabled_targets` ⇒ feature inert ⇒ today's behavior, no code r
 ### Human testing — one consolidated pass (no case run twice)
 All human validation runs **once, after Task 5 ships**, driven by the Task 2 run-sheet: Phase A Cases
 1–10 (retrieval/eligibility against the seeded/preset corpus) **plus** integration Cases 11–18
-local-harness leg **including the now-live Case 18 gate** (disabled target ⇒ widget hidden + 403).
+local-harness leg **including the now-live Case 18 gate** (unsupported **source** ⇒ widget hidden +
+403 `source_not_enabled`, per ADR-source-system-decides-widget-eligibility; the target is never checked).
 Record every case's evidence; a case is PASS only with human evidence on file (panel `mi-validate`,
 §D.10). The **only** human testing that cannot fold in now is each partner's **staging leg of Cases
 11–18** (needs that partner's issuer/JWKS/token endpoint — 0/5 facts today); those columns stay N/A
@@ -2029,7 +2047,7 @@ pairs that have none.
 | # | Failure mode to prove | Status (per cross-check — confirm in audit) |
 |---|---|---|
 | 1 | Directed happy path (`toast→mews`) returns cited, connection-scoped answers | likely covered |
-| 2 | `toast-opera` compound → **400 before search** (as `source_system` and as legacy `integration`) | covered; lock the code + status |
+| 2 | `toast-opera` compound refused before search (as legacy `integration`: 400; as `source_system`: since 2026-10-20 an unknown source → **403 `source_not_enabled`**, widget hidden) | covered; lock the code + status |
 | 3 | Legacy `integration`/`company_id` token → general content only, never routes | covered (`token_verifier.py:120`) |
 | 4 | Direction flip (`toast→mews` ≠ `mews→toast`) | proven live 2026-10-13 |
 | 5 | Empty connection box → refuse-with-reason, not a wrong answer | confirm at /chat level |
@@ -2048,6 +2066,13 @@ the gate, `make check` green, ledger + progress-log entry, stop and check in. No
 config or a deploy.
 
 ### D. Architecture decision — target-driven visibility, configurable source roles (DESIGN, plan-only)
+
+> **Superseded in part 2026-10-20.** The owner decided that only the **source** system decides widget
+> visibility (ADR-source-system-decides-widget-eligibility): the target is never checked, an unknown
+> target routes on `[obi-general, {source}-general]`, and an unknown or disabled source hides Obi
+> (403 `source_not_enabled`). R2's "the target determines whether the widget appears" and the
+> target-enablement wording below are therefore no longer current; the rest of this section is kept
+> as the 2026-10-13 decision record.
 
 **Decision (to ratify as an ADR, e.g. ADR-widget-hides-via-visibility-probe, when implemented):** *Obi widget eligibility is
 determined by the selected target's enablement on the registered platform, subject to authentication

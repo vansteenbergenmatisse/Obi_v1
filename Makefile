@@ -114,9 +114,7 @@ api:
 
 ## embed-dev: run the frontend on :3100 (NOT :3000) so the local test hosts' JWKS URLs resolve and
 ## a minted test token verifies. Rebuilds public/obi.js first. Pair with `make api`; then open
-## http://localhost:3100/test-hosts/{toast,mews,opera-cloud,multi}. The dev-only scope switcher
-## (the header tag icon) stays off here so the embed matches a real embed; prefix
-## `NEXT_PUBLIC_SHOW_SCOPE_SWITCHER=true` to bring it back for scope-isolation checks (PLAN 10.8).
+## http://localhost:3100/test-hosts/{toast,mews,opera-cloud,multi}.
 embed-dev:
 	cd frontend && pnpm run build:obi && pnpm exec next dev --port 3100
 

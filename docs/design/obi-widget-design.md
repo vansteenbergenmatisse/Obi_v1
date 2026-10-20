@@ -1,9 +1,10 @@
-# Obi widget — frontend design (apps/web)
+# Obi widget — frontend design (frontend/)
 
-> Scope: the floating chat widget UI only (`apps/web/src/features/chat`), not the backend
-> retrieval/answer pipeline — that's [`DESIGN.md`](./DESIGN.md). This is the standalone as-built
-> reference for the widget, kept in sync with the code (not a session-by-session log — that
-> history lives in git and in `PLAN.md`'s own commit trail if it's ever needed). Rewritten
+> Scope: the floating chat widget UI only (`frontend/src/features/chat`), not the backend
+> retrieval/answer pipeline — that's the design page in `docs/Final_docs/` (its components are
+> mapped in `docs/Final_docs/ingestion/` and `docs/Final_docs/retrieval/`). This is the standalone
+> as-built reference for the widget, kept in sync with the code (not a session-by-session log — that
+> history lives in git). "PLAN x.y" references below are to the earlier plan, since removed. Rewritten
 > 2026-08-11 to reflect the widget after it became the app's only chat surface. It was originally
 > built from a proprietary Obi mockup export (reference art only, removed 2026-09-12); this document
 > is now the as-built source of truth for the widget.
@@ -12,7 +13,7 @@
 
 ## 1. Component map (as-built)
 
-All in `apps/web/src/features/chat/ui/`, none promoted to `apps/web/src/components/` yet (each has
+All in `frontend/src/features/chat/ui/`, none promoted to `frontend/src/components/` yet (each has
 exactly one consumer today):
 
 | Component | Role |
@@ -39,7 +40,7 @@ exactly one consumer today):
 footer, attachment notice, teaser, header labels). Does not translate the RAG agent's actual
 answers — see §5.
 
-Public root: `apps/web/src/features/chat/index.ts` exports `ChatWidget` and `ChatSessionProvider`
+Public root: `frontend/src/features/chat/index.ts` exports `ChatWidget` and `ChatSessionProvider`
 only, plus the view-model types. Nothing else imports `ui/**` directly. There is no `ChatPanel` and
 no full-page `/chat` route — both were removed once the widget covered everything they did; the
 widget (launcher/teaser click) is the only way to reach the conversation.
@@ -62,7 +63,7 @@ chip hover fill, `#fdfdfe` message-thread background, `#edeff6` contour-line str
 arbitrary Tailwind values rather than forcing a new single-use token — same precedent as the
 shadows above.
 
-## 3. Motion catalogue (`apps/web/src/app/globals.css` `@keyframes`, every one has a `motion-reduce:` fallback)
+## 3. Motion catalogue (`frontend/src/app/globals.css` `@keyframes`, every one has a `motion-reduce:` fallback)
 
 | Keyframe | Used by | Timing |
 |---|---|---|
@@ -76,7 +77,7 @@ shadows above.
 
 ---
 
-## 4. Pixel spec (condensed reference — the full derivation is in `PLAN.md`'s Phase 4.7 section)
+## 4. Pixel spec (condensed reference — the full derivation is in the earlier plan's Phase 4.7 section, since removed)
 
 ### 4.1 Panel frame
 
@@ -156,9 +157,9 @@ top-right, `teaser-in` entrance. Timing: 3000ms after mount if closed; 20000ms a
 | Mockup's exact visuals | Real Omniboost brand tokens, app-wide, not widget-scoped. |
 | Only chat surface | The floating widget. The old full-page `/chat` route was removed — it added no value once the widget existed everywhere and duplicated the same conversation. |
 | Screenshot capture | **Real** — a real DOM capture (`html-to-image`) of the page behind the widget, landing in the same attachment pipeline as any other image, including the real click-to-zoom below. Only the *analysis* is unbuilt (no vision-capable backend — see §6). |
-| File/paste image attachment | **Real** capture, preview, remove, and click-to-zoom (`image-lightbox.tsx`, PLAN 4.7.8). Honest stub on send (dropped as text-only, with a notice) — no vision backend exists yet. |
+| File/paste image attachment | **Real** capture, preview, remove, and click-to-zoom (`image-lightbox.tsx`, PLAN 4.7.8). Sent with the turn and read by the backend (ADR-vision-grounded-image-analysis), within a per-turn image count cap and a per-image size cap. |
 | Suggestion chip | **Real** — "What can you help me with?" (adapted from the mockup's Stripe-only "My verification status," which had no Confluence equivalent) sent through the real session. |
-| Language switcher (6 locales) | **Real for the widget's own UI copy only** — greeting, chip, placeholder, footer, teaser, header labels. Does **not** change what language the RAG agent answers in; that's the model's own behavior against `apps/automation`, unscoped backend work. Translations are direct/unreviewed, same quality bar as the mockup's own six-locale table. |
+| Language switcher (6 locales) | **Real for the widget's own UI copy only** — greeting, chip, placeholder, footer, teaser, header labels. Does **not** change what language the RAG agent answers in; that is the backend's job (`backend/`: a non-English question is translated to English for search and the checked answer is translated back). Translations are direct/unreviewed, same quality bar as the mockup's own six-locale table. |
 | "Developer docs"/"Support articles" | Disabled stubs until real URLs exist. |
 | "Restart conversation" | Real. |
 | Assistant display name "Obi" | Still the mockup's placeholder, not a confirmed product decision. |
@@ -173,8 +174,8 @@ capture doesn't include the widget itself, captures `document.body` to a PNG `Bl
 `html-to-image`'s `toBlob`, wraps it in a `File`, and hands it to the composer through
 `ComposerHandle.addAttachmentFile` (the composer is a `forwardRef` for exactly this reason) — from
 there it's indistinguishable from a file-picked or pasted image: same thumbnail, same removable
-chip, same click-to-zoom preview (`image-lightbox.tsx`, PLAN 4.7.8), same honest "not answered yet"
-notice on send. A `screenshot-flash` keyframe briefly whites out the panel during the capture,
+chip, same click-to-zoom preview (`image-lightbox.tsx`, PLAN 4.7.8), and sent with the turn
+like any other image (§6). A `screenshot-flash` keyframe briefly whites out the panel during the capture,
 mirroring the mockup's own flash.
 
 **Why a real capture instead of the mockup's fake one:** the mockup fakes an instant, canned
@@ -183,19 +184,17 @@ instead. **Why not `getDisplayMedia()`:** that API requires the user to explicit
 screen-share permission and pick a source each time — a much heavier flow than a one-click
 affordance; `html-to-image`'s DOM-to-canvas approach needs no permission prompt at all.
 
-**What's still not real:** the analysis half. Nothing reads the captured image yet — same gap as
-any other image attachment (§5). A real version needs, in `apps/automation`: a vision-capable model
-call, a decision on whether/how a screenshot participates in retrieval grounding at all, and a
-`securing-http-and-llm-endpoints` pass (upload caps, content-type validation, PII/privacy handling,
-cost/abuse caps) before it ships. **That's `docs/rag/PLAN.md` Phase 7** (scoped 2026-08-11,
-superseding `docs/future-ideas/IDEAS.md` #3's original "Screenshot-grounded guidance" framing) —
-not UI work, and not started.
+**The analysis half** lives in the backend (`backend/app/features/rag_agent`), decided by
+ADR-vision-grounded-image-analysis: a vision-capable model call with per-turn image count and
+per-image byte caps (`chat_max_images_per_turn`, `chat_max_image_bytes`). Images are not checked for
+personal data; the composer tells the user so. This superseded `docs/future-ideas/IDEAS.md` #3's
+original "Screenshot-grounded guidance" framing.
 
 ---
 
 ## 7. Dev-only placeholder backdrop
 
-`apps/web/src/app/dev-preview-backdrop.tsx`, rendered by `app/page.tsx` in place of a bare hero — a
+`frontend/src/app/(site)/dev-preview-backdrop.tsx`, rendered by `app/(site)/page.tsx` in place of a bare hero — a
 static, stateless skeleton block so the floating widget previews in visual context (mirrors the
 mockup's own fake dashboard sitting beside its panel). Route-owned, one consumer, marked "safe to
 delete" in its own doc comment; not a feature, not promoted to `components/`.

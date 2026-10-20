@@ -84,11 +84,11 @@ Every clickable box carries one of these. Every stage section separates "today" 
 
 #### Eight rules that apply everywhere
 
-- **Accuracy before coverage.** Obi refuses and hands off to a human before it guesses. Three code checks enforce this: every sentence must cite a source, a score below the threshold refuses, and the database itself hides rows the caller may not see: by source today, and by scope once migration 0010 is live.
-- **Every read carries one authorization context.** Who is asking, which sources they may see, which scopes they may see, and which pages. The gate builds it once. Every later step uses it. Search, rerank, parent lookup, curated lookup. No step fetches under looser rules.
+- **Accuracy before coverage.** Obi refuses and hands off to a human before it guesses. Three code checks enforce this: every sentence must cite a source, a score below the threshold refuses, and the database itself hides rows the caller may not see: by source, and for a directed chat by routing label.
+- **Every read carries one authorization context.** Who is asking, which sources they may see, which connection (and so which routing labels) they are in, and which pages. The gate builds it once. Every later step uses it. Search, rerank, parent lookup, curated lookup. No step fetches under looser rules.
 - **The database denies by default.** If a step forgets to set its scope, Postgres returns zero rows. Never another customer's rows.
 - **An index update is all or nothing.** A page is rebuilt in staging and then swapped live in one transaction. The live corpus is never half built. Rollback is instant.
-- **Tags in Confluence are the one control surface.** The tag names live in `config/knowledge_scopes.json`. A page is in the index for one reason only: it is published and carries one of those tags. Add the tag and the page goes in. Remove the last tag and the page goes out. Edit the page and the whole page is thrown out and re-uploaded. Add `classified` and the page goes out and stays out.
+- **Labels in Confluence are the one control surface.** The recognized routing labels (`obi-general`, `{system}-general`, `{system}-to-{pos|pms|accounting}`) come from `knowledge-base/config/product_catalog.json` (ADR-routing-labels-sole-content-axis). A page is in the index for one reason only: it is published and carries at least one of those labels. Add the label and the page goes in. Remove the last one and the page goes out. Edit the page and the whole page is thrown out and re-uploaded. Add `classified` and the page goes out and stays out.
 - **Two workflows, never more.** Ingestion and retrieval. Everything on this page belongs to one of the two, or to the store they share. A new source or a new widget adds a stage to one workflow. It never adds a third workflow.
 - **A fixed workflow, never an agent loop.** Each stage is a plain function. Latency is bounded. Every refusal can be audited. At most two extra reads per question: one thin-results refetch in stage 2 under the same auth context, and one weak-score fallback in stage 4 with the person's own words. Never a loop.
 - **The same embedder on both sides.** Pages and questions go through the same model. Change the model and the version stamp forces a full re-embed of the whole corpus.
@@ -173,23 +173,23 @@ _Workflow label shown in the drawer: System overview_
 
 ##### Panel `ov-auth` · The auth host: the host backend or an agreed auth service · [Implemented]
 - Kind: Outside system
-- In plain words: Hands each person a signed card that says which company they belong to, which integration they use, and who they are. Today this is the host's own server.
-- Today: Built: the host issues a signed per-user JWT (iss, aud, sub, iat, exp, company_id, company_name, integration), verified before any search — live-proven for test hosts (commit 59385f4).
+- In plain words: Hands each person a signed card that says which business they belong to, which connection (source and target system) they are looking at, and who they are. Today the partners are Base and Data Hub.
+- Today: Built: the partner (Base or Data Hub) issues a signed per-user JWT (iss, aud, sub, iat, exp, source_system, target_system, business_id), verified before any search — live-proven for test hosts. Both partner entries are inactive until their issuer and JWKS are live; obi-test is the temporary active issuer.
 - Settings and rules:
   | Setting | Value |
   |---|---|
-  | Issues | a signed JWT per user: iss, aud, sub, iat, exp, company_id, company_name, integration |
+  | Issues | a signed JWT per user: iss, aud, sub, iat, exp, source_system, target_system, business_id |
   | Verified by | the backend on every /chat call, before any search |
-  | Never trusted | principal or knowledge_scope from the request body |
+  | Never trusted | principal, scope or connection from the request body |
 - Steps:
-  1. The host backend signs the person in and reads company and integration from its own records.
+  1. The partner's backend signs the person in and reads the business id and the connection (source and target system) from its own records.
   2. It issues a short-lived signed JWT for Obi.
   3. The host page loads the Obi iframe and sends the token by postMessage to the exact Obi origin.
   4. The iframe holds the token in memory and sends it as a bearer header through the proxy.
   5. The backend verifies algorithm, signature, issuer, audience and expiry, then builds the auth context.
 - How to test it:
   - A forged, modified or expired token is a 401.
-  - A body knowledge_scope that disagrees with the token is ignored.
+  - A body field that disagrees with the token is ignored.
 - Target and notes: Open: who signs (the host backend or an agreed service), the key exchange, the permitted host domains, the identity mapping for page permissions. The full design is section 03.2.
 
 ##### Panel `ov-corpus` · The Postgres corpus · [Implemented]
@@ -224,7 +224,7 @@ _Workflow label shown in the drawer: System overview_
 ##### Panel `ov-widget` · The Obi widget · [Implemented]
 - Kind: The widget
 - In plain words: The chat window inside Mews or Toast where a person types a question and gets a cited answer.
-- Today: Built in apps/web. Launcher, teaser, panel, composer, images, screenshot, six locales. Per-user JWT from the host; the shared pilot invite token is retired. The dev-only scope switcher was removed (owner request, 2026-09-23).
+- Today: Built in frontend/. Launcher, teaser, panel, composer, images, screenshot, six locales. Per-user JWT from the partner host, held in memory and forwarded by the proxy as X-Obi-Token; the shared pilot invite token is retired. The dev-only scope switcher was removed (owner request, 2026-09-23). Live at https://obi-web-production.up.railway.app.
 - Steps:
   1. The widget is embedded in a platform's page with a scope from its config.
   2. The user asks. The widget calls its own proxy route.
@@ -300,13 +300,13 @@ _Section id: `checklist`_
 - [ ] New revision: an event arriving while a job is running creates a second job that runs after the first. (ref: 04.1 · i1-enqueue)
 - [ ] Worker claim uses FOR UPDATE SKIP LOCKED with a 120 s lease; reaper frees a dead lease. (ref: 04.1 · i1-claim, i1-reaper)
 - [ ] Retry with backoff, then dead letter; attempt count survives a rollback. (ref: 04.1 · i1-fail, i1-handle)
-- [ ] Daily label sweep: for each slug in knowledge_scopes.json, a Confluence label search across all spaces enqueues every tagged page. (ref: 04.1 · i1-sweep · 05 ks-sweep)
+- [ ] Daily label sweep: for each recognized routing label, a Confluence label search across all spaces enqueues every labelled page. (ref: 04.1 · i1-sweep · 05 ks-sweep)
 - [ ] Folder-root sweep over source_scope removed; source_scope no longer read anywhere in ingestion. (ref: 04.1 · 08.1 source_scope)
 - [ ] Only published pages produce events; a saved draft creates no job (verified with a draft edit). (ref: 03 · 04.1)
 
 #### Ingestion, stage 2 · Decide what changed
 
-- [ ] Labels matched case-insensitively against knowledge_scopes.json; scope_state written as ok / conflict / classified / unlabeled. (ref: 04.2 · i2-labels)
+- [ ] Labels matched case-insensitively against the routing-label forms in product_catalog.json and stamped on chunk.labels; none recognized, or classified, takes the page out (scope_state retired). (ref: 04.2 · i2-labels)
 - [ ] Content fingerprint includes body, structure, title, attachment ids and versions, and parser/chunker/contextualizer/embedding configuration. (ref: 04.2 · i2-hash)
 - [ ] Metadata fingerprint includes labels and read restrictions; a metadata-only change updates in place with no embedding call. (ref: 04.2 · i2-meta, i2-inplace)
 - [ ] Version guard removed for metadata: a label change at an unchanged page version updates the tags column. (ref: 04.2 · i2-classify)
@@ -340,18 +340,18 @@ _Section id: `checklist`_
 - [ ] Rollback repoints to an old version and restores its hashes so the next sync does not report "no change". (ref: 04.4 · i4-rollback)
 - [ ] Test: delete, restore, delete ends inactive with no duplicate version. (ref: 11 · change 2 tests)
 
-#### Knowledge scopes
+#### Labels (knowledge scopes retired)
 
-- [ ] knowledge_scopes.json validated at startup: lowercase, unique, classified always present; a bad entry stops startup with a named error. (ref: 05 · ks-validate)
-- [ ] Adding a slug and deploying is the only setup for a new tag; GET /health lists it as a valid scope. (ref: 05 · ks-edit, ks-deploy)
-- [ ] Removing a slug: pages with only that tag deactivate on the next sweep; pages with another recognized tag stay in. (ref: 05 · ks-orphan)
-- [ ] Rename from obi-*-test to general / mews / toast / classified done, or a decision recorded to keep the test names. (ref: 05 · 11 open)
-- [ ] opera-cloud kept or dropped: decision recorded. (ref: 05 · 11 open)
-- [ ] Widget knowledgeScope validated for shape and membership only; unknown slug returns 400; a known slug that disagrees with the token is ignored and logged; the token decides scope. (ref: 05 · ks-widget · 06.1)
+- [ ] knowledge_scopes.json (now classified only) validated at startup: lowercase, unique, classified always present; a bad entry stops startup with a named error. (ref: 05 · ks-validate)
+- [ ] Adding a system to product_catalog.json and deploying is the only setup for its labels (retired: the scope slug list). (ref: 05 · ks-edit, ks-deploy)
+- [ ] Removing a system: pages with only its labels leave on the next complete sweep; pages with another recognized label stay in. (ref: 05 · ks-orphan)
+- [ ] Retire the obi-*-test names: done, replaced by routing labels (ADR-routing-labels-sole-content-axis). (ref: 05 · 11 open)
+- [ ] opera-cloud kept: in product_catalog.json and enabled_sources. (ref: 05 · 11 open)
+- [ ] A body knowledge_scope decides nothing: shape-validated and ignored; the widget sends none; the verified token decides the connection. (ref: 05 · ks-widget · 06.1)
 
 #### Retrieval, stage 1 · The gate
 
-- [ ] A trusted issuer (host backend or agreed auth service) issues a signed token carrying iss, aud, sub, iat, exp, company_id, company_name, integration. (ref: 06.1 · ov-auth · 03.2 · 11 open)
+- [ ] A trusted issuer (a partner: Base or Data Hub) issues a signed token carrying iss, aud, sub, iat, exp, source_system, target_system, business_id. (ref: 06.1 · ov-auth · 03.2 · 11 open)
 - [ ] Backend verifies host key and user token; company, integration, principal derived from the token; body values ignored (test: a foreign principal in the body is ignored or 401). (ref: 06.1 · r1-auth)
 - [ ] Authorization context has company_id, integration, allowed scopes (integration + general), allowed sources, principal, subject; built once, passed to every read. (ref: 06.1 · r1-ctx)
 - [ ] Rate limit 20/min, history ≤ 20 turns × 4000 chars, images ≤ 4 × 5 MB enforced. (ref: 06.1 · r1-limits)
@@ -419,13 +419,13 @@ _Section id: `checklist`_
 
 #### Embedding and separation of concerns
 
-- [ ] Folder rename approved or declined; if approved, one PR moves apps/web → frontend/, apps/automation → backend/, db + alembic + config + seeds → knowledge-base/, with CI and deploy paths updated and no logic change. (ref: 01.2 · 11 open)
+- [ ] Folder rename done in substep 1.1.1: frontend/, backend/, knowledge-base/ (schema, migrations, config, seed, local), with CI and deploy paths updated and no logic change. (ref: 01.2 · 11 open)
 - [ ] obi.js: one script tag draws the round button and the frame from our domain; Obi.init({ tokenUrl }) is the only platform-side call; Obi.clear() on logout. (ref: 03.2 · em-loader)
 - [ ] obi.js fetches the note from tokenUrl at the click, hands it to the frame over a checked channel (exact Obi origin, parent window only), renews it silently before expiry and after a long idle stretch. (ref: 03.2 · em-loader · em-token)
 - [ ] The note is held in memory only; never in a URL, cookie, web storage, log line or trace row (hash of sub only); the ?access_token= path removed. (ref: 03.2 · em-token · 07 w-token)
-- [ ] platforms.json holds one entry per platform (issuer, key URL, domains, lifetime) plus the integration map; every tag in it exists in knowledge_scopes.json; a bad entry stops startup; an unknown integration is refused; no values gives general only. (ref: 03.2 · em-backend)
+- [ ] platforms.json holds one entry per partner (issuer, key URL, domains, algs, lifetime, active, allowed_integrations) plus the system keys; a bad entry stops startup; a source the partner may not vend is refused (401); a source not in enabled_sources hides Obi (403 source_not_enabled). (ref: 03.2 · em-backend)
 - [ ] Token verifier: algorithm allow-list, key lookup by kid against the platform's entry, iss, aud, exp with 60 s leeway; 401 on any failure with no detail; 503 on an empty platforms.json outside local. (ref: 03.2 · em-backend)
-- [ ] AuthContext carries company_id, company_name, integration, allowed_scopes from the map, allowed_sources, principal, token_subject; every read in one request logs the same scopes. (ref: 03.2 · em-backend · 06.1 r1-ctx)
+- [ ] AuthContext carries company_id (business_id), source and target slugs, platform, allowed_sources, principal, token_subject; every read in one request uses the same routing labels. (ref: 03.2 · em-backend · 06.1 r1-ctx)
 - [ ] Four test host pages on our domain (no values, Mews, Toast, a second Mews company), each with its own note endpoint; the full flow passes on all four before any platform is involved. (ref: 03.2 step 3)
 - [ ] Each platform's domains in platforms.json; CSP frame-ancestors and the message check read the same list. (ref: 03.2 · 07 · 11 open)
 - [ ] Obi.clear() drops the note, the thread and the identity; the next question is refused until a new note arrives. (ref: 03.2 done-when 7)
@@ -453,18 +453,18 @@ _Section id: `concerns`_
 **In plain words (the lede):** Obi has three parts. One frontend: the chat window a person types in. One backend: the code that checks who is asking, then searches and writes the answer. One knowledge base: the Postgres database where every page lives with its tags. A person only ever gets pages whose tags match their integration and which they may read.
 
 Diagram (Top row: the frontend, the backend and the knowledge base as three boxes, joined by HTTPS and SQL. Bottom row: a Mews user gets a signed token, the backend builds an authorization context with the scopes mews and general, the scope policy and page permissions filter the rows, and the answer cites only Mews and general pages.)
-  - labels: THE THREE PARTS · one folder each in the proposed layout; HTTPS; SQL; EXAMPLE · a Mews user, left to right
-  - 1 · Frontend — the chat window and its proxy route / frontend/ (today: apps/web) → panel `sc-frontend`
-  - 2 · Backend — verify, ingest, search, rerank, answer / backend/ (today: apps/automation) → panel `sc-backend`
+  - labels: THE THREE PARTS · one folder each in the proposed layout; HTTPS; SQL; EXAMPLE · a Toast → Mews chat, left to right
+  - 1 · Frontend — the chat window and its proxy route / frontend/ → panel `sc-frontend`
+  - 2 · Backend — verify, ingest, search, rerank, answer / backend/ → panel `sc-backend`
   - 3 · Knowledge base — Postgres: pages, tags, row security / knowledge-base/ (schema, tags, seeds) → panel `sc-kb`
-  - Mews user — signed in at the host → panel `sc-user`
-  - Signed token — integration = mews → panel `em-token` (changes from today)
-  - Auth context — scopes: mews, general → panel `r1-ctx` (changes from today)
-  - Scope policy — tags && {mews, general} → panel `r3-scope` (changes from today)
+  - Partner user — signed in at Base → panel `sc-user`
+  - Signed token — toast → mews → panel `em-token` (changes from today)
+  - Auth context — four routing labels → panel `r1-ctx` (changes from today)
+  - Label policy — labels && session labels → panel `r3-scope` (changes from today)
   - Page permissions — lock 3, per person → panel `r3-acl`
-  - Cited answer — mews + general only → panel `r5-evidence`
+  - Cited answer — those labels only → panel `r5-evidence`
 
-_Top: the three parts and the two channels between them. Bottom: one Mews question, left to right. A page tagged toast is never in the list. A page tagged general is. A Mews page restricted in Confluence to a group the person is not in is dropped by lock 3. Dashed borders mark parts that change from what runs today._
+_Top: the three parts and the two channels between them. Bottom: one Toast → Mews question, left to right. A page labelled only `mews-to-pos` is never in the list. A page labelled `obi-general` is. A page restricted in Confluence to a group the person is not in is dropped by lock 3. Dashed borders mark parts that change from what runs today._
 
 #### What each part owns
 
@@ -472,26 +472,26 @@ _Top: the three parts and the two channels between them. Bottom: one Mews questi
 |---|---|---|---|
 | Frontend | The chat window. The iframe handshake and the token held in memory. The proxy route that adds the host key. Six locales. Rendering of answers, citations, refusals and clarifying chips. | UI components. The proxy route. Shape checks on the request. The iframe bridge. | Decide who may see what. Hold a signing key. Talk to Postgres. |
 | Backend | The webhook and the sweeps. Ingestion. Token verification and the authorization context. Search, rerank, coverage, generation. The citation check and the support check. The audit trail. | The FastAPI app. The five features. The clients for Confluence, OpenAI, Cohere and Claude. The job worker. The eval runner. | Trust a scope or a principal from a request body. Serve a row the database policy hides. Render UI. |
-| Knowledge base | The schema. The two roles and the row policies. The migrations. The tag list. The integration-to-tags map. Curated seed data. The local Postgres for a laptop. | Models and DDL. Alembic versions. Config JSON. Seed scripts. docker-compose. | Hold page content in git. The content lives in Postgres and comes from Confluence. Hold application logic. |
+| Knowledge base | The schema. The two roles and the row policies. The migrations. The product catalog, the partner registry and the reserved `classified` label. Curated seed data. The local Postgres for a laptop. | Models and DDL. Alembic versions. Config JSON. Seed scripts. docker-compose. | Hold page content in git. The content lives in Postgres and comes from Confluence. Hold application logic. |
 
 #### How the three parts talk
 
 | From | To | Channel | Carries | Status |
 |---|---|---|---|---|
-| Browser (chat window) | Frontend proxy | HTTPS `POST /api/chat` on the frontend's own origin | history, images, `knowledgeScope`; the user token as a bearer header (target) | [Implemented, needs changing] |
-| Frontend proxy | Backend | HTTPS `POST /chat`, SSE back | the body as-is, the host key, the user token (target) | [Implemented, needs changing] |
-| Backend | Knowledge base (Postgres) | SQL as `rag_reader` for reads and as the owner for writes | `set_config` for sources and scopes, then the queries | [Implemented] |
+| Browser (chat window) | Frontend proxy | HTTPS `POST /api/chat` on the frontend's own origin | history, images; the user token as a bearer header | [Implemented] |
+| Frontend proxy | Backend | HTTPS `POST /chat`, SSE back | the body as-is, the host key, the user token as `X-Obi-Token` | [Implemented] |
+| Backend | Knowledge base (Postgres) | SQL as `rag_reader` for reads and as the owner for writes | `set_config` for sources and routing labels, then the queries | [Implemented] |
 | Confluence | Backend | webhook `POST /confluence/events`; daily sweeps | page events; label search results | [Unverified] no public URL yet |
 | Knowledge base folder | Postgres | `alembic upgrade head`; seed scripts | schema, roles, policies, curated entries | [Implemented] |
-| Knowledge base folder | Frontend and backend | `knowledge_scopes.json` read at build time and at startup | the tag list; the integration map (proposed) | [Implemented, needs changing] |
+| Knowledge base folder | Frontend and backend | `platforms.json`, `product_catalog.json`, `knowledge_scopes.json` read at startup | the partners, the systems and routing labels, the reserved `classified` label | [Implemented] |
 
-Two rules hold the parts apart. The frontend never decides access, so a bug in the widget cannot widen what a person sees. The backend never reads a row the database would hide, so a bug in the backend cannot either. The only place a tag is defined is the knowledge base folder. Every filter reads that one list.
+Two rules hold the parts apart. The frontend never decides access, so a bug in the widget cannot widen what a person sees. The backend never reads a row the database would hide, so a bug in the backend cannot either. The only place a system (and so a routing label) is defined is the knowledge base folder. Every filter reads that one catalog.
 
-#### The folder structure: today and proposed
+#### The folder structure: before and after the rename
 
-Today the code sits in one monorepo under `apps/`, `packages/`, `config/` and `infra/`. The proposed layout keeps every file and every feature boundary. It moves them under three parent folders so the folder names say what the part is. [Decision needed] The move is a rename with no logic change. Approve it and it ships as one pull request.
+The code used to sit in one monorepo under `apps/`, `packages/`, `config/` and `infra/`. The rename in substep 1.1.1 kept every file and every feature boundary and moved them under three parent folders so the folder names say what the part is. [Implemented] The move was a rename with no logic change.
 
-**Today** [Implemented]
+**Before (retired)**
 
 ```
 repo/
@@ -513,7 +513,7 @@ repo/
 └─ docs/adr/
 ```
 
-**Proposed** [Decision needed]
+**Now** [Implemented]
 
 ```
 repo/
@@ -531,8 +531,9 @@ repo/
 │  ├─ schema/            models, roles, policies
 │  ├─ migrations/        alembic env + versions
 │  ├─ config/
-│  │  ├─ knowledge_scopes.json
-│  │  └─ platforms.json   (new)
+│  │  ├─ knowledge_scopes.json  classified only
+│  │  ├─ product_catalog.json
+│  │  └─ platforms.json
 │  ├─ seed/              curated entries
 │  └─ local/             docker-compose
 ├─ packages/contracts/   chat.yaml, claims, msgs
@@ -541,22 +542,22 @@ repo/
 
 #### What moves where
 
-| Today | Proposed | Why | Status |
+| Before | Now | Why | Status |
 |---|---|---|---|
-| `apps/web/` | `frontend/` | The name says what it is. Nothing inside changes. | [Decision needed] |
-| `apps/automation/` | `backend/` | Same. The five feature folders and the boundary rule stay as they are. | [Decision needed] |
-| `apps/automation/platform/db/` | `knowledge-base/schema/` | Models, roles and policies describe the knowledge base. They belong with it. | [Decision needed] |
-| `apps/automation/alembic/` | `knowledge-base/migrations/` | A migration changes the knowledge base. Run `alembic` from this folder. | [Decision needed] |
-| `config/knowledge_scopes.json` | `knowledge-base/config/knowledge_scopes.json` | The tag list is the one control surface. The frontend and the backend both read it from here. | [Decision needed] |
-| rule in code: scopes = integration + general | `knowledge-base/config/platforms.json` | One file says which tags each integration may see. The backend validates a token's integration against it. | [Planned] |
-| `scripts/seed_curated_knowledge.py` and the entries | `knowledge-base/seed/` | Seed data is knowledge base data. | [Decision needed] |
-| `infra/foundation/` | `knowledge-base/local/` | The compose file only runs a local Postgres. | [Decision needed] |
+| `apps/web/` | `frontend/` | The name says what it is. Nothing inside changes. | [Implemented] |
+| `apps/automation/` | `backend/` | Same. The five feature folders and the boundary rule stay as they are. | [Implemented] |
+| `apps/automation/platform/db/` | `knowledge-base/schema/` | Models, roles and policies describe the knowledge base. They belong with it. | [Implemented] |
+| `apps/automation/alembic/` | `knowledge-base/migrations/` | A migration changes the knowledge base. Run `alembic` from this folder. | [Implemented] |
+| `config/knowledge_scopes.json` | `knowledge-base/config/knowledge_scopes.json` | Config lives with the knowledge base. Since ADR-routing-labels-sole-content-axis the file holds only `classified`. | [Implemented] |
+| rule in code: scopes = integration + general | `knowledge-base/config/platforms.json` | One file lists the partners and which systems each may name as a source. The scope mapping is retired. | [Implemented] |
+| `scripts/seed_curated_knowledge.py` and the entries | `knowledge-base/seed/` | Seed data is knowledge base data. | [Implemented] |
+| `infra/foundation/` | `knowledge-base/local/` | The compose file only runs a local Postgres. | [Implemented] |
 
-> **One dependency direction.** The backend imports the models from `knowledge-base/schema/` as a Python package. The knowledge base folder imports nothing from the backend. The frontend imports neither; it reads the tag list as JSON at build time. The boundary checker (ADR-features-import-only-through-public-root) gets one new rule for this. Deploy config changes with the move: CI paths, Dockerfiles and the hosting config point at the new folders. The move is the only change in that pull request.
+> **One dependency direction.** The backend imports the models from `knowledge-base/schema/` as a Python package. The knowledge base folder imports nothing from the backend. The frontend imports neither; it reads `platforms.json` as JSON. The boundary checker (ADR-folder-dependencies-point-one-way) enforces this. CI paths, Dockerfiles and the hosting config point at the new folders.
 
 #### Example: a Mews user asks a question
 
-1. **A person at Hotel Example signs in to Mews and opens Obi.** Their signed token says `company_id = c_8f3a`, `integration = mews`, `sub = user_19f2`. The chat window holds it in memory. [Planned]
+1. **A person at Hotel Example opens Obi in a partner app (Base or Data Hub) for their Toast → Mews connection.** The partner's signed token says `business_id = B-3075`, `source_system = toast`, `target_system = mews`, `sub = user_19f2`. The chat window holds it in memory. [Implemented]
 2. **The backend verifies the token and builds one authorization context.** Allowed sources: `confluence`. For a directed chat it also carries the routing labels. Principal: from the trusted identity mapping, or none. No knowledge scopes are derived (ADR-routing-labels-sole-content-axis). [Implemented]
 3. **The search transaction sets the content filter.** [Implemented (ADR-routing-labels-sole-content-axis)] Content routing is the routing-label hard filter: `app.allowed_labels` is set from the session's directed-connection labels and `chunk_labels_read` shows a chunk only when its `labels` overlap that set (see section 05.2, panel `mi-hardfilter`). The retired scope filter (`app.allowed_knowledge_scopes` over `chunk.tags`) no longer runs — the scope GUC is opted out to the wildcard. Source/company isolation (`app.allowed_sources` / `chunk_source_read`) is unchanged.
 4. **Lock 3 checks Confluence page permissions.** A Mews page restricted to the finance group is dropped unless the person's principal is in that group. No principal: open pages only. [Implemented]
@@ -580,7 +581,7 @@ _Workflow label shown in the drawer: Separation of concerns_
 ##### Panel `sc-frontend` · One frontend · [Implemented]
 - Kind: Part
 - In plain words: The chat window a person types in, plus the small server route that adds the secret key. It shows answers. It never decides who may see what.
-- Today: frontend/: the Next.js chat widget, its proxy route and iframe bridge — renamed from apps/web in substep 1.1.1 (rename-only, no logic change). Reads the tag list from knowledge-base/config at build.
+- Today: frontend/: the Next.js chat widget, its proxy route and iframe bridge — renamed from apps/web in substep 1.1.1 (rename-only, no logic change). Reads knowledge-base/config/platforms.json on the server for the frame CSP and the loader's allowed domains. Live at https://obi-web-production.up.railway.app.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -589,15 +590,15 @@ _Workflow label shown in the drawer: Separation of concerns_
   | Reads from the knowledge base folder | nothing at build time now - the dev widget scope list generated from the tag list was removed (2026-09-23) |
   | Never | decides access, holds a signing key, opens a database connection |
 - Where in the code:
-  - `apps/web/src/features/chat/` — ui, api, server (proxy), model
-  - `apps/web/src/features/embed/` — iframe bridge and token store (planned)
-  - `apps/web/src/app/api/chat/route.ts` — the proxy entry
+  - `frontend/src/features/chat/` — ui, api, server (proxy), model
+  - `frontend/src/features/embed/` — iframe bridge and token store (planned)
+  - `frontend/src/app/api/chat/route.ts` — the proxy entry
 - Target and notes: Proposed folder: frontend/. A rename with no logic change. See section 01.2 for what moves where.
 
 ##### Panel `sc-backend` · One backend · [Implemented]
 - Kind: Part
 - In plain words: The code that checks who is asking, reads Confluence, builds the index, searches, scores and writes the answer. One backend serves every integration.
-- Today: backend/: FastAPI with the five feature folders under app/, platform clients and the worker — renamed from apps/automation in 1.1.1. The DB layer is no longer app.platform.db; it is the standalone schema package imported from knowledge-base.
+- Today: backend/: FastAPI with the five feature folders under app/, platform clients and the worker — renamed from apps/automation in 1.1.1. The DB layer is the standalone schema package imported from knowledge-base. Live at https://obi-backend-production.up.railway.app.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -606,9 +607,9 @@ _Workflow label shown in the drawer: Separation of concerns_
   | Reads from the knowledge base folder | the models, the roles and policies, the tag list, the integration map (planned) |
   | Never | trusts a scope or principal from a request body, serves a row the database hides, renders UI |
 - Where in the code:
-  - `apps/automation/app/main.py` — wires everything
-  - `apps/automation/features/` — the five features
-  - `apps/automation/platform/` — clients, settings, jobs (and today also db models)
+  - `backend/app/main.py` — wires everything
+  - `backend/app/features/` — the five features
+  - `backend/app/platform/` — clients, settings, jobs (and today also db models)
 - Target and notes: Proposed folder: backend/. The five features and the boundary rule (ADR-features-import-only-through-public-root) stay exactly as they are.
 
 ##### Panel `sc-kb` · One knowledge base · [Implemented]
@@ -619,13 +620,13 @@ _Workflow label shown in the drawer: Separation of concerns_
   | Setting | Value |
   |---|---|
   | Holds in Postgres | pages, versions, chunks with vectors, page restrictions, the queue, the audit trail, curated entries |
-  | Holds in the folder | models and DDL, roles and row policies, alembic versions, knowledge_scopes.json, platforms.json (planned), seed scripts, docker-compose |
+  | Holds in the folder | models and DDL, roles and row policies, alembic versions, knowledge_scopes.json (classified only), platforms.json, product_catalog.json, seed scripts, docker-compose |
   | Filters by | tags (lock 2), source (lock 1), page restrictions (lock 3); the policies run inside Postgres |
   | Never | holds page content in git, holds application logic |
 - Where in the code:
   - `platform/db/models.py, schema.py` — tables, roles, policies
   - `alembic/versions/` — 0001 to 0010
-  - `config/knowledge_scopes.json` — the tag list
+  - `knowledge-base/config/knowledge_scopes.json` — the tag list
   - `scripts/seed_curated_knowledge.py` — curated seeds
 - Target and notes: Proposed folder: knowledge-base/ with schema/, migrations/, config/, seed/ and local/. The backend imports schema/ as a package. The folder imports nothing back.
 
@@ -647,10 +648,10 @@ _Workflow label shown in the drawer: Separation of concerns_
 
 _Section id: `code`_
 
-**In plain words (the lede):** This is the map of the code as it is today. One repository holds everything. The backend is Python under `apps/automation`. The widget is Next.js under `apps/web`. The proposed three-folder layout is in section 01.2 and stays marked as proposed until you approve it.
+**In plain words (the lede):** This is the map of the code as it is today. One repository holds everything. The backend is Python under `backend/`. The widget is Next.js under `frontend/`. Data, migrations and config are under `knowledge-base/` (see section 01.2).
 
 Diagram (Folder map: the backend features confluence_sync, ingestion, retrieval, rag_agent and evaluation, plus platform, shared, alembic, scripts and the scopes config file. The frontend app, the contracts package, the design tokens and the ADR folder.)
-  - labels: apps/automation · the Python backend (FastAPI, SQLAlchemy, Alembic, uv); frontend and shared packages (pnpm)
+  - labels: backend · the Python backend (FastAPI, SQLAlchemy, Alembic, uv); frontend and shared packages (pnpm)
   - app/main.py — wires everything → panel `cm-root`
   - confluence_sync — receive + sweeps → panel `cm-sync`
   - ingestion — chunk, embed, swap → panel `cm-ingest`
@@ -661,14 +662,14 @@ Diagram (Folder map: the backend features confluence_sync, ingestion, retrieval,
   - shared/ — rate limiter, hashing → panel `cm-shared`
   - alembic/versions — 0001 to 0010 → panel `cm-alembic`
   - scripts/ — operator one-offs → panel `cm-scripts`
-  - knowledge_scopes — .json, the scope list → panel `cm-config`
+  - knowledge-base/config — platforms, catalog → panel `cm-config`
   - docs/adr — 14 decisions → panel `cm-docs`
-  - apps/web — the Obi widget → panel `cm-web`
+  - frontend — the Obi widget → panel `cm-web`
   - packages/contracts — chat.yaml, TS types → panel `cm-contracts`
   - design-tokens — colors, type → panel `cm-tokens`
-  - infra/foundation — local Postgres → panel `cm-infra`
+  - knowledge-base/local — local Postgres → panel `cm-infra`
 
-_config/knowledge_scopes.json sits at the repo root, next to apps/ and packages/, so both apps read the same file._
+_The config files sit in knowledge-base/config/, so the backend and the frontend read the same files._
 
 #### Who owns which table
 
@@ -691,8 +692,8 @@ _Workflow label shown in the drawer: Code map_
 - In plain words: Starts the app and plugs every part together.
 - Today: Builds the FastAPI app, the retriever, the answer service, the scheduler, and mounts the two routers.
 - Where in the code:
-  - `apps/automation/app/main.py` — create_app, build_answer_service
-  - `apps/automation/app/platform/config/settings.py` — every knob, read from .env
+  - `backend/app/main.py` — create_app, build_answer_service
+  - `backend/app/platform/config/settings.py` — every knob, read from .env
 - Steps:
   1. Read settings.
   2. Build the reader engine (fails closed without DATABASE_READER_URL outside local).
@@ -702,8 +703,8 @@ _Workflow label shown in the drawer: Code map_
 
 ##### Panel `cm-sync` · features/confluence_sync · [Implemented]
 - Kind: Feature
-- In plain words: The code that talks to Confluence: hears events, runs sweeps, turns labels into tags.
-- Today: Owns receive, decide, sweeps, and the label-to-tag rule. Writes page_source, page_restriction, event_ledger, job, reconciliation_run.
+- In plain words: The code that talks to Confluence: hears events, runs sweeps, decides from the routing labels whether a page belongs in the index.
+- Today: Owns receive, decide, sweeps, and the label membership rule: a page is in when it is published and carries a recognized routing label, and classified removes it (ADR-routing-labels-sole-content-axis). Writes page_source, page_restriction, event_ledger, job, reconciliation_run.
 - Where in the code:
   - `server/webhook.py` — POST /confluence/events
   - `application/event_service.py` — ledger dedup, job keys
@@ -711,7 +712,7 @@ _Workflow label shown in the drawer: Code map_
   - `application/worker.py` — three-transaction job loop
   - `application/sync_service.py` — handle_sync_page, the decision
   - `domain/change_detection.py` — classify
-  - `domain/knowledge_scope.py` — labels to scope tags
+  - `domain/ingest_decision.py` — membership on routing labels (knowledge_scope.py removed)
   - `application/reconciliation.py` — daily and complete sweeps
   - `domain/scope_resolver.py` — source_scope roots (retiring)
 
@@ -735,7 +736,6 @@ _Workflow label shown in the drawer: Code map_
   - `infrastructure/search_repo.py` — dense_search, keyword_search, GUCs, rerank texts, parents
   - `domain/fusion.py` — reciprocal_rank_fusion
   - `domain/permission.py` — classify_scope, PrincipalPermissionPolicy
-  - `domain/knowledge_scope.py` — resolve_allowed_scopes
   - `infrastructure/trace_repo.py` — write_query_trace
 
 ##### Panel `cm-agent` · features/rag_agent · [Implemented]
@@ -773,7 +773,7 @@ _Workflow label shown in the drawer: Code map_
   - `platform/clients/embeddings_client.py` — OpenAI, Voyage, fake, local
   - `platform/clients/reranker_client.py` — Cohere, fake
   - `platform/clients/anthropic_client.py` — Claude messages with images
-  - `platform/config/settings.py, knowledge_scopes.py` — settings and the scope-list loader
+  - `platform/config/settings.py, knowledge_scopes.py, platforms.py, product_catalog.py` — settings and the scope-list loader
   - `platform/jobs/queue.py` — enqueue, claim, complete, fail, reap
 
 ##### Panel `cm-shared` · shared/: small generic helpers · [Implemented]
@@ -847,19 +847,20 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ##### Panel `cm-scripts` · scripts/: operator tools · [Implemented]
 - Kind: Folder
 - In plain words: One-off tools an operator runs by hand.
+- Today: The knowledge-scope scripts (verify_knowledge_scope_backfill.py, verify_knowledge_scope_live.py) were removed with the retired scope axis (ADR-routing-labels-sole-content-axis).
 - Where in the code:
   - `setup_supabase.py` — preflight, provision-reader, verify-isolation
   - `seed_source_scope.py` — folder roots (retiring)
   - `seed_curated_knowledge.py` — upsert curated entries
   - `run_reconciliation_once.py` — one manual sweep
-  - `verify_knowledge_scope_backfill.py` — readiness gate: zero untagged chunks
-  - `verify_knowledge_scope_live.py` — add, edit, remove a real label and check the DB
   - `rotate_chat_api_key.py` — overlap-window key rotation
+  - `backfill_labels.py` — stamp raw routing labels on already-indexed pages
+  - `verify_directed_routing_live.py` — check directed routing against the live store
 
-##### Panel `cm-config` · config/knowledge_scopes.json: the scope list · [Implemented]
+##### Panel `cm-config` · knowledge-base/config/knowledge_scopes.json: the reserved classified label · [Implemented]
 - Kind: File
-- In plain words: The tag list. A Confluence label in this file is a knowledge scope; add a name to add a tag.
-- Today: Loaded and validated at startup (fails if obi-general-test or classified is missing); classified is present but excluded from the recognized set, from GET /health, and from the widget list. Each entry carries name + label + description. The dev-only widget scope switcher that used to be generated from this file was removed (owner request, 2026-09-23); the file now drives the backend recognized-scope set and /health only, not any client-side list. platforms.json now sits beside it under knowledge-base/config/, loaded + validated at startup after the tag map (substep 1.2.3): six ordered rules each naming the offending entry, general added by the loader and never hand-listed, exposing allowed_scopes_for + platform_for; datahub is the first active platform and is logged at boot.
+- In plain words: The reserved label file. It holds only classified; a classified Confluence label takes a page out of the index.
+- Today: Retired as a tag list by ADR-routing-labels-sole-content-axis (2026-10-12): the file now holds only the reserved classified entry; startup validation still requires it, lowercase and unique. Routing labels are validated against product_catalog.json instead. platforms.json sits beside it under knowledge-base/config/: the partners (base and datahub, inactive; obi-test, temporary and active), each with issuer, jwks_url, domains, algs, lifetime_minutes, active and allowed_integrations; its integrations map keeps the system keys with empty lists. The brief runbooks in docs/Final_docs/brief/ describe adding a system and a partner.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -868,7 +869,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
   | Matching | case-insensitive, exact |
   | Next to it (planned) | platforms.json: one entry per platform (issuer, key URL, domains) plus which tags each integration may see |
 - Where in the code:
-  - `config/knowledge_scopes.json` — the list
+  - `knowledge-base/config/knowledge_scopes.json` — only classified
   - `platform/config/knowledge_scopes.py` — load_recognized_knowledge_scopes
 - Code:
 ```
@@ -890,7 +891,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
   | 0005 | reranking and the answer pipeline |
   | 0008 | clarification fallback |
   | 0009 | image analysis |
-  | 0011 | knowledge scopes |
+  | 0011 | routing labels (knowledge scopes retired) |
   | 0013 | Supabase on AWS, NO FORCE RLS |
   | 0014 | scope RLS backstop |
 - Target and notes: Changing any fixed decision needs a new ADR. The changes on this page need at least one: the fingerprint, scope_state, label-gated ingestion, and the edge token.
@@ -903,7 +904,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
   - `src/features/chat/ui/` — launcher, teaser, panel, composer, bubbles, menus
   - `src/features/chat/api/chat-client.ts` — SSE parsing
   - `src/features/chat/server/route-handlers.ts, validation.ts, auth.ts` — the proxy
-  - `src/features/chat/model/` — messages, i18n, knowledge-scopes
+  - `src/features/chat/model/` — messages, i18n, standalone presets
   - `src/app/api/chat/route.ts` — thin route entry
   - `src/features/embed/` — iframe bridge, token store (planned, section 03.2)
 
@@ -975,8 +976,7 @@ Each event carries the page id, the page version, the space id, the actor, a tim
 | reranker_model | rerank-v3.5 | rerank-v3.5 (v4.0 exists; swap only with a threshold retune) | settings.py:83 |
 | answer_model / routing_model | claude-sonnet-5 / claude-haiku-4-5 | same | settings.py:57-58 |
 | refusal_min_rerank_score | 0.10 (provisional) | 0.10 | settings.py:99 |
-| enable_knowledge_scope_filtering | false | true | .env |
-| knowledge scopes | the JSON file | obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test | config/knowledge_scopes.json |
+| enabled_sources | every product when absent | mews, toast, opera-cloud | knowledge-base/config/product_catalog.json |
 
 > **The .env wins over the code default.** [Decision needed] The code says Voyage at 1024 dims. The deployed .env says OpenAI at 3072 dims. Both paths exist and both are tested. The live index uses the OpenAI 3072 path (a `halfvec` cast). Pick one as the default in code so a fresh deploy with no .env does not build a different index by surprise.
 
@@ -1000,7 +1000,7 @@ _Section id: `glossary`_
 | RRF | Reciprocal rank fusion. Merges the two ranked lists into one. Score = sum of 1 / (60 + rank). Ranked item: child chunk id (target), page id (today). |
 | Reranking | A cross-encoder (Cohere) reads the question and one passage together and returns a relevance score. Runs on the fused candidates. |
 | Context | The final set of parent passages handed to the answer model, after expansion, dedupe, and the token budget. The coverage check runs on this. |
-| Knowledge scope | A tag. One of the names in `config/knowledge_scopes.json`. Decides which pages a widget may see. |
+| Knowledge scope | Retired (ADR-routing-labels-sole-content-axis). A routing label now decides which pages a chat may use; `knowledge-base/config/knowledge_scopes.json` holds only `classified`. |
 | Authorization context | The one object stage 1 of retrieval builds: company, integration, allowed scopes, allowed sources, principal. Every read uses it. |
 | Company | The tenant: a hotel or restaurant group. Comes from the token as `company_id`. Tags do not know about companies; a company rule is a separate decision. |
 | Integration | The system the company runs: `mews`, `toast`, `opera-cloud`. Comes from the token. Maps to the allowed tags through `platforms.json`. |
@@ -1016,48 +1016,48 @@ _Section id: `glossary`_
 
 _Section id: `embed`_
 
-**In plain words (the lede):** A platform like Mews or Toast adds one script tag to its page. Our script draws a round Obi button at the top of the screen. Click it and the chat window pops up. At that click the script fetches a short signed note from the platform's own server that says who this is: an id, the company name and the integration. Obi checks the note and answers from the pages that integration may see. No values on the note: general pages only.
+**In plain words (the lede):** A partner (today Base and Data Hub) adds one script tag to its page. Our script draws a round Obi button. Click it and the chat window pops up. At that click the script fetches a short signed note from the partner's own server that says who this is and which connection they are looking at: a business id, the source system and the target system (for example Toast → Mews). Obi shows only when the source system is enabled, and answers from the pages carrying that connection's routing labels. Mews, Toast and Opera Cloud are systems inside the note, not partners. The partner-facing guide is `docs/Final_docs/1-how-partners-integrate-with-obi/how-partners-integrate-with-obi.md`.
 
-> **Status.** [Planned] The script, the frame, the note and its check do not exist yet. Today one shared key and one shared pilot token do this job. Two calls are made on this page: the note is fetched at the button click, and it lives about an hour with silent renewal. Both are settings, so either can change without touching the design.
+> **Status.** [Implemented] The script, the frame, the note and its check are built and proven on our test host pages; the frontend runs at `https://obi-web-production.up.railway.app` and the backend at `https://obi-backend-production.up.railway.app`. Both partner entries (`base`, `datahub`) are inactive until their issuer and key URL are live. The note is fetched at the button click and lives about an hour with silent renewal; both are settings.
 
-> **What this protects.** Obi holds verified, shareable knowledge. It keeps Mews content and Toast content apart and honors Confluence page permissions. It is not a vault. Secrets never enter it, and a page labeled `classified` is deleted from the index. The note is readable by anyone who holds it. The signature only proves nobody changed it.
+> **What this protects.** Obi holds verified, shareable knowledge. It routes each connection to its own labelled pages and honors Confluence page permissions. It is not a vault. Secrets never enter it, and a page labeled `classified` is deleted from the index. The note is readable by anyone who holds it. The signature only proves nobody changed it.
 
 #### Who talks to whom
 
 Diagram (On the platform's page: one script tag loads obi.js from our domain, which draws the button and the frame; at the click it fetches a signed note from the platform's own server; it hands the note to the frame and renews it silently. At Obi: the backend checks the note, picks the pages the integration may see, and answers with citations.)
-  - labels: ON THE PLATFORM'S PAGE · Mews, Toast, an Omniboost app; AT OBI
+  - labels: ON THE PARTNER'S PAGE · Base, Data Hub; AT OBI
   - 1 · One script tag: obi.js — our script, from our domain / draws the round button and the frame → panel `em-loader` (changes from today)
-  - 2 · The platform's server — one endpoint signs a short note / id · company name · integration, or none → panel `em-hostbackend` (changes from today)
+  - 2 · The platform's server — one endpoint signs a short note / business id · source · target → panel `em-hostbackend` (changes from today)
   - 3 · obi.js holds the note — fetched at the click, kept in memory / renewed silently, sent with every question → panel `em-token` (changes from today)
   - 4 · Obi checks the note — real, meant for Obi, not expired / bad note: refused, no search → panel `em-backend` (changes from today)
-  - 5 · Obi picks the pages — mews → mews + general / no values → general only → panel `em-kb` (changes from today)
+  - 5 · Obi picks the pages — toast→mews → four labels / source off → Obi hidden → panel `em-kb` (changes from today)
   - 6 · Obi answers — cited from those pages only / page permissions still apply → panel `ov-answer`
 
-_Solid borders run today. Dashed borders are the new part. The platform writes no UI and no messaging code. Box 2 is the one thing it builds._
+_The partner writes no UI and no messaging code. Box 2 is the one thing it builds._
 
 #### The plan, step by step
 
 We build the script and the frame once. We prove the whole flow on our own test pages first. Then every platform gets the same template and follows it with its own values. Our code does not change per platform; one config entry does. Changes to the button or the chat ship from our side, and the platform redeploys nothing.
 
-| Step | We do (Obi) | The platform does (Mews, Toast, the next one) |
+| Step | We do (Obi) | The partner does (Base, Data Hub) |
 |---|---|---|
 | 1 | Build the frame page (the round button and the chat window) and `obi.js`, the script that draws the frame, fetches the note, renews it and talks to the frame. |  |
-| 2 | Change the backend so it accepts the note: check the signature, read the three values or none, pick the tags. Trusted platforms live in `platforms.json`, one entry each, with the note lifetime per platform. |  |
-| 3 | Build four test host pages on our own domain. Each one has its own note endpoint that hands out a different set of values: none; a Mews company; a Toast company; a second Mews company. Run the whole flow on all four: click, note, check, answers, silent renewal after an hour, logout. |  |
+| 2 | Change the backend so it accepts the note: check the signature, read source, target and business id, check the source, build the routing labels. Trusted partners live in `platforms.json`, one entry each, with the note lifetime per partner. |  |
+| 3 | Build four test host pages on our own domain. Each one has its own note endpoint that hands out a different note: none; Toast → Mews; Opera Cloud → Toast; a disabled source (QuickBooks Online → Mews). Run the whole flow on all four: click, note, check, answers, silent renewal after an hour, logout. |  |
 | 4 | Hand over the template below: one script tag, one init call, the note structure, the four things we need back, and one of the test pages to copy. | Read it. Name one engineer. |
-| 5 |  | Send us four things: the issuer name it will put on the note, the public key URL, the domains the button will live on, and the integration value it will send. |
+| 5 |  | Send us three things: the issuer name it will put on the note, the public key URL, and the domains the button will live on. |
 | 6 | Add the platform's entry to `platforms.json`. Deploy. |  |
 | 7 |  | Add the script tag and the init call to the page. |
-| 8 |  | Build one endpoint, `/api/obi-token`: signed-in people only; the three values from its own session, or none; signed with its private key; lifetime as agreed. |
-| 9 | Run the checks at the bottom against the platform's test company. | Give us a test company per integration and one test user in a restricted Confluence group. |
-| 10 | Next platform: repeat 6 and 9. | Next platform: repeat 5, 7, 8 and 9 with its own values. Same template. |
+| 8 |  | Build one endpoint, `/api/obi-token`: signed-in people only; business id, source and target from its own records; signed with its private key; lifetime as agreed. |
+| 9 | Run the checks at the bottom against the platform's test company. | Give us a test business per connection and one test user in a restricted Confluence group. |
+| 10 | Next partner: repeat 6 and 9. | Next partner: repeat 5, 7, 8 and 9 with its own values. Same template. |
 
-#### The template every platform follows
+#### The template every partner follows
 
 **A · One script tag and one init call.** The only line the platform edits is the address of its own note endpoint. Two technical notes. First: `obi.js` runs inside the platform's page, so `fetch(tokenUrl)` is a same-origin request and carries the platform's session cookie by itself; no CORS is needed as long as the endpoint lives on the same origin as the page. If the platform serves it from another origin, that endpoint must allow the page's origin with credentials. Second: the frame page `/embed` is served with a `Content-Security-Policy: frame-ancestors` header built at request time from every domain in `platforms.json`; with an empty list outside local the frame returns 403 instead of rendering.
 
 ```
-<script src="https://obi.omniboost.com/obi.js"></script>
+<script src="https://obi-web-production.up.railway.app/obi.js"></script>
 <script>
   Obi.init({ tokenUrl: "/api/obi-token" });   // your endpoint (step 8)
 
@@ -1070,13 +1070,13 @@ We build the script and the frame once. We prove the whole flow on our own test 
 |---|---|
 | Draws the round button and opens the chat window in a frame from our domain. Fetches the note from `tokenUrl` at the click. Hands it to the frame over a checked channel. Renews it silently before it expires and after a long idle stretch. On `Obi.clear()` forgets the note and the chat. | An iframe tag. Messaging code. Origin checks. Renewal timers. Any UI. |
 
-**B · The note.** The platform's server signs and returns this from `/api/obi-token`, for signed-in people only. The three business fields are optional. Send all three or none.
+**B · The note.** The partner's server signs and returns this from `/api/obi-token`, for signed-in people only. The three connection fields go together.
 
-**Default: no values** → general pages only
+**No connection** → not a directed chat: no routing labels are set, so the label filter does not narrow the search
 
 ```
 {
-  "iss": "https://app.mews.com",
+  "iss": "https://base.development.omniboost.io",
   "aud": "obi",
   "sub": "the person's id",
   "iat": 1757577600,
@@ -1084,87 +1084,85 @@ We build the script and the frame once. We prove the whole flow on our own test 
 }
 ```
 
-**With the three values** → that integration + general
+**With a connection** → its four routing labels
 
 ```
 {
-  "iss": "https://app.mews.com",
+  "iss": "https://base.development.omniboost.io",
   "aud": "obi",
   "sub": "the person's id",
   "iat": 1757577600,
   "exp": 1757581200,
-  "company_id": "c_8f3a",
-  "company_name": "Hotel Example Group",
-  "integration": "mews"
+  "source_system": "toast",
+  "target_system": "mews",
+  "business_id": "B-3075"
 }
 ```
 
 | Field | Rule |
 |---|---|
-| iss | the platform's name, the same string it sends us in step 5 |
+| iss | the partner's issuer, the same string it sends us in step 5 |
 | aud | always `obi` |
-| sub | the person's id at the platform, stable, not an email |
+| sub | the person's id at the partner, stable, not an email |
 | iat, exp | issued now; expires after the agreed lifetime (default 60 minutes) |
-| company_id | the company's stable id; goes on the audit trail |
-| company_name | shown in the chat header; never decides access |
-| integration | one of the values in our map: `mews`, `toast`; anything else is refused |
+| source_system | the system the data comes from; decides whether Obi shows. Must be one the partner may vend (`allowed_integrations`, else 401) and in `enabled_sources` (`mews`, `toast`, `opera-cloud`; else 403 `source_not_enabled`) |
+| target_system | the system the data goes to; never checked, only picks routing labels. Unknown: `obi-general` + `{source}-general` |
+| business_id | the business's stable id; the company-isolation key and the audit trail; never decides content |
 | signature | RS256 or ES256, private key on the platform's server, key id in the header |
 
-**C · What we need back, once per platform.**
+**C · What we need back, once per partner.**
 
 | Item | Example |
 |---|---|
-| issuer name | `https://app.mews.com` |
-| public key URL | `https://app.mews.com/.well-known/obi-jwks.json` |
-| domains | `app.mews.com`, `staging.mews.com` |
-| integration value | `mews` |
+| issuer name | `https://base.development.omniboost.io` |
+| public key URL | `https://base.development.omniboost.io/obi/jwks` |
+| domains | `base.development.omniboost.io`, `app.omniboost.io` |
 
-#### One template, many platforms
+#### One template, two partners
 
-Each platform is one entry in our config. Nothing else in our code knows the platform's name. The lifetime sits in the entry, so one platform can run an hour and another fifteen minutes.
+Each partner is one entry in `knowledge-base/config/platforms.json`. Nothing else in our code knows the partner's name. The lifetime sits in the entry. The committed entries (excerpt; `obi-test` is a temporary third entry):
 
 ```
 {
   "platforms": {
-    "mews": {
-      "issuer":   "https://app.mews.com",
-      "jwks_url": "https://app.mews.com/.well-known/obi-jwks.json",
-      "domains":  ["app.mews.com"],
-      "lifetime_minutes": 60
+    "base": {
+      "issuer":   "https://base.development.omniboost.io",
+      "jwks_url": "https://base.development.omniboost.io/obi/jwks",
+      "domains":  ["base.development.omniboost.io", "app.omniboost.io"],
+      "lifetime_minutes": 60, "algs": ["RS256"], "active": false,
+      "allowed_integrations": ["mews", "toast", "opera-cloud"]
     },
-    "toast": {
-      "issuer":   "https://pos.toasttab.com",
-      "jwks_url": "https://pos.toasttab.com/.well-known/obi-jwks.json",
-      "domains":  ["pos.toasttab.com"],
-      "lifetime_minutes": 60
+    "datahub": {
+      "issuer":   "TODO until 4.x",
+      "jwks_url": "TODO until 4.x",
+      "domains":  ["datahub.omniboost.io"],
+      "lifetime_minutes": 60, "algs": ["RS256"], "active": false,
+      "allowed_integrations": ["mews", "toast", "opera-cloud"]
     }
   },
-  "integrations": {
-    "mews":  ["mews", "general"],
-    "toast": ["toast", "general"]
-  }
+  "integrations": { "mews": [], "toast": [], "opera-cloud": [] }
 }
 ```
 
 | Changes per platform | Stays the same |
 |---|---|
-| the issuer name, the public key, the domains, the lifetime, the integration value, the note endpoint on its side | `obi.js`, the frame, the init call, the note structure, our backend code, the knowledge base |
+| the issuer name, the public key, the domains, the lifetime, the systems it may vend, the note endpoint on its side | `obi.js`, the frame, the init call, the note structure, our backend code, the knowledge base |
 
 #### Why the note stays signed
 
-Values typed into the page can be changed by anyone with the browser's developer tools open. A Mews user could set `integration: "toast"` and read Toast documentation. With a signed note that edit breaks the signature and the request is refused. Today that only guards shareable documentation. The moment one company-specific page or one restricted page enters the knowledge base, the signature is what stops anyone from claiming any company. The platform pays for this once, with one small endpoint.
+Values typed into the page can be changed by anyone with the browser's developer tools open. A user could set `source_system: "toast"` and open Obi for a connection they do not have. With a signed note that edit breaks the signature and the request is refused. Today that only guards shareable documentation. The moment one company-specific page or one restricted page enters the knowledge base, the signature is what stops anyone from claiming any company. The platform pays for this once, with one small endpoint.
 
 #### Done when
 
 1. All four test host pages pass the checks below before any platform is involved.
-2. A Mews note gets Mews and general pages, and never a Toast-only page.
-3. A note with no values gets general pages only.
+2. A Toast → Mews note gets only pages labelled `obi-general`, `toast-general`, `mews-general` or `toast-to-pms`.
+3. A note whose source is not in `enabled_sources` hides Obi (403 `source_not_enabled`).
 4. A changed, expired or missing note is refused before any search.
-5. A message from a domain not in the platform's entry is ignored.
+5. A message from a domain not in the partner's entry is ignored.
 6. After an hour of use the chat still works, and the renewal happened without a click.
 7. After `Obi.clear()` the page holds no note and no chat.
 
-Still to decide: which platform goes first, whether embedded users need per-person Confluence page permissions, and the lifetime per platform. They are in section 11.
+Still to decide: whether embedded users need per-person Confluence page permissions, and the lifetime per partner. They are in section 11.
 
 #### Panels that belong to this section (6)
 
@@ -1172,13 +1170,13 @@ _Workflow label shown in the drawer: Embedding Obi in another application_
 
 ##### Panel `em-token` · The signed note (JWT) · [Implemented]
 - Kind: Contract
-- In plain words: A short signed note from the platform's server. By default it carries no values. With values it carries an id, the company name and the integration. obi.js fetches it at the click and renews it silently. Obi checks the signature before it reads a word of it.
-- Today: Built: a short signed JWT per user carrying company_id, company_name and integration, verified before any search — live-proven for test hosts (commit 59385f4).
+- In plain words: A short signed note from the partner's server. It carries the business id and the connection: source system and target system. obi.js fetches it at the click and renews it silently. Obi checks the signature before it reads a word of it.
+- Today: Built: a short signed JWT per user carrying source_system, target_system and business_id, verified before any search — live-proven for test hosts.
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | Default | no values: general pages only |
-  | Three values | company_id, company_name, integration |
+  | Three values | source_system, target_system, business_id |
   | Always | iss, aud = obi, sub, iat, exp |
   | Signed with | the platform's private key; key id in the header |
   | Lifetime | per platform, default 60 minutes; renewed silently by obi.js |
@@ -1187,21 +1185,21 @@ _Workflow label shown in the drawer: Embedding Obi in another application_
 - Code:
 ```
 {
-  "iss": "https://app.mews.com",
+  "iss": "https://base.development.omniboost.io",
   "aud": "obi",
   "sub": "user_19f2",
   "iat": 1757577600,
   "exp": 1757581200,
-  "company_id": "c_8f3a",
-  "company_name": "Hotel Example Group",
-  "integration": "mews"
+  "source_system": "toast",
+  "target_system": "mews",
+  "business_id": "B-3075"
 }
 ```
 - How to test it:
-  - Change one character of integration: signature fails, refused.
+  - Change one character of source_system: signature fails, refused.
   - exp in the past: refused.
   - No values: general pages only.
-  - A valid mews note and a body scope of toast: scoped to mews.
+  - A valid toast → mews note and a body knowledge_scope: the body value is ignored.
 - Target and notes: The issuer URL, the key id and the sub format are placeholders. Nothing is configured until the decisions in section 11 are made.
 
 ##### Panel `em-loader` · obi.js: one script tag · [Implemented]
@@ -1211,7 +1209,7 @@ _Workflow label shown in the drawer: Embedding Obi in another application_
 - Settings and rules:
   | Setting | Value |
   |---|---|
-  | Loads from | https://obi.omniboost.com/obi.js, versioned; changes ship from our side |
+  | Loads from | https://obi-web-production.up.railway.app/obi.js; changes ship from our side |
   | Init | Obi.init({ tokenUrl }); tokenUrl is the platform's note endpoint and the only value it edits |
   | At the click | fetch(tokenUrl) from inside the platform's page: same-origin, so the platform's session cookie goes along by itself and no CORS is needed; an endpoint on another origin must allow the page's origin with credentials |
   | Hands the note | to the frame by postMessage with the exact Obi origin; the frame accepts it from the parent window only |
@@ -1219,9 +1217,9 @@ _Workflow label shown in the drawer: Embedding Obi in another application_
   | Obi.clear() | forgets the note, empties the chat, hides the company name, blocks sending until a new note arrives |
   | Never | a note in a URL, a cookie or web storage |
 - Where in the code:
-  - `apps/web/src/features/embed/loader.ts` — built to public/obi.js (planned)
-  - `apps/web/src/features/embed/iframe-bridge.ts` — the frame side of the channel (planned)
-  - `apps/web/src/app/embed/page.tsx` — the frame's page (planned)
+  - `frontend/src/features/embed/loader.ts` — built to public/obi.js (planned)
+  - `frontend/src/features/embed/iframe-bridge.ts` — the frame side of the channel (planned)
+  - `frontend/src/app/embed/page.tsx` — the frame's page (planned)
 - How to test it:
   - The platform's page contains one script tag and one init call and nothing else from us.
   - A note is fetched at the first click, not at page load.
@@ -1231,81 +1229,87 @@ _Workflow label shown in the drawer: Embedding Obi in another application_
 
 ##### Panel `em-hostbackend` · The platform's note endpoint · [Decision needed]
 - Kind: Outside system
-- In plain words: One endpoint on the platform's own server. It knows who is signed in, which company they belong to and which integration that company runs. It writes those on a short signed note, or writes none.
+- In plain words: One endpoint on the partner's own server. It knows who is signed in, which business they belong to and which connection (source and target system) they are looking at. It writes those on a short signed note.
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | Route | /api/obi-token (any path; the platform tells obi.js which) |
   | Who may call it | signed-in people only; it uses the platform's own session |
-  | Default | no values: iss, aud = obi, sub, iat, exp only |
-  | With values | company_id, company_name, integration, from its own records, never from the browser |
+  | Default | a note without a connection is not a directed chat; send source_system, target_system and business_id together |
+  | Connection | source_system, target_system, business_id, from its own records, never from the browser |
   | Signs with | a private key that stays on its server (RS256 or ES256), key id in the header |
-  | Lifetime | as agreed per platform, default 60 minutes |
-  | Gives Obi once | issuer name, public key URL, domains, integration value |
+  | Lifetime | as agreed per partner, default 60 minutes |
+  | Gives Obi once | issuer name, public key URL, domains |
 - How to test it:
   - Two companies never share a company_id.
-  - A company that does not run Toast never gets integration = toast.
+  - A business without a Toast connection never gets source_system = toast.
   - A call without a session gets nothing.
 - Target and notes: The one thing the platform builds. Decision needed: the platform signs directly, or an auth service the two teams agree on does.
 
 ##### Panel `em-backend` · Obi checks the note and picks the pages · [Implemented]
 - Kind: Backend
-- In plain words: Obi's server checks the note is real, meant for Obi and not expired. Then it reads the values and writes one note of its own that every later step obeys: which company, which integration, which tags.
+- In plain words: Obi's server checks the note is real, meant for Obi and not expired. Then it checks the source system and writes one note of its own that every later step obeys: which company, which connection, which routing labels.
 - Today: One shared CHAT_API_KEY is compared in constant time, plus per-user JWT verification (issuer, signature, audience, expiry) that builds the AuthContext; principal comes from the token, not the request body — live-proven for test hosts (commit 59385f4).
 - Settings and rules:
   | Setting | Value |
   |---|---|
-  | platforms.json | one entry per platform: issuer, public key URL, domains, lifetime; plus the integration map |
-  | Lifetime check | exp minus iat must not exceed the platform's lifetime_minutes |
-  | No values | allowed tags = general |
-  | Unknown integration | refused |
+  | platforms.json | one entry per partner: issuer, public key URL, domains, algs, lifetime, active, allowed_integrations |
+  | Lifetime check | exp minus iat must not exceed the partner's lifetime_minutes |
+  | Source not enabled | 403 source_not_enabled; the widget stays hidden |
+  | Source the partner may not vend | 401 |
   | Empty platforms.json outside local | startup fails |
   | Bad note | 401 with no detail; no search runs |
-  | Company identity | the pair (iss, company_id); two platforms may reuse a company id |
+  | Company identity | the pair (iss, business_id); two partners may reuse a business id |
 - Where in the code:
-  - `rag_agent/server/token_verifier.py` — verification (planned)
-  - `rag_agent/application/auth_context.py` — context construction (planned)
-  - `rag_agent/server/router.py:254-267` — _verify_api_key (today)
-  - `config/platforms.json` — one entry per platform: issuer, jwks_url, domains, lifetime_minutes; plus the integration map (planned)
+  - `rag_agent/server/token_verifier.py` — verification
+  - `rag_agent/application/auth_context.py` — context construction, the source gate
+  - `rag_agent/server/router.py` — _verify_api_key, GET /chat/visibility
+  - `knowledge-base/config/platforms.json` — one entry per partner: issuer, jwks_url, domains, algs, lifetime_minutes, active, allowed_integrations
 - Steps:
   1. Check the host key.
-  2. Read iss from the note; find the platform's entry in platforms.json. No entry: refused.
+  2. Read iss from the note; find the partner's entry in platforms.json. No entry or inactive: refused.
   3. Reject any signing algorithm not on the allow-list; find the public key by key id; check the signature.
   4. Check aud = obi and exp with 60 s leeway.
-  5. Read company_id, company_name, integration. None present: tags = general only.
-  6. Look the integration up in the map; unknown: refused.
+  5. Read source_system, target_system, business_id.
+  6. Check the source: the partner may vend it (else 401) and it is in enabled_sources (else 403 source_not_enabled). The target is never checked.
   7. Build one AuthContext and hand it to every read.
 - Code:
 ```
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class AuthContext:
-    company_id: str
-    company_name: str            # display only
-    integration: str             # mews, toast
-    allowed_scopes: tuple[str, ...]   # from platforms.json, always has 'general'
+    company_id: str | None         # business_id from the token
+    company_name: str | None
+    integration: str | None        # legacy single-integration form only
+    allowed_scopes: tuple[str, ...]  # always empty since ADR-routing-labels-sole-content-axis
     allowed_sources: tuple[str, ...]
-    principal: str | None       # from the identity mapping, or None
-    space_id: int | None        # the Confluence space the widget is bound to; lock 3's space rule
-    token_subject: str
+    principal: str | None
+    token_subject: str | None
+    slot_pos: str | None = None
+    slot_pms: str | None = None
+    slot_accounting: str | None = None
+    source_slug: str | None = None   # directed connection: decides eligibility
+    target_slug: str | None = None   # routing only, never checked
+    platform: str | None = None
 ```
 - How to test it:
   - Forged, changed or expired note: 401.
-  - No values: only general pages come back.
-  - A body knowledge_scope that disagrees with the note is ignored and logged; an unknown slug is a 400 before any search.
-  - Every read in one request logs the same tags to query_trace.
+  - A source not in enabled_sources: 403 source_not_enabled, Obi hidden, no search.
+  - The request body never decides access: source, target and business id come only from the verified note.
+  - Every read in one request uses the same routing labels.
 - Target and notes: Verification order is fixed: algorithm, signature, issuer, audience, expiry, then the business claims. Never the other way round.
 
-##### Panel `em-kb` · Obi picks the pages: the shared knowledge base · [Implemented, needs changing]
+##### Panel `em-kb` · Obi picks the pages: the shared knowledge base · [Implemented]
 - Kind: Store
-- In plain words: One database for every integration. Row security inside it shows a person only pieces whose tags match their integration, plus general, and which they may read.
+- In plain words: One database for every connection. Row security inside it shows a directed chat only pieces whose routing labels match its connection, and which the person may read.
+- Today: Built (ADR-routing-labels-sole-content-axis, ADR-directed-source-target-routing-labels): chunk_labels_read on chunk.labels filters every directed chat; the old tag-per-integration rule is retired.
 - Settings and rules:
   | Setting | Value |
   |---|---|
-  | mews | mews + general |
-  | toast | toast + general |
-  | no values | general |
-  | Then | source lock, page restrictions per person, company rule once it exists |
-  | One database | tags separate the integrations, never separate databases |
+  | toast → mews | obi-general, toast-general, mews-general, toast-to-pms |
+  | opera-cloud → toast | obi-general, opera-cloud-general, toast-general, opera-cloud-to-pos |
+  | unknown target | obi-general + {source}-general |
+  | Then | source lock, page restrictions per person |
+  | One database | routing labels separate the connections, never separate databases |
 - Target and notes: The rows and policies do not change for this work. The note only changes where the tags come from.
 
 ##### Panel `em-button` · The frame: the round button and the chat window · [Implemented]
@@ -1315,14 +1319,14 @@ class AuthContext:
 - Settings and rules:
   | Setting | Value |
   |---|---|
-  | Comes from | https://obi.omniboost.com/embed |
+  | Comes from | https://obi-web-production.up.railway.app/embed |
   | Accepts | the note and the clear message, only from the parent window, only from a domain in the platform's entry |
   | Keeps the note | in memory inside the frame |
   | Sends | the note as a bearer header on every question, through the proxy that adds the host key |
   | CSP | frame-ancestors built at request time from every domain in platforms.json; empty list outside local: 403, the frame does not render |
 - Where in the code:
-  - `apps/web/src/app/embed/page.tsx` — the frame's page (planned)
-  - `apps/web/src/features/chat/` — the chat window (exists)
+  - `frontend/src/app/embed/page.tsx` — the frame's page (planned)
+  - `frontend/src/features/chat/` — the chat window (exists)
 - How to test it:
   - The frame refuses a message from any other window or domain.
   - The note never appears in the frame's URL, cookies or storage.
@@ -1335,14 +1339,14 @@ _Section id: `ingest`_
 
 **In plain words (the lede):** Ingestion is the road from a published Confluence page to searchable pieces in Postgres. It starts when an editor clicks Publish on a page that carries a knowledge tag. It ends when the whole page sits in the database as active pieces with their vectors. Four stages run in order inside one job. This chapter reads the whole road once and the four sections after it open each stage.
 
-Diagram (Confluence and the knowledge scope tag list feed receive, decide, build and activate, which write into the Postgres corpus.)
+Diagram (Confluence and the recognized routing labels feed receive, decide, build and activate, which write into the Postgres corpus.)
   - Confluence — published + tagged → panel `ov-confluence`
   - Stage 1 · Receive — webhook, queue → panel `ov-receive`
   - Stage 2 · Decide — what changed? → panel `ov-decide`
   - Stage 3 · Build — chunk, embed all → panel `ov-build` (changes from today)
   - Stage 4 · Activate — one atomic swap → panel `ov-activate`
   - Postgres — tables + vectors → panel `ov-corpus`
-  - Knowledge scopes — the tag list → panel `tg-config`
+  - Routing labels — from the catalog → panel `tg-config`
   - Sweeps — daily safety net → panel `i1-sweep`
   - Runs as writer — table owner → panel `s-writer`
 
@@ -1350,12 +1354,12 @@ _Dashed arrows are inputs, not live calls. The tag list tells stage 2 which labe
 
 #### The whole path, step by step
 
-1. **An editor publishes a page in Confluence.** The page carries a tag from the knowledge-scope list, for example `toast`. Drafts do nothing. Only Publish counts.
+1. **An editor publishes a page in Confluence.** The page carries a routing label, for example `toast-general`. Drafts do nothing. Only Publish counts.
 2. **Confluence posts a webhook.** Page edited, tag added, tag removed, attachment changed, page trashed. One HTTP call to `/confluence/events`. If the webhook is missed, the daily sweep finds the page anyway.
 3. **Stage 1 checks and queues.** Rate limit, size cap, HMAC signature, parse. Write the event once in the ledger. Drop it if we caused it ourselves. Put one `sync_page` job on the queue. Answer Confluence in milliseconds.
 4. **A worker claims the job.** `FOR UPDATE SKIP LOCKED` plus a 120 second lease. Two workers never take the same job.
 5. **Stage 2 fetches the facts.** Page meta, labels, read restrictions, attachment list through the Confluence API. Body only if the version or the file list moved.
-6. **Stage 2 reads the tags.** Labels are matched against `knowledge_scopes.json`. No recognized tag, or `classified`: the page is deactivated and the job ends. One recognized tag: continue.
+6. **Stage 2 reads the labels.** Labels are matched against the routing-label forms from `product_catalog.json`. No recognized label, or `classified`: the page leaves the index and the job ends. At least one recognized label: continue.
 7. **Stage 2 decides.** Hashes of body, structure, files, title, labels, restrictions. Same fingerprint: stop. Only labels or permissions changed: update the tag columns in place, no embedding, stop. Anything else changed: rebuild the whole page.
 8. **Stage 3 builds the whole page again.** HTML to blocks. Blocks to parent chunks (about 1200 tokens) and child chunks (about 400 tokens). Each child gets a context note. Every child is embedded. Nothing is reused from the old build.
 9. **Stage 4 writes in staging.** A new `document_version` row in state staging. All chunks inserted with `is_active = false`. Zero children: mark failed, keep the old page live, stop.
@@ -1440,7 +1444,7 @@ _Workflow label shown in the drawer: Ingestion, stage 1 \u00b7 Receive and queue
 - How to test it:
   - A page labeled in a space with no folder root is picked up by the label sweep.
   - A page whose last recognized label was removed is deactivated by the next sweep.
-- Target and notes: Target: a daily label sweep (Confluence label search over the names in knowledge_scopes.json) replaces the folder-root sweep. Any tagged page the webhook missed is found within a day.
+- Target and notes: Target: a daily label sweep (Confluence label search over the recognized routing labels from product_catalog.json) replaces the folder-root sweep. Any labelled page the webhook missed is found within a day.
 
 ##### Panel `i1-webhook` · POST /confluence/events · [Implemented]
 - Kind: HTTP endpoint
@@ -1618,7 +1622,7 @@ _Section id: `in2`_
 
 | Field | Value |
 |---|---|
-| Inputs | one `sync_page` job; page meta, labels, read restrictions, attachment list from the Confluence API (published version only); the stored hashes of the last build; `knowledge_scopes.json` |
+| Inputs | one `sync_page` job; page meta, labels, read restrictions, attachment list from the Confluence API (published version only); the stored hashes of the last build; the recognized routing labels from `product_catalog.json` |
 | Processing rules | labels → scope state (ok, conflict, classified, unlabeled); content fingerprint (body, structure, title, attachment ids/versions, pipeline config) → rebuild; metadata fingerprint (labels, restrictions) → in-place update; no recognized tag or classified → deactivate; same fingerprint → stop. Page version is a hint, never a reason to skip |
 | Outputs | a decision: rebuild / metadata / deactivate / no-op; updated `page_source` columns; on rebuild, the page blocks handed to stage 3 |
 | Failure behavior | Confluence API error: job fails, retries with backoff, then dead letter; restrictions fetch fails: page stored as readable by nobody (fail closed) |
@@ -1639,7 +1643,7 @@ Diagram (Fetch page facts, read labels, hash everything, classify. Four outcomes
   - Update in place — tags, state, ACL → panel `i2-inplace`
 
 - **Fetch page facts** Page meta (version, status, title, parent), labels, read restrictions, and the attachment list. The body is fetched only when the version or the file list moved.
-- **Read labels** Labels are matched against `knowledge_scopes.json`, case-insensitive. The result is a scope state: ok, conflict, classified, or unlabeled. Only "ok" pages are ever served. A page with no recognized tag is never built, and if it was built before it is deactivated now.
+- **Read labels** Labels are matched against the routing-label forms from `product_catalog.json`, case-insensitive, and stamped on `chunk.labels`. A page with no recognized routing label, or with `classified`, is never built, and if it was built before it is removed now.
 - **Hash everything** Content, structure, attachment manifest, title, labels, restrictions, and the pipeline versions. Together they form one index fingerprint. If the fingerprint is the same, nothing changed.
 - **Classify** Compares the new hashes with the stored ones. Gone statuses short-circuit first. Then body and file changes. Then metadata changes. The Confluence version number is a hint, never a reason to skip a check.
 - **Gone or classified** Trashed, deleted, archived, or now carrying the `classified` label, or its last recognized label was removed. The page is deactivated and its chunks stop being served.
@@ -1704,10 +1708,10 @@ _Workflow label shown in the drawer: Ingestion, stage 2 \u00b7 Decide what chang
   - `platform/clients/confluence_client.py` — get_page_meta, get_labels, get_restrictions, get_attachments
 - Target and notes: The Confluence API returns the published version of a page. Draft edits are invisible to Obi until the editor clicks Publish.
 
-##### Panel `i2-labels` · Labels to scope state · [Implemented]
+##### Panel `i2-labels` · Labels decide membership · [Implemented]
 - Kind: Gate
-- In plain words: Matches the page's labels against the tag list. One good tag: continue. No tag or a forbidden tag: the page goes out.
-- Today: Every recognized label becomes a tag (no conflict zeroing); visibility is tags && allowed_scopes overlap, and empty tags are private (fail-closed, migration 0014). No app-code delta remains. Proven by test_sync_rules_visibility.py + test_customer_isolation_backstop.py.
+- In plain words: Matches the page's labels against the recognized routing labels. At least one: continue. None, or classified: the page goes out.
+- Today: Since ADR-routing-labels-sole-content-axis (2026-10-12) the page's raw Confluence labels are stamped on chunk.labels and decide membership: at least one recognized routing label (obi-general, {slug}-general, {slug}-to-{pos|pms|accounting}, validated against product_catalog.json) keeps the page in; none, or classified, takes it out. The old label-to-scope-tag step (knowledge_scope.py) was removed; chunk.tags is inert data.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -1715,10 +1719,10 @@ _Workflow label shown in the drawer: Ingestion, stage 2 \u00b7 Decide what chang
   | conflict | two or more provider labels; page hidden everywhere |
   | classified | the classified label present; deactivate and purge |
   | unlabeled | no recognized label; not in the corpus (target) |
-  | Matching | case-insensitive against config/knowledge_scopes.json |
+  | Matching | case-insensitive against the routing-label forms in knowledge-base/config/product_catalog.json |
 - Where in the code:
-  - `confluence_sync/domain/knowledge_scope.py:24-31` — resolve_knowledge_scope_tags
-  - `confluence_sync/application/sync_service.py:103-115, 180-189` — where the tags are threaded
+  - `confluence_sync/domain/ingest_decision.py` — membership on routing labels
+  - `confluence_sync/application/sync_service.py` — where the decision is applied
 - Code:
 ```
 def resolve(labels, recognized):
@@ -1772,7 +1776,7 @@ def resolve(labels, recognized):
 ##### Panel `i2-gone` · Gone, classified, or unlabeled: deactivate · [Implemented]
 - Kind: Outcome
 - In plain words: The page was deleted, lost its tag, or got the classified tag. It leaves search now.
-- Today: Delete/trash/archive, an unreachable source, the classified label, and removal of the last recognized knowledge-scope label all PURGE every row of the page (purge_page in versioning.py), not soft-deactivate; a restore/re-tag re-indexes as a first build. Proven by test_sync_rules_delete.py and test_sync_rules_membership.py.
+- Today: Delete/trash/archive, an unreachable source, the classified label, and removal of the last recognized routing label all PURGE every row of the page (purge_page in versioning.py), not soft-deactivate; a restore/re-tag re-indexes as a first build. Proven by test_sync_rules_delete.py and test_sync_rules_membership.py.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2194,11 +2198,11 @@ CREATE UNIQUE INDEX ux_document_version_one_active
 
 ---
 
-## 05 · Knowledge scopes: the tag list, and what a tag does
+## 05 · Labels: what puts a page in (knowledge scopes retired)
 
 _Section id: `tags`_
 
-**In plain words (the lede):** A knowledge scope is a tag. The list of tags lives in one small file, `config/knowledge_scopes.json`. A Confluence label that matches a name in that file puts the page in the index and decides which widget may see it. Adding or removing a tag is one edit to that file plus a deploy. Everything the tag does after that is automatic.
+**In plain words (the lede):** A Confluence routing label puts a page in the index and decides which chats may use it. The recognized labels come from the systems in `knowledge-base/config/product_catalog.json`: `obi-general`, `{system}-general` and `{system}-to-{pos|pms|accounting}`. Adding a system is one catalog edit plus a deploy. The old knowledge-scope tag list described below is retired.
 
 > **RETIRED by ADR-routing-labels-sole-content-axis (2026-10-12): the knowledge-scope `-test` tag axis no longer exists.** [Implemented] The whole scope-tag mechanism this section describes — `config/knowledge_scopes.json` as the content/membership control, `obi-general-test`/`obi-mews-test`/`obi-operacloud-test`/`obi-toast-test`, the `chunk.tags` filter, the `chunk_scope_read` / `curated_knowledge_entry_scope_read` RLS policies and the `app.allowed_knowledge_scopes` GUC — is retired. **Routing labels are now BOTH the index-membership axis AND the content-routing axis.** Index membership = published + at least one recognized routing label (`obi-general`, `{slug}-general`, `{slug}-to-{pos|pms|accounting}`, from `product_catalog.json`, stamped on the `chunk.labels` column) + not `classified`. Content routing is the `labels && :session_labels` hard filter behind the `chunk_labels_read` policy (see section 05.2, panel `mi-hardfilter`). `classified` is unchanged as the delete/exclusion signal, and source/company isolation (`chunk_source_read` / `app.allowed_sources`) is unchanged. Migration `0018` dropped the two scope RLS policies (reversibly); `knowledge_scopes.json` now holds only `classified`; `chunk.tags` remains as inert data read by nothing. The diagrams, tables and panels below describe the superseded axis and are kept for provenance only — `config/knowledge_scopes.json` is no longer the control surface.
 
@@ -2207,12 +2211,12 @@ _Section id: `tags`_
 | Label | What it means | Who sees the page |
 |---|---|---|
 | general | shared knowledge for every platform | every widget |
-| mews | specific to the Mews platform | the Mews widget (plus everyone sees general) |
-| toast | specific to Toast POS (the product, not this repo's codename) | the Toast widget |
+| mews | specific to Mews (retired scope) | retired |
+| toast | specific to Toast POS (retired scope) | retired |
 | classified [Planned] | never serve this page | nobody, and the page leaves the index |
 | opera-cloud [Decision needed] | in the config today; not in your target list | confirm keep or drop |
 
-Today the names in the file carry a test prefix and suffix (`obi-toast-test`). Rename them when the real corpus lands. Labels are matched case-insensitive. Any label not in this file is ignored.
+Retired: the `obi-*-test` names were removed, not renamed. Labels are matched case-insensitive. Any label that is not a recognized routing label (or `classified`) is ignored.
 
 #### Add or remove a tag
 
@@ -2226,14 +2230,14 @@ Diagram (Edit the scope file, deploy, the label sweep finds pages with the new t
   - Tag removed — from the file → panel `ks-remove` (changes from today)
   - Pages go out — only that tag: deactivate → panel `ks-orphan` (changes from today)
 
-_Adding a tag to the file is the only setup step. Pages with that label are found by the next label sweep, or by the webhook the next time the page is published._
+_Retired flow, kept for provenance. Today adding a system to product_catalog.json is the only setup step; pages with its labels are found by the next sweep, or by the webhook the next time the page is published._
 
 | You want to | You do | Obi does |
 |---|---|---|
-| Add a new tag, for example `opera` | Add `"opera"` to the list in `config/knowledge_scopes.json`. Deploy. | The label sweep searches Confluence for pages labeled `opera` and queues each one. The tag is now a valid `knowledgeScope` for a widget. |
-| Remove a tag | Delete the name from the file. Deploy. | The next sweep re-checks every page. A page whose only recognized tag was the removed one is deactivated. A widget still sending that scope gets a 400. |
-| Rename a tag (`obi-toast-test` to `toast`) | Change the name in the file. Relabel the pages in Confluence. Deploy. | Old-name pages deactivate. New-name pages index. Do the relabel first so no page is out of the index in between. |
-| Make a page visible to every widget | Label it `general` in Confluence. | Nothing to deploy. The tag columns update on the next event or sweep. |
+| Add a new system, for example `cloudbeds` | Add it to `knowledge-base/config/product_catalog.json` (and to `enabled_sources` if it may open Obi). Deploy. | Its labels (`cloudbeds-general`, `cloudbeds-to-…`) are recognized. The sweep queues pages that carry them. |
+| Remove a system | Remove it from `platforms.json`, then from the catalog. Deploy. | A page whose only recognized labels were that system's leaves on its next event or the next complete sweep. |
+| Accept another spelling of a system | Add an alias in `product_catalog.json`. Deploy. | Tokens using the alias resolve to the same system. No relabel needed. |
+| Make a page available to every chat | Label it `obi-general` in Confluence. | Nothing to deploy. The labels restamp on the next event or sweep, with no re-embed. |
 
 Diagram (Six things an editor can do and what happens: add a label, change a label, remove the last label, add classified, put two provider labels on one page, edit the body. Below: the scope list file, the scope state, and the filter that uses them.)
   - Add a label — for example mews → panel `tg-add`
@@ -2248,7 +2252,7 @@ Diagram (Six things an editor can do and what happens: add a label, change a lab
   - Deactivate + purge — chunks deleted → panel `tg-purge` (changes from today)
   - Excluded: conflict — logged, heals on fix → panel `tg-conflict` (changes from today)
   - Rebuild whole page — out, then back in → panel `tg-rebuild`
-  - The scope list — knowledge_scopes.json → panel `tg-config`
+  - Reserved label — classified only → panel `tg-config`
   - scope_state — only ok is served → panel `tg-state` (changes from today)
   - The filter — state ok + tag match → panel `tg-filter` (changes from today)
 
@@ -2276,34 +2280,34 @@ _Every arrow runs through ingestion stage 1 (a label event or a sweep) and stage
 
 #### Panels that belong to this section (23)
 
-_Workflow label shown in the drawer: Knowledge scopes_
+_Workflow label shown in the drawer: Labels_
 
-##### Panel `tg-config` · The scope list file · [Implemented]
+##### Panel `tg-config` · The reserved label file · [Implemented]
 - Kind: Config
-- In plain words: The list of tag names in one small file. A name here is a tag; a name not here is ignored.
-- Today: knowledge-base/config/knowledge_scopes.json holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test and the reserved classified; the loader validates it at startup and returns the four recognized scopes (classified excluded). The dev widget scope list that used to mirror this file (minus classified) was removed (owner request, 2026-09-23).
+- In plain words: One small file that holds the reserved classified label. The labels that put a page in come from the product catalog.
+- Today: Retired by ADR-routing-labels-sole-content-axis (2026-10-12): knowledge-base/config/knowledge_scopes.json holds only the reserved classified entry; the four obi-*-test scopes were removed. The recognized labels are the routing-label forms derived from product_catalog.json.
 - Settings and rules:
   | Setting | Value |
   |---|---|
-  | Path | config/knowledge_scopes.json at the repo root |
-  | Today | obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test |
+  | Path | knowledge-base/config/knowledge_scopes.json |
+  | Today | classified only (the obi-*-test scopes are retired) |
   | Target | general, mews, toast, classified (confirm opera-cloud) |
   | Rule | startup fails if general is missing |
   | Also read by | the backend loader only; the dev widget scope list that used to import this JSON was removed (2026-09-23) |
 - Where in the code:
-  - `config/knowledge_scopes.json` — the list
+  - `knowledge-base/config/knowledge_scopes.json` — the list
   - `platform/config/knowledge_scopes.py` — loader
 
 ##### Panel `ks-edit` · Edit knowledge_scopes.json · [Implemented, needs changing]
 - Kind: Knowledge scopes
 - In plain words: The tag list is one small file. Add a tag's name to the file to create the tag.
-- Today: The file holds obi-general-test, obi-mews-test, obi-operacloud-test, obi-toast-test as an object {scopes:[{name,description}]}, not a plain list of slugs. Loaded at startup by both apps.
+- Today: Retired by ADR-routing-labels-sole-content-axis (2026-10-12): the four obi-*-test scopes were removed; knowledge_scopes.json holds only classified. A new label comes from adding a system to product_catalog.json.
 - Settings and rules:
   | Setting | Value |
   |---|---|
-  | Path | config/knowledge_scopes.json at the repo root |
+  | Path | knowledge-base/config/knowledge_scopes.json (classified only) |
   | Shape | a JSON list of lowercase slugs |
-  | Rule | a Confluence label that matches a slug (case-insensitive) is a knowledge scope |
+  | Rule | retired: a Confluence label is recognized when it matches a routing-label form from product_catalog.json |
 - Steps:
   1. Open the file.
   2. Add or remove one slug.
@@ -2315,7 +2319,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `ks-validate` · Validate the list · [Implemented]
 - Kind: Knowledge scopes
 - In plain words: The app checks the list at startup and stops with a clear message if a name is wrong.
-- Today: Startup validation in platform/config/knowledge_scopes.py, in order: every entry lowercase, no duplicates, obi-general-test present, classified present — each rule raises naming the entry and exits the backend non-zero (test_knowledge_scopes.py, 6 unit tests).
+- Today: Retired by ADR-routing-labels-sole-content-axis (2026-10-12): startup validation in platform/config/knowledge_scopes.py now checks only lowercase, no duplicates, and classified present (test_knowledge_scopes.py). No general scope is required.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2332,7 +2336,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `ks-deploy` · Deploy · [Implemented, needs changing]
 - Kind: Knowledge scopes
 - In plain words: Ship the new file. The backend reads it.
-- Today: The frontend no longer has a scope list: the dev widget scope switcher and its generated list were removed (owner request, 2026-09-23). Only the backend reads this file now.
+- Today: Retired by ADR-routing-labels-sole-content-axis (2026-10-12): there is no scope list to deploy. A new system ships as a product_catalog.json change.
 - Steps:
   1. The backend restarts and reads the new list.
   2. The frontend has no scope list to rebuild - only the backend reads this file now.
@@ -2342,7 +2346,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `ks-sweep` · The label sweep finds tagged pages · [Planned]
 - Kind: Knowledge scopes
 - In plain words: Once a day, asks Confluence for every page with each tag in the list and queues the new ones.
-- Today: The sweep walks folder roots from source_scope. A label search does not exist yet.
+- Today: Retired by ADR-routing-labels-sole-content-axis (2026-10-12): the reconciliation sweep searches Confluence for the recognized routing labels, not scope tags.
 - Steps:
   1. Once a day, for each slug in the list, ask Confluence for every page with that label (CQL label search across all spaces).
   2. Enqueue one sync_page job per page found.
@@ -2353,7 +2357,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `ks-index` · Pages go in · [Implemented]
 - Kind: Knowledge scopes
 - In plain words: The queued pages run through ingestion and become searchable in that scope.
-- Today: Membership is now label-gated (never-bend rule 5): a first-seen page with no recognized knowledge-scope label is never ingested (no version, chunk, or page_source row); a page carrying at least one recognized label is indexed in that scope. Enforced in sync_service.handle_sync_page. Proven by test_sync_rules_membership.py::test_in2_untagged_page_never_indexed.
+- Today: Retired by ADR-routing-labels-sole-content-axis (2026-10-12): membership is label-gated on routing labels: a first-seen page with no recognized routing label is never ingested; a page with at least one is indexed. Enforced in sync_service.handle_sync_page. Proven by test_sync_rules_membership.py::test_in2_untagged_page_never_indexed.
 - Steps:
   1. The queued job runs ingestion stages 2 to 4 on the page.
   2. Tags on the chunks are the recognized labels.
@@ -2362,7 +2366,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `ks-widget` · A widget uses the same slug · [Implemented, needs changing]
 - Kind: Knowledge scopes
 - In plain words: A widget uses the same tag name as its scope, so it only sees pages with that tag.
-- Today: The live /embed frame does not set a knowledgeScope prop; the client sends no scope and the token-driven scope (step 3) is derived server-side. The dev-only scope switcher that used to set it client-side was removed (owner request, 2026-09-23).
+- Today: Retired by ADR-routing-labels-sole-content-axis (2026-10-12): the widget sends no scope. The directed connection in the token picks the four routing labels at chat-start.
 - Steps:
   1. The embed config sets knowledgeScope to the slug, for example toast.
   2. The gate validates the slug against the list.
@@ -2371,6 +2375,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `ks-remove` · A tag is removed from the file · [Implemented, needs changing]
 - Kind: Knowledge scopes
 - In plain words: Take the name out of the file and ship it. That label means nothing anymore.
+- Today: Retired by ADR-routing-labels-sole-content-axis (2026-10-12): there are no scope names to remove. Removing a system is a product_catalog.json and platforms.json change.
 - Steps:
   1. Delete the slug and deploy.
   2. Labels with that name are now ignored.
@@ -2379,6 +2384,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `ks-orphan` · Pages with only that tag go out · [Planned]
 - Kind: Knowledge scopes
 - In plain words: Pages that only had the removed tag leave search on the next sweep. Pages with another tag stay.
+- Today: Retired by ADR-routing-labels-sole-content-axis (2026-10-12): pages whose only routing labels are no longer recognized leave the index on their next event or the next complete sweep.
 - Steps:
   1. The next sweep re-reads each indexed page's labels.
   2. A page with no remaining recognized tag is deactivated.
@@ -2412,10 +2418,9 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `tg-remove` · Remove the last recognized label · [Implemented]
 - Kind: Editor action
 - In plain words: An editor removes the last tag. The page leaves search.
-- Today: Removing the last recognized knowledge-scope label (or leaving only unrelated labels) purges every row of the page — not soft-deactivate — via the label-gated membership check in confluence_sync/application/sync_service.py (handle_sync_page). Folder roots (source_scope) no longer keep it in. Proven by test_sync_rules_membership.py::test_tags_remove_last_recognized_label_removes_rows and ::test_tags_unrelated_labels_alone_do_not_keep_page.
+- Today: Removing the last recognized routing label (or leaving only unrelated labels) purges every row of the page — not soft-deactivate — via the label-gated membership check in confluence_sync/application/sync_service.py (handle_sync_page). Folder roots (source_scope) no longer keep it in. Proven by test_sync_rules_membership.py::test_tags_remove_last_recognized_label_removes_rows and ::test_tags_unrelated_labels_alone_do_not_keep_page.
 - Where in the code:
   - `confluence_sync/application/sync_service.py` — deactivate-on-unlabeled branch (target)
-  - `platform/config/settings.py` — cut-over flag only: default on, deleted after verify_knowledge_scope_backfill.py reports zero untagged chunks
 - Steps:
   1. Confluence sends label_deleted.
   2. Ingestion stage 2 finds no recognized label: scope_state = unlabeled.
@@ -2439,8 +2444,8 @@ _Workflow label shown in the drawer: Knowledge scopes_
 
 ##### Panel `tg-two` · Two provider labels on one page · [Implemented]
 - Kind: Editor mistake
-- In plain words: A page carries two platform tags at once. That is legitimate sharing (D4): the page resolves to both tags and is retrievable in each of those scopes — never public.
-- Today: Built (§13 step 3, D4): two recognized provider labels are legitimate sharing — the page resolves to both tags and is retrievable in each of those scopes, never public. Proven by test_sync_rules_visibility.py. The panel body (simple / steps / tests) was reconciled to D4 on 2026-09-25; the retired 'conflict / hidden from everyone' framing is recorded in 0.4-design-review/plan-corrections.md.
+- In plain words: A page carries two routing labels at once. Chats matching either label can use it.
+- Today: Retired by ADR-routing-labels-sole-content-axis (2026-10-12): two labels on one page are simply two routing labels; each directed chat whose four labels include either one can use the page. Earlier (§13 step 3, D4) two provider scope tags were legitimate sharing; that scope axis no longer exists.
 - Steps:
   1. Ingestion stage 2 resolves every recognized label into the page's tags — no conflict state.
   2. The scope policy shows the page in each matching scope: tags && allowed_scopes.
@@ -2481,7 +2486,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `tg-deactivate` · Deactivate · [Planned]
 - Kind: Outcome
 - In plain words: The page's pieces are switched off and search cannot see them.
-- Today: Narrowed (§13 step 1): deactivate_page is no longer the delete/classified path (those PURGE now) — it survives only for the reconciliation source-scope-loss sweep (reconciliation.py:206-216). Recorded in 0.4-design-review/plan-corrections.md.
+- Today: Narrowed (§13 step 1): deactivate_page is no longer the delete/classified path (those PURGE now) — it survives only for the reconciliation source-scope-loss sweep (reconciliation.py).
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2501,13 +2506,13 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `tg-conflict` · Excluded as a conflict · [Implemented, needs changing]
 - Kind: Outcome
 - In plain words: The page is marked as a conflict and hidden. Fix the tags in Confluence and the next sync brings it back.
-- Today: Retired (§13 step 3, D4): there is no conflict/hide state — two provider labels share both scopes and no knowledge_scope_conflict log line is emitted. panel.py has no 'retired' status word, so the status is left unchanged; the retirement is recorded in 0.4-design-review/plan-corrections.md.
+- Today: Retired (§13 step 3, D4), and the scope axis itself is retired by ADR-routing-labels-sole-content-axis: there is no conflict/hide state and no knowledge_scope_conflict log line. panel.py has no 'retired' status word, so the status is left unchanged.
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | State | conflict |
   | Visible to | nobody |
-  | Log | knowledge_scope_conflict with page_id, title, matched labels |
+  | Log | none (retired): knowledge_scope_conflict is no longer emitted |
   | Heals | on the next sync after the labels are fixed |
 
 ##### Panel `tg-rebuild` · Rebuild with tags carried · [Implemented, needs changing]
@@ -2520,7 +2525,7 @@ _Workflow label shown in the drawer: Knowledge scopes_
 ##### Panel `tg-state` · scope_state · [Planned]
 - Kind: Data
 - In plain words: One word per page: ok, conflict, classified, or unlabeled. Only ok pages are ever shown.
-- Today: Retired (§13 step 3, D4/§7): scope_state was never built (no enum, no column); state is materialized as the tag set on chunk.tags/page_source.tags, and the only non-ok value (conflict) is gone. No 'retired' status word exists; retirement recorded in 0.4-design-review/plan-corrections.md.
+- Today: Retired (§13 step 3, D4/§7): scope_state was never built (no enum, no column). The whole scope-tag axis is retired by ADR-routing-labels-sole-content-axis; chunk.tags is inert data. No 'retired' status word exists.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2534,12 +2539,12 @@ CREATE TYPE scope_state AS ENUM ('ok','conflict','classified','unlabeled');
 ALTER TABLE chunk ADD COLUMN scope_state scope_state NOT NULL DEFAULT 'unlabeled';
 ALTER TABLE page_source ADD COLUMN scope_state scope_state NOT NULL DEFAULT 'unlabeled';
 ```
-- Target and notes: Backfill: every active chunk with a recognized tag becomes ok. The readiness gate (verify_knowledge_scope_backfill.py) must report zero rows in any other state before the new policy goes live.
+- Target and notes: Retired: the readiness gate script (verify_knowledge_scope_backfill.py) was removed with the scope axis.
 
 ##### Panel `tg-filter` · The filter that uses tags · [Implemented, needs changing]
 - Kind: Step
 - In plain words: The database rule that shows a piece only when its tag matches the widget's scope and its state is ok.
-- Today: The 0010 RESTRICTIVE policy is live on Supabase and, after migration 0014 (2026-09-25), floor-less: '*' OR tags && allowed_scopes (scope_state retired, D4). The app predicate tags && :scopes stays behind a flag, default off (PLAN 10.7).
+- Today: Retired by ADR-routing-labels-sole-content-axis (2026-10-12): migration 0018 drops chunk_scope_read; app.allowed_knowledge_scopes is set to the wildcard and read by no policy. The content filter is now chunk_labels_read on chunk.labels (see r3-scope). The code block shows the dropped policy for reference.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -2629,7 +2634,7 @@ _Workflow label shown in the drawer: Multi-integration context_
 - Where in the code:
   - `knowledge-base/config/product_catalog.json` — the registry
   - `docs/Final_docs/5-integration-context/catalog.md` — the schema and the 8 rules
-  - `platform/config/knowledge_scopes.py` — the loader pattern to copy
+  - `platform/config/product_catalog.py` — the loader, enabled_sources, build_labels
 - How to test it:
   - The loader rejects a duplicate alias, a role outside pos/pms/accounting, an unknown connection type, and a reserved name (classified, obi-*).
   - Every platforms.json integration key resolves to a catalog id or alias.
@@ -2840,7 +2845,7 @@ _Workflow label shown in the drawer: Multi-integration context_
   | Setting | Value |
   |---|---|
   | New column | chunk.labels text[] NOT NULL DEFAULT '{}' + partial GIN ix_chunk_labels_gin WHERE is_active; mirrored on page_source |
-  | Migration | 0016 (down_revision 0015_applicability_stamp), reversible; copies the 0007 knowledge_scope pattern |
+  | Migration | 0016 (down_revision 0015_applicability_stamp), reversible |
   | Separate from tags | labels (raw Confluence labels) stay distinct from tags (resolved scope); isolation locks 0–2 unchanged |
   | Label change | a label-only edit restamps labels via the metadata-only path — no re-embed, same version (D3) |
 - Where in the code:
@@ -2883,7 +2888,7 @@ _Workflow label shown in the drawer: Multi-integration context_
   | Always on | not behind a flag; an unlabelled chunk overlaps nothing and is invisible under a connection (D2) |
   | Parent expansion exempt | fetch_parent_context carries no label filter — the matched child is already authorized |
 - Where in the code:
-  - `retrieval/infrastructure/search_repo.py` — _base_filters + the GUC in the apply_knowledge_scope path
+  - `retrieval/infrastructure/search_repo.py` — _base_filters + the GUC in apply_allowed_labels
   - `knowledge-base/schema/schema.py` — the RESTRICTIVE labels RLS policy
 - How to test it:
   - A Toast→Mews chat never receives a chunk whose only label is toast-to-accounting or mews-to-pos.
@@ -2954,10 +2959,10 @@ _Section id: `rt1`_
 | Field | Value |
 |---|---|
 | Inputs | the chat request from the widget proxy: history (≤20 turns), images (≤4), `knowledgeScope`; Authorization header (server key today; host key + signed user token in the target); optional Idempotency-Key |
-| Processing rules | verify key and token in constant time; derive company, integration, principal from the token, never the body; rate limit 20/min; validate the body slug for shape and membership against `knowledge_scopes.json` only (unknown: 400); the token decides scope and a known slug that disagrees is ignored and logged; build the authorization context (company, integration, allowed scopes = integration + general, allowed sources, principal); small-talk exact match → short reply; vague check (flag, off) → clarifying question; Haiku rewrite → one standalone question plus its parts |
+| Processing rules | verify key and token in constant time; derive company (`business_id`), source and target system, principal from the token, never the body; rate limit 20/min; a body `knowledge_scope` is shape-validated and ignored; the source must be vendable by the issuer (401) and in `enabled_sources` (403 `source_not_enabled`), the target is never checked; build the authorization context (company, source and target slugs, platform, allowed sources, principal); small-talk exact match → short reply; vague check (flag, off) → clarifying question; Haiku rewrite → one standalone question plus its parts |
 | Outputs | one authorization context object; the rewritten question and its parts; or a short reply with no search |
 | Failure behavior | missing or bad auth: 401 (fail closed); unknown scope: 400; rewrite model error: fall back to the raw text; rate limit: 429 |
-| Code locations | `rag_agent/api/chat.py`, `rag_agent/application/auth.py`, `rag_agent/application/rewrite.py`, `apps/web/app/api/chat/route.ts` |
+| Code locations | `rag_agent/server/router.py`, `rag_agent/server/token_verifier.py`, `rag_agent/application/auth_context.py`, `frontend/src/app/api/chat/route.ts` |
 | Today | [Implemented, needs changing] key, limits, small talk, rewrite run; scope and principal come from the body; company is not known |
 | Target | [Planned] signed token from the host backend, verified before any claim is read (section 03.2); company + integration in the context; question parts listed for the coverage check |
 
@@ -2975,12 +2980,12 @@ Diagram (Web proxy, verify host key and user token, limits, build auth context, 
 - **Web proxy** The browser never talks to the backend. It calls the widget's own `/api/chat`, which adds the server key and streams the answer back as bytes.
 - **Verify** Today: one shared server key per deployment, compared in constant time. Target: a key per widget host plus a signed user token from the host backend (or an agreed auth service). The token says which company the person belongs to, which integration that company runs (Mews, Toast, Opera Cloud), and who the person is. The request body cannot widen that. The contract and the handshake are in section 03.2.
 - **Limits** Rate limit (20 a minute), history at most 20 turns of 4000 characters, images capped, scope slug validated, numeric principals rejected. Every LLM call has a timeout, retries, and a breaker.
-- **Auth context** One object built here and passed everywhere. Fields: `company_id` (the tenant), `integration` (the knowledge scope: `mews`, `toast`, `opera-cloud`), allowed scopes (the integration plus `general`), allowed sources, the person's principal, the token subject, and `space_id` (the Confluence space the widget is bound to, read by lock 3's space rule). Every database read in retrieval stages 2 to 5 sets its scope from this object. The token decides scope. The body slug is checked for shape only. A slug not in `knowledge_scopes.json` is a 400 before any search. A known slug that disagrees with the token is ignored and logged. The answer model also gets company and integration as plain facts, so it can say "in Mews, do X" instead of guessing.
+- **Auth context** One object built here and passed everywhere. Fields: `company_id` (the tenant, from `business_id`), `source_slug` and `target_slug` (the directed connection, for example `toast` → `mews`), the platform, allowed sources, the person's principal and the token subject. Only the source decides whether Obi shows (ADR-source-system-decides-widget-eligibility); the target only picks routing labels. Every database read in retrieval stages 2 to 5 sets its filters from this object. A body `knowledge_scope` is checked for shape and ignored; it decides nothing. The answer model also gets the connection as plain facts, so it can say "in Mews, do X" instead of guessing.
 - **Small talk?** "hi", "thanks", "test". The whole message must match a closed list. A real question that starts with "hi" does not match. The reply is short and carries no citation.
 - **Too vague?** Behind a flag, off by default. Twelve words or more skips it. Otherwise one cheap classifier call. A vague question gets a clarifying question with options, which is an open turn, never a refusal.
 - **Rewrite** Haiku turns the chat history into one standalone question. In the target it also lists the question's parts ("how to configure", "which permissions", "how to roll back") for the coverage check in retrieval stage 5. Fails open to the raw text.
 
-> **Body fields are not identity.** [Implemented, needs changing] Today `principal` and `knowledge_scope` come from the request body, and the backend trusts them as far as it trusts the proxy. In the target the host backend (or an agreed auth service) signs a token per user. The backend verifies it and derives both values from it. The body slug is checked for shape and membership only. An unknown slug is a 400 before any search. A known slug that disagrees with the token is ignored and logged. This closes the "send another user's principal" path.
+> **Body fields are not identity.** [Implemented] The partner signs a token per user; the backend verifies it and derives company, connection and identity from it. A body `principal` or `knowledge_scope` is shape-validated and never decides access. This closes the "send another user's principal" path.
 
 > **The answer cache is removed.** A cached answer can outlive a permission change. There is no traffic yet that needs a cache, so the target drops `CachingAnswerService`. Idempotency replay stays, because it is bound to the token, the history, and the scope, and it lives only minutes.
 
@@ -2988,40 +2993,45 @@ Diagram (Web proxy, verify host key and user token, limits, build auth context, 
 
 _Workflow label shown in the drawer: Retrieval, stage 1 \u00b7 The gate_
 
-##### Panel `r1-ctx` · Build the authorization context: company, integration, person · [Planned]
+##### Panel `r1-ctx` · Build the authorization context: company, connection, person · [Planned]
 - Kind: Step
-- In plain words: Writes one note: which company, which integration (Mews, Toast, Opera Cloud), which person, and which pages they may see. Every later step reads only this note.
-- Today: Scopes are resolved once per request (resolve_allowed_scopes) and reused by the fallback. The principal string is passed separately. Parent expansion opens its own session.
+- In plain words: Writes one note: which company, which connection (source and target system), which person, and which pages they may see. Every later step reads only this note.
+- Today: The gate builds one AuthContext per request from the verified token: company (business_id), source and target slugs, platform, allowed sources. The source must be vendable by the issuer (401) and in enabled_sources (403 source_not_enabled); the target is never checked. resolve_allowed_scopes and retrieval/domain/knowledge_scope.py were removed with the scope axis (ADR-routing-labels-sole-content-axis). Parent expansion opens its own session.
 - Settings and rules:
   | Setting | Value |
   |---|---|
-  | company_id | the tenant (hotel or restaurant group), from the token |
-  | company_name | display context for the answer and the header; never an access key |
-  | integration | the knowledge scope the company runs: mews, toast, opera-cloud; from the token |
-  | allowed_scopes | from platforms.json: the integration plus general |
+  | company_id | the tenant, from the token's business_id |
+  | source_slug | the source system; must be vendable by the issuer and in enabled_sources (ADR-source-system-decides-widget-eligibility) |
+  | target_slug | the target system; never checked, picks routing labels only; unknown is carried as None |
+  | platform | the verified partner entry |
   | allowed_sources | confluence today; a second source later |
   | principal, subject | who the person is: sub from the token; principal from the identity mapping or none |
-  | space_id | the Confluence space the widget is bound to; lock 3 drops a candidate page outside it |
+  | allowed_scopes | retired: always empty (ADR-routing-labels-sole-content-axis) |
 - Where in the code:
-  - `retrieval/domain/knowledge_scope.py` — resolve_allowed_scopes
+  - `rag_agent/application/auth_context.py` — build_auth_context, _build_directed_context
   - `retrieval/domain/permission.py:30-37` — classify_scope
   - `rag_agent/application/answer_service.py` — where the context is threaded
 - Code:
 ```
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class AuthContext:
-    company_id: str
-    company_name: str            # display only
-    integration: str             # mews, toast
-    allowed_scopes: tuple[str, ...]   # from platforms.json, always has 'general'
+    company_id: str | None         # business_id from the token
+    company_name: str | None
+    integration: str | None        # legacy single-integration form only
+    allowed_scopes: tuple[str, ...]  # always empty since ADR-routing-labels-sole-content-axis
     allowed_sources: tuple[str, ...]
-    principal: str | None       # from the identity mapping, or None
-    space_id: int | None        # the Confluence space the widget is bound to; lock 3's space rule
-    token_subject: str
+    principal: str | None
+    token_subject: str | None
+    slot_pos: str | None = None
+    slot_pms: str | None = None
+    slot_accounting: str | None = None
+    source_slug: str | None = None   # directed connection: decides eligibility
+    target_slug: str | None = None   # routing only, never checked
+    platform: str | None = None
 ```
 - How to test it:
-  - Every reader transaction in a request logs the same allowed_sources and allowed_scopes to query_trace.
-- Target and notes: Target: company and integration come from the signed token and are also handed to the answer model as plain facts, so an answer can say "in Mews, do X" instead of guessing which system the person uses.
+  - Every reader transaction in a request uses the same allowed_sources and routing labels.
+- Target and notes: The connection from the signed token is also handed to the answer model as plain facts (the connection block), so an answer can say "in Mews, do X" instead of guessing which system the person uses.
 
 ##### Panel `r1-proxy` · The widget's proxy route · [Implemented]
 - Kind: Outside system
@@ -3035,19 +3045,19 @@ class AuthContext:
   | Body cap | 30 MB (four base64 images plus text) |
   | Its own auth | x-widget-access-token today; the user token in the target |
 - Where in the code:
-  - `apps/web/src/features/chat/server/route-handlers.ts` — handlePostChat, handlePatchFeedback
-  - `apps/web/src/features/chat/server/validation.ts` — shape checks only
-  - `apps/web/src/platform/automation-api/client.ts` — the backend client
+  - `frontend/src/features/chat/server/route-handlers.ts` — handlePostChat, handlePatchFeedback
+  - `frontend/src/features/chat/server/validation.ts` — shape checks only
+  - `frontend/src/platform/automation-api/client.ts` — the backend client
 
 ##### Panel `r1-auth` · Verify who is asking · [Implemented]
 - Kind: Gate
-- In plain words: Checks the widget's key and the person's signed card. Company, integration, and identity come from the card, never from what was typed.
+- In plain words: Checks the widget's key and the person's signed card. Business, connection and identity come from the card, never from what was typed.
 - Today: One CHAT_API_KEY per deployment, compared in constant time against the current and previous key (rotation window), plus a per-user RS256 JWT verified before any search — live-proven for test hosts (commit 59385f4).
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | Host key | one per widget host, rotated with an overlap window |
-  | User token | a JWT from the trusted issuer: iss, aud, sub, iat, exp, company_id, company_name, integration |
+  | User token | a JWT from the trusted issuer: iss, aud, sub, iat, exp, source_system, target_system, business_id |
   | Verification | algorithm allow-list, signature by kid, issuer, audience, expiry with 60 s leeway; then the claims become the auth context |
   | Fail closed | 503 if the key or the issuer config is missing, 401 on any mismatch |
 - Where in the code:
@@ -3055,7 +3065,7 @@ class AuthContext:
   - `docs/runbooks/chat-api-key-rotation.md` — rotation
 - How to test it:
   - Expired token: 401.
-  - Valid token, body scope for another integration: the token wins and the mismatch is logged.
+  - Valid token plus a body knowledge_scope: the body value is shape-checked and ignored.
   - Both compares always run so timing does not reveal which key matched.
 - Target and notes: The token contract and the iframe handshake are in section 03.2.
 
@@ -3111,12 +3121,12 @@ class AuthContext:
 ##### Panel `r1-idem` · Idempotency replay · [Implemented]
 - Kind: Data
 - In plain words: Returns the same answer if the same request arrives twice, without a second search.
-- Today: The cache key already binds sha256(key, history, token_subject, knowledge_scope) — token subject, not body principal.
+- Today: The cache key already binds the token subject, not the body principal. The knowledge_scope part of the key is empty since ADR-routing-labels-sole-content-axis.
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | Header | Idempotency-Key, optional |
-  | Cache key | sha256(key / history / principal / knowledge_scope), target: token subject instead of body principal |
+  | Cache key | sha256(key / history / principal / scope), target: token subject instead of body principal |
   | TTL | minutes; bounded entries |
   | Effect | same request replays the same Answer and trace id, no rerun |
 - Where in the code:
@@ -3464,7 +3474,7 @@ _Workflow label shown in the drawer: Retrieval, stage 3 \u00b7 Filter_
 - Where in the code:
   - `knowledge-base/migrations/versions/0016_chunk_labels.py` — the routing-label policy + GUC
   - `knowledge-base/migrations/versions/0018_retire_knowledge_scope_rls.py` — drops the retired scope policies (reversible)
-  - `retrieval/infrastructure/search_repo.py` — apply_allowed_labels (apply_knowledge_scope opts out to the wildcard)
+  - `retrieval/infrastructure/search_repo.py` — apply_allowed_labels (apply_knowledge_scope still sets the retired GUC to the wildcard)
 - How to test it:
   - Directed Toast->Mews chat: never a toast-to-accounting or mews-to-pos page, at any similarity.
   - Legacy/tokenless chat: label filter opts out ('*'); lock 1 still isolates by source.
@@ -3813,7 +3823,7 @@ _Workflow label shown in the drawer: Retrieval, stage 5 \u00b7 Answer_
 ##### Panel `r5-parents` · Expand children to parents · [Implemented, needs changing]
 - Kind: Step
 - In plain words: Swaps each small piece for its big piece, because the big piece gives the model enough context to answer.
-- Today: fetch_parent_texts opens a fresh reader session and re-applies the source GUC. Document 03 section 10 does not mention the knowledge-scope GUC there. Verify in retriever.py:242-250.
+- Today: fetch_parent_texts opens a fresh reader session and re-applies the source GUC. The knowledge-scope GUC no longer filters anything (ADR-routing-labels-sole-content-axis). Verify in retriever.py.
 - Settings and rules:
   | Setting | Value |
   |---|---|
@@ -4084,7 +4094,7 @@ _Workflow label shown in the drawer: The widget_
   | Teaser timing | 3 s after load, again 20 s after each close or dismiss |
   | Panel | opens from the launcher or the teaser |
 - Where in the code:
-  - `apps/web/src/features/chat/ui/chat-launcher.tsx, teaser-popup.tsx, use-widget-visibility.ts` — the closed state
+  - `frontend/src/features/chat/ui/chat-launcher.tsx, teaser-popup.tsx, use-widget-visibility.ts` — the closed state
 
 ##### Panel `w-panel` · The panel · [Implemented]
 - Kind: UI
@@ -4096,8 +4106,8 @@ _Workflow label shown in the drawer: The widget_
   | Parts | panel-header, contour-background, message-list, composer |
   | State | one ChatSessionProvider mounted once in layout.tsx |
 - Where in the code:
-  - `apps/web/src/features/chat/ui/panel-body.tsx, panel-header.tsx, floating-frame.tsx` — the open state
-  - `apps/web/src/features/chat/ui/chat-session-provider.tsx` — messages, pending, locale, knowledgeScope
+  - `frontend/src/features/chat/ui/panel-body.tsx, panel-header.tsx, floating-frame.tsx` — the open state
+  - `frontend/src/features/chat/ui/chat-session-provider.tsx` — messages, pending, locale, knowledgeScope
 
 ##### Panel `w-composer` · The composer · [Implemented]
 - Kind: UI
@@ -4130,17 +4140,17 @@ _Workflow label shown in the drawer: The widget_
 ##### Panel `w-token` · The user token · [Implemented]
 - Kind: Auth
 - In plain words: The card that says who the person is. Today a shared pilot token; in the target a signed card per person.
-- Today: The host issues a per-user JWT (iss, aud, sub, iat, exp, company_id, company_name, integration) delivered to the iframe by postMessage and held in memory — live-proven for test hosts (commit 59385f4); the ?access_token= pilot path is retired.
+- Today: The partner issues a per-user JWT (iss, aud, sub, iat, exp, source_system, target_system, business_id) delivered to the iframe by postMessage and held in memory — live-proven for test hosts; the proxy forwards it to the backend as X-Obi-Token; the ?access_token= pilot path is retired.
 - Settings and rules:
   | Setting | Value |
   |---|---|
   | Target | a JWT per user from the host backend, delivered to the iframe by postMessage, held in memory, forwarded by the proxy as a bearer header |
-  | Carries | iss, aud, sub, iat, exp, company_id, company_name, integration |
+  | Carries | iss, aud, sub, iat, exp, source_system, target_system, business_id |
   | Never in | a URL, a cookie or web storage; the pilot's ?access_token= path is retired |
   | Cross-origin | the iframe runs on the Obi origin; the only cross-origin channel is postMessage with origin and source checks (section 03.2) |
 - Where in the code:
-  - `apps/web/src/features/chat/api/access-token.ts` — capture and persist (today)
-  - `apps/web/src/features/chat/server/auth.ts` — constant-time compare (today)
+  - `frontend/src/features/embed/iframe-bridge.ts` — holds the host-posted token in memory
+  - `frontend/src/features/chat/server/route-handlers.ts` — forwards it to the backend as X-Obi-Token
 - Target and notes: The full contract and the handshake are in section 03.2.
 
 ##### Panel `w-proxy` · The proxy route · [Implemented]
@@ -4154,8 +4164,8 @@ _Workflow label shown in the drawer: The widget_
   | Checks | structural shape only; the backend owns the business caps and its 400 is forwarded as-is |
   | Streams | a byte passthrough, no buffering |
 - Where in the code:
-  - `apps/web/src/features/chat/server/route-handlers.ts` — handlePostChat, handlePatchFeedback
-  - `apps/web/src/app/api/chat/route.ts` — thin entry
+  - `frontend/src/features/chat/server/route-handlers.ts` — handlePostChat, handlePatchFeedback
+  - `frontend/src/app/api/chat/route.ts` — thin entry
 
 ##### Panel `w-i18n` · Six locales · [Implemented]
 - Kind: UI
@@ -4166,7 +4176,7 @@ _Workflow label shown in the drawer: The widget_
   | Covers | greeting, suggestion chips, placeholder, footer, teaser, menus, banners |
   | Does not cover | the answer text; the model decides that |
 - Where in the code:
-  - `apps/web/src/features/chat/model/i18n.ts` — the copy table
+  - `frontend/src/features/chat/model/i18n.ts` — the copy table
 
 ##### Panel `w-screenshot` · Screenshot of the page behind the widget · [Implemented]
 - Kind: Tool
@@ -4191,8 +4201,8 @@ _Workflow label shown in the drawer: The widget_
   | Image | a labeled block: looked at your image |
   | Partial (target) | an amber note listing the uncovered parts |
 - Where in the code:
-  - `apps/web/src/features/chat/ui/message-bubble.tsx, message-list.tsx` — per-turn rendering
-  - `apps/web/src/features/chat/api/chat-client.ts` — SSE parsing on blank-line boundaries
+  - `frontend/src/features/chat/ui/message-bubble.tsx, message-list.tsx` — per-turn rendering
+  - `frontend/src/features/chat/api/chat-client.ts` — SSE parsing on blank-line boundaries
 
 ---
 
@@ -4251,7 +4261,7 @@ _The loop on chunk is parent_chunk_id: a child points at its parent in the same 
 | job | partial unique index on (page_id) WHERE status = 'pending' | coalesce waiting work without dropping a new revision |
 | curated_knowledge_entry | + `embedding`, + `tsv`, + `scope_state` | curated facts compete on relevance instead of arriving by id |
 | query_trace | + `token_subject` (hashed), + `candidate_chunk_ids`, + `decision` (answer, partial, refuse reason) | audit the whole judge step, not just the top hits |
-| source_scope | retired: no longer read by the sweeps or the stamp step | tags from `knowledge_scopes.json` are the only membership control |
+| source_scope | retired: no longer read by the sweeps or the stamp step | recognized routing labels are the only membership control (ADR-routing-labels-sole-content-axis) |
 
 #### The indexes that make search fast
 
@@ -4319,7 +4329,7 @@ ALTER TABLE query_trace ADD COLUMN candidate_chunk_ids integer[];
 ALTER TABLE query_trace ADD COLUMN decision text;
 
 -- backfill before the policy is trusted: every active chunk with a recognized tag -> 'ok';
--- verify_knowledge_scope_backfill.py must report zero rows in any other state.
+-- (the readiness script for this backfill was removed with the scope axis).
 ```
 
 > **If filtered search ever loses recall, climb this ladder in order.** Raise `ef_search`. Partition `chunk` by source or customer. Quantize. Only then consider `pgvectorscale`, which is not available on Supabase. Climb only against a measured loss on the eval set.
@@ -4463,7 +4473,7 @@ _Workflow label shown in the drawer: The relational database_
   | Setting | Value |
   |---|---|
   | One row per | question that reached retrieval |
-  | Retrieval half | raw_query, retrieved_page_ids, retrieved_chunk_ids, rerank_scores, allowed_sources, allowed_knowledge_scopes, embedding_model, reranker_model, latency_ms |
+  | Retrieval half | raw_query, retrieved_page_ids, retrieved_chunk_ids, rerank_scores, allowed_sources, allowed_knowledge_scopes (retired, empty), embedding_model, reranker_model, latency_ms |
   | Answer half | rewritten_query, answer, citations JSONB, feedback |
   | Target adds | token_subject (hashed), candidate_chunk_ids, decision |
   | Written as | the owner, so row security never blocks the insert |
@@ -4580,7 +4590,7 @@ _Workflow label shown in the drawer: The vector database_
 ##### Panel `vd-rls` · Row security covers vectors too · [Implemented]
 - Kind: Vector database
 - In plain words: The row locks apply to the numbers too, so a hidden row never comes out of a vector search.
-- Today: Regression-tested: dedicated tests pin that embedding lives on chunk, that both the source and knowledge-scope SELECT policies are registered on chunk, and that a raw nearest-neighbor query as the reader never returns a row on a forbidden source even when it is the closest match.
+- Today: Regression-tested: dedicated tests pin that embedding lives on chunk, that the source and routing-label SELECT policies are registered on chunk (the knowledge-scope policy was dropped by migration 0018), and that a raw nearest-neighbor query as the reader never returns a row on a forbidden source even when it is the closest match.
 - Steps:
   1. The vector sits on the chunk row.
   2. The source and scope policies apply to every SELECT on chunk.
@@ -4711,15 +4721,15 @@ _Workflow label shown in the drawer: Security_
   | Setting | Value |
   |---|---|
   | Host key | per widget host, server to server, never in the browser |
-  | User token | signed by the trusted issuer (host backend or agreed auth service): iss, aud, sub, iat, exp, company_id, company_name, integration; reaches the iframe by postMessage only |
+  | User token | signed by the trusted issuer (a partner: Base or Data Hub): iss, aud, sub, iat, exp, source_system, target_system, business_id; reaches the iframe by postMessage only |
   | Rate limit key | the token subject; request.client.host on the pre-token path. No X-Forwarded-For parsing today (TRUSTED_PROXY_HOPS=0, set in 7.1.1) — see decision r1-limits-ipkey |
   | Network | the backend stays private to the proxy; only the proxy holds the host key |
 - Where in the code:
   - `rag_agent/server/router.py:254-267` — _verify_api_key
-  - `apps/web/src/features/chat/server/auth.ts` — the proxy check today
+  - `frontend/src/features/chat/server/route-handlers.ts` — forwards the user token as X-Obi-Token and adds the host key
 - How to test it:
   - Forged token: 401.
-  - Token for integration A, body scope B: scoped to A.
+  - Token for connection A, body knowledge_scope B: the body value is ignored.
   - Two different subjects behind one IP do not share a rate bucket.
   - A postMessage from an origin off the allow-list never becomes a token.
 - Target and notes: The full design of lock 0 is section 03.2.
@@ -4737,14 +4747,14 @@ _Workflow label shown in the drawer: Security_
 
 ##### Panel `s-scope` · Scope row security · [Implemented]
 - Kind: Lock 2
-- In plain words: Lock 2: the database shows only pieces whose tag matches this person's integration.
-- Today: Migration 0014 applied to Supabase 2026-09-25 and verified live as rag_reader: empty tags visible to no scope, per-scope counts correct, '*' opt-out kept for the trusted parent/eval path; app predicate still default-off (RLS is the boundary); scope-value injection closed by the 4.2 fail-closed validator.
+- In plain words: Lock 2: for a directed chat, the database shows only pieces whose routing labels match the connection. The old tag-per-integration rule is retired (ADR-routing-labels-sole-content-axis).
+- Today: Retired as a scope-tag lock by ADR-routing-labels-sole-content-axis (2026-10-12): migration 0018 dropped chunk_scope_read and curated_knowledge_entry_scope_read. Lock 2 is now chunk_labels_read on chunk.labels (see r3-scope). Earlier: migration 0014 applied to Supabase 2026-09-25 and verified live.
 - Settings and rules:
   | Setting | Value |
   |---|---|
-  | ADR | 0011, 0014 |
+  | ADR | ADR-routing-labels-sole-content-axis (supersedes the knowledge-scope ADR) |
   | Fails | closed for tagged rows; target: closed for every row not in state ok |
-  | Separates | platforms that share one source id |
+  | Separates | directed connections that share one source id |
   | Applies to | chunk and curated_knowledge_entry |
 
 ##### Panel `s-acl` · Page access list · [Implemented]
@@ -4796,9 +4806,9 @@ _Workflow label shown in the drawer: Security_
 - Settings and rules:
   | Setting | Value |
   |---|---|
-  | Per query | allowed_sources, allowed_knowledge_scopes, candidates, scores, answer, citations, feedback; target: token subject and decision |
+  | Per query | allowed_sources, allowed_knowledge_scopes (retired, empty), candidates, scores, answer, citations, feedback; target: token subject and decision |
   | Per refusal | a human_handoff log line with trace id, raw query, reason |
-  | Per sync | a reconciliation_run row and structured log lines (webhook_event, knowledge_scope_conflict) |
+  | Per sync | a reconciliation_run row and structured log lines (webhook_event) |
   | Secrets | never logged; the audit line for /chat carries ids and counts, not the message |
 
 ---
@@ -5011,7 +5021,7 @@ _Section id: `open`_
 | `sc-kb` | concerns | One knowledge base | Implemented |
 | `sc-user` | concerns | A Mews user | Planned |
 | `em-token` | embed | The signed note (JWT) | Implemented |
-| `r1-ctx` | rt1 | Build the authorization context: company, integration, person | Planned |
+| `r1-ctx` | rt1 | Build the authorization context: company, connection, person | Planned |
 | `r3-scope` | rt3 | Routing-label row security (scope axis retired) | Implemented |
 | `r3-acl` | rt3 | Page-level access list | Implemented |
 | `r5-evidence` | rt5 | The evidence block | Implemented |
@@ -5025,7 +5035,7 @@ _Section id: `open`_
 | `cm-shared` | code | shared/: small generic helpers | Implemented |
 | `cm-alembic` | code | knowledge-base/migrations/versions: the migrations | Implemented |
 | `cm-scripts` | code | scripts/: operator tools | Implemented |
-| `cm-config` | code | config/knowledge_scopes.json: the scope list | Implemented |
+| `cm-config` | code | knowledge-base/config/knowledge_scopes.json: the reserved classified label | Implemented |
 | `cm-docs` | code | docs/adr: the decisions of record | Implemented |
 | `cm-web` | code | frontend: the widget | Implemented |
 | `cm-contracts` | code | packages/contracts | Implemented |
@@ -5034,8 +5044,8 @@ _Section id: `open`_
 | `em-loader` | embed | obi.js: one script tag | Implemented |
 | `em-hostbackend` | embed | The platform's note endpoint | Decision needed |
 | `em-backend` | embed | Obi checks the note and picks the pages | Implemented |
-| `em-kb` | embed | Obi picks the pages: the shared knowledge base | Implemented, needs changing |
-| `tg-config` | tags | The scope list file | Implemented |
+| `em-kb` | embed | Obi picks the pages: the shared knowledge base | Implemented |
+| `tg-config` | tags | The reserved label file | Implemented |
 | `i1-sweep` | in1 | Sweeps: the safety net | Implemented, needs changing |
 | `s-writer` | security | The writer (table owner) | Implemented |
 | `i1-webhook` | in1 | POST /confluence/events | Implemented |
@@ -5048,7 +5058,7 @@ _Section id: `open`_
 | `i1-fail` | in1 | Retry with backoff, then dead letter | Implemented |
 | `i1-handle` | in1 | Handle and complete in one transaction | Implemented |
 | `i2-fetch` | in2 | Fetch the page facts | Implemented |
-| `i2-labels` | in2 | Labels to scope state | Implemented |
+| `i2-labels` | in2 | Labels decide membership | Implemented |
 | `i2-hash` | in2 | One index fingerprint | Implemented, needs changing |
 | `i2-classify` | in2 | Classify the change | Implemented, needs changing |
 | `i2-gone` | in2 | Gone, classified, or unlabeled: deactivate | Implemented |

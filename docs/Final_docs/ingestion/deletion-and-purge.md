@@ -65,8 +65,8 @@ Confluence.
 
 This diverges from the design panels `tg-purge`/`tg-classified` as originally worded ("keeps
 `page_source` with state `classified` so the sweep knows to skip it"): that rested on the
-`scope_state` concept, which the sync-rules decisions retire (D4). The correction is recorded in
-`docs/Final_docs/0.4-design-review/plan-corrections.md`. The design page still wins; it gets the
+`scope_state` concept, which the sync-rules decisions retire (D4). The correction was recorded in the
+0.4 design-review plan corrections (removed). The design page still wins; it gets the
 `today`-line update when the 2.2.4 series completes (§13 step 6).
 
 ## How we know it works
@@ -108,7 +108,7 @@ Rule 8 (a change to one page never touches another's rows) is proven by
   page A leaves neighbour B byte-identical: same active version id, chunk `stable_key`s, tags and
   embedding vectors.
 
-The revert-cycle proof for all of these (the delete/classified three and the membership four) is in
-`docs/Final_docs/sync-rules/test-proof.md`.
+The revert-cycle proof for all of these (the delete/classified three and the membership four) was recorded in
+the sync-rules test-proof file (removed); the ledger entries for the 2.2.4 series keep the record.
 
 Not yet proven here: the live label/freshness proof (needs staging — owner blocker).

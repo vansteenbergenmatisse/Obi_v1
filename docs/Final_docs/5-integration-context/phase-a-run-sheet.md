@@ -534,42 +534,38 @@ table** records the local/Base/Data Hub legs separately.
 
 **Case verdict (per env):** Local ☐ PASS ☐ FAIL · Base ☐ PASS ☐ FAIL ☐ N/A · DataHub ☐ PASS ☐ FAIL ☐ N/A
 
-### Case 18 — Target-enablement widget eligibility (decision-dependent — §D.18 item 4)
+### Case 18 — Source-enablement widget eligibility (live gate — §D.18 item 4, ADR-source-system-decides-widget-eligibility)
 
-- **How to reach this context:** a directed token whose **target** is a product that is *not*
-  enabled for the customer. Connection under test: target-enablement eligibility. **STATUS
-  (transcribed verbatim):** the retrieval half is live; **the eligibility gate is not yet built in
-  the directed path** (the launch allowlist lapses for directed tokens — ADR-directed-source-target-routing-labels D4/D5,
-  `auth_context.py:190-192`). This case records current behaviour now and becomes a pass/fail gate
-  only once the eligibility refinement is adopted (its own substep + ADR amendment). **Do not fail
-  Phase A on this case until the refinement ships.**
+- **How to reach this context:** a directed token whose **source** is not a supported system (e.g.
+  `source_system: "PEP PMS"`, `target_system: "NetSuite"`). Only the source decides whether Obi
+  shows (`enabled_sources` = `mews`, `toast`, `opera-cloud`); the target is never checked. Full case:
+  `phase-a-validation-cases.md` Case 18.
 - **Action:** open Obi.
-- **Expected (today):** the directed token is accepted if it verifies and vends; access is gated by
-  the connection's **content** (empty box → cited refusal), not by a target-enablement check. Record
-  exactly what happens.
-- **Expected (after the §D.18-item-4 refinement is built):** the widget is **ineligible / hidden**
-  for a non-enabled target, and the backend refuses the session — mirroring how a filled
-  off-allowlist slot hides Obi in the slot form.
+- **Expected:** the widget is **hidden**; `GET /chat/visibility` → `{"visible":false,"reason":"source_not_enabled"}`;
+  `POST /chat` → **403** `{"error":"integration not available","reason":"source_not_enabled"}` (no
+  product id in the body).
+- **Control:** an enabled source with any target (`toast → mews`, `toast → NetSuite`) is visible and
+  served; the unknown target routes on `[obi-general, toast-general]`.
 
 | # | Step (§D.10 order) | Expected | Observed | PASS/FAIL | Network / trace / console ref | Notes |
 |---|---|---|---|---|---|---|
-| 1 | Configuration | Directed token whose target is a product not enabled for the customer | | | | |
-| 2 | Metadata | Corpus for the directed connection (content gate applies) | | | | |
-| 3 | Included / excluded ids | Today: content-gated (empty box → refusal); no target-enablement check yet | | | | |
-| 4 | Reranker results | Eligible-only (per content) | | | | |
-| 5 | Answers | Today: token accepted if it verifies+vends; gated by content. After refinement: widget ineligible/hidden, session refused. **Record observed behaviour** | | | | |
-| 6 | Citations | Per content gate | | | | |
-| 7 | Further retrieval | **Tag the row "decision-dependent — not yet a gate."** Do not fail Phase A on this case until the refinement ships | | | | |
+| 1 | Configuration | Directed token whose source is not a supported system | | | | |
+| 2 | Metadata | No session starts for the unsupported source | | | | |
+| 3 | Included / excluded ids | None — refused before any search | | | | |
+| 4 | Reranker results | None | | | | |
+| 5 | Answers | Widget hidden; `POST /chat` 403 `source_not_enabled`. Control: enabled source served for any target | | | | |
+| 6 | Citations | None for the refused case | | | | |
+| 7 | Further retrieval | None | | | | |
 
 **Per-environment capture (record separately):**
 
 | Aspect | Local harness | Base (staging) | Data Hub (staging) |
 |---|---|---|---|
-| Observed behaviour (today) | | | |
-| Content-gated refusal seen? | | | |
-| Tagged "decision-dependent — not yet a gate"? | | | |
+| Visibility probe body | | | |
+| `POST /chat` status + body | | | |
+| Launcher mounted? | | | |
 | Network / trace / console ref | | | |
-| PASS / FAIL / N/A (non-gating today) | | | |
+| PASS / FAIL / N/A | | | |
 
 **Case verdict (per env):** Local ☐ PASS ☐ FAIL ☐ N/A · Base ☐ PASS ☐ FAIL ☐ N/A · DataHub ☐ PASS ☐ FAIL ☐ N/A
 
@@ -596,11 +592,11 @@ table** records the local/Base/Data Hub legs separately.
    copy changes, update the expected badge text — the enum (`general|pos|pms|accounting|pair`) is the
    design-of-record oracle.
 7. **Integration cases 11–18 prove our side on the local harness now; the real end-to-end leg waits on
-   partner staging** (`partner-facts.md`: 0/5 confirmed for both Base and Data Hub today). Record the
+   partner staging** (current per-partner state: `partner-facts.md`). Record the
    two legs separately; never call a case fully passed on the local leg alone.
-8. **Case 18 is decision-dependent.** The "target-enablement controls widget eligibility" half of §D.18
-   item 4 is not yet implemented in the directed path. Case 18 documents current behaviour and becomes
-   a gate only after that refinement ships. It does not fail Phase A meanwhile.
+8. **Case 18 is a live gate on the source** (ADR-source-system-decides-widget-eligibility, 2026-10-20).
+   An unsupported source must hide the widget and be refused 403 `source_not_enabled`; the target is
+   never checked. A disabled source that mounts the widget or is served fails the case.
 
 ---
 

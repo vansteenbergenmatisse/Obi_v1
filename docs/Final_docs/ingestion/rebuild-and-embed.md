@@ -78,8 +78,8 @@ counts), never code paths:
 - `test_versioning_failed.py::test_i4_failed_never_garbage_collected_by_gc` — panel `i4-failed`:
   retain 0 touches only `superseded` rows; a `failed` row survives untouched.
 
-Each red-today test's revert/red/green cycle is recorded in
-`docs/Final_docs/sync-rules/test-proof.md` (§13 step 5). The design-page **status** flips for
+Each red-today test's revert/red/green cycle was recorded in the sync-rules test-proof file
+(removed; the ledger keeps the record) (§13 step 5). The design-page **status** flips for
 `i2-rebuild`/`i3-embed`/`i4-gc` are batched to §13 step 6, mirroring steps 1–4.
 
 Not proven here: the attachment-only rebuild (deferred to 2.4.1, strict xfail) and the live-webhook

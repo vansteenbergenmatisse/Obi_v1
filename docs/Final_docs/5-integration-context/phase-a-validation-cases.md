@@ -442,30 +442,31 @@ the `/embed` `frame-ancestors` CSP (`middleware.ts:51-56` from `activeDomains()`
   only `active: true` platforms' domains. (Only the temporary `obi-test` origin is active today, so a
   partner's origin must be added to its `active` entry before its page can embed.)
 
-### Case 18 — Target-enablement widget eligibility (live pass/fail gate — §D.18 item 4, ADR-widget-hides-via-visibility-probe)
+### Case 18 — Source-enablement widget eligibility (live pass/fail gate — §D.18 item 4, ADR-source-system-decides-widget-eligibility)
 
-Covers: the owner decision "the selected target's enablement controls widget eligibility." **Status:
-LIVE GATE.** The eligibility refinement shipped (Task 5, ADR-widget-hides-via-visibility-probe "Target-Enablement Widget
-Eligibility in the Directed Path", amends ADR-directed-source-target-routing-labels D4/D5): a product-global `enabled_targets` list in
-`product_catalog.json`, a `TargetNotEnabledError` → **403** after vend rights in the directed gate
-(`auth_context.py`, `_build_directed_context`), a read-only `GET /chat/visibility` probe, and the
-frontend hide (loader init fetch + the `obi:hidden` frame→host message). This case is now a pass/fail
-gate for Phase A. Retrieval routing (ADR-directed-source-target-routing-labels D5 four-label filter) is unchanged.
+Covers: the owner decision of 2026-10-20 "only the **source** system decides whether Obi shows; the
+target is never checked" (ADR-source-system-decides-widget-eligibility, which supersedes the
+which-endpoint part of ADR-widget-hides-via-visibility-probe; the probe, 403 render and `obi:hidden`
+message stay). **Status: LIVE GATE.** As built: `enabled_sources` (`["mews","toast","opera-cloud"]`)
+in `product_catalog.json`; in the directed gate (`auth_context.py`, `_build_directed_context`) an
+unresolved source → `SourceNotEnabledError` **403**, a known source the issuer may not vend →
+**401**, a vended source not in `enabled_sources` → **403**; a read-only `GET /chat/visibility`
+probe; the frontend hide (loader decodes `source_system` + the `obi:hidden` frame→host message).
+Retrieval routing (ADR-directed-source-target-routing-labels D5 four-label filter) is unchanged.
 
-- **Setup:** a directed token whose **target** is a product *not* in `enabled_targets` (e.g.
-  `mews → quickbooks-online` while the shipped list is `["mews","toast","opera-cloud"]`). The token
-  otherwise verifies and vends.
+- **Setup:** a directed token whose **source** is not a supported system (e.g. Base's real example
+  `source_system: "PEP PMS"`, `target_system: "NetSuite"`). The token otherwise verifies.
 - **Action:** open Obi.
 - **Expected (PASS):** the widget is **hidden** — `GET /chat/visibility` returns
-  `{"visible":false,"reason":"target_not_enabled"}`, the loader hides before/at mount (via
+  `{"visible":false,"reason":"source_not_enabled"}`, the loader hides before/at mount (via
   `obi:hidden`), and `POST /chat` for the same connection is refused **403** with body
-  `{"error":"integration not available","reason":"target_not_enabled"}` (no product id in the body).
-  Mirrors how a filled off-allowlist slot hides Obi in the slot form.
+  `{"error":"integration not available","reason":"source_not_enabled"}` (no product id in the body).
 - **Expected (FAIL):** widget mounts / is visible, or `POST /chat` is served (or returns a status
-  other than 403 for the not-enabled target), or the body leaks the product id.
-- **Control (must also hold):** an **enabled** target (e.g. `toast → mews`) is `visible:true` and the
-  session is served — the gate does not over-hide. Unknown target still **400** before any search;
-  un-vended still **401** (precedence: 400 → 401 → 403).
+  other than 403), or the body leaks the product id.
+- **Control (must also hold):** an **enabled source with any target** — e.g. `toast → mews`, and
+  `toast → NetSuite` (unknown target) — is `visible:true` and the session is served; the unknown
+  target routes on `[obi-general, toast-general]`. The gate does not over-hide and never checks the
+  target.
 - **Verify:** record the observed `GET /chat/visibility` body, the `POST /chat` status + body, and
   whether the launcher mounted. **PASS/FAIL gates Phase A** (no longer decision-dependent).
 
@@ -539,7 +540,7 @@ gates 8.5.2 like any other case.
 | Vend rights + inactive registration denied | 15 |
 | Customer/connection switch without logout (Marien) | 16 |
 | Embed-origin lock (frame-ancestors) | 17 |
-| Target-enablement widget eligibility (live gate — ADR-widget-hides-via-visibility-probe) | 18 |
+| Source-enablement widget eligibility (live gate — ADR-source-system-decides-widget-eligibility) | 18 |
 
 ## Gaps and assumptions (honest)
 
@@ -572,10 +573,11 @@ gates 8.5.2 like any other case.
    on partner staging.** The local harness uses our own test keys and `test-*.local` issuers, so a
    local PASS proves the gate/widget behave correctly — not that Base or Data Hub authentication
    works. The partner-staging leg of each case runs only once that partner confirms its issuer, JWKS
-   and token endpoint (`partner-facts.md`: 0/5 confirmed for both today). Record the two legs
+   and token endpoint (current per-partner state: `partner-facts.md`). Record the two legs
    separately; do not call a case fully passed on the local leg alone.
-8. **Case 18 is now a live gate (ADR-widget-hides-via-visibility-probe, 2026-10-13).** The "target-enablement controls widget
-   eligibility" half of §D.18 item 4 shipped in Task 5 (ADR-widget-hides-via-visibility-probe amends ADR-directed-source-target-routing-labels D4/D5): the directed
-   path now refuses a not-enabled target with a **403** and hides the widget via `GET /chat/visibility`
-   + the `obi:hidden` message. Case 18 is a pass/fail gate for Phase A — a disabled target that mounts
-   the widget or is served fails the case. Retrieval routing (ADR-directed-source-target-routing-labels D5) is unchanged.
+8. **Case 18 is a live gate on the source (ADR-source-system-decides-widget-eligibility, 2026-10-20).**
+   The gate first shipped on the target (ADR-widget-hides-via-visibility-probe, 2026-10-13); the owner
+   then decided only the **source** decides. An unsupported source is refused **403**
+   `source_not_enabled` and the widget hides via `GET /chat/visibility` + the `obi:hidden` message; the
+   target is never checked. A disabled source that mounts the widget or is served fails the case.
+   Retrieval routing (ADR-directed-source-target-routing-labels D5) is unchanged.

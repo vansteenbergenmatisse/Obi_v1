@@ -1,16 +1,20 @@
-# Deploy-readiness gate — customer-scope RLS (migration 0010)
+# Deploy-readiness gate — source RLS backstop
 
 **When:** before exposing Obi's reader path (the `/chat` retrieval read) on any real, non-local
 database — Supabase staging or production. **Not needed for the local demo** (see below).
 
+> The file name is historical. The knowledge-scope RLS policies this gate used to check
+> (`chunk_scope_read`, `curated_knowledge_entry_scope_read`, migration `0010`) were dropped by
+> migration `0018_retire_knowledge_scope_rls` (ADR-routing-labels-sole-content-axis). The gate now
+> checks the source/company fence.
+
 ## What it protects
 
-Migration `0010_customer_scope_rls` installs the RESTRICTIVE customer-scope RLS policies
-(`chunk_scope_read` on `chunk`, `curated_knowledge_entry_scope_read` on `curated_knowledge_entry`)
-that are Obi's fail-closed tenant backstop (ADR-db-level-customer-scope-isolation-backstop): a read under an unset or wrong scope GUC
-returns nothing, independent of the application flag. If the reader path is exposed on a database
-where `0010` was never applied (head `< 0010`) or where a downgrade dropped the policies, that
-backstop is silently absent and cross-integration isolation rests on the application layer alone.
+Obi's fail-closed tenant backstop is the PERMISSIVE source policy plus row security ENABLEd. A single
+PERMISSIVE SELECT policy on an RLS-enabled table is deny-by-default: the non-owner `rag_reader` sees
+only the rows it admits, and an unset `app.allowed_sources` admits none. If the reader path is
+exposed on a database where these policies are missing or row security was disabled, source/company
+isolation fails open (never-bend rule 1).
 
 ## The gate
 
@@ -18,11 +22,14 @@ backstop is silently absent and cross-integration isolation rests on the applica
 cd backend && DATABASE_URL=<target> uv run python scripts/setup_supabase.py check-deploy-readiness
 ```
 
-Read-only (catalog SELECTs only; prints no secret — masked host + db name). It asserts, for both
-scope policies: the table exists, the policy is present `AS RESTRICTIVE FOR SELECT`, and row
-security is ENABLEd on the table. On any gap it prints what is missing and
-`Do NOT expose the reader path until \`alembic upgrade head\` (>= 0010) is applied` and exits
-non-zero (10). All-present exits 0.
+Read-only (catalog SELECTs only; prints no secret — masked host + db name). It asserts, for
+`chunk.chunk_source_read` and `curated_knowledge_entry.curated_knowledge_entry_reader_read`: the table
+exists, the policy is present as `PERMISSIVE FOR SELECT`, and row security is ENABLEd on the table.
+It also reports whether the routing-label policy `chunk_labels_read` is present, but never fails on
+it: that policy is RESTRICTIVE and fail-open by design (an unset `app.allowed_labels` opts out), so
+its absence loses label routing, not tenant isolation. On any gap it prints what is missing, tells
+you not to expose the reader path until `alembic upgrade head` and
+`setup_supabase.py provision-reader` have run, and exits non-zero (10). All-present exits 0.
 
 ### Enforcement status: MANUAL today (CFG-G)
 
@@ -40,22 +47,22 @@ that pipeline exists, this runbook — run by hand — is the gate.
 
 **CI runs it only as a smoke test, not as the gate.** `.github/workflows/ci.yml` has a step
 (`deploy-readiness check — smoke only`) that runs `check-deploy-readiness` against a freshly-migrated
-**local** Postgres to prove the CLI itself works and the migrations still install the backstop. That
+**local** Postgres to prove the CLI itself works and the migrations still install the source backstop. That
 is a regression canary against the local store; it is explicitly **not** the production gate and
 says nothing about any real target database.
 
 Note it checks RLS **ENABLE**, not **FORCE**: ADR-supabase-postgres-store-without-force-rls deliberately keeps `chunk` at `ENABLE` +
 `NO FORCE` (owner-role exemption on managed Postgres); `ENABLE` is what binds the non-owner reader
-role to the RESTRICTIVE policy, so requiring `FORCE` would contradict ADR-supabase-postgres-store-without-force-rls.
+role to the policy, so requiring `FORCE` would contradict ADR-supabase-postgres-store-without-force-rls.
 
 ## Local demo: why it is inert, and still mandatory before deploy
 
-`0010` runs unconditionally everywhere (`alembic upgrade head`), including local. Locally its RLS is
-merely **inert**, because local reads use the RLS-exempt owner role — so the policies exist but do
-not constrain the owner. That is expected: the local demo does not rely on DB-level tenant
-isolation. Before any real deployment where a non-owner reader role serves `/chat`, `0010` is
-**mandatory** and this gate must pass — it is the check that the backstop is actually in force for
-the reader role, not just present in a migration file.
+The migrations run unconditionally everywhere (`alembic upgrade head`), including local. Locally the
+RLS is merely **inert**, because local reads use the RLS-exempt owner role — so the policies exist
+but do not constrain the owner. That is expected: the local demo does not rely on DB-level tenant
+isolation. Before any real deployment where a non-owner reader role serves `/chat`, this gate must
+pass — it is the check that the backstop is actually in force for the reader role, not just present
+in a migration file.
 
 _Automated proof: `backend/app/features/confluence_sync/tests/test_deploy_readiness_check.py`
 (gap MIG-02 / ADR-db-level-customer-scope-isolation-backstop) — ready-when-present and fails-closed-when-absent, both rolled back._

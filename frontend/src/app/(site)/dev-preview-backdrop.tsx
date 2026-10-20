@@ -1,7 +1,7 @@
 /**
  * Dev-only visual backdrop so the floating widget previews in context, not on a blank page.
  * Safe to delete — no behavior, no data, not part of the product (see
- * `docs/rag/OBI-WIDGET-DESIGN.md` §7). Route-owned, single consumer (`app/page.tsx`) — not a
+ * `docs/design/obi-widget-design.md` §7). Route-owned, single consumer (`app/page.tsx`) — not a
  * feature, not promoted to `components/`.
  */
 import type { ReactNode } from "react";

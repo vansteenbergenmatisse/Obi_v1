@@ -6,8 +6,7 @@
 >
 > These express the **directed `source_system` → `target_system` + `business_id`** contract — the
 > form Obi now routes on (ADR-directed-source-target-routing-labels, confirmed decision `connection-routing`). They **supersede the
-> three-slot `context.slots` version** in `jasper-reply-draft.md` (kept as provenance / for the
-> owner's in-progress edits). Base and Data Hub each join exactly two systems — a source and a
+> three-slot `context.slots` version** (an earlier Jasper reply draft, since removed). Base and Data Hub each join exactly two systems — a source and a
 > target (`plan.md` §D.17) — so the directed pair is their real shape, not a simplification.
 
 ---
@@ -75,9 +74,13 @@ Your token endpoint signs a JWT like this:
   a PMS or a POS). Accounting is a **target only** — `mews → quickbooks-online` is valid, but a chat
   never starts from an accounting product. We route a connection when it has pages and refuse with a
   reason when its box is empty, so send the real pair and we will tell you what is covered.
+- Only the **source** decides whether Obi shows (ADR-source-system-decides-widget-eligibility,
+  2026-10-20): Mews, Toast and Opera Cloud are supported sources. An unknown or unsupported source
+  hides the widget (403 `source_not_enabled`). The target is never checked: send the customer's real
+  target, even one we have no pages for; it then gets general and source answers.
 - Send two ids, never a compound. A value like `toast-opera` is not a system — it reads as two ids
-  mashed together, resolves to nothing, and the gate refuses the token with a 401 before any
-  search. Send `toast` as the source and the PMS id as the target.
+  mashed together and resolves to nothing; as a source it hides Obi. Send `toast` as the source and
+  the PMS id as the target.
 - The legacy single-`integration` claim and the `context.slots` form still verify, but they no
   longer route — the directed pair is what Obi filters on. New tokens send the directed form.
 - `aud` is exactly `"obi"`, `sub` is the end user's stable id, `iss` is your issuer string, and
@@ -102,7 +105,8 @@ Your token endpoint signs a JWT like this:
 |---|---|---|
 | Directed connection | A `source → target` pair resolves and the user gets answers from that connection's pages only | **Works today** (the directed gate + hard label filter are built and tested) |
 | Wrong-connection isolation | A different connection's pages never appear, at any similarity | **Works today** (proven at the DB + eval level; `phase-9-isolation-run.txt`) |
-| Unknown source or target | A system your issuer may not vend, or one not in the catalog, is refused | **Works today** (400 before any search, or 401 on a vend violation) |
+| Unsupported source | A source not in the catalog or not enabled hides the widget; a known source your issuer may not vend is refused | **Works today** (403 `source_not_enabled` before any search, or 401 on a vend violation; ADR-source-system-decides-widget-eligibility) |
+| Any target | The target is never checked; an unknown target still gets general + source answers | **Works today** (routes on `[obi-general, {source}-general]`) |
 | Direction swap | `source` and `target` swapped is treated as a new connection and resets the chat | **Works today** (widget + session) |
 | Empty connection box | A valid pair with no pages yet refuses with a reason, not a wrong answer | **Works today** (content-gated) |
 
@@ -191,7 +195,8 @@ For each platform, once the five facts are in, on our side in order:
    vend), set **`active: false`** until the endpoints verify.
 2. Verify the JWKS is reachable and the token endpoint mints a conforming directed JWT (`iss`,
    `aud:"obi"`, `sub`, `iat`, `exp ≤ 60 min`, `business_id` + `source_system` + `target_system`).
-3. Confirm the vend rights: the issuer may assert only the source/target ids agreed in step 1.
+3. Confirm the vend rights: the issuer may assert only the source ids agreed in step 1 (the target
+   is never checked — ADR-source-system-decides-widget-eligibility).
 4. Flip to **`active: true`** only after that passes.
 5. Redeploy the backend (new registry entry) and rebuild/redeploy the frontend (the iframe's
    `frame-ancestors` CSP derives from the active embed domains).

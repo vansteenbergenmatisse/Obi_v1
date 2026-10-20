@@ -11,8 +11,9 @@ nothing from `backend/` or `frontend/` (ADR-features-import-only-through-public-
 - `schema/` — SQLAlchemy models, enums (mapped 1:1 to Postgres ENUMs), the writer/reader engines (`engine.py`), RLS/role helpers, and `settings.py` (`KbSettings`, reads the same `.env` as the backend). The embedding column switches to `halfvec` above 2000 dims.
 - `migrations/` — a self-contained Alembic project (`alembic.ini`, `env.py`, `versions/0001…`). **Every schema change on the design page is one migration; every migration has a downgrade.** This is the only Alembic project in the repo.
 - `config/` — the canonical JSON registries, edited by operators, read by both apps:
-  - `knowledge_scopes.json` — the single allowlist of knowledge-scope tags.
-  - `platforms.json` — the platform / JWT-issuer registry + integration→scope map (production values).
+  - `product_catalog.json` — the systems (Mews, Toast, Opera Cloud, …), their kinds and the enabled sources; the routing labels (`obi-general`, `{product}-general`, `{product}-to-{kind}`) are derived from it.
+  - `knowledge_scopes.json` — holds only the reserved `classified` label (the knowledge-scope axis is retired, ADR-routing-labels-sole-content-axis).
+  - `platforms.json` — the embedding-partner / JWT-issuer registry and the valid integration claim values (production values).
   - `platforms.local.json` — local-only test-host issuers (localhost; **rejected in a production env**).
 - `seed/` — the curated-knowledge seed CLI. `local/` — the local pgvector docker-compose + `rag_reader` role SQL (dev only; not deployed).
 - `tests/` — schema/migration/RLS tests, run from this folder's own venv.
@@ -20,7 +21,7 @@ nothing from `backend/` or `frontend/` (ADR-features-import-only-through-public-
 ## Contracts it shares with the other roots
 
 - **The `schema` package is the backend's entire DB layer.** The backend imports `schema.engine`, `schema.models`, `schema.enums` by full path (ADR-features-import-only-through-public-root exception — models/enums are not facaded).
-- **`config/*.json` are read at runtime by both the backend (boot) and the frontend (embed CSP, server-side).** Changing a scope tag or platform means editing these files — nothing else may define a tag or platform.
+- **`config/*.json` are read at runtime by both the backend (boot) and the frontend (embed CSP, server-side).** Changing a routing label or platform means editing these files — nothing else may define a routing label or platform.
 - It ships **with the backend** in the deploy image (siblings under one root), because the backend resolves both the import and the config paths relative to that layout.
 
 ## Rules that never bend (see root CLAUDE.md)

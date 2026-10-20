@@ -4,7 +4,7 @@
  * It owns no behavior, so per the architecture standard it stays in `app/` and
  * is NOT a feature. Wrapped in `DevPreviewBackdrop`, a dev-only decorative backdrop so the
  * globally-mounted chat widget previews against realistic page content instead of a blank page
- * (see `docs/rag/OBI-WIDGET-DESIGN.md` §7). Safe to delete; not part of the product.
+ * (see `docs/design/obi-widget-design.md` §7). Safe to delete; not part of the product.
  *
  * The old standalone `/chat` full-page route was removed (PLAN 4.7.7) — the floating widget,
  * mounted globally in `app/layout.tsx`, is now the only chat surface.

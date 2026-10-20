@@ -9,7 +9,7 @@ Governs: `knowledge-base/config/knowledge_scopes.json`, `knowledge-base/config/p
 `backend/app/platform/config/settings.py`, `backend/app/platform/config/platforms.py`,
 `backend/app/features/retrieval/infrastructure/search_repo.py` (`apply_knowledge_scope`,
 `_base_filters`), `backend/app/features/retrieval/application/retriever.py`,
-`backend/app/features/retrieval/domain/knowledge_scope.py`,
+`backend/app/features/retrieval/domain/knowledge_scope.py` (removed 2026-10-20),
 `backend/app/features/rag_agent/application/auth_context.py`,
 `backend/app/features/rag_agent/application/answer_service.py`,
 `backend/app/features/rag_agent/infrastructure/curated_knowledge_repo.py`,

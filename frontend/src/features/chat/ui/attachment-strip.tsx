@@ -1,7 +1,7 @@
 /**
  * AttachmentStrip — thumbnail preview row for images staged in the composer, rendered above the
  * textarea so it sits at the bottom of the panel with the input (see
- * `docs/rag/OBI-WIDGET-DESIGN.md` §6). Feature-internal — only `Composer` renders it.
+ * `docs/design/obi-widget-design.md` §6). Feature-internal — only `Composer` renders it.
  *
  * Pre-send staging only: these previews live in the composer's local state until `send()`
  * base64-encodes them and hands them to `onSend` (PLAN 7.5) — this component itself never talks

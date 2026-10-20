@@ -2,17 +2,11 @@
 
 An editor adds a Confluence label to an already-indexed page, alongside whatever labels it
 already carried (Confluence sends label_added; the page version does not change). The worker
-re-resolves the full current label set on every sync (`resolve_knowledge_scope_tags` in
+re-resolves the full current label set on every sync (in
 `handle_sync_page`), so the newly-recognized tag must land on `page_source.tags` -- and because
 `ChangeClass.labels_changed` alone is not in `_REBUILD_CLASSES` (`sync_service.py`), this must be
 a metadata-only update: the active `document_version` is never rebuilt for a label-only change.
 
-Not duplicated here: `test_knowledge_scope.py` covers `resolve_knowledge_scope_tags` in isolation
-(pure function, no sync path); `test_scope_resolver.py` covers folder/space roots (unrelated);
-`test_knowledge_scope_backfill.py` covers an already-tagged corpus's retrieval readiness, not this
-add transition. `test_scope_tagging_first.py` covers the first-index case and
-`test_scope_tagging_change.py` covers swapping one recognized label for another; this file is the
-only one exercising an add-alongside-the-existing-label transition on an already-indexed page.
 
 The panel's second acceptance line -- "the page appears in the new scope's results on the next
 question" -- is proven here too, end to end through the real sync path (`test_tg_add_...

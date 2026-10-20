@@ -1,43 +1,51 @@
-# Widget target-enablement hide (frontend)
+# Widget source-enablement hide (frontend)
+
+> The filename keeps its old "target" name for link stability. Since 2026-10-20 the gate is on the
+> **source** (ADR-source-system-decides-widget-eligibility); the target is never checked.
 
 - **Workflow:** embed / widget (frontend)
 - **Owning code:** `frontend/src/features/embed/loader.ts` (the host-page `obi.js` loader),
+  `frontend/scripts/enabled-source-names.mjs` (the build-time name list),
   `frontend/src/app/embed/embed-frame.tsx` (the `/embed` frame), `frontend/src/features/chat/api/chat-client.ts`
   (`checkVisibility`), `frontend/src/features/chat/server/route-handlers.ts` (`handleGetVisibility`)
   + `frontend/src/app/api/chat/visibility/route.ts` (the proxy), `packages/contracts/src/iframe-messages.ts`
   (the `obi:hidden` message)
-- **Design panel:** panel mi-gate (target-enablement visibility gate), directed path
-- **Authorized by:** ADR-widget-hides-via-visibility-probe "Target-Enablement Widget Eligibility in the Directed Path" (amending
-  ADR-directed-source-target-routing-labels D4/D5) — the backend 403 (`reason: target_not_enabled`) is the authority; this hide is UX
-- **Status:** Implemented, needs changing → Unverified (frontend coded + unit/mocked-browser proven;
-  the signed-key e2e needs a local key, see below)
+- **Design panel:** panel mi-gate (source-enablement visibility gate), directed path
+- **Authorized by:** ADR-source-system-decides-widget-eligibility (which gates), building on the
+  mechanism of ADR-widget-hides-via-visibility-probe (probe, 403 render, `obi:hidden`). The backend
+  403 (`reason: source_not_enabled`) is the authority; this hide is UX.
+- **Status:** Unverified (frontend coded + unit/mocked-browser proven; the signed-key e2e needs a
+  local key, see below)
 
 ## What it does
 
-When Obi is embedded on a platform page whose verified directed token points at a **target** integration
-that is not in the enabled set (`knowledge-base/config/product_catalog.json` → `enabled_targets`, today
-`["mews","toast","opera-cloud"]`), the widget never appears. Two layers:
+When Obi is embedded on a platform page whose directed token names a **source** system that is not
+enabled (`knowledge-base/config/product_catalog.json` → `enabled_sources`, today
+`["mews","toast","opera-cloud"]`) or not known at all, the widget never appears. The target is never
+checked: a Toast customer sees Obi for any target, NetSuite included. Two layers:
 
-1. **Load-time, no-flash (loader).** `__OBI_ENABLED_TARGETS__` is injected into `obi.js` at build by
-   esbuild `--define` from `enabled_targets` — exactly how `__OBI_ORIGIN__` is injected
-   (`frontend/package.json` `build:obi`). In `init()`, before mounting, the loader fetches the token once
-   and decodes its (display-only, non-trust) `target_system`; if that target is not enabled it returns
-   without mounting — no launcher, no iframe, no flash. The set absent/empty ⇒ **all enabled** (fail-open);
-   a failed eligibility fetch or a token with no `target_system` (a legacy single-integration note) also
-   mounts. The trust-bearing token fetch still happens fresh at click.
+1. **Load-time, no-flash (loader).** `__OBI_ENABLED_SOURCES__` is injected into `obi.js` at build by
+   esbuild `--define` from `scripts/enabled-source-names.mjs` — every normalized name an enabled source
+   answers to (id, label, aliases) — exactly how `__OBI_ORIGIN__` is injected (`frontend/package.json`
+   `build:obi`). In `init()`, before mounting, the loader fetches the token once and decodes its
+   (display-only, non-trust) `source_system`, normalized the way the backend does (case-folded,
+   whitespace collapsed). If that source is not enabled it returns without mounting — no launcher, no
+   iframe, no flash. The set absent/empty ⇒ **all enabled** (fail-open); a failed eligibility fetch or a
+   token with no `source_system` (a legacy single-integration note) also mounts. The trust-bearing token
+   fetch still happens fresh at click.
 2. **Server-authoritative cross-check (frame).** On every token receipt, `embed-frame.tsx` calls
-   `GET /chat/visibility` through the same-origin Next proxy that injects the host `CHAT_API_KEY`
-   (`/api/chat/visibility` → `handleGetVisibility`, mirroring `POST /api/chat`). On `{"visible":false,
-   "reason":"target_not_enabled"}` it posts the one frame→host message `obi:hidden`, and the loader
-   `destroy()`s the widget. A hard failure (400/401/429/503) is **never** coerced to hidden — the widget
-   stays mounted.
+   `GET /chat/visibility` through the same-origin Next proxy that injects the host `CHAT_API_KEY` and
+   forwards the user token as `X-Obi-Token` (`/api/chat/visibility` → `handleGetVisibility`, mirroring
+   `POST /api/chat`). On `{"visible":false,"reason":"source_not_enabled"}` it posts the one frame→host
+   message `obi:hidden`, and the loader `destroy()`s the widget. A hard failure (400/401/429/503) is
+   **never** coerced to hidden — the widget stays mounted.
 
 ## Why it does it
 
-The directed routing path (ADR-directed-source-target-routing-labels) does not itself gate widget visibility; the allowlist lapse let a
-not-yet-enabled target still render Obi. ADR-widget-hides-via-visibility-probe partially reverses that for **widget eligibility only**
-(retrieval routing is unchanged). The backend's `POST /chat` 403 with `reason: target_not_enabled` is the
-real authority — it never names the product id (never-bend rule 10). The frontend hide is pure UX: show
+A source system can connect to hundreds of targets; checking each target against our catalog would
+refuse most real connections (Base's first token was `PEP PMS → NetSuite`). So only the source decides
+(owner, 2026-10-20). The backend's `POST /chat` 403 with `reason: source_not_enabled` is the real
+authority — it never names the product id (never-bend rule 10). The frontend hide is pure UX: show
 nothing rather than a widget that can only refuse. The two-layer split exists so the common case has no
 flash (the loader decodes locally) while correctness stays server-authoritative (the probe can hide a
 widget the loader mounted, e.g. when the enabled set was absent at build). Fail-open on every uncertain
@@ -53,9 +61,11 @@ Two conventions are bent, both authorized by ADR-widget-hides-via-visibility-pro
 
 ## How we know it works
 
-- **Loader, unit** (`frontend/src/features/embed/tests/loader-target-gate.test.ts`): `test_loader_hides_when_decoded_target_not_enabled`,
-  `test_loader_mounts_when_decoded_target_enabled`, `test_loader_mounts_when_enabled_set_absent_all_enabled`
-  (the fail-safe default), `test_loader_mounts_when_eligibility_fetch_fails` (fail-open), and
+- **Loader, unit** (`frontend/src/features/embed/tests/loader-source-gate.test.ts`):
+  `test_loader_hides_when_decoded_source_not_enabled`, `test_loader_hides_when_decoded_source_unknown`,
+  `test_loader_mounts_when_decoded_source_enabled_by_display_name`,
+  `test_loader_mounts_when_enabled_set_absent_all_enabled` (the fail-safe default),
+  `test_loader_mounts_when_eligibility_fetch_fails` (fail-open), and
   `test_loader_destroys_on_obi_hidden_from_own_frame_only` (origin/source-guarded teardown).
 - **Visibility client, unit** (`frontend/src/features/chat/tests/chat-client.test.ts`):
   `test_visibility_gets_own_proxy_route_with_bearer_token`, `test_visibility_reports_visible_true`,
@@ -69,14 +79,9 @@ Two conventions are bent, both authorized by ADR-widget-hides-via-visibility-pro
 - **Frame, unit/integration** (`frontend/src/app/embed/embed-frame.test.tsx`):
   `test_embed_posts_obi_hidden_when_visibility_reports_hidden` (posted to the exact host origin, never `"*"`),
   `test_embed_does_not_hide_on_visibility_hard_failure`.
-- **Browser (e2e)** (`frontend/e2e/widget-hidden-when-target-disabled.spec.ts` + `/test-hosts/quickbooks`
-  stub minting `target_system: "quickbooks-online"`): launcher count 0. **Caveat:** needs
-  `TEST_OBI_PRIVATE_KEY_QUICKBOOKS` (RS256, gitignored — same signed-key class as `widget-mounts.spec.ts`).
-  Without the key the token route 503s and the loader fails open (mounts), so the committed spec only
-  passes where the key is configured. Validated locally with an ephemeral key (fresh server, CI mode):
-  the spec passes (launcher count 0).
-- **Gate:** `make boundaries` green; `pnpm typecheck` clean; full `vitest` suite green for the touched
-  files (one pre-existing, unrelated unhandled-rejection flake in `loader.test.ts`'s renewal-timer path,
-  present on the un-modified loader too).
-- **Not yet proven:** the backend side (403 precedence, `/chat/visibility` live answer) is owned elsewhere;
-  the live signed-key browser run in CI is deferred to where the quickbooks key exists.
+- **Browser (e2e)** (`frontend/e2e/widget-hidden-when-source-disabled.spec.ts` + `/test-hosts/quickbooks`
+  stub minting `source_system: "quickbooks-online"`, `target_system: "mews"`): launcher count 0.
+  **Caveat:** needs `TEST_OBI_PRIVATE_KEY_QUICKBOOKS` (RS256, gitignored — same signed-key class as
+  `widget-mounts.spec.ts`). Without the key the token route 503s and the loader fails open (mounts), so
+  the spec only passes where the key is configured.
+- **Not yet proven:** the live signed-key browser run in CI is deferred to where the quickbooks key exists.

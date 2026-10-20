@@ -24,11 +24,9 @@ security_baseline (surface: POST /chat, tier STATE-MUTATING + LLM-CALL):
                               cap (chat_max_image_bytes), checked on every turn's `images`, not
                               just the newest — a caller could otherwise stuff an oversized image
                               on an older turn to dodge a newest-turn-only check. PLAN 10.5
-                              (ADR-knowledge-scope-tagging-and-filtering decision 6): `knowledge_scope` is shape-validated (short
-                              lowercase slug) but not whitelisted here — `resolve_allowed_scopes`
-                              (retrieval/domain/knowledge_scope.py) already degrades an
-                              unrecognized value to `general`/the deployment default rather than
-                              erroring, so this only rejects a value that could not possibly be a
+                              (retired knowledge-scope design, ADR-routing-labels-sole-content-axis):
+                              `knowledge_scope` is shape-validated (short lowercase slug) and then
+                              ignored — it decides nothing, so this only rejects a value that could not possibly be a
                               real scope, the same posture as the `principal` validator below.
   C4_timeout:     covered   - retrieval's embedder/reranker already carry timeout/retry/breaker
                               (3.5.2/3); the answer-runtime AnthropicMessagesClient now does too

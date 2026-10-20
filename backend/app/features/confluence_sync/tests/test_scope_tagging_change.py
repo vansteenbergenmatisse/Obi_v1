@@ -2,7 +2,7 @@
 
 An editor swaps one recognized label for another on an already-indexed page (Confluence sends
 label_deleted then label_added, no body change). The worker reads the current label set fresh
-on every sync (`resolve_knowledge_scope_tags` in `handle_sync_page`), so the page's tags must
+on every sync (in `handle_sync_page`), so the page's tags must
 converge to exactly the new tag with the old one gone -- never both at once -- and this is a
 metadata-only change: no rebuild (the active document_version does not change). The panel's
 steps name two equivalent delivery shapes -- coalesced (both events land in one pending job,
@@ -14,9 +14,6 @@ label_deleted and label_added always get distinct keys and never dedupe into one
 time; both paths are exercised here since they run different code (one job vs. two through the
 queue) even though both are expected to converge on the same result.
 
-Not duplicated here: `test_knowledge_scope.py` covers `resolve_knowledge_scope_tags` in isolation;
-`test_scope_resolver.py` covers folder/space roots; `test_knowledge_scope_backfill.py` covers an
-already-tagged corpus. This file is the only one exercising the real sync path for a label swap.
 """
 
 from __future__ import annotations

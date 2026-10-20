@@ -1,5 +1,12 @@
 # Decision memo · token/API extension for the integration context (§D.1)
 
+> **Read first (2026-10-20).** This memo records the three-slot decisions of 2026-10-05. That
+> contract is now **legacy** (still accepted, no longer routes): partners send the directed token
+> (ADR-directed-source-target-routing-labels), the knowledge-scope axis is retired
+> (ADR-routing-labels-sole-content-axis), and only the **source** decides whether Obi shows
+> (ADR-source-system-decides-widget-eligibility; see §8). Current how-to:
+> [`how-partners-integrate-with-obi.md`](../1-how-partners-integrate-with-obi/how-partners-integrate-with-obi.md).
+
 This is the decision memo §D.1 requires — the place where the §15 keuzes 1–4
 (`docs/Final_docs/sync-rules/plan.md` §15) are decided. The decisions themselves were made by the
 owner in decision round 1 and recorded in `docs/Final_docs/plan.md` §D.13 (2026-10-05); this memo
@@ -184,7 +191,7 @@ target role**: an accounting target (e.g. `mews → quickbooks-online`) needs **
 `*-to-accounting` pages exist today**. This bears on O9 (accounting products ↔ scopes) above but
 does not close it.
 
-**Target-enablement hide is being built (Task 5 / ADR-widget-hides-via-visibility-probe).** The resolution of the open §D intent
+**Target-enablement hide is being built (Task 5 / ADR-widget-hides-via-visibility-probe).** *(Superseded 2026-10-20: the gate is now on the source — see §8.)* The resolution of the open §D intent
 is under construction as Task 5 of this work block: a **configurable, backend-enforced
 target-enablement gate on the directed path** with a matching frontend eligibility signal, so a
 token whose target is not enabled (e.g. QuickBooks at launch) yields **no widget** rather than
@@ -199,6 +206,8 @@ product-global default.
 
 ## 7 · Sync note — ADR-widget-hides-via-visibility-probe ratified and shipped (2026-10-13, Task 5e)
 
+*(The target-side gate described here was moved to the source on 2026-10-20 — see §8.)*
+
 Append-only; nothing above is changed. Task 5 (backend + frontend) is built and green and
 **ADR-widget-hides-via-visibility-probe is now Accepted** (`docs/adr/widget-hides-via-visibility-probe.md`),
 so §6's "being built" is now **done**. As shipped: optional flat `enabled_targets`
@@ -212,3 +221,15 @@ widget-eligibility only, so rule 11's gold-set before/after does not apply. `con
 §4/§8.4 and `catalog.md` are synced, and `phase-a-validation-cases.md` Case 18 is flipped from
 decision-dependent to a live pass/fail gate (disabled target ⇒ widget hidden + 403). The §D.18
 item-4 intent is now resolved in code and of record.
+
+## 8 · Sync note — the source decides, not the target (2026-10-20)
+
+Append-only; nothing above is changed. ADR-source-system-decides-widget-eligibility (Accepted
+2026-10-20) supersedes the **which-endpoint** part of §6/§7: `enabled_targets` is renamed
+**`enabled_sources`** (same value, `["mews","toast","opera-cloud"]`) and gates the directed token's
+**source**. An unknown or disabled source → **403** `SourceNotEnabledError`, body reason
+`source_not_enabled`; `GET /chat/visibility` → `{"visible":false,"reason":"source_not_enabled"}`.
+The target is never checked (no vend, enablement or allowlist check); an unknown target routes on
+`[obi-general, {source}-general]`. The probe, the 403 render and the `obi:hidden` message from
+ADR-widget-hides-via-visibility-probe stay as built. Example: `mews → quickbooks-online` now shows
+Obi; `quickbooks-online → mews` is hidden.

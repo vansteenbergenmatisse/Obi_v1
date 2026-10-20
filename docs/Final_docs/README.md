@@ -7,10 +7,17 @@ The authoritative design material for Obi and the audits taken against it. One l
 | `obi-rag-system-flow.html` | the design page *Obi, part by part* — every stage as a click panel with a today line, a target and tests. The source of truth. | design (owner) |
 | `obi-action-plan.html` | the action plan — the only work list, one substep at a time. | design (owner) |
 | `obi-system-brief.md` | the markdown brief generated from the design page by `tools/brief.py`. | `tools/brief.py` |
-| `obi-embedding-implementation-prompt.md` | the embedding-work implementation prompt. | design (owner) |
+| `1-how-partners-integrate-with-obi/how-partners-integrate-with-obi.md` | the partner-facing guide: how Base and Data Hub embed Obi, the token they mint (`source_system`, `target_system`, `business_id`), and what they send back. | maintainers |
+| `ledger.md` | the append-only record of finished substeps (commit, test count, deviations). | each substep |
+| `progress-log.md` | the ledger's plain-English companion, one entry per finished substep. | each substep |
+| `brief/` | operator runbooks: add a system, add a partner platform, run the embed test on localhost. | maintainers |
+| `handover/` | label and partner documents: tagging guide, label administration, partner onboarding. | maintainers |
+| `ingestion/`, `retrieval/` | one doc per component: what it does, why, how we know it works. | each substep |
+| `0.5-regression-tests/` | the regression phase: harness, coverage map, CI gate proof, release audit, owner decisions. | substep 0.5 |
+| `4-test-foundation/`, `phase-4-embed-security/` | test-foundation and embed-security evidence. | phase 4 |
+| `5-integration-context/` | the integration-context catalog, contract, partner facts and phase-9 directed-connection evidence. | phase 5–9 |
+| `sync-rules/` | the sync-rules plan, manual tests, routing test labels, widget hide notes. | sync-rules work |
 | `agent-research/` | scratch research notes. Ad hoc and expected to be sparse or empty; see its own README. | ad hoc |
-| `0.3-code-vs-design-audit-2026-09-14/` | the single, consolidated 0.3 home (merged 2026-09-18): one synopsis per code folder auditing the code against the design page at a pinned commit (substep 0.3.1), **plus** the test-suite inventory and infrastructure inventory (substep 0.3.2/0.3.3, `test-suite-inventory.md` / `infrastructure-inventory.md`). Frozen snapshot. See its own README. | substep 0.3.1–0.3.3 (obi-auditor runs) |
-| `0.3-synopsis-2026-09-16/` | **Merged 2026-09-18 into `0.3-code-vs-design-audit-2026-09-14/`.** Retained only as redirect stubs (`README.md`, `test-suite-inventory.md`) so append-only ledger and frozen 0.4-review references still resolve. | redirect stub |
 
 Naming convention for anything added here: no filename carries a bare relative word like
 "today" or "latest" — date it (`YYYY-MM-DD`) the day it's written, since these are frozen

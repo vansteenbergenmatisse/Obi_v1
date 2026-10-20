@@ -1,5 +1,14 @@
 # The shared integration-context contract (launch shape)
 
+> **LEGACY — superseded by the directed form.** The three-slot `context.slots` contract (and the
+> single `integration` claim) is still **accepted** by the gate, but it **no longer routes** content.
+> The current contract is the directed token (`source_system`, `target_system`, `business_id`;
+> ADR-directed-source-target-routing-labels), and only the **source** decides whether Obi shows
+> (ADR-source-system-decides-widget-eligibility: `enabled_sources` = `mews`, `toast`, `opera-cloud`;
+> unknown or disabled source → 403 `source_not_enabled`; the target is never checked). This page
+> stays because code still cites it. For how a partner integrates today, see
+> [`how-partners-integrate-with-obi.md`](../1-how-partners-integrate-with-obi/how-partners-integrate-with-obi.md).
+
 **Status: design of record for the Step-5 build.** Everything normative here traces to the owner
 decisions in `docs/Final_docs/plan.md` §D.13 (2026-10-05), to §D.1/§D.2/§D.11, or to real code
 cited by file and line. Where the owner has not decided, this document says so and points at the
@@ -113,6 +122,11 @@ Notes that keep this honest:
 > authority; the frontend hide (loader init fetch, then the `obi:hidden` frame→host message) is UX.
 > Retrieval routing (the four-label hard filter, ADR-directed-source-target-routing-labels D5) is **unchanged** — this gate controls
 > widget *eligibility* only.
+>
+> **Superseded 2026-10-20 by ADR-source-system-decides-widget-eligibility:** the list is now
+> `enabled_sources` and gates the **source**, not the target. An unknown or disabled source → 403
+> `source_not_enabled` (`SourceNotEnabledError`); visibility → `{"visible":false,"reason":"source_not_enabled"}`.
+> The target is never checked; an unknown target routes on `[obi-general, {source}-general]`.
 
 ## 5 · Eligibility: one filtered search
 
@@ -280,6 +294,10 @@ frontend hiding is UX, not the boundary (§4).
 > `GET /chat/visibility` → `{"visible":false,"reason":"target_not_enabled"}` (widget hidden) and a
 > **403** on `POST /chat`. E.g. `mews → quickbooks-online` at launch (QuickBooks not enabled) hides
 > Obi, mirroring this off-allowlist slot example.
+>
+> **Superseded 2026-10-20 (ADR-source-system-decides-widget-eligibility):** only the source decides.
+> `mews → quickbooks-online` now **shows** Obi (Mews is an enabled source); `quickbooks-online → mews`
+> is hidden (`source_not_enabled`).
 
 ## 9 · Deliberately NOT in the launch contract
 

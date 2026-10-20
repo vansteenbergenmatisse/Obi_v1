@@ -1,7 +1,8 @@
 # Runbook · Deploy the Obi backend to Railway (webhook-driven), and roll back
 
 The backend goes online so Confluence Cloud webhooks reach `POST /confluence/events` and drive
-ingestion. The **frontend and knowledge editing stay local**; `knowledge-base/` still ships *inside*
+ingestion. The frontend is a separate Railway service (`obi-web`, see `railway-frontend-deploy.md`);
+knowledge editing stays in Confluence. `knowledge-base/` ships *inside*
 the backend image (the backend imports `schema` from it and reads its config JSON at boot). Postgres
 stays on Supabase (already provisioned + migrated).
 
@@ -22,8 +23,9 @@ and answer cache are all in-process.
    (non-loopback). Outside an offline env the app **fails to boot** without this.
    **Done (temporary):** the committed file now has an active `obi-test` platform whose issuer is our
    Supabase Auth (`https://<project-ref>.supabase.co/auth/v1`), so the backend boots in production
-   before datahub is live. `datahub` is inactive (its TODO placeholders are kept for the swap);
-   `mews`/`toast`/`opera-cloud` stay inactive. **obi-test is temporary — remove it once datahub is
+   before datahub is live. `base` and `datahub` are inactive (datahub's TODO placeholders are kept for
+   the swap). Base and Data Hub are the only embedding partners; Mews, Toast and Opera Cloud are
+   source/target systems, never platforms. **obi-test is temporary — remove it once datahub is
    live** (see "Swapping obi-test → datahub" below). Because obi-test uses Supabase Auth as the
    issuer, **turn off public sign-ups in Supabase Auth** — anyone who can sign up gets a token from
    this issuer.
@@ -37,7 +39,8 @@ and answer cache are all in-process.
 
 ## Swapping obi-test → datahub (when datahub is live, Phase 4.x)
 
-`obi-test` is a temporary bridge so production can boot before datahub exists. To retire it:
+`obi-test` is a temporary bridge so production can boot before datahub exists. To retire it (the same
+steps apply to `base` when Base goes live):
 
 1. In `knowledge-base/config/platforms.json`, fill datahub's real `issuer`, `jwks_url` and `domains`
    (replace the `TODO until 4.x` placeholders) and set `datahub` `"active": true`.
@@ -50,7 +53,7 @@ and answer cache are all in-process.
    are decoupled from the committed file, so they stay green; the two `..._real_file_...` tests in
    `test_platforms.py` read datahub via `by_issuer` and continue to pass.
 5. If public Supabase sign-ups were disabled only for obi-test, decide whether to keep them off.
-6. Push to `main` and redeploy.
+6. Redeploy with `railway up --service obi-backend` from the repo root. A git push alone does not deploy.
 
 ## Environment variables (set as Railway service variables — never in the image or git)
 
@@ -80,15 +83,16 @@ keep the cheap 5s local job-drain (`WORKER_TICK_SECONDS`) and a daily reconcile 
    `ENV=… uv run python scripts/setup_supabase.py check-deploy-readiness` exits 0, and
    `verify-isolation` passes. See `deploy-readiness-scope-rls.md`.
 4. **Create the Railway service** from this repo (Dockerfile builder), set all env vars above, deploy.
-5. **Post-boot check:** `GET /health` returns 200 with the right `ENV` and scope list; logs show
+5. **Post-boot check:** `GET /health` returns 200 with the right `ENV` (`knowledge_scopes` is `[]` since the scope axis was retired); logs show
    `platform_registry_loaded` and `Application startup complete`, no reader/registry fail-closed error.
 6. **Register the Confluence webhook** at `https://<railway-url>/confluence/events` (page + label
    events) with the shared secret.
-7. **Live smoke test:** add label `obi-toast-test` to a known page, then
-   `DATABASE_URL=<supabase> uv run python scripts/smoke_webhook.py <page_id> --require-tag obi-toast-test`.
+7. **Live smoke test:** add the routing label `toast-general` to a known page, then
+   `DATABASE_URL=<supabase> uv run python scripts/smoke_webhook.py <page_id> --require-tag toast-general`.
+   Remove the test label afterwards.
    Paste the PASS output into the deploy PR.
-8. **Point the local frontend** at the backend: set `AUTOMATION_API_BASE_URL` + matching `CHAT_API_KEY`
-   in `frontend/.env.local`.
+8. **Point the frontend** at the backend: `AUTOMATION_API_BASE_URL` + matching `CHAT_API_KEY` on the
+   `obi-web` service (or in `frontend/.env.local` for a local frontend).
 
 ## Rollback
 

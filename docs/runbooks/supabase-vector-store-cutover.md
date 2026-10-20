@@ -121,8 +121,9 @@ Run every step from `backend`. Steps are idempotent and safe to re-run.
    make eval                                                  # retrieval quality on the live store
    ```
 
-   The cross-provider (Mews vs Toast) exclusion is **not** demonstrable on real data — the whole
-   corpus is `general` — it stays proven by `test_retrieval_knowledge_scope.py`. Run the local
+   The cross-provider (Mews vs Toast) exclusion now rides the routing labels (`chunk_labels_read`;
+   the knowledge-scope axis is retired, ADR-routing-labels-sole-content-axis). Prove it live with
+   `scripts/verify_directed_routing_live.py` (see `phase-9-directed-routing-live-test.md`). Run the local
    isolation suite against the **local superuser docker**, not the managed instance (the fixture
    `ALTER ROLE`s, which the managed `postgres` role can't do):
 
@@ -190,4 +191,5 @@ Project `vtpbwkbbkfukfmytlqns`, region `eu-west-1`, session pooler `:5432`, db `
 - **Not done (deliberately):** production traffic was **not** switched, and the mixed working tree
   was **not** committed — those are operator decisions. Before any *public* deploy, land **Phase
   11.1a** (the customer-axis fail-open backstop); the source-axis RLS proven here does not cover the
-  Mews/Opera/Toast scope axis.
+  Mews/Opera/Toast scope axis. *(Later: that scope axis was retired by ADR-routing-labels-sole-content-axis;
+  product routing now rides `chunk_labels_read`.)*

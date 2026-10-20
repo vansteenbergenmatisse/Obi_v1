@@ -9,7 +9,7 @@ live runner `verify_sync_rules.py` covers it.
 and save the output where substep 2.2.4's Proof line says (the pull request).
 
 **Label hygiene (owner rule, 2026-10-02).** Any Confluence label added *only to drive a test* — a
-scope label on a scratch page, a poke/resync label, anything not approved as a page's real tag — is
+routing label on a scratch page, a poke/resync label, anything not approved as a page's real tag — is
 removed again before the test is called done. A test is not finished while a test-only label is
 still live on any page. Scratch pages end in the trash; surviving real pages end with exactly the
 labels the owner approved, nothing else.
@@ -27,9 +27,9 @@ labels the owner approved, nothing else.
 - `backend/scripts/verify_sync_rules.py` — the live staging runner. Refuses the offline fixture
   gateway; drives the label-based rules (2, 3, 4, 5, 7) automatically via the Confluence v1 label
   API and prompts for the physical actions no API here can perform — trash/restore (rule 1) and
-  body/title edit (rule 6). Prints pass/fail per rule from DB-state readings (mirrors
-  `verify_knowledge_scope_live.py`). Requires `--yes` (a production-guard) and an already-synced
-  `--page-id` carrying one recognized label. **Written** — but like its sibling live script it is a
+  body/title edit (rule 6). Prints pass/fail per rule from DB-state readings. Requires `--yes` (a production-guard) and an already-synced
+  `--page-id` carrying one recognized routing label. **Written** — but like its sibling live script
+  (`verify_directed_routing_live.py`) it is a
   network + credentials tool with no hermetic test; its logic mirrors the green fixture-gateway
   tests.
 
@@ -58,7 +58,7 @@ failure; re-read after the window.
   (`test_sync_rules_delete.py`, panel i2-gone). **Live-script covers it:** yes.
 
 ### MT-2 — Remove the last recognized label (rule 2)
-- **Do.** On an indexed page carrying exactly one recognized knowledge-scope label, remove that
+- **Do.** On an indexed page carrying exactly one recognized routing label, remove that
   label (leave the page published, optionally with unrelated labels). Wait, read.
 - **Expect.** `page_state.py` shows **zero** rows — losing the last recognized label removes the page
   exactly like a delete. Unrelated labels alone never keep it in.
@@ -101,8 +101,8 @@ failure; re-read after the window.
 - **Do.** Publish a page with **no** recognized label; wait, read (nothing should exist). Add one
   recognized label. Wait, read.
 - **Expect.** While unlabeled: `page_state.py` shows **zero** rows — never ingested. After the first
-  recognized label: a full build — a `document_version`, the full child set embedded, searchable in
-  that scope.
+  recognized label: a full build — a `document_version`, the full child set embedded, searchable for
+  chats whose routing labels include it.
 - **Automated mirror.** `test_in2_untagged_page_never_indexed` (negative half, step 2) +
   `test_in2_first_relevant_tag_full_build` (positive half, step 6) (`test_sync_rules_membership.py`,
   panel ks-index). **Live-script covers it:** yes.

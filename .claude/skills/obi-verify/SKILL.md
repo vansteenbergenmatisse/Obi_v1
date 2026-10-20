@@ -14,7 +14,7 @@ Run from the repository root. The Makefile is at the repository root and its tar
 | lint + types | cd backend && uv run ruff check . ; uv run ruff format --check . ; uv run pyright | counts not above the baseline in docs/plan/baseline.md; if that file is missing or says "no baseline yet", PASS with note "no baseline yet" |
 | browser | make test-ui | exit 0; if the target does not exist print "not wired yet" |
 | eval | make eval | prints recall@75, P@5, NDCG@10, refusal rate; none below docs/plan/baseline.md; if that file is missing or says "no baseline yet", PASS with note "no baseline yet" |
-| live (only if STAGING_DATABASE_URL is set) | cd backend && uv run python scripts/setup_supabase.py verify-isolation && uv run python scripts/verify_knowledge_scope_backfill.py | both exit 0; if the var is unset print "skipped" |
+| live (only if STAGING_DATABASE_URL is set) | cd backend && uv run python scripts/setup_supabase.py verify-isolation | exits 0; if the var is unset print "skipped" |
 
 Baseline: read docs/plan/baseline.md once. A missing file, or a numbered line reading "no baseline yet", is not a failure — report the level PASS with the note "no baseline yet". A real number that is exceeded (lint/type counts rose, or an eval metric fell) is RED.
 

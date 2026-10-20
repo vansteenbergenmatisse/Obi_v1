@@ -1,6 +1,12 @@
 # 4.2 · Test proofs — the gap-closing tests, each proven real
 
-Date: 2026-10-05 · substep 4.2 (golf 1). One block per gap test, in the 0.2.8 method of docs/Final_docs/sync-rules/test-proof.md: green-today guards are inverted in production (red for the stated reason), the production file restored byte-identical (shasum-verified), green again. Red-first entries (G14) show red-today → the fix → green. Gap ids map to docs/Final_docs/4-test-foundation/coverage-audit.md.
+> **Note (2026-10-20).** This is a record of what ran at the time; results are unchanged. Since then
+> the knowledge-scope `-test` tag axis it mentions (`obi-general-test`, `obi-mews-test`, …,
+> `app.allowed_knowledge_scopes`) was retired by ADR-routing-labels-sole-content-axis — routing
+> labels are the only content axis — and the `apps/automation`, `apps/web` and `infra/foundation`
+> folders were renamed to `backend/`, `frontend/` and `knowledge-base/local/`.
+
+Date: 2026-10-05 · substep 4.2 (golf 1). One block per gap test, in the 0.2.8 method of the sync-rules test-proof file (removed): green-today guards are inverted in production (red for the stated reason), the production file restored byte-identical (shasum-verified), green again. Red-first entries (G14) show red-today → the fix → green. Gap ids map to docs/Final_docs/4-test-foundation/coverage-audit.md.
 
 # 4.2 unit-gap proof — golf 1 (G3, G8, G10, G17, G19)
 

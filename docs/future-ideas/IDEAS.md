@@ -1,10 +1,18 @@
 # Future ideas — not scheduled
 
 Backlog of product ideas raised in conversation, captured here so they aren't lost. **None of
-these are scoped, designed, or scheduled** — they are not part of `docs/rag/PLAN.md` and carry no
-commitment. Before any of these becomes real work: run it through `docs/rag/PLAN.md`'s own
-process (design first, an ADR if it's a durable architecture decision, then a phase with
-acceptance criteria) rather than building ad hoc.
+these are scoped, designed, or scheduled** — they are not part of the action plan
+(`docs/Final_docs/obi-action-plan.html`) and carry no commitment. Before any of these becomes real
+work: run it through the project process (design page first, an ADR if it's a durable architecture
+decision, then an action-plan substep with acceptance criteria) rather than building ad hoc.
+
+> **Read with care (2026-10-20).** Mentions of `docs/rag/PLAN.md` / `docs/rag/DESIGN.md` and their
+> "Phase N" numbers below refer to the earlier plan, which has since been removed; the current work
+> list is the action plan above. Paths written as `frontend/` / `backend/` are now `frontend/`
+> / `backend/`. The knowledge-scope axis these ideas mention (`obi-*-test` tags, scope filtering,
+> "Phase 10") was retired by ADR-routing-labels-sole-content-axis: a page is in the index when it is
+> published and carries at least one recognized routing label (`classified` removes it), and routing
+> labels are the only content axis.
 
 Each idea below is written as raised, plus a short note on how it would connect to what already
 exists — not a spec.
@@ -28,7 +36,7 @@ deletions deactivated — with no manual step.
   label-driven — see PLAN NEXT FIXES #6). A labeled page **outside** any root is never pulled in.
 
 **What a real verification would cover** (one live page/folder per case, asserting the DB result, the
-way `scripts/verify_knowledge_scope_live.py` does for label add/swap/remove today):
+way `backend/scripts/verify_sync_rules.py` does for label add/remove today):
 - add page → ingested (chunks + tags); add page **under a `source_scope`-covered parent** vs outside
   it (outside = not ingested — is that the intended behavior, or the label-driven feature?).
 - edit body → re-embed (new `active_doc_version_id`); edit **label only** → `metadata_only`, tags
@@ -85,8 +93,8 @@ a hard refusal.
 ## 2. Account/tier/integration awareness — **retrieval-side gap partially promoted 2026-08-21 → `docs/rag/PLAN.md` Phase 10**
 
 **The specific gap this entry identified by direct code read — `tags` written at ingestion, never
-read at query time — is what `docs/rag/PLAN.md` Phase 10 (`docs/adr/0011-Knowledge-Scope-Tagging-
-And-Retrieval-Filtering.md`) closes.** Phase 10 covers only the *declared* case: which platform a
+read at query time — is what `docs/rag/PLAN.md` Phase 10 (ADR-knowledge-scope-tagging-and-filtering, since
+retired and deleted) closes.** Phase 10 covers only the *declared* case: which platform a
 deployment/embed is scoped to, resolved once per session, filtered with a **hard** SQL predicate.
 Everything else raised in this entry stays here, unbuilt:
 - The **hard-vs-soft scoping nuance** below (a customer's own integration context needs a *soft*
@@ -201,7 +209,7 @@ against the real tag taxonomy and how connector instances are actually identifie
 assuming it's just a config change. Not scoped, designed, or scheduled — same as every other idea in
 this file.
 
-**Not the same axis as Phase 10 (2026-08-21).** `docs/rag/PLAN.md` Phase 10 / `docs/adr/0011-*.md`
+**Not the same axis as Phase 10 (2026-08-21).** `docs/rag/PLAN.md` Phase 10 / ADR-knowledge-scope-tagging-and-filtering (retired)
 builds knowledge-scope tagging (which third-party *platform*'s docs a chunk belongs to — Mews vs.
 Opera Cloud). This idea is a different axis entirely (which *instance* of one connector — e.g. two
 QuickBooks accounts) and remains unbuilt; ADR-knowledge-scope-tagging-and-filtering Decision 8 lists it as an explicit non-goal of
@@ -227,18 +235,18 @@ here as an unscheduled idea, per `docs/adr/keep-frontend-backend-in-one-repo-for
 (and 0006/0007 before it) for the full decision history; this entry keeps the design work itself so
 none of it is lost.
 
-**The idea.** `apps/web` (frontend) and `apps/automation` (backend) become independently deployable
+**The idea.** `frontend/` and `backend/` become independently deployable
 and independently versioned — able to live in separate git repositories — with
 `packages/contracts` and `packages/design-tokens` as *published, versioned* packages instead of
 pnpm workspace `workspace:*` links (which only resolve inside one monorepo checkout). Motivation is
 separation of concerns and independent deployability, not multi-product reuse per se (though it
 would also serve that later, see idea #4's note on Muse).
 
-**Relation to current architecture.** Today everything lives in one pnpm workspace; `apps/web`
+**Relation to current architecture.** Today everything lives in one pnpm workspace; `frontend/`
 depends on both packages via `workspace:*`. That link only works inside this one checkout — before
 either app could leave the monorepo, both packages need a real publish target and semver
 discipline (a breaking contract change = a major version bump, consumed explicitly by each app, not
-silently picked up). `apps/automation` already hand-authors its own Pydantic models against the
+silently picked up). `backend/` already hand-authors its own Pydantic models against the
 same wire shapes (no codegen) — that convention would stay true; only the distribution mechanism
 would change.
 
@@ -247,12 +255,12 @@ one-line idea):
 
 1. **Publish `packages/contracts` and `packages/design-tokens`** to a real registry (private npm
    registry vs. GitHub Packages — **open decision**) with semantic versioning discipline.
-2. **Extract `apps/web` into its own repository** — name is an **open decision** (e.g.
+2. **Extract `frontend/` into its own repository** — name is an **open decision** (e.g.
    `omniboost-rag-web`). History-preserving extraction (`git subtree split` / `git filter-repo`, not
    a fresh copy — keep blame/history). Switch `@omniboost/contracts`/`@omniboost/design-tokens` from
    `workspace:*` to real published version ranges. New standalone CI (lint/typecheck/test/build) —
    today it piggybacks on the monorepo's root scripts, which won't exist once standalone.
-3. **Extract `apps/automation` into its own repository** — name is an **open decision** (e.g.
+3. **Extract `backend/` into its own repository** — name is an **open decision** (e.g.
    `omniboost-rag-automation`). Same history-preserving extraction; its Makefile/`uv` toolchain and
    `alembic/` migrations move unchanged (already self-contained, per ADR-features-import-only-through-public-root). New standalone CI
    (`make check`, `make boundaries`, ruff, pyright).
@@ -324,8 +332,8 @@ single page subtree (this session's own blocked attempt is the first concrete in
 ## 8. Multi-provider platform architecture: reusable core, provider-scoped knowledge — **knowledge/RAG-corpus piece promoted 2026-08-21 → `docs/rag/PLAN.md` Phase 10**
 
 **The third concern below ("Knowledge / RAG separation") now has an owning phase and ADR** —
-`docs/rag/PLAN.md` Phase 10, decided by `docs/adr/0011-Knowledge-Scope-Tagging-And-Retrieval-
-Filtering.md`. Read that ADR and phase for the current state of: recognized-scope configuration,
+`docs/rag/PLAN.md` Phase 10, decided by ADR-knowledge-scope-tagging-and-filtering
+(since retired and deleted). Read that ADR and phase for the current state of: recognized-scope configuration,
 label-driven per-page tagging, the retrieval-time hard filter (behind `enable_knowledge_scope_
 filtering`, ships dark), request-level `knowledge_scope` threading, and the always-present curated-
 knowledge layer. **Confirmed 2026-08-21: the recognized scope set is `general`, `mews`, `opera-cloud`,
@@ -386,41 +394,41 @@ answers.
 **High-level shape.** Three concerns, each already structurally distinct in this repo today, need to
 stay that way and get more deliberate about it as more providers appear:
 
-1. **Frontend** (`apps/web`) — should stay one reusable core product, not one fork per provider.
-2. **Backend** (`apps/automation`) — should stay one shared core service, not one deployment per
+1. **Frontend** (`frontend/`) — should stay one reusable core product, not one fork per provider.
+2. **Backend** (`backend/`) — should stay one shared core service, not one deployment per
    provider.
 3. **Knowledge / RAG corpus** — the one thing that *should* become provider-partitioned, because
    unlike the app code, provider-specific documentation is genuinely provider-specific content.
 
-**Frontend reusability.** `apps/web/src/features/chat` is already the one place the chat UI, widget,
+**Frontend reusability.** `frontend/src/features/chat` is already the one place the chat UI, widget,
 composer, and session logic live, behind its own `index.ts` public root (per this project's
-feature-boundary convention) and `apps/web/src/platform/automation-api` as the one client to the
+feature-boundary convention) and `frontend/src/platform/automation-api` as the one client to the
 backend. There is no per-provider frontend fork today — that is already the right shape; this idea
 just says: keep it that way as providers multiply, rather than letting a "Mews build" and an "Opera
 build" diverge into separate codebases. Idea #5 (frontend/backend repository separation, currently
 de-scheduled per `docs/adr/keep-frontend-backend-in-one-repo-for-now.md`) is the mechanism that would let
-`apps/web` be independently deployed/embedded per provider context while staying one codebase — this
+`frontend/` be independently deployed/embedded per provider context while staying one codebase — this
 idea is a second, concrete reason #5's trigger ("a real second product/deployment with a committed
 launch date") might eventually fire, alongside Muse.
 
-**Shared backend.** Per ADR-defer-product-and-package-extraction decision 2, `apps/automation/app/platform/config/settings.py` is
+**Shared backend.** Per ADR-defer-product-and-package-extraction decision 2, `backend/app/platform/config/settings.py` is
 already fully env-driven — no product-specific literal is baked into logic — so multiple deployments
 of the same backend already cost an environment/ops action, not a code fork. That property should
 hold for provider-scoped deployments too: a "Mews-facing" backend instance and an "Opera-facing" one
-should be the same image, different config/scope, not different code. `apps/automation/app/platform/
+should be the same image, different config/scope, not different code. `backend/app/platform/
 clients` (`confluence_client.py` is the one existing example) is the established pattern for adding a
 new external integration client without duplicating the service around it — the repeatable shape a
 future provider's data connector would follow (see idea #4/#7 for what that connector needs to feed
 into ingestion).
 
 **Knowledge / RAG separation — the part that should genuinely partition.** "Knowledge" here means
-what `apps/automation/app/features/retrieval` retrieves from — the `page_source`/`chunk` corpus fed
-by `apps/automation/app/features/confluence_sync` ingestion — not prompts, agent instructions, or
+what `backend/app/features/retrieval` retrieves from — the `page_source`/`chunk` corpus fed
+by `backend/app/features/confluence_sync` ingestion — not prompts, agent instructions, or
 skills. `docs/adr/source-id-row-security-with-reader-writer-roles.md` already built most of the mechanism
 this idea needs: `source_type`/`source_id`/`tags` columns on `page_source` and `chunk`, `source_type`
 deliberately a CHECK constraint (not a PG enum) specifically so a new connector type doesn't need an
 `ALTER TYPE`, and RLS keyed on `source_id` as the hard security boundary. `source_scope`
-(`apps/automation/app/platform/db/models.py`, resolved by `apps/automation/app/features/
+(`knowledge-base/schema/models.py`, resolved by `backend/app/features/
 confluence_sync/domain/scope_resolver.py`) already resolves which Confluence roots feed which tags at
 ingest time. None of this was built for multi-provider scoping specifically (ADR-source-id-row-security-with-reader-writer-roles was written for
 generic multi-source isolation, e.g. Confluence vs. a future Zendesk), but it is the same shape:
@@ -435,11 +443,11 @@ existing model without a schema change:
   when a different provider is active.
 
 **Default retrieval behavior — the concrete gap, already identified once (idea #2).** A direct read of
-`apps/automation/app/features/retrieval/infrastructure/search_repo.py`'s `_base_filters()` confirms
+`backend/app/features/retrieval/infrastructure/search_repo.py`'s `_base_filters()` confirms
 retrieval's SQL filters by `space_id` and `source_id` (RLS + explicit `WHERE`) today, but **never
 reads `tags` at query time** — the tagging columns are populated at ingest but nothing reads them back
 out during retrieval. That is the literal mechanism this idea needs built: `HybridRetriever`
-(`apps/automation/app/features/retrieval/application/retriever.py`) would need to fold "shared tags +
+(`backend/app/features/retrieval/application/retriever.py`) would need to fold "shared tags +
 active-provider tag" into its filter (or a soft rerank bias, per idea #2's hard-vs-soft nuance — a
 strict provider tag filter is fine here because there is no cross-provider comparison expectation the
 way idea #2's client-integration case had, but that should be confirmed, not assumed, when this is
@@ -450,8 +458,8 @@ for account/integration-awareness, but the trigger here is *which platform this 
 embedded in*, not *which integrations a given customer runs*. Whatever resolves that (a config value
 for a provider-specific deployment, or a runtime lookup for an embedded/multi-tenant case — genuinely
 undecided) should be resolved once at session/deployment start and carried forward, the same way
-`principal` is threaded through `apps/web/src/features/chat/server/route-handlers.ts` and
-`apps/automation/app/features/rag_agent/server/router.py`'s request handling today — not
+`principal` is threaded through `frontend/src/features/chat/server/route-handlers.ts` and
+`backend/app/features/rag_agent/server/router.py`'s request handling today — not
 rediscovered on every `/chat` call. There is no tenant/account/session-context model in this repo
 today beyond that caller-self-reported `principal` string (idea #2 already noted this); provider
 context would need something in the same spirit, scoped appropriately.
@@ -499,16 +507,16 @@ provider, not a guarantee.
   or Claude Code to change one concern without accidentally touching another.
 
 **Related current architecture.**
-- Frontend: `apps/web/src/features/chat/**` (chat UI, session, `route-handlers.ts` principal
-  handling), `apps/web/src/platform/automation-api/**` (the one backend client).
-- Backend/core: `apps/automation/app/platform/config/settings.py` (env-driven config, ADR-defer-product-and-package-extraction
-  decision 2), `apps/automation/app/platform/clients/confluence_client.py` (the integration-client
-  pattern), `apps/automation/app/features/rag_agent/server/router.py` (principal handling).
-- Knowledge/RAG: `apps/automation/app/features/retrieval/infrastructure/search_repo.py`
-  (`_base_filters()` — where scoping would need to read `tags`), `apps/automation/app/features/
-  retrieval/application/retriever.py` (`HybridRetriever`), `apps/automation/app/platform/db/models.py`
-  (`SourceScope`, `source_type`/`source_id`/`tags` on `page_source`/`chunk`), `apps/automation/app/
-  features/confluence_sync/domain/scope_resolver.py` (root resolution), `apps/automation/app/
+- Frontend: `frontend/src/features/chat/**` (chat UI, session, `route-handlers.ts` principal
+  handling), `frontend/src/platform/automation-api/**` (the one backend client).
+- Backend/core: `backend/app/platform/config/settings.py` (env-driven config, ADR-defer-product-and-package-extraction
+  decision 2), `backend/app/platform/clients/confluence_client.py` (the integration-client
+  pattern), `backend/app/features/rag_agent/server/router.py` (principal handling).
+- Knowledge/RAG: `backend/app/features/retrieval/infrastructure/search_repo.py`
+  (`_base_filters()` — where scoping would need to read `tags`), `backend/app/features/
+  retrieval/application/retriever.py` (`HybridRetriever`), `knowledge-base/schema/models.py`
+  (`SourceScope`, `source_type`/`source_id`/`tags` on `page_source`/`chunk`), `backend/app/
+  features/confluence_sync/domain/scope_resolver.py` (root resolution), `backend/app/
   features/confluence_sync/application/versioning.py` (the one ingestion tagging seam).
 - Governing docs: `docs/adr/source-id-row-security-with-reader-writer-roles.md`,
   `docs/adr/defer-product-and-package-extraction.md`, `docs/adr/keep-frontend-backend-in-one-repo-for-now.md`,

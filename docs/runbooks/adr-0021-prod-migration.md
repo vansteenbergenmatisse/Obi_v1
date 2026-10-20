@@ -1,10 +1,9 @@
 # Runbook — ADR-routing-labels-sole-content-axis production migration & deploy (0014 → head/0018)
 
-**Status: PREPARED, NOT EXECUTED.** This is the owner-authorized procedure to take the live Supabase
-database from its current revision up to head (including migration `0018`, which retires the
-knowledge-scope RLS axis) and deploy the Path B backend. **No step here has been run against
-production.** Agent task 4 in `docs/Final_docs/sync-rules/plan.md` executes this **only after explicit
-owner authorization**.
+**Status: EXECUTED on 2026-10-13.** Production went from `0014` to `0018` and the Path B backend
+was redeployed (commit `3178553`; see the ledger entries "ADR-0021 Path B production cutover" and
+"ADR-0021 Path B live verification"). The procedure below is kept as the record of how it was done
+and as the rollback reference.
 
 Why now: the Path B code (ADR-routing-labels-sole-content-axis) is complete and green locally, but it writes/reads the
 `labels` column and assumes the routing-label axis. Production is **reportedly at migration `0014`**

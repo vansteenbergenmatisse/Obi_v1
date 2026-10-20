@@ -91,7 +91,7 @@ def test_label_hard_filter_excludes_a_page_outside_the_connection_boxes(
 def test_no_knowledge_scopes_argument_is_unrestricted(gateway, settings: Settings) -> None:
     """A caller passing no `knowledge_scopes` (the internal/eval path) sets the '*' wildcard, so the
     RLS backstop does not restrict — the legacy `retrieve()` contract is preserved. The public path
-    always resolves a real scope list (`resolve_allowed_scopes`), never None, so it never hits '*'.
+    passes no scope list either since the knowledge-scope axis was retired, so it also sets '*'.
     """
     index_page(gateway, settings, _ONBOARDING_PAGE, 3)
     _set_chunk_tags(_ONBOARDING_PAGE, ["obi-mews-test"])

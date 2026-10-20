@@ -60,7 +60,7 @@ existing tag model, not part of this ADR.
    no current requirement to express.
 
 4. **The two cosmetic "Omniboost" UI strings are optional, not required, to change now.**
-   `frontend/src/app/page.tsx`'s heading and `frontend/src/app/layout.tsx`'s `metadata.title` are the
+   `frontend/src/app/(site)/page.tsx`'s heading and `frontend/src/app/(site)/layout.tsx`'s `metadata.title` are the
    only hardcoded product-name strings found in real (non-mockup) code; both are decorative, not
    functional. Leave them as literals unless/until a second deployment is real — introducing an env
    var for two strings ahead of a second consumer is unnecessary layering.
