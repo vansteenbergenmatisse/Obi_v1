@@ -85,12 +85,12 @@ export const TEST_HOSTS: readonly TestHostConfig[] = [
     directedClaims: { source_system: "opera-cloud", target_system: "toast", business_id: "B-3075" },
   },
   {
-    // DISABLED-target demo (sync-rules Task 5, ADR-0022): a directed connection whose TARGET is an
-    // accounting product (quickbooks-online) that is NOT in product_catalog.json's enabled_targets.
-    // The widget must stay hidden. Only exercised by `widget-hidden-when-target-disabled.spec.ts`
-    // and only when TEST_OBI_PRIVATE_KEY_QUICKBOOKS is present locally (same signed-key caveat as
-    // the other test hosts); the matching platforms.local.json issuer is only needed for the
-    // backend-verified visibility probe, not for the loader's client-side target_system decode.
+    // DISABLED-source demo (ADR-0023): a directed connection whose SOURCE is an accounting product
+    // (quickbooks-online) that is NOT in product_catalog.json's enabled_sources. The widget must
+    // stay hidden. Only exercised by `widget-hidden-when-source-disabled.spec.ts` and only when
+    // TEST_OBI_PRIVATE_KEY_QUICKBOOKS is present locally (same signed-key caveat as the other test
+    // hosts); the matching platforms.local.json issuer is only needed for the backend-verified
+    // visibility probe, not for the loader's client-side source_system decode.
     name: "quickbooks",
     issuerKey: "test-quickbooks",
     issuer: "https://test-quickbooks.local",
@@ -98,11 +98,11 @@ export const TEST_HOSTS: readonly TestHostConfig[] = [
     privateKeyEnv: "TEST_OBI_PRIVATE_KEY_QUICKBOOKS",
     publicKeyEnv: "TEST_OBI_PUBLIC_KEY_QUICKBOOKS",
     businessClaims: null,
-    // Mews (PMS) → QuickBooks Online (accounting, NOT enabled) — the directed target the loader
-    // decodes and rejects.
+    // QuickBooks Online (accounting, NOT an enabled source) → Mews — the directed source the
+    // loader decodes and rejects.
     directedClaims: {
-      source_system: "mews",
-      target_system: "quickbooks-online",
+      source_system: "quickbooks-online",
+      target_system: "mews",
       business_id: "B-3075",
     },
   },

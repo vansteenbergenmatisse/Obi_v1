@@ -302,9 +302,9 @@ describe("checkVisibility (panel mi-gate · ADR-0022)", () => {
 
   it("test_visibility_reports_hidden_with_reason", async () => {
     fetchMock.mockResolvedValue(
-      new Response(JSON.stringify({ visible: false, reason: "target_not_enabled" }), { status: 200 }),
+      new Response(JSON.stringify({ visible: false, reason: "source_not_enabled" }), { status: 200 }),
     );
-    await expect(checkVisibility()).resolves.toEqual({ visible: false, reason: "target_not_enabled" });
+    await expect(checkVisibility()).resolves.toEqual({ visible: false, reason: "source_not_enabled" });
   });
 
   // panel mi-gate · ADR-0022 — a hard failure (400/401/429/503) throws; it is NEVER coerced to

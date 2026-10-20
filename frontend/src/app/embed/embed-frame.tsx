@@ -50,7 +50,7 @@ function EmbedBridge({ allowedOrigins }: EmbedFrameProps) {
   const restartRef = useRef(restart);
   restartRef.current = restart;
 
-  // Target-enablement cross-check (sync-rules Task 5, ADR-0022). On every token receipt, ask the
+  // Source-enablement cross-check (ADR-0023). On every token receipt, ask the
   // server-authoritative `/chat/visibility` probe whether Obi should be shown for the verified
   // directed context. ONLY an explicit `visible:false` hides — a hard failure (thrown) is swallowed
   // and never treated as hidden, so a transient outage can't blank the widget for everyone. The

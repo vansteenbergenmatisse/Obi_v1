@@ -453,11 +453,11 @@ describe("handleGetVisibility (panel mi-gate · ADR-0022)", () => {
   // or any hard failure is forwarded verbatim, never reshaped.
   it("mi_gate_visibility_forwards_backend_hidden_and_hard_failures_verbatim", async () => {
     callAutomationApiMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ visible: false, reason: "target_not_enabled" }), { status: 200 }),
+      new Response(JSON.stringify({ visible: false, reason: "source_not_enabled" }), { status: 200 }),
     );
     let response = await handleGetVisibility(visibilityRequest());
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ visible: false, reason: "target_not_enabled" });
+    expect(await response.json()).toEqual({ visible: false, reason: "source_not_enabled" });
 
     for (const status of [400, 401]) {
       callAutomationApiMock.mockResolvedValueOnce(

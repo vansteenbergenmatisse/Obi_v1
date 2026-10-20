@@ -156,7 +156,7 @@ function dispatchSseEvent(rawEvent: string, handlers: ChatStreamHandlers): void 
 }
 
 /** The server-authoritative visibility decision (sync-rules Task 5, ADR-0022). `visible:false`
- * carries a machine-readable `reason` (today only `target_not_enabled`); the shape mirrors the
+ * carries a machine-readable `reason` (today only `source_not_enabled`); the shape mirrors the
  * `VisibilityResponse` in `packages/contracts/src/openapi/chat.yaml`. */
 export interface VisibilityResult {
   visible: boolean;
@@ -166,7 +166,7 @@ export interface VisibilityResult {
 /**
  * Probes `GET /api/chat/visibility` (the same-origin proxy that injects the host key) with the
  * embed's platform-signed user JWT, so the `/embed` frame can decide whether Obi should be shown
- * for the verified directed context (target-enablement hide, sync-rules Task 5 / ADR-0022).
+ * for the verified directed context (source-enablement hide, ADR-0023).
  *
  * Returns the decision on a 200. A HARD failure (400/401/429/503, or a network/parse error) THROWS
  * `ChatRequestError` — it is never coerced to `visible:false`, so a transient outage can't blank

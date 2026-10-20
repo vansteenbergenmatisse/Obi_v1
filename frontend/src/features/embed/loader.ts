@@ -13,10 +13,11 @@
  * the one FRAME → HOST message, `obi:hidden` (sync-rules Task 5, ADR-0022), accepting it only from
  * its own iframe's `contentWindow` at the exact Obi origin and then tearing the widget down.
  *
- * Target-enablement hide (sync-rules Task 5, ADR-0022): BEFORE mounting, `init()` fetches the token
- * once and decodes its directed `target_system` claim (display-only, same non-trust posture as
- * `decodeExpMs`). If that target is not in the build-injected `__OBI_ENABLED_TARGETS__` set, the
- * widget never mounts — no launcher, no iframe, no flash. The set absent/empty means "all enabled"
+ * Source-enablement hide (ADR-0023, supersedes the ADR-0022 target gate): BEFORE mounting, `init()`
+ * fetches the token once and decodes its directed `source_system` claim (display-only, same
+ * non-trust posture as `decodeExpMs`). If that source is not in the build-injected
+ * `__OBI_ENABLED_SOURCES__` set, the widget never mounts — no launcher, no iframe, no flash. The
+ * target is never checked: a source can have hundreds of targets. The set absent/empty means "all enabled"
  * (fail-open); a failed eligibility fetch also mounts — the server-authoritative `/chat/visibility`
  * cross-check is the real gate. The trust-bearing token fetch still happens fresh at click; this is
  * one extra eligibility-only fetch at init.
@@ -42,30 +43,37 @@ declare const __OBI_ORIGIN__: string | undefined;
 const OBI_ORIGIN: string =
   typeof __OBI_ORIGIN__ !== "undefined" && __OBI_ORIGIN__ ? __OBI_ORIGIN__ : window.location.origin;
 
-// Replaced at build time by esbuild's `--define:__OBI_ENABLED_TARGETS__=...` (package.json
-// `build:obi`), sourced from `knowledge-base/config/product_catalog.json`'s `enabled_targets` —
-// EXACTLY how `__OBI_ORIGIN__` above is injected. A JSON array string, e.g.
-// `'["mews","toast","opera-cloud"]'`. Never defined under vitest (nor in any build that omits it):
-// then `ENABLED_TARGETS` is null and every target is treated as enabled (fail-open default).
-declare const __OBI_ENABLED_TARGETS__: string | undefined;
-function parseEnabledTargets(): ReadonlySet<string> | null {
+// Replaced at build time by esbuild's `--define:__OBI_ENABLED_SOURCES__=...` (package.json
+// `build:obi`), sourced from `knowledge-base/config/product_catalog.json`'s `enabled_sources` —
+// EXACTLY how `__OBI_ORIGIN__` above is injected. A JSON array string of every NORMALIZED name an
+// enabled source answers to (canonical id, display label, aliases — lowercased, single-spaced),
+// e.g. `'["mews","toast","opera-cloud","opera cloud","operacloud"]'`, so a partner's display name
+// matches like the backend's lenient `resolve_system`. Never defined under vitest (nor in any build
+// that omits it): then `ENABLED_SOURCES` is null and every source is treated as enabled (fail-open).
+declare const __OBI_ENABLED_SOURCES__: string | undefined;
+/** Case-fold and collapse whitespace — the same normalization as the backend's lenient
+ * `resolve_system` (`_normalize_system_name`), so "Opera  CLOUD" matches "opera cloud". */
+function normalizeSystemName(value: string): string {
+  return value.trim().split(/\s+/).join(" ").toLowerCase();
+}
+function parseEnabledSources(): ReadonlySet<string> | null {
   try {
-    if (typeof __OBI_ENABLED_TARGETS__ === "undefined" || !__OBI_ENABLED_TARGETS__) return null;
-    const list = JSON.parse(__OBI_ENABLED_TARGETS__) as unknown;
+    if (typeof __OBI_ENABLED_SOURCES__ === "undefined" || !__OBI_ENABLED_SOURCES__) return null;
+    const list = JSON.parse(__OBI_ENABLED_SOURCES__) as unknown;
     if (!Array.isArray(list) || list.length === 0) return null;
-    const targets = list.filter((t): t is string => typeof t === "string");
-    return targets.length ? new Set(targets) : null;
+    const names = list.filter((t): t is string => typeof t === "string").map(normalizeSystemName);
+    return names.length ? new Set(names) : null;
   } catch {
     return null;
   }
 }
-const ENABLED_TARGETS: ReadonlySet<string> | null = parseEnabledTargets();
+const ENABLED_SOURCES: ReadonlySet<string> | null = parseEnabledSources();
 
 const MSG_OPEN = "obi:open";
 const MSG_TOKEN = "obi:token";
 const MSG_CLEAR = "obi:clear";
 // Frame → host (the one inbound message this loader accepts): the server-authoritative visibility
-// probe reported the directed target is not enabled (sync-rules Task 5, ADR-0022).
+// probe reported the directed source is not supported (ADR-0023).
 const MSG_HIDDEN = "obi:hidden";
 
 // Renew this long before the decoded `exp` so a click never races an about-to-expire token.
@@ -115,17 +123,17 @@ function decodeExpMs(token: string): number | null {
   }
 }
 
-/** Display-only, non-trust decode of the directed `target_system` claim (same posture as
+/** Display-only, non-trust decode of the directed `source_system` claim (same posture as
  * `decodeExpMs`; the backend `TokenVerifier` + `/chat/visibility` probe are the real authority).
  * null when the claim is absent or the token is unparseable — a legacy single-integration note
- * carries no `target_system`, so it is never hidden by the load-time gate. */
-function decodeTargetSystem(token: string): string | null {
+ * carries no `source_system`, so it is never hidden by the load-time gate. */
+function decodeSourceSystem(token: string): string | null {
   try {
     const payload = token.split(".")[1];
     if (!payload) return null;
     const base64 = payload.replace(/-/g, "+").replace(/_/g, "/");
-    const json = JSON.parse(atob(base64)) as { target_system?: unknown };
-    return typeof json.target_system === "string" ? json.target_system : null;
+    const json = JSON.parse(atob(base64)) as { source_system?: unknown };
+    return typeof json.source_system === "string" ? json.source_system : null;
   } catch {
     return null;
   }
@@ -297,18 +305,18 @@ function mount(tokenUrl: string): void {
   launcherEl = injectLauncherButton(() => toggleWidget(tokenUrl));
 }
 
-/** Load-time target-enablement gate (sync-rules Task 5, ADR-0022). When an enabled set is known,
- * fetch the note once and decode its (display-only) `target_system`; if that target is not enabled,
- * return without mounting — no launcher, no iframe, no flash. A missing enabled set, a failed
- * fetch, or a note with no `target_system` all fail OPEN (mount): the server-authoritative
+/** Load-time source-enablement gate (ADR-0023). When an enabled set is known, fetch the note once
+ * and decode its (display-only) `source_system`; if that source is not enabled (or unknown), return
+ * without mounting — no launcher, no iframe, no flash. A missing enabled set, a failed fetch, or a
+ * note with no `source_system` all fail OPEN (mount): the server-authoritative
  * `/chat/visibility` probe in the frame is the real gate. Epoch-guarded (LC-5): a `clear()`/
  * `destroy()`/re-`init()` while the eligibility fetch is in flight cancels the mount.
  *
- * NOTE: when `ENABLED_TARGETS` is null (the default, and always under vitest) this function reaches
+ * NOTE: when `ENABLED_SOURCES` is null (the default, and always under vitest) this function reaches
  * `mount()` with no `await` in between, so mounting stays synchronous for every existing caller/test. */
 async function gateAndMount(options: ObiInitOptions): Promise<void> {
   const capturedEpoch = epoch;
-  if (ENABLED_TARGETS !== null) {
+  if (ENABLED_SOURCES !== null) {
     let token: string | null = null;
     try {
       const response = await fetch(options.tokenUrl, { credentials: "same-origin" });
@@ -320,10 +328,10 @@ async function gateAndMount(options: ObiInitOptions): Promise<void> {
       token = null;
     }
     if (epoch !== capturedEpoch) return;
-    const target = token ? decodeTargetSystem(token) : null;
-    // Hide ONLY on a concretely-decoded, not-enabled target. null (no claim / unparseable / fetch
-    // failed) mounts — the visibility probe decides authoritatively.
-    if (target !== null && !ENABLED_TARGETS.has(target)) return;
+    const source = token ? decodeSourceSystem(token) : null;
+    // Hide ONLY on a concretely-decoded source that is not enabled. null (no claim / unparseable /
+    // fetch failed) mounts — the visibility probe decides authoritatively.
+    if (source !== null && !ENABLED_SOURCES.has(normalizeSystemName(source))) return;
   }
   if (epoch !== capturedEpoch) return;
   mount(options.tokenUrl);
@@ -341,8 +349,7 @@ function init(options: ObiInitOptions): void {
 }
 
 /** Frame → host listener: the `/embed` frame posts `obi:hidden` after the server-authoritative
- * `/chat/visibility` probe reports the directed target is not enabled (sync-rules Task 5,
- * ADR-0022). Accept it ONLY from our own iframe's `contentWindow` AND the exact Obi origin — never
+ * `/chat/visibility` probe reports the directed source is not supported (ADR-0023). Accept it ONLY from our own iframe's `contentWindow` AND the exact Obi origin — never
  * a wildcard, never another frame — then tear the widget down. A hostile/misconfigured sender is
  * ignored silently (no throw), matching the frame bridge's posture. */
 function handleFrameMessage(event: MessageEvent): void {

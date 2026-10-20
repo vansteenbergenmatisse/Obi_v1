@@ -1,10 +1,10 @@
 /**
- * Browser proof for the target-enablement hide (sync-rules Task 5, ADR-0022; panel mi-gate).
+ * Browser proof for the source-enablement hide (ADR-0023; panel mi-gate).
  * Mirrors `widget-mounts.spec.ts`, but against the `/test-hosts/quickbooks` stub, whose token route
- * mints a DIRECTED note with `target_system: "quickbooks-online"` — an accounting product NOT in
- * `product_catalog.json`'s `enabled_targets` (`["mews","toast","opera-cloud"]`, baked into
- * `public/obi.js` by `build:obi`'s `--define:__OBI_ENABLED_TARGETS__`). The loader fetches that note
- * at `init()`, decodes the (display-only) target, sees it is not enabled, and never mounts: the
+ * mints a DIRECTED note with `source_system: "quickbooks-online"` — an accounting product NOT in
+ * `product_catalog.json`'s `enabled_sources` (`["mews","toast","opera-cloud"]`, baked into
+ * `public/obi.js` by `build:obi`'s `--define:__OBI_ENABLED_SOURCES__`). The loader fetches that note
+ * at `init()`, decodes the (display-only) source, sees it is not enabled, and never mounts: the
  * launcher count is 0 — no launcher, no iframe, no flash.
  *
  * SIGNED-KEY CAVEAT (same class as `widget-mounts.spec.ts`, stronger here): this proof needs a real
@@ -18,7 +18,7 @@
  */
 import { expect, test } from "@playwright/test";
 
-test("the obi widget stays hidden when the directed target is not enabled", async ({ page }) => {
+test("the obi widget stays hidden when the directed source is not enabled", async ({ page }) => {
   await page.goto("/test-hosts/quickbooks");
 
   // The load-time eligibility fetch + decode runs after `Obi.init()`; give it room to resolve

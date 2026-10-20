@@ -219,7 +219,7 @@ describe("EmbedFrame lifecycle", () => {
     fetchMock.mockImplementation((url: string) => {
       if (String(url).includes("/visibility")) {
         return Promise.resolve(
-          new Response(JSON.stringify({ visible: false, reason: "target_not_enabled" }), { status: 200 }),
+          new Response(JSON.stringify({ visible: false, reason: "source_not_enabled" }), { status: 200 }),
         );
       }
       return Promise.resolve(okStreamResponse([]));

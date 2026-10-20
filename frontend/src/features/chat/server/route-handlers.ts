@@ -47,7 +47,7 @@
  *   trace-id-keyed update, not a scoped read.
  *
  * security_baseline (surface: GET /api/chat/visibility, tier AUTHENTICATED-READ — sync-rules
- * Task 5 / ADR-0022, the target-enablement visibility probe):
+ * ADR-0023, the source-enablement visibility probe):
  *   C1_auth:        covered   - identical to POST /api/chat: the incoming per-user JWT
  *                               (`Authorization: Bearer`) is threaded to the backend as
  *                               `X-Obi-Token` (the scope authority, verified by `TokenVerifier`);
@@ -222,10 +222,10 @@ export async function handlePostChat(request: Request): Promise<Response> {
 }
 
 /**
- * GET /api/chat/visibility (sync-rules Task 5, ADR-0022) — the target-enablement visibility probe.
+ * GET /api/chat/visibility (ADR-0023) — the source-enablement visibility probe.
  * Read-only, no request body: extracts the per-user JWT, injects the host key server-side (via
  * `callAutomationApi`), and forwards the backend's `/chat/visibility` body + status verbatim. A
- * `{"visible":false,"reason":"target_not_enabled"}` 200 and any hard failure (400/401/429/503) are
+ * `{"visible":false,"reason":"source_not_enabled"}` 200 and any hard failure (400/401/429/503) are
  * both passed through unchanged — the frame never coerces a hard failure into "hidden".
  */
 export async function handleGetVisibility(request: Request): Promise<Response> {

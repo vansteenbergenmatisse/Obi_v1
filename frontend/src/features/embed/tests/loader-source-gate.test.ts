@@ -1,25 +1,31 @@
 // @vitest-environment jsdom
 /**
- * Loader target-enablement hide (sync-rules Task 5, panel mi-gate / ADR-0022). The loader decodes
- * the directed `target_system` claim at `init()` and refuses to mount the launcher/iframe when the
- * target is not in the build-injected `__OBI_ENABLED_TARGETS__` set — a no-flash, load-time hide,
- * cross-checked server-side by `GET /chat/visibility` → `obi:hidden` (covered separately).
+ * Loader source-enablement hide (ADR-0023, supersedes the ADR-0022 target gate; panel mi-gate).
+ * The loader decodes the directed `source_system` claim at `init()` and refuses to mount the
+ * launcher/iframe when the source is not one Obi supports — a no-flash, load-time hide,
+ * cross-checked server-side by `GET /chat/visibility` → `obi:hidden` (covered separately). The
+ * target is never checked: a source can have hundreds of targets.
  *
- * `__OBI_ENABLED_TARGETS__` is replaced by esbuild `--define` only in the real `build:obi` bundle;
- * under vitest it is undefined, so a test that needs a concrete enabled set stubs it on `globalThis`
- * BEFORE importing the loader (the module reads it once at load). An absent/empty set means "all
- * targets enabled" (the documented default) — so every existing loader test, which never stubs it,
- * keeps mounting synchronously.
+ * `__OBI_ENABLED_SOURCES__` is replaced by esbuild `--define` only in the real `build:obi` bundle,
+ * as the normalized (lowercase, single-spaced) ids, display names and aliases of the catalog's
+ * `enabled_sources`; under vitest it is undefined, so a test that needs a concrete set stubs it on
+ * `globalThis` BEFORE importing the loader (the module reads it once at load). An absent/empty set
+ * means "all sources enabled" — so every existing loader test, which never stubs it, keeps mounting
+ * synchronously.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const TOKEN_URL = "/api/test-hosts/toast/obi-token?form=directed";
 
-/** A syntactically-valid JWT carrying a display-only `target_system` claim (no real signature —
- * the loader decodes it for the hide decision only, never for auth). */
-function jwtWithTarget(target: string | null): string {
+/** The names the real build injects for enabled_sources = mews, toast, opera-cloud. */
+const ENABLED_NAMES = ["mews", "toast", "opera-cloud", "opera cloud", "operacloud"];
+
+/** A syntactically-valid JWT carrying display-only `source_system`/`target_system` claims (no
+ * real signature — the loader decodes it for the hide decision only, never for auth). */
+function jwtWith(source: string | null, target: string | null = "NetSuite"): string {
   const header = btoa(JSON.stringify({ alg: "RS256", typ: "JWT" }));
   const claims: Record<string, unknown> = { exp: Math.floor(Date.now() / 1000) + 3600 };
+  if (source !== null) claims.source_system = source;
   if (target !== null) claims.target_system = target;
   const payload = btoa(JSON.stringify(claims));
   return `${header}.${payload}.signature`;
@@ -31,7 +37,7 @@ async function loadObi(): Promise<typeof window.Obi> {
   return window.Obi;
 }
 
-describe("Obi loader · target-enablement hide (panel mi-gate · ADR-0022)", () => {
+describe("Obi loader · source-enablement hide (panel mi-gate · ADR-0023)", () => {
   let fetchMock: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -46,13 +52,12 @@ describe("Obi loader · target-enablement hide (panel mi-gate · ADR-0022)", () 
     document.body.innerHTML = "";
   });
 
-  // panel mi-gate · ADR-0022 — a disabled directed target never mounts: no launcher, no iframe, no
-  // flash. The enabled set omits quickbooks-online (an accounting product), matching
-  // product_catalog.json's enabled_targets.
-  it("test_loader_hides_when_decoded_target_not_enabled", async () => {
-    vi.stubGlobal("__OBI_ENABLED_TARGETS__", JSON.stringify(["mews", "toast", "opera-cloud"]));
+  // panel mi-gate · ADR-0023 — a known source that is not enabled never mounts: no launcher, no
+  // iframe, no flash. xero is in the catalog but not in enabled_sources.
+  it("test_loader_hides_when_decoded_source_not_enabled", async () => {
+    vi.stubGlobal("__OBI_ENABLED_SOURCES__", JSON.stringify(ENABLED_NAMES));
     fetchMock.mockResolvedValue(
-      new Response(JSON.stringify({ token: jwtWithTarget("quickbooks-online") }), { status: 200 }),
+      new Response(JSON.stringify({ token: jwtWith("Xero", "Mews") }), { status: 200 }),
     );
 
     const Obi = await loadObi();
@@ -66,11 +71,29 @@ describe("Obi loader · target-enablement hide (panel mi-gate · ADR-0022)", () 
     expect(document.querySelectorAll("button.obi-launcher").length).toBe(0);
   });
 
-  // panel mi-gate · ADR-0022 — an enabled directed target mounts normally.
-  it("test_loader_mounts_when_decoded_target_enabled", async () => {
-    vi.stubGlobal("__OBI_ENABLED_TARGETS__", JSON.stringify(["mews", "toast", "opera-cloud"]));
+  // panel mi-gate · ADR-0023 — a source the catalog does not know (Base's "PEP PMS") is not a
+  // supported source either, so the widget never mounts.
+  it("test_loader_hides_when_decoded_source_unknown", async () => {
+    vi.stubGlobal("__OBI_ENABLED_SOURCES__", JSON.stringify(ENABLED_NAMES));
     fetchMock.mockResolvedValue(
-      new Response(JSON.stringify({ token: jwtWithTarget("mews") }), { status: 200 }),
+      new Response(JSON.stringify({ token: jwtWith("PEP PMS", "NetSuite") }), { status: 200 }),
+    );
+
+    const Obi = await loadObi();
+    Obi.init({ tokenUrl: TOKEN_URL });
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(document.querySelectorAll("iframe").length).toBe(0);
+    expect(document.querySelectorAll("button.obi-launcher").length).toBe(0);
+  });
+
+  // panel mi-gate · ADR-0023 — an enabled source mounts whatever its target, and a display name
+  // ("Opera  Cloud", any case or spacing) matches like the backend's lenient resolver.
+  it("test_loader_mounts_when_decoded_source_enabled_by_display_name", async () => {
+    vi.stubGlobal("__OBI_ENABLED_SOURCES__", JSON.stringify(ENABLED_NAMES));
+    fetchMock.mockResolvedValue(
+      new Response(JSON.stringify({ token: jwtWith("Opera  CLOUD", "NetSuite") }), { status: 200 }),
     );
 
     const Obi = await loadObi();
@@ -82,13 +105,13 @@ describe("Obi loader · target-enablement hide (panel mi-gate · ADR-0022)", () 
     });
   });
 
-  // panel mi-gate · ADR-0022 — default: an absent enabled set means "all enabled", so even a
-  // disabled-looking target mounts (the build simply didn't inject the set). Proves the fail-safe
-  // default `__OBI_ENABLED_TARGETS__` empty/absent ⇒ all enabled.
+  // panel mi-gate · ADR-0023 — default: an absent enabled set means "all enabled", so even a
+  // disabled-looking source mounts (the build simply didn't inject the set). Proves the fail-safe
+  // default `__OBI_ENABLED_SOURCES__` empty/absent ⇒ all enabled.
   it("test_loader_mounts_when_enabled_set_absent_all_enabled", async () => {
-    // No stub for __OBI_ENABLED_TARGETS__ → the module sees it undefined.
+    // No stub for __OBI_ENABLED_SOURCES__ → the module sees it undefined.
     fetchMock.mockResolvedValue(
-      new Response(JSON.stringify({ token: jwtWithTarget("quickbooks-online") }), { status: 200 }),
+      new Response(JSON.stringify({ token: jwtWith("quickbooks-online") }), { status: 200 }),
     );
 
     const Obi = await loadObi();
@@ -100,11 +123,11 @@ describe("Obi loader · target-enablement hide (panel mi-gate · ADR-0022)", () 
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  // panel mi-gate · ADR-0022 — fail-open: a failed eligibility fetch (e.g. the platform's token
+  // panel mi-gate · ADR-0023 — fail-open: a failed eligibility fetch (e.g. the platform's token
   // endpoint is down) must NOT hide the widget. The server-authoritative visibility probe is the
   // real gate; the load-time decode is a no-flash optimization only.
   it("test_loader_mounts_when_eligibility_fetch_fails", async () => {
-    vi.stubGlobal("__OBI_ENABLED_TARGETS__", JSON.stringify(["mews", "toast", "opera-cloud"]));
+    vi.stubGlobal("__OBI_ENABLED_SOURCES__", JSON.stringify(ENABLED_NAMES));
     fetchMock.mockResolvedValue(new Response(null, { status: 503 }));
 
     const Obi = await loadObi();
@@ -116,7 +139,7 @@ describe("Obi loader · target-enablement hide (panel mi-gate · ADR-0022)", () 
     });
   });
 
-  // panel mi-gate · ADR-0022 — the server-authoritative cross-check: an `obi:hidden` posted by the
+  // panel mi-gate · ADR-0023 — the server-authoritative cross-check: an `obi:hidden` posted by the
   // loader's OWN iframe, from the exact Obi origin, tears the widget down. A message from a foreign
   // origin is ignored (no destroy).
   it("test_loader_destroys_on_obi_hidden_from_own_frame_only", async () => {
