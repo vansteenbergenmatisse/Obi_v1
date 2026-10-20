@@ -1919,3 +1919,21 @@ Task 5e closed out the Task-5 target-enablement work with its ADR and doc sync, 
 **8.5.3 (partial) · Base platform entry + numeric business_id · 2026-10-16.** Marien (Base) sent four of the five integration facts. Base signs `business_id` as a number, which our token check rejected. A failing test came first, and the verifier now accepts an integer and turns it into text (a boolean is still refused). The shared token contract and its drift test were updated to match. The owner clarified that Base and Data Hub are two separate integrations on two sites. So Base got its own `base` entry with Marien's issuer and JWKS, and `datahub` keeps only `datahub.omniboost.io`. `base` stays inactive because Base's JWKS returned a server error. A copy of the file with `base` switched on passed the production validation, so activating it later is one flag plus a redeploy. `partner-facts.md` now records Marien's answers, including the two systems from his example (PEP PMS, NetSuite) that our catalog does not know yet. Nothing was redeployed in this step.
 
 **ADR-0023 · The source system decides widget eligibility · 2026-10-20.** Base's first real token (PEP PMS → NetSuite) showed that checking the target system doesn't work: one source system can connect to hundreds of targets, and an unknown system caused an error in the chat instead of hiding the widget. The owner decided that only the source system matters. If the source is one we support (Mews, Toast, Opera Cloud), Obi shows for any target; otherwise it hides. The tests were written first and failed. The backend gate now checks the source only (it must be known, vendable by the partner and enabled). An unknown target is accepted and routes on the source's own pages (`obi-general` + `{source}-general`). An unknown source hides Obi, where it used to give a 400. The catalog field `enabled_targets` became `enabled_sources`, with the same three products. The widget loader now reads `source_system` from the token and recognizes display names like "Opera Cloud" the same way the backend does, using a small build script that lists every name of each enabled source. ADR-0023 records the decision and why dropping the target check doesn't widen data access. The frontend suite passes apart from the known composer test, and the browser e2e for the hidden widget was updated but needs a local signing key to run. Nothing is deployed yet.
+
+**ADR-source-system-decides-widget-eligibility · deploy · 2026-10-20.** The source-decides change was committed in two parts and deployed to both Railway services. The live checks passed: a chat without a token is visible and answers, the widget script recognises "opera cloud", and the three partner hosts are still on the frame allow-list.
+
+**Integration guide, old-system cleanup and clear names · 2026-10-20.** Code, config, tests and docs no longer describe the retired system (knowledge scopes, the integration claim as routing, Mews/Toast/Opera Cloud as partners) as current. It runs in this order:
+1. Four read-only audit agents mapped what was stale.
+2. Every ADR now has a name that says what it decided, and every reference to it was rewritten. The ledger and this log keep the old numbers; docs/adr/README.md maps them.
+3. 85 docs and the dead scope code, scripts, tests, env vars and non-partner platform entries were deleted.
+4. Three agents rewrote the remaining docs, CLAUDE.md files, runbooks, briefs and the design page.
+5. 15 docs got clear names.
+6. A new guide, `1-how-partners-integrate-with-obi`, explains in Markdown and HTML what a partner builds and what we register, with every file linked by its clear name.
+
+Four verification agents then ran three rounds and caught real problems:
+- the long names had pushed lint above its baseline;
+- four guide claims were wrong;
+- the HTML overflowed on a phone;
+- `verify-isolation` would have reported a false leak on the live database.
+
+All of these were fixed. A tokenless chat turns out to search all indexed pages, not just general ones, and the guide now says so. Round 3 passed on tests, names, links and the guide. About 13 spots in the design page's retired scope sections are left, because the three-round cap was reached; they are listed in the ledger as owner follow-ups, together with a wrong UI label and the curated-knowledge behaviour.

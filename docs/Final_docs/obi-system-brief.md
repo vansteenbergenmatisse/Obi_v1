@@ -452,7 +452,7 @@ _Section id: `concerns`_
 
 **In plain words (the lede):** Obi has three parts. One frontend: the chat window a person types in. One backend: the code that checks who is asking, then searches and writes the answer. One knowledge base: the Postgres database where every page lives with its tags. A person only ever gets pages whose tags match their integration and which they may read.
 
-Diagram (Top row: the frontend, the backend and the knowledge base as three boxes, joined by HTTPS and SQL. Bottom row: a Mews user gets a signed token, the backend builds an authorization context with the scopes mews and general, the scope policy and page permissions filter the rows, and the answer cites only Mews and general pages.)
+Diagram (Top row: the frontend, the backend and the knowledge base as three boxes, joined by HTTPS and SQL. Bottom row: a partner user gets a signed token for a Toast to Mews connection, the backend builds one authorization context with the four routing labels, the label policy and page permissions filter the rows, and the answer cites only matching pages.)
   - labels: THE THREE PARTS · one folder each in the proposed layout; HTTPS; SQL; EXAMPLE · a Toast → Mews chat, left to right
   - 1 · Frontend — the chat window and its proxy route / frontend/ → panel `sc-frontend`
   - 2 · Backend — verify, ingest, search, rerank, answer / backend/ → panel `sc-backend`

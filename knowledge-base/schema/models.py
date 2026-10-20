@@ -612,9 +612,9 @@ class QueryTrace(Base):
 class CuratedKnowledgeEntry(Base):
     """Hand-authored knowledge always eligible for retrieval, independent of any Confluence page.
 
-    ``tags`` mirrors ``chunk``/``page_source``'s knowledge-scope tagging (PLAN 10.2): empty means
-    "applies to every scope" (matching ``general``'s always-included semantics), so an entry never
-    needs editing if ``general`` is ever renamed. Reuses the existing citation machinery at
+    ``tags`` are legacy knowledge-scope tags and inert since migration 0018: the curated read
+    returns only untagged entries (``allowed_scopes`` is always empty), so a tagged entry is stored
+    but never served. Reuses the existing citation machinery at
     retrieval time (PLAN 10.6) rather than introducing a parallel content model.
     """
 

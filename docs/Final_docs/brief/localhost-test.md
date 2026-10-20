@@ -18,7 +18,7 @@ go-live minus the real signing key.
   `PLATFORMS_PATH=…/knowledge-base/config/platforms.local.json`, and `CHAT_API_KEY`.
 - Root `.env` already sets `ENV=local`, the same `PLATFORMS_PATH`, and a byte-identical `CHAT_API_KEY`.
 - The committed `knowledge-base/config/platforms.local.json` defines four active test issuers:
-  `test-mews`, `test-toast`, `test-opera`, `test-none` (general only). The `toast` and
+  `test-mews`, `test-toast`, `test-opera`, `test-none` (no business claims, not narrowed). The `toast` and
   `opera-cloud` hosts mint a directed token (`toast → mews` and `opera-cloud → toast`, with a
   `business_id`); the `quickbooks` host mints `quickbooks-online → mews`, a source that is not in
   `enabled_sources`, so the widget must stay hidden (it needs `TEST_OBI_PRIVATE_KEY_QUICKBOOKS`

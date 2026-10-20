@@ -2,7 +2,7 @@
  * Root layout for the Obi `/embed` frame (PLAN 11.1c) — one of Next's "multiple root
  * layouts" (see `(site)/layout.tsx`'s docstring). Deliberately does NOT mount
  * `ChatSessionProvider`/`ChatWidget` at this level: `page.tsx` does that itself, scoped to this
- * one route, with no `knowledgeScope` prop — scope now comes from the verified token, not a
+ * one route, with no `knowledgeScope` prop — the connection comes from the verified token, not a
  * deployment-time prop. Keeps `globals.css` (design tokens, Tailwind) so the widget renders
  * pixel-identical to the main site inside the iframe.
  */

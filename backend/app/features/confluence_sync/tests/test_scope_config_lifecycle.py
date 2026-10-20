@@ -94,7 +94,8 @@ def test_tags_scope_removed_from_config_purges_on_complete_sweep(
     gateway, settings, monkeypatch, tmp_path
 ):
     """panel tg-config · never-bend rule 5
-    A scope removed from the tag map stops counting: a page indexed under it (and carrying no
+    A scope removed from the recognized routing-label set stops counting: a page indexed under it
+    (and carrying no
     other recognized label) is hard-purged — page_source, document_version and chunk all gone —
     when the COMPLETE sweep re-enqueues it and the worker re-derives membership against the
     shrunk recognized set."""
@@ -123,7 +124,8 @@ def test_tags_scope_removed_lightweight_sweep_does_not_catch_it(
     gateway, settings, monkeypatch, tmp_path
 ):
     """panel tg-config / ks-sweep · documents the known purge window
-    A scope removed from the tag map is NOT caught by the LIGHTWEIGHT (daily) sweep: the page
+    A scope removed from the recognized routing-label set is NOT caught by the LIGHTWEIGHT (daily)
+    sweep: the page
     shows no cheap drift signal (version/status/parent/title unchanged), so nothing is enqueued
     and its stale rows remain retrievable until the COMPLETE sweep (every
     ``complete_recon_interval_days``, default 14 days) re-verifies it. This test PINS that
@@ -153,8 +155,10 @@ def test_tags_scope_added_already_indexed_page_restamped_by_complete_sweep(
     gateway, settings, monkeypatch, tmp_path
 ):
     """panel tg-config / tg-add · substep D.0 (roadmap step 5, gap A)
-    A page indexed under scope A while also carrying label B (B not yet in the tag map) IS
-    retroactively stamped with B when B is added to the tag map: the COMPLETE sweep re-enqueues
+    A page indexed under scope A while also carrying label B (B not yet in the recognized
+    routing-label set) IS
+    retroactively stamped with B when B is added to the recognized routing-label set: the COMPLETE
+    sweep re-enqueues
     the page, the trigger re-derives scopes = {A, B}, and the handler sees the stamped tags
     disagree with ``cmd.scopes`` — a metadata-only restamp (same document_version, zero embed
     calls), never a rebuild. The LIGHTWEIGHT sweep still enqueues nothing (no cheap drift signal
@@ -173,7 +177,7 @@ def test_tags_scope_added_already_indexed_page_restamped_by_complete_sweep(
         doc_version_before = ps.active_doc_version_id
     assert doc_version_before is not None
 
-    # Phase 2: the operator adds toast-general to the tag map.
+    # Phase 2: the operator adds toast-general to the recognized routing-label set.
     _set_recognized(monkeypatch, tmp_path, ["obi-general", "mews-general", "toast-general"])
     assert "toast-general" in settings.product_catalog.all_routing_labels()
     counter = install_counting_embedder(monkeypatch, settings)

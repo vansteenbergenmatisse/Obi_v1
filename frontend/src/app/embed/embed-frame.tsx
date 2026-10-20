@@ -2,7 +2,7 @@
  * Client half of the `/embed` frame — route-owned, single consumer (`page.tsx`), so it stays here
  * rather than in `features/embed` (which is the postMessage bridge + CSP reader, not UI).
  * Wires `initIframeBridge` for the life of the frame and renders the existing chat PANEL with NO
- * `knowledgeScope` prop: scope is derived server-side from the verified `X-Obi-Token` the browser
+ * `knowledgeScope` prop: identity and the connection come server-side from the verified `X-Obi-Token` the browser
  * now forwards on every `POST /api/chat` (PLAN 11.1c).
  *
  * Unlike the main site, the embed does NOT mount the full `ChatWidget` (launcher + teaser +

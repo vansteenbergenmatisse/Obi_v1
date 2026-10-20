@@ -2,10 +2,10 @@
 Obi embed.
 
 A platform's own server signs a short-lived JWT at button-click; this verifier is the trust
-boundary that turns that token into a `VerifiedClaims` the AuthContext builder can use to drive
-retrieval scope. It replaces the caller-self-reported `knowledge_scope` on the `/chat` surface,
-closing the last trusted-from-caller gap on the scope axis (the 11.1a DB backstop is the net
-beneath it).
+boundary that turns that token into a `VerifiedClaims` the AuthContext builder uses for identity
+and the directed source/target connection (ADR-source-system-decides-widget-eligibility). Nothing
+the caller sends in the body decides access. The knowledge-scope axis and its DB backstop are
+retired (ADR-routing-labels-sole-content-axis).
 
 Fixed verification order (any failure -> a bare `TokenError`; the router maps that to a 401 with
 no detail leaked — an attacker learns nothing about *why* a token was rejected):

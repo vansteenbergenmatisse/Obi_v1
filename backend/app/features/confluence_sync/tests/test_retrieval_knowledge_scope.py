@@ -257,7 +257,7 @@ def test_auth7_label_filtered_search_excludes_out_of_box_child_so_parent_not_exp
     assert not (set(h.chunk_id for h in toast_mews.hits) & out_of_box_child_ids)
 
 
-def test_auth7_parent_text_fetch_opts_out_of_scope_rls_by_design_adr0014(
+def test_auth7_parent_text_fetch_opts_out_of_scope_rls_by_design_db_backstop(
     gateway, settings: Settings
 ) -> None:
     """gap AUTH-7 · ADR-db-level-customer-scope-isolation-backstop — pins the DELIBERATE scope-RLS

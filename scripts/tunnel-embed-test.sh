@@ -16,7 +16,7 @@
 #
 # Prereqs (two OTHER terminals):
 #   make api         # backend (FastAPI) on :8000
-#   make embed-dev   # frontend (Next.js) on :3100 — builds obi.js, scope switcher on
+#   make embed-dev   # frontend (Next.js) on :3100 — builds obi.js
 # Then:
 #   make tunnel      # or: scripts/tunnel-embed-test.sh
 # Open the printed https URL at /test-hosts/none and click the launcher. Ctrl-C to stop.

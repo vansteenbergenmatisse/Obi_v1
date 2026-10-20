@@ -235,8 +235,8 @@ def create_app(*, settings: Settings | None = None, start_scheduler: bool | None
 
     @app.get("/health")
     def health() -> dict:
-        # substep 1.2.1: list the loaded, recognized scopes. `knowledge_scope_set` already excludes
-        # the reserved `classified` scope, so it is never exposed here.
+        # substep 1.2.1: the retired knowledge-scope list; `knowledge_scope_set` excludes the
+        # reserved `classified` label, so this is always empty now.
         return {
             "status": "ok",
             "env": settings.env,

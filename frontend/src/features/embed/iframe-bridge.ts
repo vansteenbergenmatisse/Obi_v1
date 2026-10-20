@@ -69,7 +69,7 @@ function slotsSignature(context: unknown): string | null {
  * from a token's payload — enough to tell whether a renewal changed which corpus/identity the note
  * is scoped to (substep 8.4.2 extends this past the legacy single `integration` claim; see
  * `packages/contracts/src/token-claims.json`). Never throws; an unparseable or claimless token
- * yields nulls, which compare equal to another claimless token (both scope to general). */
+ * yields nulls, which compare equal to another claimless token (neither is narrowed). */
 const EMPTY_SCOPE: TokenScope = {
   integration: null,
   company: null,

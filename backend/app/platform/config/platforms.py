@@ -99,9 +99,9 @@ class PlatformEntry:
     lifetime_minutes: int
     algs: tuple[str, ...]
     active: bool
-    # gap CIP-A1: the systems (integration CLAIM VALUES) this platform is trusted to assert. A
-    # self-serving platform lists only its own system (e.g. mews -> ["mews"]); a hub partner
-    # (datahub) lists the systems it may vend. build_auth_context rejects a verified token whose
+    # gap CIP-A1: the systems (integration CLAIM VALUES) this platform is trusted to assert as a
+    # source. A partner (Base, Data Hub) lists the systems it may vend. build_auth_context rejects a
+    # verified token whose
     # `integration` is not in the issuing platform's list, so a trusted issuer cannot assert an
     # arbitrary integration claim. Empty () => the platform may assert no integration claim (tokens
     # without business claims only, which are not narrowed to a connection). Every listed value is

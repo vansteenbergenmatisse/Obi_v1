@@ -226,10 +226,8 @@ def verify_isolation() -> int:
     a real source -> only that source's rows; GUC set to a bogus source -> 0 rows. Then (13.2) also
     checks the reader can resolve pgvector types (dense-query path), can read its non-``chunk``
     page-ACL + curated tables (migration 0009), and that an ``anon``-like public role stays denied.
-    Finally (ADR-db-level-customer-scope-isolation-backstop / migration 0010) it proves the
-    knowledge-scope backstop: a chunk tagged for
-    one customer scope is invisible to the reader under any other scope (the source-axis checks opt
-    out of that RESTRICTIVE policy via the ``'*'`` wildcard so they still measure the source axis).
+    The knowledge-scope backstop it used to prove is retired (migration 0018 drops its policies,
+    ADR-routing-labels-sole-content-axis), so there is no scope check any more.
     """
     eng = engine_mod.get_engine()
     with eng.connect() as conn:
