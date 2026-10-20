@@ -15,8 +15,10 @@ Usage (from `backend`):
     uv run python scripts/seed_curated_knowledge.py --title "Password reset" --body "updated text"
     uv run python scripts/seed_curated_knowledge.py --id 3 --deactivate
 
-Empty (or omitted) `--tags` means the entry applies to every knowledge scope, matching the table's
-own "empty tags = always included" semantics (PLAN 10.3).
+`--tags` sets the legacy knowledge-scope tags. The knowledge-scope axis is retired
+(ADR-routing-labels-sole-content-axis): every chat's `allowed_scopes` is empty, so the curated query
+currently returns ONLY untagged entries. Leave `--tags` empty for an entry that should be served;
+a tagged entry is stored but currently NOT returned.
 """
 
 from __future__ import annotations
@@ -42,7 +44,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         "--body", default=None, help="entry body text (required when upserting by title)"
     )
     p.add_argument(
-        "--tags", default="", help="comma-separated knowledge-scope tags; empty = every scope"
+        "--tags",
+        default="",
+        help=(
+            "comma-separated legacy tags; only untagged entries are currently returned, "
+            "so a tagged entry is stored but not served"
+        ),
     )
     p.add_argument(
         "--deactivate",

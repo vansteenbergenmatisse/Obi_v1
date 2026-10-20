@@ -15,7 +15,7 @@
 > `5-integration-context/human-validation-cases.md` Case 18. How a partner integrates:
 > `docs/Final_docs/1-how-partners-integrate-with-obi/how-partners-integrate-with-obi.md`.
 >
-> **Removed docs cited below.** `sync-rules/test-proof.md` (removed), `sync-rules/path-b-audit.md`,
+> **Removed docs cited below.** `sync-rules/test-proof.md` (removed), `sync-rules/path-b-audit.md` (removed),
 > `0.2-agent-quality/`, `0.4-design-review/` and `5-integration-context/jasper-reply-draft.md` (removed) were
 > deleted on 2026-10-20. Mentions of them in the historical sections are kept as provenance; the
 > ledger entries remain the record of what they proved. Old `apps/web` / `apps/automation` paths
@@ -382,7 +382,7 @@ retained — rule 1 intact), and `obi-backend` redeployed on Railway (`/health` 
 []`, worker draining every 5s). A COMPLETE reconciliation sweep is re-indexing the corpus — it
 correctly enqueued the whole `omnidoc` space (1069 pages; `source_scope` row 23 scopes the entire
 space) and the deployed, sink-bound worker drains in job-id order, so the nine routing-labelled pages
-(the tail jobs) index last. **(2) Audit follow-up (`sync-rules/path-b-audit.md`).** The audit found
+(the tail jobs) index last. **(2) Audit follow-up (`sync-rules/path-b-audit.md` (removed)).** The audit found
 no hard code gaps but two test-proof gaps (rules 3 & 4) and ~5 stale operator files; both are now
 closed in the working tree. Sync rules **3 & 4** gained end-to-end proof — `test_sync_rules_routing.py`
 drives a routing-label change through the real sync path and asserts `chunk.labels` grows/shrinks AND
@@ -647,7 +647,7 @@ updated); `i2-gone` today-line updated (unlabeled trigger now live).
 - **Tests (database):** `test_sync_rules_membership.py` — `test_tags_remove_last_recognized_label_removes_rows`,
   `test_tags_unrelated_labels_alone_do_not_keep_page`, `test_in2_untagged_page_never_indexed`,
   `test_tags_recognized_label_present_keeps_page` (guard). Red-today proof + guard-inversion proof in
-  `test-proof.md`.
+  `test-proof.md` (removed).
 - **Test-infra decision:** the generic DB fixtures (1001/1002/2002/3005/3007/3010) carry only
   unrelated labels, so the gate un-indexes them. The shared `index_page` helper now injects the base
   `obi-general-test` scope **only when a page has no recognized label** (leaving scope-tagging tests
@@ -697,7 +697,7 @@ visible in each scope), **3** (remove one tag, another stays → metadata-only, 
   `test_two_provider_labels_share_all_scopes_no_conflict_log`. **Removed** the moot
   `test_s_audit_knowledge_scope_conflict_log_line_emitted_on_conflicting_labels` (that audit event no
   longer exists; s-audit's other two log lines keep their own tests). Red-today + guard-inversion
-  proofs in `test-proof.md`.
+  proofs in `test-proof.md` (removed).
 - **Eval (Rule 11):** `make eval` before/after **byte-identical** (only the run label differs) → no
   gold-set regression. Caveat: the bundled baseline ranker doesn't route through knowledge-scope
   resolution, so it can't move on this change — the real visibility proof is the db+retrieval tests.
@@ -734,7 +734,7 @@ Rules satisfied: cross-cutting **3.4.1 / r3-scope** (empty tags visible to no sc
   red then restored). The moot `test_scope_rls_untagged_chunk_is_global_visible_under_any_scope`
   (asserted the removed floor) was **rewritten in place** into the fail-closed test. 2 new
   reversibility tests in `knowledge-base/tests/test_migration_0014_chunk_scope_fail_closed.py`.
-  Proofs in `test-proof.md`.
+  Proofs in `test-proof.md` (removed).
 - **Q-A resolved (corrects the step-1 §0 note):** the flag default is **False** in both code and the
   test env — the step-1 "runs True" note was a misread (retrieval tests pass `True` directly to the
   `HybridRetriever` constructor, not via env). RLS fail-closed is flag-independent; the app-layer
@@ -787,8 +787,8 @@ negative half landed in step 2), **8** (a change to one page never touches anoth
   the new `test_sync_rules_isolation.py`. Both green-today guards, each proven real by the 0.2.8
   revert method (rule 5: invert the membership gate; rule 8: drop the `page_id` scope on the version
   delete in `purge_page`) — production-file checksums matched before/after (no residue). Proofs in
-  `test-proof.md`. No production code changed.
-- **Docs finalised:** `coverage-map.md` + `test-proof.md` step-6 sections; **created**
+  `test-proof.md` (removed). No production code changed.
+- **Docs finalised:** `coverage-map.md` + `test-proof.md` (removed) step-6 sections; **created**
   `manual-tests.md` (MT-1..MT-7, each mapped to its automated mirror + `verify_sync_rules.py` live
   coverage, honest that the live scripts are owner-blocked/unwritten); `plan-corrections.md` (removed) step-6
   section recording the batched status flips + everything deliberately left undone.
@@ -1220,7 +1220,7 @@ xfail, remove it from the allow-list (it will XPASS → CI red otherwise).
 ## 12. Deliverables (files created/edited on execution)
 
 **New docs:** `docs/Final_docs/sync-rules/plan.md` (this file), `.../manual-tests.md`,
-`.../test-proof.md`; `docs/Final_docs/0.4-design-review/plan-corrections.md` (removed).
+`.../test-proof.md` (removed); `docs/Final_docs/0.4-design-review/plan-corrections.md` (removed).
 **Edited docs:** `docs/Final_docs/0.5-regression-tests/coverage-map.md`; design page
 `obi-rag-system-flow.html` + `obi-action-plan.html` statuses/`today` lines; `docs/Final_docs/ledger.md`
 + `progress-log.md` (append per substep); relevant `docs/Final_docs/ingestion/` component docs.
@@ -1579,7 +1579,7 @@ Werkwijze per golf: één golf per keer, /obi-change-procedure, ledger-entry bij
 >   (owner-approved the harness production-deploy guard). `/health` → `knowledge_scopes: []` (was the
 >   four `-test` scopes = old image). Background jobs confirmed running (`worker_tick` every 5s), so
 >   webhook + sweep now auto-sync going forward.
-> - **8-sync-rules audit vs the new tags:** `sync-rules/path-b-audit.md`. All 8 work in code; no hard
+> - **8-sync-rules audit vs the new tags:** `sync-rules/path-b-audit.md` (removed). All 8 work in code; no hard
 >   gaps. Rules 3 & 4 (remove-one-tag / add-a-tag) are **test-proof gaps** — nothing asserts
 >   `chunk.labels` shrinks/grows or that routing flips. DB layer consistent (0016/0018).
 >
@@ -1603,7 +1603,7 @@ Werkwijze per golf: één golf per keer, /obi-change-procedure, ledger-entry bij
 > are fixed, and (b) sync rules 3 & 4 now have the `chunk.labels`/routing-flip test proof
 > (`test_sync_rules_routing.py`, 2 tests, proven real by revert). `make check` green (boundaries 0 ·
 > backend 1542 + 1 xfail · kb 53). Detail: ledger/progress-log entry "ADR-routing-labels-sole-content-axis Path B audit
-> follow-up" + the Follow-up section of `sync-rules/path-b-audit.md`. Still owner/worker-owned: the
+> follow-up" + the Follow-up section of `sync-rules/path-b-audit.md` (removed). Still owner/worker-owned: the
 > re-sync tail + the live isolation run; and `check-deploy-readiness` is flagged (stale banner) but
 > its Path B re-spec is a separate security substep.
 >

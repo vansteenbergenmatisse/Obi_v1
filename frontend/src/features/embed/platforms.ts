@@ -7,7 +7,7 @@
  * the same `knowledge-base/config/platforms.json` (or a local override, see `PLATFORMS_PATH` below)
  * and returns the sorted, de-duplicated domain list of every `active: true` entry. Never caches —
  * each call re-reads the file, matching "computed at request time." Does not verify tokens or map
- * integrations to scopes; that stays backend-only (`TokenVerifier`/`PlatformRegistry`).
+ * integrations to claim values; that stays backend-only (`TokenVerifier`/`PlatformRegistry`).
  *
  * Deliberately NOT re-exported from `./index.ts` (the feature's client-safe public root), and
  * deliberately its OWN file separate from `csp.ts`'s pure logic: this file uses real

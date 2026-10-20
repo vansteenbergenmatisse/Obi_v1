@@ -20,7 +20,9 @@ enforcement already runs once, at write time, before this cache ever sees the re
 retrieved under one resolved knowledge-scope allow-list, so a later request naming a *different*
 `knowledge_scope` with otherwise-identical history/principal must not replay evidence scoped to a
 provider it never asked for — not named in PLAN 10.5's own file list, but required by the same
-correctness argument as the pre-existing `scope` binding above.
+correctness argument as the pre-existing `scope` binding above. That knowledge-scope term is now
+vestigial: ADR-routing-labels-sole-content-axis retired the axis and `allowed_scopes` is always
+empty, so it contributes an empty string to every key.
 
 Same staleness shape as the pre-existing `Idempotency-Key` replay cache (PLAN 4.4): a cached answer
 reflects the corpus/ACL state at the moment it was generated and can be up to `ttl_seconds` stale if
@@ -49,7 +51,8 @@ def _cache_key(history: Sequence[ChatMessage], auth: AuthContext) -> str:
     to the verified edge identity —
     `principal` (page-ACL), `allowed_scopes` (knowledge scope), and `token_subject`. A cache hit
     can therefore never cross a principal, a scope allow-list, or a subject boundary; the raw
-    token is never part of the key (only its verified subject)."""
+    token is never part of the key (only its verified subject). The `allowed_scopes` term is
+    vestigial (always empty since ADR-routing-labels-sole-content-axis)."""
     turns = [(m.role, m.content) for m in history]
     payload = (
         json.dumps(turns, separators=(",", ":"))

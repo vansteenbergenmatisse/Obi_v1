@@ -36,7 +36,9 @@ legs separately — a local PASS never stands in for a partner-staging PASS.
 ### Case 1 — General guidance baseline (configuration + general)
 
 - **How to reach this context:** preset **"No preset (general only)"** — company with all three
-  slots empty. Connection under test: none (general-only visibility rule).
+  slots empty. Connection under test: none (general-only visibility rule; legacy wording from before
+  ADR-routing-labels-sole-content-axis — a chat with no directed connection is not narrowed by
+  routing labels).
 - **Questions:** (1) a general question general guidance answers (e.g. "What is Obi?" / "How do I
   get started?"); (2) a connection-specific question with no matching slot (e.g. "Why are my Mews
   invoices missing in QuickBooks?").
@@ -49,7 +51,7 @@ legs separately — a local PASS never stands in for a partner-staging PASS.
 |---|---|---|---|---|---|---|
 | 1 | Configuration | No preset; all slots empty; widget shows simulated-context marker; Obi visible | | | | |
 | 2 | Metadata | Seeded general pages present | | | | |
-| 3 | Included / excluded ids | Included: general only. Excluded: all software/connection/workflow | | | | |
+| 3 | Included / excluded ids | Included: general only (legacy wording, see Case 1 note). Excluded: all software/connection/workflow | | | | |
 | 4 | Reranker results | Re-orders eligible evidence only; no excluded page reintroduced | | | | |
 | 5 | Answers | General Q answered from general; connection-specific Q not answered with connection instructions — serves general + asks for missing config (never broadens) | | | | |
 | 6 | Citations | Every sentence cited; all badges "General guide" | | | | |

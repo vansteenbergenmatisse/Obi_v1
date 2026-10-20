@@ -4,13 +4,14 @@ feature's I/O boundary and `retrieval/infrastructure/search_repo.py`'s bound-arr
 pattern for the identical `tags && :scopes` predicate (PLAN 10.4) — the list is always bound as a
 parameter, never string-interpolated into the SQL text.
 
-Access control (Phase 11.1a / ADR-db-level-customer-scope-isolation-backstop): as of migration 0009
-the table has an `anon`-denied RLS
-posture (reader-scoped `*_reader_read` policy), and this read now also sets the customer-scope RLS
-GUC (`app.allowed_knowledge_scopes`) via `apply_knowledge_scope` before the query, so the DB
-enforces the same `curated_knowledge_entry_scope_read` RESTRICTIVE policy the retriever enforces on
-`chunk`. The app-layer `tags && :allowed_scopes` predicate below is retained as defense-in-depth and
-for deterministic ordering/limit; it is no longer the *only* access control.
+Access control: as of migration 0009 the table has an `anon`-denied RLS posture (reader-scoped
+`*_reader_read` policy). The knowledge-scope policy (`curated_knowledge_entry_scope_read`,
+ADR-db-level-customer-scope-isolation-backstop) is RETIRED: migration 0018 dropped it
+(ADR-routing-labels-sole-content-axis). `apply_knowledge_scope(session, None)` still runs, but it
+only sets the `'*'` wildcard on a GUC no policy reads. The app-layer
+`tags = '{}' OR tags && :allowed_scopes` predicate below is unchanged, and because every gate
+builds `allowed_scopes` empty, the query returns ONLY untagged curated entries (`tags = '{}'`);
+tagged entries are currently never returned.
 """
 
 from __future__ import annotations

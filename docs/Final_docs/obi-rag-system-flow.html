@@ -671,15 +671,14 @@ details.sec[open]>summary .show{display:none}
       <li><span><b>The answer cites only pages the filters allowed.</b> The exact matching pieces are reranked, expanded to parents and checked for coverage and support. The trace row records <code>allowed_sources</code>, the session routing labels and the token subject. <span class="tag t-done">Implemented (ADR-routing-labels-sole-content-axis)</span></span></li>
     </ol>
     <table class="wide">
-      <tr><th>Page tags</th><th>Page restriction in Confluence</th><th>A Mews user sees it?</th><th>Why</th></tr>
-      <tr><td>mews</td><td>none</td><td>yes</td><td>tag matches, page is open</td></tr>
-      <tr><td>general</td><td>none</td><td>yes</td><td>every integration gets general</td></tr>
-      <tr><td>mews, general</td><td>none</td><td>yes</td><td>either tag matches</td></tr>
-      <tr><td>toast</td><td>none</td><td>no</td><td>no tag overlap; the database never returns the row</td></tr>
-      <tr><td>mews</td><td>finance group only</td><td>only members of that group</td><td>lock 3 checks the person's principal</td></tr>
-      <tr><td>mews, toast</td><td>none</td><td>no</td><td><code>scope_state = conflict</code>: hidden from everyone until an editor fixes the labels</td></tr>
+      <tr><th>Page routing labels</th><th>Page restriction in Confluence</th><th>This Toast &rarr; Mews chat sees it?</th><th>Why</th></tr>
+      <tr><td>mews-general</td><td>none</td><td>yes</td><td>the session labels are <code>obi-general</code>, <code>toast-general</code>, <code>mews-general</code>, <code>toast-to-pms</code>; <code>labels &amp;&amp; :session_labels</code> overlaps</td></tr>
+      <tr><td>obi-general</td><td>none</td><td>yes</td><td>every directed chat carries <code>obi-general</code></td></tr>
+      <tr><td>toast-to-pms</td><td>none</td><td>yes</td><td>the connection label matches</td></tr>
+      <tr><td>opera-cloud-general</td><td>none</td><td>no</td><td>no label overlap; the database never returns the row</td></tr>
+      <tr><td>mews-general</td><td>finance group only</td><td>only members of that group</td><td>lock 3 checks the person's principal</td></tr>
       <tr><td>classified</td><td>any</td><td>no</td><td>the page is out of the index and its pieces are deleted</td></tr>
-      <tr><td>none</td><td>any</td><td>no</td><td>a page with no recognized tag is not in the index (target)</td></tr>
+      <tr><td>none</td><td>any</td><td>no</td><td>a page with no recognized routing label is not in the index</td></tr>
     </table>
     </details>
     </details>

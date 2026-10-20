@@ -244,7 +244,7 @@ Where a panel has both a **Today** line and a **Target and notes** line, the Tod
 3. Group the deltas by the ship order in section 01: Priority 1 (exact chunk through search, rerank and answer; sections 06.2 to 06.5), Priority 2 (batched support check before send; section 06.5), then the rest in section order (ingestion fingerprint and whole-page rebuild, label-gated ingestion, scope_state and the RESTRICTIVE policy, the embedding work in 03.2, the folder move in 01.2).
 4. Do not implement anything tagged "Decision needed" without the owner's call. Section 11 lists every open decision; several sections repeat the tag in place. The page proposes a default for each; state the default in the plan and mark it as awaiting confirmation.
 5. Every threshold and depth on the page (refusal threshold 0.10, `coverage_min_score`, `coverage_unsure_band`, rerank depth 75 vs 150, the support-check latency budget) is provisional until the gold set in section 10 exists. Plan the gold set early because acceptance for stages 4 and 5 depends on it.
-6. Section 08.1 ends with the full DDL of the one target migration (0011). Apply migration 0010 live first; run the backfill and the readiness gate (`verify_knowledge_scope_backfill.py`) before trusting the new policy.
+6. Section 08.1 records the retired knowledge-scope migrations (0010, 0011, 0014) for history only; migration 0018 removed their policies, and routing labels are the content axis now.
 7. Never disable row security on Supabase and never run the 0009 downgrade there: both expose the tables through the public REST roles.
 """)
 

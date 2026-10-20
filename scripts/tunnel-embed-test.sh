@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Obi · quick "test online" tunnel for the embed widget (self-only, general-only).
+# Obi · quick "test online" tunnel for the embed widget (self-only, tokenless, not narrowed to a connection).
 #
 # Exposes the LOCAL Next.js frontend (:3100) on a public HTTPS URL via a cloudflared
 # quick tunnel, so you can open the widget in a browser over the internet. Only the
@@ -93,7 +93,7 @@ echo
 echo "      $URL/test-hosts/none"
 echo
 echo "  Open it, click the round launcher, ask a question."
-echo "  (general-only content — no partner or token needed)"
+echo "  (tokenless, not narrowed to a connection: all indexed pages — no partner needed)"
 echo
 echo "  Injected host into the local registry: $HOST"
 echo "  Ctrl-C here to stop the tunnel and restore the registry."

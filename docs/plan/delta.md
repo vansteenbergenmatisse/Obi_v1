@@ -1,5 +1,10 @@
 # Delta — code versus the design page
 
+> **Historical (pre-0018) delta.** This table records the gap as audited before migration 0018
+> and ADR-routing-labels-sole-content-axis retired the knowledge-scope axis. Rows that speak of
+> tags, knowledge scopes or the tag map describe that retired model; rule #5 now means routing
+> labels (a page is indexed while it is published and carries a recognized routing label).
+
 The gap between what the repository does today and what the design page targets.
 One row per panel. Filled by the Phase-0 audit (`obi-auditor` / `/obi-audit`) reading
 each panel with `python3 backend/tools/panel.py <id>` and proving each claim

@@ -90,6 +90,7 @@ def drop_chunk_rls(conn: Connection) -> None:
 
 # --- Phase 11.1a: customer/knowledge-scope isolation backstop
 # (ADR-db-level-customer-scope-isolation-backstop) ----------------------
+# RETIRED by migration 0018; kept only so the 0018 downgrade and the test harness can re-create it.
 # A second axis on top of the source policy above. The mews/opera/toast/general boundary used to be
 # an app-layer ``tags && :scopes`` predicate gated by a fail-OPEN feature flag; this makes the DB
 # enforce it. The policy is ``AS RESTRICTIVE`` so it **ANDs** with ``chunk_source_read`` (a second

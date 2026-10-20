@@ -41,10 +41,11 @@ class LocalState:
     contextualization_version: int
     contextualization_and_schema: int  # retrieval_schema_version
     embedding_model: str
-    # The stamped knowledge-scope tags. Not compared by classify() (they are not page-side
-    # state); the command handler compares them against the authoritative cmd.scopes and routes
-    # a mismatch to the metadata-only restamp path (§D.0 — a recognized-set or source_scope
-    # allow-list edit must reach already-indexed pages at the complete-sweep cadence).
+    # The stamped routing labels (legacy ``tags`` column). Not compared by classify() (they are
+    # not page-side state); the command handler compares them against the authoritative
+    # cmd.scopes and routes a mismatch to the metadata-only restamp path (§D.0 — a recognized-set
+    # or source_scope allow-list edit must reach already-indexed pages at the complete-sweep
+    # cadence).
     tags: tuple[str, ...]
     # The stamped "Applies to" payload (panel mi-applies, 8.2.2; None = no record).
     # Not compared by classify() either — the Applies-to table is lifted OUT of the body

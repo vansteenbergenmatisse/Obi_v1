@@ -102,7 +102,7 @@ def standalone_registry(
     """The standalone environment's one active platform — the test harness, which may simulate any
     configured customer, so it vends every catalog product (gate check 4). `base_registry`, when
     supplied, lends its real integration→scope map so a validated preset's `allowed_scopes` match
-    production; absent, scope assembly simply yields general-only (validation only needs the gate
+    production; absent, scope assembly simply yields no scopes (validation only needs the gate
     not to refuse — scope assembly never raises)."""
     catalog = catalog if catalog is not None else load_product_catalog()
     scopes: dict[str, tuple[str, ...]] = {}

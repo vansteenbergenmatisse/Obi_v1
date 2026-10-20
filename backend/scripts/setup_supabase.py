@@ -217,49 +217,6 @@ def _check_anon_denied(conn) -> tuple[bool, str]:
     return ok, ("anon stays default-denied — " + detail if ok else "anon LEAK — " + detail)
 
 
-def _check_reader_scope_axis(eng, reader, real_source: str) -> tuple[bool, str]:
-    """Prove the ADR-db-level-customer-scope-isolation-backstop / migration-0010 knowledge-scope
-    backstop: a chunk *tagged* for one
-    customer scope is invisible to the reader under any other scope, and visible under its own.
-
-    Distinct from the source axis above: that isolates by ``source_id`` (``app.allowed_sources``);
-    this isolates by knowledge-scope tag (``app.allowed_knowledge_scopes``, a RESTRICTIVE policy
-    that ANDs on top). Meaningful only on a *tagged* corpus — an all-untagged corpus
-    (``cardinality(tags) = 0``) is global by design, so we report a skip-as-pass. The owner bypasses
-    RLS, so we read a real tag from the owner side, then count as the reader filtered to rows
-    carrying that tag: under the matching scope > 0; under a bogus scope 0 (tagged rows drop out).
-    """
-    with eng.connect() as conn:
-        tag = conn.execute(
-            text(
-                "SELECT t FROM (SELECT DISTINCT unnest(tags) AS t FROM chunk) u "
-                "WHERE t <> '' ORDER BY t LIMIT 1"
-            )
-        ).scalar()
-    if tag is None:
-        return True, "no tagged chunks — scope-axis check N/A (skipped)"
-
-    with reader() as s:
-        s.execute(text("SELECT set_config('app.allowed_sources', :v, true)"), {"v": real_source})
-        s.execute(text("SELECT set_config('app.allowed_knowledge_scopes', :v, true)"), {"v": tag})
-        in_scope = s.execute(
-            text("SELECT count(*) FROM chunk WHERE :t = ANY(tags)"), {"t": tag}
-        ).scalar_one()
-    with reader() as s:
-        s.execute(text("SELECT set_config('app.allowed_sources', :v, true)"), {"v": real_source})
-        s.execute(
-            text("SELECT set_config('app.allowed_knowledge_scopes', :v, true)"),
-            {"v": "obi-__nonexistent__-test"},
-        )
-        out_scope = s.execute(
-            text("SELECT count(*) FROM chunk WHERE :t = ANY(tags)"), {"t": tag}
-        ).scalar_one()
-
-    ok = in_scope > 0 and out_scope == 0
-    detail = f"tag {tag!r}: in-scope={in_scope} (expect > 0), out-of-scope={out_scope} (expect 0)"
-    return ok, ("scope backstop holds — " + detail if ok else "scope LEAK — " + detail)
-
-
 def verify_isolation() -> int:
     """Prove the ADR-source-id-row-security-with-reader-writer-roles read-path guarantee holds live:
     owner sees rows, reader is default-deny.
@@ -302,11 +259,8 @@ def verify_isolation() -> int:
         # SET LOCAL cannot bind params; set_config(name, value, is_local=true) is the transaction-
         # scoped equivalent that can (mirrors retrieval's apply_source_scope).
         s.execute(text("SELECT set_config('app.allowed_sources', :v, true)"), {"v": real})
-        # ADR-db-level-customer-scope-isolation-backstop / 0010: the RESTRICTIVE scope policy ANDs
-        # with the source policy, so a *tagged*
-        # corpus needs the scope GUC or every tagged row drops out and this source-axis count reads
-        # 0. Opt out with '*' here so this block isolates the *source* axis; the scope axis is
-        # proven separately below.
+        # Opt the scope GUC out with '*' so this block isolates the *source* axis. At head the scope
+        # policies are gone (migration 0018), so this only matters on a database below 0018.
         s.execute(text("SELECT set_config('app.allowed_knowledge_scopes', '*', true)"))
         scoped = s.execute(text("SELECT count(*) FROM chunk")).scalar_one()
     with reader() as s:
@@ -328,13 +282,11 @@ def verify_isolation() -> int:
     non_chunk_ok, non_chunk_detail = _check_reader_non_chunk(reader, owner_page_sources)
     with eng.connect() as conn:
         anon_ok, anon_detail = _check_anon_denied(conn)
-    # ADR-db-level-customer-scope-isolation-backstop / 0010: prove the scope backstop — a *tagged*
-    # chunk is isolated to its own scope.
-    scope_ok, scope_detail = _check_reader_scope_axis(eng, reader, real)
+    # The knowledge-scope axis is retired (ADR-routing-labels-sole-content-axis; migration 0018
+    # drops its policies), so there is no scope isolation left to prove here.
     print(f"reader halfvec    : {halfvec_detail}")
     print(f"reader non-chunk  : {non_chunk_detail}")
     print(f"anon role         : {anon_detail}")
-    print(f"scope axis        : {scope_detail}")
 
     if not chunk_ok:
         print("FAIL: RLS default-deny / scoping did not hold as expected.", file=sys.stderr)
@@ -357,13 +309,6 @@ def verify_isolation() -> int:
     if not anon_ok:
         print("FAIL: an anon-like public role can read the corpus — RLS leak.", file=sys.stderr)
         return 7
-    if not scope_ok:
-        print(
-            "FAIL: knowledge-scope backstop leaked — a tagged chunk was visible under the wrong "
-            "scope. Apply migration 0010 (chunk/curated *_scope_read RESTRICTIVE policies).",
-            file=sys.stderr,
-        )
-        return 8
     print(
         "OK: ADR-source-id-row-security-with-reader-writer-roles read-path isolation + reader "
         "read-access hold on this instance."

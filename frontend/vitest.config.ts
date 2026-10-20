@@ -7,9 +7,9 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
-      // Mirror tsconfig's `@kb/*` path alias so the generated scope list (`model/knowledge-scopes.ts`
-      // imports `@kb/config/knowledge_scopes.json`) resolves the same repo-root canonical file under
-      // Vitest as it does under Next's build (substep 1.2.2).
+      // Mirror tsconfig's `@kb/*` path alias so the standalone preset list
+      // (`features/chat/model/standalone-presets.ts` imports `@kb/config/standalone_presets.json`)
+      // resolves the same repo-root canonical file under Vitest as it does under Next's build.
       "@kb": path.resolve(__dirname, "../knowledge-base"),
       // Next.js swaps the real `server-only` package (which unconditionally throws) for a no-op
       // when building its SERVER webpack graph; Vitest has no such split, so tests need the same

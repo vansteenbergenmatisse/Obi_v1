@@ -46,7 +46,8 @@ table{border-collapse:collapse;width:100%;font-size:14.5px}
 th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--rule)}
 th{font:600 12px/1.3 "IBM Plex Mono",monospace;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-faint);background:#FAFBFB}
 tr:last-child td{border-bottom:0}
-.pill{display:inline-block;font:600 12px/1 "IBM Plex Mono",monospace;padding:5px 8px;border-radius:999px;white-space:nowrap}
+.pill{display:inline-block;font:600 12px/1.3 "IBM Plex Mono",monospace;padding:5px 8px;border-radius:999px;white-space:nowrap}
+.tbl .pill{white-space:normal;border-radius:10px}
 .ok{background:var(--moss-wash);color:var(--moss)}.warn{background:var(--amber-wash);color:var(--amber)}.bad{background:var(--rust-wash);color:var(--rust)}.info{background:var(--petrol-wash);color:var(--petrol)}
 ol.steps{list-style:none;counter-reset:s;padding:0;margin:0;display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
 ol.steps>li{min-width:0;counter-increment:s;position:relative;padding:14px 16px 14px 56px;background:var(--card);border:1px solid var(--rule);border-radius:12px}
@@ -91,7 +92,7 @@ footer ul{padding-left:18px}
         <tr><td>Embed hosts allowed</td><td><code>base.development.omniboost.io</code> (dev)<br><code>app.omniboost.io</code> (live)</td><td><code>datahub.omniboost.io</code></td></tr>
         <tr><td>What works now</td><td><span class="pill ok">widget + answers without a connection</span></td><td><span class="pill ok">widget + answers without a connection</span></td></tr>
         <tr><td>Signing entry</td><td><code>base</code> <span class="pill warn">inactive</span></td><td><code>datahub</code> <span class="pill warn">inactive</span></td></tr>
-        <tr><td>Blocking activation</td><td><span class="pill bad">JWKS returns HTTP 500</span> and no token from the deployed dev environment yet</td><td><span class="pill bad">issuer, JWKS, token endpoint and example token not received</span></td></tr>
+        <tr><td>Blocking activation</td><td><span class="pill bad">JWKS returns HTTP 500</span> and no token from the deployed dev environment yet</td><td><span class="pill bad">issuer, JWKS, token endpoint and source/target ids not received</span></td></tr>
       </tbody>
     </table></div>
     <p class="note">Live facts per partner: <a href="../5-integration-context/partner-facts.md">partner-facts.md</a> · partner pages: <a href="../../embedding/base.md">Base</a>, <a href="../../embedding/datahub.md">Data Hub</a> · services: frontend <code>obi-web-production.up.railway.app</code>, backend <code>obi-backend-production.up.railway.app</code>.</p>
@@ -203,7 +204,7 @@ footer ul{padding-left:18px}
     <p class="sub">Five steps, in order. Each names what we need back.</p>
     <ol class="steps">
       <li><b>Tell us where the widget loads.</b> Every https origin, e.g. <code>https://base.development.omniboost.io</code>. Every page on that https origin is covered.<div class="need">We need: the exact origins.</div></li>
-      <li><b>Publish a signing key (JWKS).</b> RS256 or ES256, each key with a <code>kid</code>. Rotate by publishing the new <code>kid</code> a little before signing with it (Obi refetches at most every 30 s).
+      <li><b>Publish a signing key (JWKS).</b> RS256 or ES256 (Base: RS256), each key with a <code>kid</code>. Rotate by publishing the new <code>kid</code> a little before signing with it (Obi refetches at most every 30 s).
 <pre><code>{ "keys": [ { "kid": "base-2026-10", "kty": "RSA", "alg": "RS256",
               "use": "sig", "n": "&lt;modulus&gt;", "e": "AQAB" } ] }</code></pre>
         <div class="need">We need: the JWKS URL and the exact <code>iss</code> string.</div></li>
@@ -211,7 +212,7 @@ footer ul{padding-left:18px}
 <pre><code>{ "iss": "https://base.development.omniboost.io", "aud": "obi", "sub": "5",
   "iat": 1792072431, "exp": 1792072731,
   "source_system": "Toast", "target_system": "NetSuite", "business_id": 2108 }</code></pre>
-        Send <code>source_system</code>, <code>target_system</code> and <code>business_id</code> together, each non-empty (otherwise 401) · <code>iss</code> letter for letter · <code>aud</code> is <code>"obi"</code> · <code>exp − iat</code> ≤ 60 min · names in any case or spacing · <code>business_id</code> string or number · 60 s clock skew tolerated.
+        Send <code>source_system</code>, <code>target_system</code> and <code>business_id</code> together, each non-empty (with a source or target present, a missing one is a 401) · <code>iss</code> letter for letter · <code>aud</code> is <code>"obi"</code> · <code>exp − iat</code> ≤ 60 min · names in any case or spacing · <code>business_id</code> string or number · 60 s clock skew tolerated.
         <div class="need">We need: the deployed <code>tokenUrl</code> (not <code>.test</code>) and one fresh token.</div></li>
       <li><b>Add the widget.</b>
 <pre><code>&lt;script src="https://obi-web-production.up.railway.app/obi.js"&gt;&lt;/script&gt;
@@ -262,7 +263,7 @@ footer ul{padding-left:18px}
         <tr><td><code>lifetime_minutes</code></td><td>Longest accepted <code>exp − iat</code> (1–1440; we use 60).</td></tr>
         <tr><td><code>algs</code></td><td><code>RS256</code> and/or <code>ES256</code>.</td></tr>
         <tr><td><code>active</code></td><td>Only active entries are served; a token from an inactive entry is refused (401).</td></tr>
-        <tr><td><code>allowed_integrations</code></td><td>The source systems this partner may assert; any other source is refused (401).</td></tr>
+        <tr><td><code>allowed_integrations</code></td><td>The catalog systems this partner may assert as source; a known source outside it is refused (401), an unknown source is hidden (403) first.</td></tr>
       </tbody>
     </table></div>
     <h3>Supported sources and routing</h3>

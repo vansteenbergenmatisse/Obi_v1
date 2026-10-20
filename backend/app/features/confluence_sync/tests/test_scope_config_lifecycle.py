@@ -1,15 +1,15 @@
-"""Scope-CONFIG lifecycle: the tag map itself (knowledge_scopes.json) gains or loses a scope.
+"""Recognized-label CONFIG lifecycle: the recognized routing-label set gains or loses a label.
 
 Membership tests elsewhere (test_sync_rules_membership.py) change a PAGE's labels; this file
 changes the RECOGNIZED SET and proves what happens to pages already in the index. The operator
-edit is simulated by pointing the settings-module loader at a tmp knowledge_scopes.json that
-passes the real startup validation (lowercase, unique, general + classified present), so
-``settings.knowledge_scope_set`` — re-read on every access by the worker and both sweeps — serves
-the edited set exactly as a deploy of the edited file would.
+edit is simulated by patching ``ProductCatalog.all_routing_labels`` to return exactly the edited
+set (ADR-routing-labels-sole-content-axis retired the knowledge_scopes.json tag map), so
+``settings.product_catalog.all_routing_labels()`` — read by the worker and both sweeps — serves
+the edited set exactly as a deploy of an edited product catalog would.
 
-Panels: tg-config (the tag list tells stage 2 which labels count), ks-sweep (sweeps as the
-safety net), tg-classified (the reserved label), tg-add. Never-bend rule 5: a page is in the
-index for one reason — published and carrying a tag from the tag map.
+Panels: tg-config (the recognized label list tells stage 2 which labels count), ks-sweep (sweeps
+as the safety net), tg-classified (the reserved label), tg-add. Never-bend rule 5: a page is in
+the index for one reason — published and carrying a recognized routing label.
 """
 
 from __future__ import annotations

@@ -12,8 +12,9 @@ Design decisions recorded on the command (see ``docs/plans/confluence-trigger-la
 
 * **D1** — the shape below: ``page_id``, ``action``, ``scopes``, ``reason``.
 * **scopes is authoritative** — the trigger computes ``recognized_labels ∩
-  authorized_tags`` and the ingestion layer stamps exactly those; it never
-  re-derives membership. ``()`` for a ``delete``.
+  authorized_tags`` (the stamped routing labels, stored in the legacy ``tags``
+  column) and the ingestion layer stamps exactly those; it never re-derives
+  membership. ``()`` for a ``delete``.
 * **delete is a hard purge** (owner decision, 2026-09-25): ``delete`` removes
   every row for the page, and is idempotent — purging a page that isn't indexed
   is a no-op. That idempotency is what lets the whole event table collapse to a
@@ -48,9 +49,9 @@ VALID_REASONS: frozenset[str] = frozenset(Reason.__args__)  # type: ignore[attr-
 class SyncCommand:
     """A decided action for one page — the only value that crosses the layer boundary.
 
-    ``scopes`` carries the authoritative knowledge-scope tags for an ``upsert``
-    (``recognized_labels ∩ authorized_tags``); it is always empty for a
-    ``delete``.
+    ``scopes`` carries the authoritative stamped routing labels for an ``upsert``
+    (``recognized_labels ∩ authorized_tags``), stored in the legacy ``tags`` column,
+    which retrieval no longer reads; it is always empty for a ``delete``.
     """
 
     page_id: int

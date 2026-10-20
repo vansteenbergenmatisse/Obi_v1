@@ -35,7 +35,7 @@ The rule is recorded in
 | Embed hosts allowed | `base.development.omniboost.io` (dev), `app.omniboost.io` (live) | `datahub.omniboost.io` |
 | What works now | Widget loads; answers without a connection (no token yet) | Widget loads; answers without a connection (no token yet) |
 | Registered as a signing partner | Yes, entry `base`, **inactive** | Yes, entry `datahub`, **inactive** |
-| Blocking activation | The JWKS URL returns HTTP 500; we need a token from the deployed dev environment | Issuer, JWKS URL, token endpoint and an example token not received yet |
+| Blocking activation | The JWKS URL returns HTTP 500; we need a token from the deployed dev environment | Issuer, JWKS URL, token endpoint and the source/target ids not received (the one sample token was expired and locally signed) |
 
 Live facts per partner are tracked in
 [partner-facts.md](../5-integration-context/partner-facts.md). The partner pages are
@@ -72,7 +72,7 @@ standard JWKS document:
 }
 ```
 
-- Sign with **RS256 or ES256**. Anything else (including HS256) is rejected.
+- Sign with **RS256 or ES256** (whichever we register for you; Base is registered for RS256). Anything else, including HS256, is rejected.
 - Every key needs a **`kid`**, and every token's header must carry the `kid` it was signed with.
 - To rotate: publish the new key (new `kid`) in the JWKS first, then start signing with it. Obi
   refetches your JWKS when it sees an unknown `kid`, at most once every 30 seconds, so publish a
@@ -103,8 +103,9 @@ The token's claims:
 | `target_system` | together | The system it connects to, e.g. `"NetSuite"`. Any non-empty value is accepted; it is never judged. |
 | `business_id` | together | Your customer id, as a string or a number (`2108` and `"2108"` both work). |
 
-Send `source_system`, `target_system` and `business_id` together, each non-empty. A token that
-carries one of them without the others is malformed and refused (401).
+Send `source_system`, `target_system` and `business_id` together, each non-empty. If a token
+carries `source_system` or `target_system`, all three must be present, or it is refused (401). A
+`business_id` on its own is ignored, and the answers are not narrowed to a connection.
 
 A complete example:
 
@@ -184,7 +185,7 @@ Each partner is one entry in
 | `lifetime_minutes` | The longest token lifetime accepted (`exp − iat`), 1–1440; we use 60. |
 | `algs` | Allowed signing algorithms: `RS256` and/or `ES256`. |
 | `active` | Only an active entry is served. A token from an inactive entry is refused (401), so until activation the partner's pages send no token. |
-| `allowed_integrations` | The source systems this partner may assert. A source outside it is refused (401). |
+| `allowed_integrations` | The catalog systems this partner may assert as source. A known source outside it is refused (401); an unknown source is hidden (403) before this check. |
 
 Today: `obi-test` is the only active entry. It is a temporary bridge (our own Supabase issuer) that
 also carries the Base and Data Hub hosts, so their pages can load the widget before their own

@@ -28,7 +28,7 @@ Where a panel has both a **Today** line and a **Target and notes** line, the Tod
 3. Group the deltas by the ship order in section 01: Priority 1 (exact chunk through search, rerank and answer; sections 06.2 to 06.5), Priority 2 (batched support check before send; section 06.5), then the rest in section order (ingestion fingerprint and whole-page rebuild, label-gated ingestion, scope_state and the RESTRICTIVE policy, the embedding work in 03.2, the folder move in 01.2).
 4. Do not implement anything tagged "Decision needed" without the owner's call. Section 11 lists every open decision; several sections repeat the tag in place. The page proposes a default for each; state the default in the plan and mark it as awaiting confirmation.
 5. Every threshold and depth on the page (refusal threshold 0.10, `coverage_min_score`, `coverage_unsure_band`, rerank depth 75 vs 150, the support-check latency budget) is provisional until the gold set in section 10 exists. Plan the gold set early because acceptance for stages 4 and 5 depends on it.
-6. Section 08.1 ends with the full DDL of the one target migration (0011). Apply migration 0010 live first; run the backfill and the readiness gate (`verify_knowledge_scope_backfill.py`) before trusting the new policy.
+6. Section 08.1 records the retired knowledge-scope migrations (0010, 0011, 0014) for history only; migration 0018 removed their policies, and routing labels are the content axis now.
 7. Never disable row security on Supabase and never run the 0009 downgrade there: both expose the tables through the public REST roles.
 
 ---
@@ -563,16 +563,15 @@ repo/
 4. **Lock 3 checks Confluence page permissions.** A Mews page restricted to the finance group is dropped unless the person's principal is in that group. No principal: open pages only. [Implemented]
 5. **The answer cites only pages the filters allowed.** The exact matching pieces are reranked, expanded to parents and checked for coverage and support. The trace row records `allowed_sources`, the session routing labels and the token subject. [Implemented (ADR-routing-labels-sole-content-axis)]
 
-| Page tags | Page restriction in Confluence | A Mews user sees it? | Why |
+| Page routing labels | Page restriction in Confluence | This Toast → Mews chat sees it? | Why |
 |---|---|---|---|
-| mews | none | yes | tag matches, page is open |
-| general | none | yes | every integration gets general |
-| mews, general | none | yes | either tag matches |
-| toast | none | no | no tag overlap; the database never returns the row |
-| mews | finance group only | only members of that group | lock 3 checks the person's principal |
-| mews, toast | none | no | `scope_state = conflict`: hidden from everyone until an editor fixes the labels |
+| mews-general | none | yes | the session labels are `obi-general`, `toast-general`, `mews-general`, `toast-to-pms`; `labels && :session_labels` overlaps |
+| obi-general | none | yes | every directed chat carries `obi-general` |
+| toast-to-pms | none | yes | the connection label matches |
+| opera-cloud-general | none | no | no label overlap; the database never returns the row |
+| mews-general | finance group only | only members of that group | lock 3 checks the person's principal |
 | classified | any | no | the page is out of the index and its pieces are deleted |
-| none | any | no | a page with no recognized tag is not in the index (target) |
+| none | any | no | a page with no recognized routing label is not in the index |
 
 #### Panels that belong to this section (4)
 

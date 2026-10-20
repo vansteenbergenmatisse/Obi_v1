@@ -13,12 +13,13 @@ import { DevPreviewBackdrop } from "./dev-preview-backdrop";
 import { isLocalOrDevEnv } from "@/features/embed/csp";
 
 // Obi embed test-host pages (PLAN 11.1c) — local-only scaffolding, each simulates a third-party
-// site embedding Obi under a different scope. Never rendered in production.
+// site embedding Obi with a different minted token (legacy integration note; none narrows to
+// a connection — only directed source → target tokens do). Never rendered in production.
 const TEST_HOSTS = [
-  { name: "Mews", href: "/test-hosts/mews", scope: "Mews + general" },
-  { name: "Toast", href: "/test-hosts/toast", scope: "Toast + general" },
-  { name: "Opera Cloud", href: "/test-hosts/opera-cloud", scope: "Opera Cloud + general" },
-  { name: "None", href: "/test-hosts/none", scope: "general only" },
+  { name: "Mews", href: "/test-hosts/mews", scope: "legacy integration: mews (not narrowed)" },
+  { name: "Toast", href: "/test-hosts/toast", scope: "legacy integration: toast (not narrowed)" },
+  { name: "Opera Cloud", href: "/test-hosts/opera-cloud", scope: "legacy integration: opera-cloud (not narrowed)" },
+  { name: "None", href: "/test-hosts/none", scope: "no business claims (not narrowed)" },
 ];
 
 export default function HomePage() {
