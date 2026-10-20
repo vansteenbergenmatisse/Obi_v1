@@ -1,9 +1,11 @@
-"""Phase 11.1a — the customer-isolation DB backstop (ADR-db-level-customer-scope-isolation-backstop), read-path side.
+"""Phase 11.1a — the customer-isolation DB backstop
+(ADR-db-level-customer-scope-isolation-backstop), read-path side.
 
 The mews/opera/toast/general boundary was enforced *only* by an app-layer ``tags && :scopes``
 predicate gated behind ``enable_knowledge_scope_filtering`` — which **failed open** (flag off, or a
 single dropped predicate, returned every customer's rows to everyone). Source isolation already
-fails *closed* via ADR-source-id-row-security-with-reader-writer-roles RLS; the customer axis did not.
+fails *closed* via ADR-source-id-row-security-with-reader-writer-roles RLS; the customer axis did
+not.
 
 This adds a second, **RESTRICTIVE** RLS policy on ``chunk`` (``chunk_scope_read``) keyed on a new
 per-transaction GUC ``app.allowed_knowledge_scopes``, mirroring ``app.allowed_sources``. Being
@@ -16,7 +18,8 @@ isolation). Semantics:
   purpose; the public ``/chat`` path always resolves a real scope list, never ``'*'``).
 
 These tests read ``chunk`` directly as the non-owner ``rag_reader`` (RLS-subject; the owner is
-exempt by ADR-supabase-postgres-store-without-force-rls ``NO FORCE``) with **no app-layer predicate at all**, so they prove the DB
+exempt by ADR-supabase-postgres-store-without-force-rls ``NO FORCE``) with **no app-layer predicate
+at all**, so they prove the DB
 enforces the boundary on its own. Mirrors ``test_force_rls_managed_postgres.py``'s direct reads.
 """
 
@@ -294,7 +297,8 @@ def _curated_titles_visible_to_reader(scope_guc: str | None) -> set[str]:
 def test_curated_scope_rls_isolates_tagged_entries_but_keeps_global(
     gateway, settings: Settings
 ) -> None:
-    """The curated analogue of the chunk backstop (ADR-db-level-customer-scope-isolation-backstop): as ``rag_reader``, a curated entry
+    """The curated analogue of the chunk backstop (ADR-db-level-customer-scope-isolation-backstop):
+    as ``rag_reader``, a curated entry
     tagged for one customer is invisible under another's scope, an empty-tags entry stays global,
     and an unset GUC fails closed for the *tagged* entries. Sets up the full post-0009/0010 curated
     RLS posture on a connection and tears it down, so the shared harness (curated RLS off) is

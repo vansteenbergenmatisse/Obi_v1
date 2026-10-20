@@ -15,8 +15,8 @@
 > `5-integration-context/human-validation-cases.md` Case 18. How a partner integrates:
 > `docs/Final_docs/1-how-partners-integrate-with-obi/how-partners-integrate-with-obi.md`.
 >
-> **Removed docs cited below.** `sync-rules/test-proof.md`, `sync-rules/path-b-audit.md`,
-> `0.2-agent-quality/`, `0.4-design-review/` and `5-integration-context/jasper-reply-draft.md` were
+> **Removed docs cited below.** `sync-rules/test-proof.md` (removed), `sync-rules/path-b-audit.md`,
+> `0.2-agent-quality/`, `0.4-design-review/` and `5-integration-context/jasper-reply-draft.md` (removed) were
 > deleted on 2026-10-20. Mentions of them in the historical sections are kept as provenance; the
 > ledger entries remain the record of what they proved. Old `apps/web` / `apps/automation` paths
 > mean `frontend/` / `backend/`.
@@ -350,7 +350,7 @@ eight sync rules this file documents were not touched** — 8.4.3 is a deploy of
 code changed, `make check` still green (boundaries 0 · backend 1240 + 1 xfailed · kb 51). The two remaining Phase-8 items
 are now **prepped and owner-gated**: 8.5.2 (Phase A human validation) has its case doc
 `docs/Final_docs/5-integration-context/human-validation-cases.md` (10 cases, humans run it), and 8.5.3 (the Jasper reply)
-has its draft `docs/Final_docs/5-integration-context/jasper-reply-draft.md` (owner edits + sends; the working obi.js URL now
+has its draft `docs/Final_docs/5-integration-context/jasper-reply-draft.md` (removed) (owner edits + sends; the working obi.js URL now
 exists). Operational tails: §D.15 DB-password rotation, and a **temporary `obi-test` embed allow-list**
 (`platforms.json` domains = the Railway host) to remove at real integration. Detail + status: ledger entries `8.4.3`,
 `8.4.3-addendum`, and `8.5.2 / 8.5.3 prep + housekeeping` (2026-10-09), and `plan.md` §D / §A row 5 — not here.
@@ -594,7 +594,7 @@ the PR (they name that live proof).
 2026-09-25** (owner go-ahead). 17 field edits across 7 panels (`tg-two`, `i4-gc`, `vd-swap`,
 `i3-embed`, `i2-rebuild`, `r3-scope`, `tg-filter`) brought simple/steps/tests/settings/note/code text
 to D1–D4; `r3-scope` flipped `unverified → built` (0014 applied + verified live). Recorded in
-`docs/Final_docs/0.4-design-review/plan-corrections.md` ("TARGET lines RECONCILED"); brief regenerated
+`docs/Final_docs/0.4-design-review/plan-corrections.md` (removed) ("TARGET lines RECONCILED"); brief regenerated
 (192 panels).
 
 > Also live-confirmed on 2026-09-25 but **not** a sync-rules deliverable: the localhost:3100 widget
@@ -624,8 +624,8 @@ rebuild), **7** (`classified` label → purge).
 - **Removed** the strict-xfail `test_delete_marks_the_active_version_superseded` (moot: purge deletes
   the version row) and the redundant `test_delete_deactivates_page`, both in `test_worker_sync.py`.
 - **Docs/panels:** component doc `docs/Final_docs/ingestion/deletion-and-purge.md`;
-  proof `docs/Final_docs/sync-rules/test-proof.md`; corrections appended to
-  `docs/Final_docs/0.4-design-review/plan-corrections.md`; coverage rows added to
+  proof `docs/Final_docs/sync-rules/test-proof.md` (removed); corrections appended to
+  `docs/Final_docs/0.4-design-review/plan-corrections.md` (removed); coverage rows added to
   `docs/Final_docs/0.5-regression-tests/coverage-map.md`; panel `tg-classified` flipped
   `build→built`, `i2-gone`/`tg-purge` today-lines corrected (status flips batched to step 6); brief
   regenerated.
@@ -654,7 +654,7 @@ updated); `i2-gone` today-line updated (unlabeled trigger now live).
   that set their own recognized label untouched). 14 tests across 12 files were adjusted (explicit
   recognized label on direct `handle_sync_page`/enqueue paths; `'*'` knowledge-scope wildcard on 3
   RLS source-axis tests that relied on the empty-tags floor; premise rewrites for
-  scope_tagging_add/reindex/verify_isolation_script). Full list in `plan-corrections.md`.
+  scope_tagging_add/reindex/verify_isolation_script). Full list in `plan-corrections.md` (removed).
 - **Source_scope coexistence:** roots still sweep+tag but no longer grant membership (a covered page
   needs a recognized label); `test_reconciliation.py`'s two root tests updated accordingly.
 - **Gate:** `make check` green (backend 935 passed, kb 41, boundaries 0); ruff/format clean on
@@ -667,7 +667,7 @@ updated); `i2-gone` today-line updated (unlabeled trigger now live).
 - **Deviation — no feature flag:** the gate is **unconditional**. The action-plan 2.2.4 body
   mentions "a cut-over flag with default on," but its own *Must be true* says "always, with no
   feature flag," and never-bend rule 5 is unconditional — built flagless, recorded in
-  `plan-corrections.md`. Flip to a flagged cut-over only on owner request.
+  `plan-corrections.md` (removed). Flip to a flagged cut-over only on owner request.
 - **Independently verified (not just self-reported):** step 2 was implemented by a subagent, then
   reviewed against the actual diff and re-run — `make check` green on an independent run; the 14
   adjusted tests were audited for weakened assertions (none found; `test_versioning_swap` is
@@ -703,7 +703,7 @@ visible in each scope), **3** (remove one tag, another stays → metadata-only, 
   resolution, so it can't move on this change — the real visibility proof is the db+retrieval tests.
 - **Docs/panels:** `today` lines updated on `tg-two`/`tg-conflict`/`tg-state`/`i2-labels` (status
   flips + target reconciliation batched to step 6, mirroring steps 1–2); corrections in
-  `plan-corrections.md` (incl. 2.2.3 retired/absorbed, 2.5.1 re-scoped to the D3 backfill);
+  `plan-corrections.md` (removed) (incl. 2.2.3 retired/absorbed, 2.5.1 re-scoped to the D3 backfill);
   coverage-map rows added; `deletion-and-purge.md` conflict wording corrected; brief regenerated.
 - **Gate:** `make check` green (backend **939** passed, kb **41**, boundaries 0); ruff/format clean
   on touched files; whole-repo pyright unchanged (47; the 3 pre-existing `PageHashes bytes|None`
@@ -742,7 +742,7 @@ Rules satisfied: cross-cutting **3.4.1 / r3-scope** (empty tags visible to no sc
   No default change. Eval before/after byte-identical (fixture ranker runs under `'*'`, can't move).
 - **Docs/panels:** `r3-scope`/`i2-labels` today-lines updated (status flips + target reconciliation
   batched to step 6 — `r3-scope`'s target still names the retired `scope_state='ok'` conjunct, not
-  edited in place); `plan-corrections.md` step-4 section; `coverage-map.md` rows; brief regenerated.
+  edited in place); `plan-corrections.md` (removed) step-4 section; `coverage-map.md` rows; brief regenerated.
 - **Gate:** `make check` green (backend **940**, kb **43**, boundaries 0); ruff/format clean on the 3
   touched files; whole-repo pyright unchanged at **47** (ADR-features-import-only-through-public-root D1 holds).
 - **Security (RLS touch):** strictly **tightening** — dropping an `OR` clause only reduces
@@ -790,7 +790,7 @@ negative half landed in step 2), **8** (a change to one page never touches anoth
   `test-proof.md`. No production code changed.
 - **Docs finalised:** `coverage-map.md` + `test-proof.md` step-6 sections; **created**
   `manual-tests.md` (MT-1..MT-7, each mapped to its automated mirror + `verify_sync_rules.py` live
-  coverage, honest that the live scripts are owner-blocked/unwritten); `plan-corrections.md` step-6
+  coverage, honest that the live scripts are owner-blocked/unwritten); `plan-corrections.md` (removed) step-6
   section recording the batched status flips + everything deliberately left undone.
 - **Design-page statuses flipped** (`obi-rag-system-flow.html`, via `panel.py`): `i2-gone`,
   `tg-purge`, `i2-labels`, `i3-embed`, `i2-rebuild`, `tg-two` → **built**; `tg-conflict`/`tg-state`
@@ -799,7 +799,7 @@ negative half landed in step 2), **8** (a change to one page never touches anoth
   clean on the touched test files; whole-repo pyright unchanged at 44 (ADR-features-import-only-through-public-root D1 holds).
 - **Deliberately NOT done (owner-blocked / workflow-constrained) — see the step-6 ledger entry:**
   design-page **target** lines left stale (workflow forbids editing a target line; tracked in
-  `plan-corrections.md`); `tg-conflict`/`tg-state` status unchanged (no `retired` status word);
+  `plan-corrections.md` (removed)); `tg-conflict`/`tg-state` status unchanged (no `retired` status word);
   action-plan checkboxes for 2.2.4/2.3.1 **not ticked** (each names a live proof that is owner-blocked);
   the live scripts + Q-B backfill + 0014-to-Supabase remain outstanding.
   - **→ Update (2026-09-25):** most of this tail has since been cleared — **0014 applied to Supabase**,
@@ -856,7 +856,7 @@ negative half landed in step 2), **8** (a change to one page never touches anoth
   `tg-purge`/`tg-classified` as worded said "keep page_source with state classified" — that rested
   on the retired `scope_state`). Steps 2's rule-2 purge and the restore path both rely on
   `page_source` being gone → `get_local_state` returns `None` → first index. Logged in
-  `plan-corrections.md`. This resolves the "fix the code to match rule 5" arm of the
+  `plan-corrections.md` (removed). This resolves the "fix the code to match rule 5" arm of the
   `live-0.5.3-cm-docs` decision-needed in `docs/plan/decisions.md`.
 - **Boundary fix to §14.3:** the counting-embedder seam the appendix suggests (monkeypatch
   `ingestion.application.services.build_embedding_provider` from a confluence_sync test) **fails
@@ -1059,7 +1059,7 @@ Format: **today** (file:line) · **change** · **files** · **test-first** (name
 - **Risk:** changes retrieval visibility of currently-conflicted pages → **eval before/after required**
   (Rule 11).
 - **Panels:** `tg-two`,`tg-conflict`,`tg-state` **changed/retired**; `i2-labels`,`2.2.3`,`2.5.1`
-  **changed**; recorded in `plan-corrections.md` (§8).
+  **changed**; recorded in `plan-corrections.md` (removed) (§8).
 
 ### Rule 5 — First relevant tag on an untagged page → full build
 - **◑ Partly built (§13 step 2, 2026-09-24).** The **negative** half — the no-tag→no-index gate — is
@@ -1134,7 +1134,7 @@ covered by the Rule-4 visibility tests + `test_sec_*`.
 
 ---
 
-## 8. Design-page corrections — `docs/Final_docs/0.4-design-review/plan-corrections.md` (new)
+## 8. Design-page corrections — `docs/Final_docs/0.4-design-review/plan-corrections.md` (removed) (new)
 
 One entry per panel/substep the decisions move, each marked **changed/retired** with the reason:
 `tg-two` (conflict→legitimate sharing), `tg-conflict` (retired), `tg-state`/`scope_state` (retired),
@@ -1177,11 +1177,11 @@ to its automated test name **and** whether `verify_sync_rules.py` covers it live
 **Embed-call counter.** `FakeEmbeddingProvider` (`embeddings_client.py:55`) has no counter. Add a thin
 counting wrapper (increment per text in `embed`) as a test fixture, reused by rules 3/4/5/6.
 
-**Prove each test real (the 0.2.8 way) → `docs/Final_docs/sync-rules/test-proof.md` (new).** For each
+**Prove each test real (the 0.2.8 way) → `docs/Final_docs/sync-rules/test-proof.md` (removed) (new).** For each
 test: revert the one line it guards → run → **red** (record the reason), restore → **green**. Red-today
 tests (1,2,4,6,7,RLS) already fail on current code — record that as the first half of the cycle;
 green-today guards (3,5,8) use the revert step. Format copied from
-`docs/Final_docs/0.2-agent-quality/test-writer-check.md`.
+`docs/Final_docs/0.2-agent-quality/test-writer-check.md` (removed).
 
 **Coverage map → `docs/Final_docs/0.5-regression-tests/coverage-map.md` (edit in place).** One row per
 test in the existing columns `| panel | title | test file | test name | level | green |`. Panels:
@@ -1220,7 +1220,7 @@ xfail, remove it from the allow-list (it will XPASS → CI red otherwise).
 ## 12. Deliverables (files created/edited on execution)
 
 **New docs:** `docs/Final_docs/sync-rules/plan.md` (this file), `.../manual-tests.md`,
-`.../test-proof.md`; `docs/Final_docs/0.4-design-review/plan-corrections.md`.
+`.../test-proof.md`; `docs/Final_docs/0.4-design-review/plan-corrections.md` (removed).
 **Edited docs:** `docs/Final_docs/0.5-regression-tests/coverage-map.md`; design page
 `obi-rag-system-flow.html` + `obi-action-plan.html` statuses/`today` lines; `docs/Final_docs/ledger.md`
 + `progress-log.md` (append per substep); relevant `docs/Final_docs/ingestion/` component docs.
@@ -1257,7 +1257,7 @@ progress-log entries, design-page `today` line flipped.
 
 ## 14. Execution appendix — exact APIs, DDL and formats (so this file stands alone)
 
-> **Path caveat:** older proof docs (e.g. `0.2-agent-quality/test-writer-check.md`) cite
+> **Path caveat:** older proof docs (e.g. `0.2-agent-quality/test-writer-check.md` (removed)) cite
 > `apps/automation/...` / `apps/web/...`. The tree has since moved. Trust the **live** layout:
 > backend Python is under `backend/app/...`, tests under `backend/app/features/<feature>/tests/`.
 
@@ -1392,7 +1392,7 @@ Columns: `| panel | title | test file | test name | level | green |`. Test file 
 | `i4-gc` | Garbage collect old versions | app/features/ingestion/tests/test_versioning_gc.py | test_i4_gc_keeps_the_two_most_recent_superseded_versions | database | yes |
 ```
 
-### 14.7 Proof format (`docs/Final_docs/sync-rules/test-proof.md`, new — the 0.2.8 method)
+### 14.7 Proof format (`docs/Final_docs/sync-rules/test-proof.md` (removed), new — the 0.2.8 method)
 
 Per test: run unmodified → revert the **one** line its docstring names → rerun (confirm **red** for the
 stated reason) → restore → rerun (confirm **green**); `git status --short` clean after. For red-today

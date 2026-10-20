@@ -1,4 +1,5 @@
-"""Phase 11.1a / ADR-db-level-customer-scope-isolation-backstop: 0010 adds the RESTRICTIVE customer-scope policies and is reversible.
+"""Phase 11.1a / ADR-db-level-customer-scope-isolation-backstop: 0010 adds the RESTRICTIVE
+customer-scope policies and is reversible.
 
 Runs the real Alembic chain against a dedicated database. 0010 adds a second, ``AS RESTRICTIVE``
 policy to ``chunk`` (``chunk_scope_read``) and to ``curated_knowledge_entry``
@@ -33,7 +34,8 @@ _KB_ROOT = Path(__file__).resolve().parents[1]
 
 pytestmark = pytest.mark.db  # substep 0.5.1: real local Postgres, Alembic chain
 _BELOW_0010 = "0009_reconcile_non_chunk_rls"
-# ADR-routing-labels-sole-content-axis: migration 0018 drops these scope policies at head, so pin to 0010 to test ITS effect.
+# ADR-routing-labels-sole-content-axis: migration 0018 drops these scope policies at head, so pin to
+# 0010 to test ITS effect.
 _AT_0010 = "0010_customer_scope_rls"
 _CHUNK_SCOPE_POLICY = "chunk_scope_read"
 _CURATED_SCOPE_POLICY = "curated_knowledge_entry_scope_read"

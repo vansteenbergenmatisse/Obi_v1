@@ -7,7 +7,8 @@ by ``test_search_repo_keyword.py``'s spy-session tests for the retrieval-stage-2
 The session-scoped engine bootstrap is the shared ``app.tests.db_harness`` (run once per session
 via the root conftest's ``_shared_db_schema`` fixture); the owner ``session`` fixture comes from the
 root conftest and per-test truncation from this directory's ``conftest.py``. This file proves the
-keyword query's own OR-join/ts_rank shape as the table owner (RLS-exempt, ADR-supabase-postgres-store-without-force-rls NO FORCE), so the
+keyword query's own OR-join/ts_rank shape as the table owner (RLS-exempt,
+ADR-supabase-postgres-store-without-force-rls NO FORCE), so the
 shared harness's RLS policies do not affect it.
 """
 

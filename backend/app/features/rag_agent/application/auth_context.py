@@ -1,16 +1,17 @@
-"""Frozen edge identity for the Obi embed (PLAN 11.1c, ADR-db-level-customer-scope-isolation-backstop).
+"""Frozen edge identity for the Obi embed (PLAN 11.1c,
+ADR-db-level-customer-scope-isolation-backstop).
 
 `build_auth_context` turns a verified JWT (`VerifiedClaims`, see server/token_verifier.py) into
-the single immutable `AuthContext` that drives EVERY reader transaction on the answer path — its
-`allowed_scopes` feed `apply_knowledge_scope` (the scope-GUC + app predicate), sitting on top of
-the 11.1a DB backstop. The verified `integration` claim is what maps to scopes; the caller can no
-longer self-report `knowledge_scope`.
+the single immutable `AuthContext` that drives EVERY reader transaction on the answer path. The
+knowledge-scope axis is retired (ADR-routing-labels-sole-content-axis): `allowed_scopes` is always
+empty and retrieval sets the scope GUC to the `'*'` wildcard, so it restricts nothing. Content is
+routed by the routing labels built from the directed `source_system`/`target_system` claims; the
+caller can never self-report access through the request body.
 
-v1 scope decisions (spec §6): integration-level content scoping only. `principal` is always `None`
-for embedded users (open Confluence pages only, no per-person page ACL). `company_id`/`company_name`
-are carried for audit/future use but are NEVER a scope axis — two users of the same integration in
-different companies see the same knowledge scopes (done-when 3a). A token with no business values
-from an ACTIVE platform degrades to general-only (not refused); every failure below raises an
+`principal` is always `None` for embedded users (open Confluence pages only, no per-person page
+ACL). `company_id`/`company_name` are carried for audit and the chat-session key but are NEVER a
+content axis. A token with no business values from an ACTIVE platform degrades to an identified
+context that is not narrowed to a connection (not refused); every failure below raises an
 `AuthContextError` the router maps to a bare 401.
 
 Two authorization gates run here, at the trust boundary (not in the verifier, which intentionally
@@ -19,16 +20,16 @@ verifies-without-serving — PLAN 11.1c):
     admits an inactive platform's validly-signed token; this gate consults the registry's ACTIVE
     view (`platform_for`) and denies it — an inactive platform is not served at all
     (`InactivePlatformError`).
-  - CIP-A1: the verified `integration` claim must be one the issuing platform is trusted to assert
-    (`PlatformEntry.allowed_integrations`). A self-serving platform (mews/toast/opera-cloud) may
-    assert only its own integration; a hub (datahub) may vend the product integrations it lists.
-    Otherwise `IntegrationNotAllowedError` — so a trusted issuer can no longer claim any
-    integration and reach another tenant's scopes. An integration that is not a real integration
-    at all raises `UnknownIntegrationError`.
+  - CIP-A1: the verified legacy `integration` claim must be one the issuing platform is trusted
+    to assert (`PlatformEntry.allowed_integrations`). The platforms (Base, Data Hub) may vend only
+    the systems they list; Mews, Toast and Opera Cloud are systems, never platforms. Otherwise
+    `IntegrationNotAllowedError`. An integration that is not a real integration at all raises
+    `UnknownIntegrationError`.
 
 Substep 8.1.3 (panels mi-gate/mi-contract): the gate accepts the three-slot integration context.
 After the active-platform gate, the FIVE slot checks of
-docs/Final_docs/5-integration-context/integration-token-decisions.md §4 run in order over the filled slots —
+docs/Final_docs/5-integration-context/integration-token-decisions.md §4 run in order over the filled
+slots —
 a legacy single-`integration` note is read as ONE filled slot (the product's catalog role picks
 the slot), so both token forms go through the same chain:
 
@@ -40,14 +41,15 @@ the slot), so both token forms go through the same chain:
   3. role        — the product's catalog role matches the slot it sits in (toast is never a PMS)
                                                              -> `InvalidSlotValueError` (400)
   4. vend rights — the issuing platform may only fill slots with products its
-                   `allowed_integrations` resolve to (CIP-A1 generalized: Data Hub vends
-                   POS/PMS, Base vends Accounting)           -> `IntegrationNotAllowedError` (401)
+                   `allowed_integrations` resolve to (CIP-A1 generalized: Base and Data Hub
+                   each vend only the systems they list)     -> `IntegrationNotAllowedError` (401)
   5. allowlist   — a FILLED POS/PMS slot must be on the launch allowlist (Toast as POS, Mews as
                    PMS); the Accounting slot is NEVER gated here (owner decision O4 — inert for
                    eligibility); an EMPTY slot never refuses -> `SlotNotOnAllowlistError` (401)
 
 The one frozen AuthContext (never-bend rule 3) then carries the canonical slot ids
-(`slot_pos`/`slot_pms`/`slot_accounting`) and the union of the filled slots' knowledge scopes.
+(`slot_pos`/`slot_pms`/`slot_accounting`); no knowledge scope is derived (`allowed_scopes` is
+empty). The slot and legacy forms are accepted but do not route content.
 When a token carries BOTH forms, the structured `context` is authoritative and the legacy claim
 is ignored (token-claims.json scopes the legacy trio rule to context-less tokens)."""
 
@@ -92,7 +94,7 @@ class UnknownIntegrationError(InvalidSlotValueError):
 
 class InactivePlatformError(AuthContextError):
     """AUTH-1 / CIP-A2: the verified issuer's platform is not active, so it is not served at all
-    (even for a general-only token) -> the router returns 401."""
+    (even for a token with no business values) -> the router returns 401."""
 
 
 class IntegrationNotAllowedError(AuthContextError):
@@ -108,7 +110,8 @@ class SlotNotOnAllowlistError(AuthContextError):
 
 
 class SourceNotEnabledError(AuthContextError):
-    """ADR-source-system-decides-widget-eligibility (source-enablement visibility gate, supersedes the ADR-widget-hides-via-visibility-probe target gate): the
+    """ADR-source-system-decides-widget-eligibility (source-enablement visibility gate, supersedes
+    the ADR-widget-hides-via-visibility-probe target gate): the
     directed SOURCE system is unknown to the catalog or not in its `enabled_sources` — not a source
     Obi supports, so the session is refused and the router returns a 403 (off the 401 renew path)
     that hides Obi. The message NEVER names the product (never-bend rule 10): the error body is a
@@ -129,7 +132,8 @@ class AuthContext:
     slot_pos: str | None = None
     slot_pms: str | None = None
     slot_accounting: str | None = None
-    # substep 9.3.1 (Option A, ADR-directed-source-target-routing-labels): the directed connection this chat is bound to — the
+    # substep 9.3.1 (Option A, ADR-directed-source-target-routing-labels): the directed connection
+    # this chat is bound to — the
     # resolved CANONICAL catalog ids of the source and target systems, None for the slot/legacy
     # forms. Chat-start (9.2.1) reuses these to build the four routing labels + connection block.
     source_slug: str | None = None
@@ -152,7 +156,8 @@ def _identity_key(claims: VerifiedClaims) -> str:
 
 
 def general_only_context() -> AuthContext:
-    """The tokenless / internal / eval path: general-only, no identity, no principal."""
+    """The tokenless / internal / eval path: no identity, no principal, no scopes. Not narrowed
+    by routing labels, so the search covers all indexed pages."""
     return AuthContext(
         company_id=None,
         company_name=None,
@@ -166,7 +171,8 @@ def general_only_context() -> AuthContext:
 
 # The §D.13 slot roles in their fixed order (matches the catalog's VALID_PRODUCT_ROLES).
 _SLOT_ROLES = ("pos", "pms", "accounting")
-# Check 1 (shape): mirrors the router's body knowledge_scope slug validator (integration-token-decisions §4).
+# Check 1 (shape): mirrors the router's body knowledge_scope slug validator
+# (integration-token-decisions §4).
 _SLOT_VALUE_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 
 
@@ -183,10 +189,12 @@ def _build_directed_context(
     entry: PlatformEntry,
     catalog: ProductCatalog | None,
 ) -> AuthContext:
-    """The directed source → target gate (substep 9.3.1, Option A, ADR-directed-source-target-routing-labels, panels mi-gate/
+    """The directed source → target gate (substep 9.3.1, Option A,
+    ADR-directed-source-target-routing-labels, panels mi-gate/
     mi-contract).
 
-    ADR-source-system-decides-widget-eligibility (owner, 2026-10-20): only the SOURCE system decides eligibility. A source can have
+    ADR-source-system-decides-widget-eligibility (owner, 2026-10-20): only the SOURCE system decides
+    eligibility. A source can have
     hundreds of targets, so the target is assumed supported and NEVER checked.
       source · resolves through the SAME lenient catalog resolver chat-start uses
             (`resolve_system`: canonical id, alias, or display name, case/space insensitive). An
@@ -197,16 +205,19 @@ def _build_directed_context(
       target · resolved with the same resolver for routing only. An unknown target is carried as
             `target_slug=None` (never a fabricated system) and routing falls back to the source's
             own labels; no vend, enablement, role or allowlist check applies to it.
-    The slot role check and the launch allowlist lapse for the directed form (ADR-directed-source-target-routing-labels D4/D5).
+    The slot role check and the launch allowlist lapse for the directed form
+    (ADR-directed-source-target-routing-labels D4/D5).
 
     `business_id` (verified present for this form) becomes `company_id` — the company-isolation
     axis the chat-session key and the audit trail already consume (never a scope axis by itself).
-    Scopes stay general-only here; the four routing labels (built from `source_slug`/`target_slug`
-    at chat-start) are the content axis, wired into the hard filter in a later stage. The body
+    No knowledge scope is derived here; the four routing labels (built from
+    `source_slug`/`target_slug` at chat-start) are the content axis, wired into the hard filter in
+    a later stage. The body
     never contributes any of this (never-bend rules 2-3): the gate reads only the verified token."""
     catalog = catalog if catalog is not None else _default_catalog()
 
-    # -- source · membership, vend rights, enablement (ADR-source-system-decides-widget-eligibility: only the source gates) ---------
+    # -- source · membership, vend rights, enablement (ADR-source-system-decides-widget-eligibility:
+    # only the source gates) ---------
     source = catalog.resolve_system(claims.source_system or "")
     if source is None:
         raise SourceNotEnabledError("source system is not supported")
@@ -221,7 +232,8 @@ def _build_directed_context(
     if source.id not in catalog.enabled_sources:
         raise SourceNotEnabledError("source system is not supported")
 
-    # -- target · routing input only, never checked (ADR-source-system-decides-widget-eligibility) -----------------------------------
+    # -- target · routing input only, never checked (ADR-source-system-decides-widget-eligibility)
+    # -----------------------------------
     target = catalog.resolve_system(claims.target_system or "")
 
     return AuthContext(
@@ -249,7 +261,8 @@ def build_auth_context(
     if entry is None:
         raise InactivePlatformError(claims.issuer)
 
-    # Directed-connection form (substep 9.3.1, Option A, ADR-directed-source-target-routing-labels): routes on source → target,
+    # Directed-connection form (substep 9.3.1, Option A, ADR-directed-source-target-routing-labels):
+    # routes on source → target,
     # not the membership slots. Validated here and short-circuits the slot chain below.
     if claims.source_system is not None or claims.target_system is not None:
         return _build_directed_context(claims, entry, catalog)
@@ -266,7 +279,8 @@ def build_auth_context(
                 raw_slots[role] = value
 
     if not raw_slots and (structured or claims.integration is None):
-        # no business values / every slot empty -> general only (an empty slot never refuses),
+        # no business values / every slot empty -> not narrowed to a connection (an empty slot
+        # never refuses),
         # still identified by the token subject; company_id carried for audit only.
         return AuthContext(
             company_id=claims.company_id,
@@ -335,9 +349,11 @@ def build_auth_context(
                 f"{role} slot '{canonical}' is outside the launch allowlist"
             )
 
-    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired. The slot checks above still gate WHICH
+    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired. The slot checks
+    # above still gate WHICH
     # integration a token may assert (shape/membership/role/vend/allowlist — access, not content),
-    # but no knowledge scope is derived; content is routed by the ADR-directed-source-target-routing-labels label axis. No base tag.
+    # but no knowledge scope is derived; content is routed by the
+    # ADR-directed-source-target-routing-labels label axis. No base tag.
     return AuthContext(
         company_id=claims.company_id,
         company_name=claims.company_name,

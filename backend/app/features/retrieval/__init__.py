@@ -4,7 +4,8 @@ Public surface: `HybridRetriever` (the entry point), `PrincipalPermissionPolicy`
 callers construct), the `RetrievedHit`/`RetrievalResult` DTOs `retrieve_with_context` returns
 (the Phase 4.2 answer workflow's real external consumer), the `query_trace` answer/feedback
 writers Phase 4 UPDATEs with once an answer is grounded, and `apply_knowledge_scope` (a no-op
-wildcard GUC setter kept only because the migration-0018 downgrade re-applies policies that read it).
+wildcard GUC setter kept only because the migration-0018 downgrade re-applies policies that read
+it).
 Since substep 8.2.3 it also exposes the deterministic applicability matcher (panel mi-match):
 `match_applicability`/`derive_connections` with their `CustomerContext`/`ConnectionRecord`/
 `MatchResult` types — the pure §D.4 predicate 8.3.1 mirrors in SQL and 8.3.4 reads reasons from.

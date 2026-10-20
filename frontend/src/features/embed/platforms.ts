@@ -25,8 +25,8 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-// frontend/src/features/embed -> repo root is four directories up; the file lives beside
-// knowledge_scopes.json under knowledge-base/config/ (relocated in substep 1.2.3).
+// frontend/src/features/embed -> repo root is four directories up; the file lives under
+// knowledge-base/config/ (relocated in substep 1.2.3).
 const DEFAULT_PLATFORMS_PATH = resolve(
   here,
   "../../../../knowledge-base/config/platforms.json",

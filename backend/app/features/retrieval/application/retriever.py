@@ -159,11 +159,13 @@ class HybridRetriever:
         space_id, principal = classify_scope(scope)
         query_vec = self._embedder.embed([query])[0]
         sources = self._allowed_sources
-        # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired. No app-layer scope predicate is ever
+        # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired. No app-layer
+        # scope predicate is ever
         # applied (the scope GUC is opted out to wildcard below); `knowledge_scopes` is accepted
         # for call-shape compatibility but intentionally ignored. Content is routed by the labels.
         effective_scopes = None
-        # Option A Stage 6 / 9.4.1 (panel mi-hardfilter, ADR-directed-source-target-routing-labels D1/D2): the directed-connection
+        # Option A Stage 6 / 9.4.1 (panel mi-hardfilter, ADR-directed-source-target-routing-labels
+        # D1/D2): the directed-connection
         # label list this chat is bound to. A directed chat carries its four routing boxes; a
         # legacy/slot/tokenless chat carries None, so the hard filter is a no-op (the label axis is
         # relevance, not the access fence). Passed as a kwarg only when present so every existing
@@ -190,9 +192,11 @@ class HybridRetriever:
         with self._session_factory() as session:
             # Per-txn knobs, same transaction as the searches below:
             #  - HNSW iterative_scan keeps recall honest once a narrow scope prunes rows (3.5.1)
-            #  - the source-scope GUC drives RLS default-deny on the reader role (ADR-source-id-row-security-with-reader-writer-roles) —
+            # - the source-scope GUC drives RLS default-deny on the reader role
+            # (ADR-source-id-row-security-with-reader-writer-roles) —
             #    this is the source/company isolation axis and is UNCHANGED.
-            #  - the knowledge-scope axis is RETIRED (ADR-routing-labels-sole-content-axis): always opt out (wildcard None) so
+            # - the knowledge-scope axis is RETIRED (ADR-routing-labels-sole-content-axis): always
+            # opt out (wildcard None) so
             #    the scope GUC never restricts, independent of whether migration 0018 has dropped
             #    the chunk_scope_read policy yet. Content is routed by the label axis below.
             apply_hnsw_gucs(
@@ -202,7 +206,8 @@ class HybridRetriever:
             )
             apply_source_scope(session, sources)
             apply_knowledge_scope(session, None)
-            # 9.4.1 (ADR-directed-source-target-routing-labels D1): the labels GUC is set in the SAME txn/path as the scope GUC, so
+            # 9.4.1 (ADR-directed-source-target-routing-labels D1): the labels GUC is set in the
+            # SAME txn/path as the scope GUC, so
             # the RESTRICTIVE chunk_labels_read policy and the app-layer `labels && :session_labels`
             # predicate agree (rules 1 and 3). None -> '*' opt-out (legacy/slot chats route none).
             apply_allowed_labels(session, label_filter)
@@ -378,7 +383,8 @@ class HybridRetriever:
         ``trace_query`` when given, else ``query`` (byte-identical to every pre-3.6.7 caller).
         The answer workflow uses this so an image turn can fold the vision transcription into
         ``query`` to DRIVE retrieval while the trace records only the text-only question — the
-        transcription is memory-only and never persisted (never-bend rule 10, ADR-vision-grounded-image-analysis C6)."""
+        transcription is memory-only and never persisted (never-bend rule 10,
+        ADR-vision-grounded-image-analysis C6)."""
         started = time.perf_counter()
         hits, effective_scopes = self._search(
             query, scope, k, knowledge_scopes, customer_context, session_labels
@@ -392,7 +398,8 @@ class HybridRetriever:
         ground). Re-applies the source-scope GUC on this fresh session — a new transaction starts
         with no GUC set, and the chunk table is RLS-protected regardless of parent/child kind. The
         knowledge-scope GUC is set to the ``'*'`` wildcard: these ids already came from a scoped,
-        permitted search (ADR-db-level-customer-scope-isolation-backstop), so re-filtering by scope would risk dropping a legitimately
+        permitted search (ADR-db-level-customer-scope-isolation-backstop), so re-filtering by scope
+        would risk dropping a legitimately
         authorized parent — but the GUC must still be set, else the RESTRICTIVE policy denies."""
         if not chunk_ids:
             return {}

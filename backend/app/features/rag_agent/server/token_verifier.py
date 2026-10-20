@@ -1,4 +1,5 @@
-"""JWT edge-binding verifier (PLAN 11.1c, ADR-db-level-customer-scope-isolation-backstop) for the Obi embed.
+"""JWT edge-binding verifier (PLAN 11.1c, ADR-db-level-customer-scope-isolation-backstop) for the
+Obi embed.
 
 A platform's own server signs a short-lived JWT at button-click; this verifier is the trust
 boundary that turns that token into a `VerifiedClaims` the AuthContext builder can use to drive
@@ -90,7 +91,8 @@ class ContextSlots:
 
 
 def _parse_directed(payload: dict) -> tuple[str, str, str]:
-    """Structural validation of the directed-connection form (substep 9.3.1, ADR-directed-source-target-routing-labels): a token
+    """Structural validation of the directed-connection form (substep 9.3.1,
+    ADR-directed-source-target-routing-labels): a token
     carrying `source_system` + `target_system` + `business_id`, all three non-empty strings.
     A partner system missing its counterpart, or a missing/empty/non-string business_id (an integer
     id is accepted and normalized to its decimal string — Base signs it as a number), is a
@@ -120,7 +122,8 @@ class VerifiedClaims:
     # substep 8.1.3: the structured form's slots; None when the token carries no `context`
     # claim (the legacy form — `integration` above is then read as one filled slot by the gate).
     slots: ContextSlots | None = None
-    # substep 9.3.1 (Option A, ADR-directed-source-target-routing-labels): the directed source → target connection form. Present
+    # substep 9.3.1 (Option A, ADR-directed-source-target-routing-labels): the directed source →
+    # target connection form. Present
     # (all three non-None) only when the token carries `source_system`; None otherwise. These
     # drive routing when present — `slots`/`integration` stay accepted but no longer route.
     source_system: str | None = None
@@ -182,7 +185,8 @@ class TokenVerifier:
                 raise TokenError("lifetime exceeds platform max")
 
             # 6. business values. Three forms (token-claims.json, substeps 8.1.2 / 9.3.1):
-            #    - directed (ADR-directed-source-target-routing-labels): `source_system`+`target_system`+`business_id` — the
+            # - directed (ADR-directed-source-target-routing-labels):
+            # `source_system`+`target_system`+`business_id` — the
             #      routing form; the legacy trio rule does NOT apply;
             #    - structured: a `context` claim with the three slots — company-ID-only, the
             #      legacy trio rule does NOT apply (the schema's context/source_system conditional);

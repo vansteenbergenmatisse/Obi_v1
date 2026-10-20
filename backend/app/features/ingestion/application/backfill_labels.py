@@ -1,4 +1,5 @@
-"""Idempotent backfill of the raw-labels column (ADR-directed-source-target-routing-labels D1, panel mi-labels, substep 9.1.2).
+"""Idempotent backfill of the raw-labels column (ADR-directed-source-target-routing-labels D1, panel
+mi-labels, substep 9.1.2).
 
 Stamps each indexed page's *raw* Confluence labels (the unresolved ``get_labels`` output) onto its
 ``page_source`` row and its active chunks, for pages indexed before migration 0016 added the column.

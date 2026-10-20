@@ -57,7 +57,8 @@ def _shared_db_schema() -> Iterator[None]:
 
 @pytest.fixture
 def session(_shared_db_schema: None) -> Iterator[Session]:
-    """Owner-role session for direct DB seeding/asserting (bypasses RLS, ADR-supabase-postgres-store-without-force-rls NO FORCE).
+    """Owner-role session for direct DB seeding/asserting (bypasses RLS,
+    ADR-supabase-postgres-store-without-force-rls NO FORCE).
 
     Tests commit explicitly when they need data visible to a separate reader connection.
     """

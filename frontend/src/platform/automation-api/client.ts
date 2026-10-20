@@ -47,8 +47,8 @@ export interface AutomationApiRequest {
   /**
    * The platform-signed user JWT (PLAN 11.1c), forwarded on its own header —
    * `X-Obi-Token` — never on `Authorization` (that header carries the host `chat_api_key`
-   * below). Verified backend-side by `TokenVerifier`; absent means the tokenless/general-only
-   * path. Never logged.
+   * below). Verified backend-side by `TokenVerifier`; absent means the tokenless path (not
+   * narrowed to a connection: all indexed pages). Never logged.
    */
   userToken?: string;
 }

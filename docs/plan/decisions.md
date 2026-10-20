@@ -23,7 +23,7 @@ raised during the 0.5 regression phase.
 | folder-move | when the folder move happens | early — Phase 1 | confirmed | 2026-09-14 | frontend/ backend/ knowledge-base/ split |
 | embedded-scoping | scoping for embedded users | integration-level scoping; no per-person Confluence permissions in v1 | confirmed | 2026-09-14 | per-person permissions stay an open target on the design page (section 11) |
 | note-ttl | how long the note lives | 60 minutes per platform | confirmed | 2026-09-14 | |
-| note-empty | a note with no values | gives general pages only | confirmed | 2026-09-14 | |
+| note-empty | a note with no values | gives general pages only | confirmed | 2026-09-14 | **Superseded (2026-10-20):** a note with no values carries no routing labels, so its search is not narrowed to a connection (all indexed pages); ADR-routing-labels-sole-content-axis. |
 | note-fetch-timing | when the note is fetched | at the button click | confirmed | 2026-09-14 | |
 | platform-order | platform rollout order | Data Hub first; Mews and Toast follow; Opera Cloud stays inactive until confirmed | confirmed | 2026-09-14 | **Superseded in substance:** the embedding partners (platforms) are only Base (Marien) and Data Hub (Jasper). Mews, Toast and Opera Cloud are source/target systems inside the token, never platforms (`knowledge-base/config/platforms.json`: `obi-test` temporary + active, `base` and `datahub` inactive). See `integration-timing`. |
 | translation | non-English questions | translated to English before search; the checked answer translated back before replay | confirmed | 2026-09-14 | citations, markers and the trace stay English (rule 9) |

@@ -1,4 +1,5 @@
-"""One-off CLI to add/update/deactivate a `curated_knowledge_entry` row (PLAN 10.6, ADR-knowledge-scope-tagging-and-filtering).
+"""One-off CLI to add/update/deactivate a `curated_knowledge_entry` row (PLAN 10.6,
+ADR-knowledge-scope-tagging-and-filtering).
 
 Ownership is deliberately one-off (no CRUD API yet), mirroring `seed_source_scope.py`'s ownership
 decision. Unlike `source_scope`, `curated_knowledge_entry` has no DB-level unique constraint to

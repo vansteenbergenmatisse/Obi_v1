@@ -1,7 +1,8 @@
 """Fixed answer workflow (PLAN 4.2): small-talk short-circuit -> rewrite -> retrieve/rerank ->
 CRAG retry -> refusal -> parent-context expansion -> grounded generation -> citation enforcement.
 
-A plain function pipeline, not an agent loop (ADR-rerank-then-verify-cited-answers §5): every stage is deterministic given its
+A plain function pipeline, not an agent loop (ADR-rerank-then-verify-cited-answers §5): every stage
+is deterministic given its
 inputs, so latency is bounded and each stage is unit-testable with a fake collaborator. The one
 non-obvious ordering choice: CRAG's corrective retry runs BETWEEN retrieval and the refusal check —
 a weak result gets one retry before refusal is decided — even though DESIGN.md's stage table lists
@@ -16,7 +17,8 @@ question is never misrouted here; anything that doesn't match runs the full grou
 refusal included. This path skips rewrite, retrieval, CRAG, refusal, and citation enforcement
 entirely, and writes no `query_trace` row — it isn't a retrieval event.
 
-Image analysis (PLAN 7.3, ADR-vision-grounded-image-analysis; substep 3.6.7, panel r5-image): an image on the newest turn is
+Image analysis (PLAN 7.3, ADR-vision-grounded-image-analysis; substep 3.6.7, panel r5-image): an
+image on the newest turn is
 transcribed by a second, independent `generate_image_analysis` call (verbatim on-screen text + a
 short UI description). Substep 3.6.7 moved this call to the very TOP of `answer()`, before every
 short-circuit, and put it to work three ways: (1) the transcription FOLDS INTO the one search query
@@ -34,29 +36,35 @@ short-circuit, but the transcription rides back on `Answer.image_analysis` inste
 discarded (closing the pre-3.6.7 disclosed gap). It still does not change `decide_refusal`'s
 `has_image` gate (a text-empty-but-image-answerable turn does not refuse).
 
-Ambiguity classification + clarification (PLAN 9.2/9.3, ADR-ambiguity-clarification-then-fallback-answer): checked right after small-talk,
+Ambiguity classification + clarification (PLAN 9.2/9.3,
+ADR-ambiguity-clarification-then-fallback-answer): checked right after small-talk,
 before rewrite/retrieval — a message that is an exact small-talk match (e.g. "hi") is checked first
 and never reaches this branch, which is this repo's explicit tie-break for the "hi, what's the
-approval process?" case ADR-ambiguity-clarification-then-fallback-answer flagged as needing one: `is_small_talk` requires the *whole*
+approval process?" case ADR-ambiguity-clarification-then-fallback-answer flagged as needing one:
+`is_small_talk` requires the *whole*
 message to match, so a real question glued onto a greeting still runs the clarification check
 normally. When `enable_clarification_branch` is on and the classifier verdict is `is_ambiguous`,
 this bypasses rewrite/retrieval/CRAG/refusal and returns a clarifying question (PLAN 9.3,
 `generate_clarification`) instead — same shape as small-talk: no `query_trace` row, `refused`
-stays False (`needs_clarification=True` is a still-open turn, not a refusal, per ADR-ambiguity-clarification-then-fallback-answer decision
+stays False (`needs_clarification=True` is a still-open turn, not a refusal, per
+ADR-ambiguity-clarification-then-fallback-answer decision
 4). A non-ambiguous verdict is only logged (`clarification_decision`) and changes nothing — the
 pipeline below runs exactly as it would with the branch disabled. When the flag is off (the
 default), `decide_clarification` is never called at all — zero added cost or behavior change.
 
-Differentiated refusal copy (PLAN 9.4, ADR-ambiguity-clarification-then-fallback-answer decision 5): each of the three refusal-reason
+Differentiated refusal copy (PLAN 9.4, ADR-ambiguity-clarification-then-fallback-answer decision 5):
+each of the three refusal-reason
 categories (`no_candidates | weak_score | no_citations`, `domain/refusal.RefusalReason`) gets its
 own honest, user-facing string (`_REFUSAL_COPY`) instead of one identical `_REFUSAL_TEXT` for all
 three — a user can now tell "nothing like this exists" from "I found something too weak to trust"
 from "my draft answer didn't hold up," while `refusal_reason` itself stays a stable category (not
 a diagnostic string with an interpolated score) so it can be grouped on for fallback-rate reporting
-(PLAN 9.7). Human hand-off (ADR-ambiguity-clarification-then-fallback-answer decision 6) is still a stub this phase — every reason's copy
+(PLAN 9.7). Human hand-off (ADR-ambiguity-clarification-then-fallback-answer decision 6) is still a
+stub this phase — every reason's copy
 ends the same way, and no real integration exists yet.
 
-Human hand-off logging (PLAN 9.6, ADR-ambiguity-clarification-then-fallback-answer decision 6): every `refused=True` answer (both branches
+Human hand-off logging (PLAN 9.6, ADR-ambiguity-clarification-then-fallback-answer decision 6):
+every `refused=True` answer (both branches
 above) emits one additional `human_handoff` structured log record — `trace_id`, `raw_query`,
 `refusal_reason` (`created_at` comes free from `configure_logging`'s `TimeStamper` processor, not a
 manual field, matching every other log call in this module). `raw_query` is deliberately the user's
@@ -110,11 +118,13 @@ log = get_logger("rag_agent.answer_service")
 
 _NO_CITATIONS_REASON: RefusalReason = "no_citations"
 
-# PLAN 9.4, ADR-ambiguity-clarification-then-fallback-answer decision 5: distinct, honest copy per refusal-reason category (drafted under
+# PLAN 9.4, ADR-ambiguity-clarification-then-fallback-answer decision 5: distinct, honest copy per
+# refusal-reason category (drafted under
 # copywriting-rules/ux-writing/anti-ai-writing) — previously all three rendered one identical
 # string, so a user could not tell "nothing like this exists" from "I found something too weak to
 # trust" from "my draft answer didn't hold up." All three still end on the same human-hand-off
-# affordance (ADR-ambiguity-clarification-then-fallback-answer decision 6 is unchanged — still a stub, no real integration).
+# affordance (ADR-ambiguity-clarification-then-fallback-answer decision 6 is unchanged — still a
+# stub, no real integration).
 _REFUSAL_COPY: dict[RefusalReason, str] = {
     "no_candidates": (
         "I couldn't find anything about this in the documentation I can search — "
@@ -162,10 +172,12 @@ class AnswerProvider(Protocol):
     """The shape `POST /chat` depends on — satisfied by `AnswerService` itself and by
     `answer_cache.CachingAnswerService`, which wraps one `AnswerProvider` around another.
 
-    PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): the read path is driven by a single frozen `AuthContext` (built from a
-    verified edge JWT, or the general-only tokenless context) instead of a caller-reported
-    `knowledge_scope` string — `auth.allowed_scopes` are the authoritative retrieval scopes and
-    `auth.principal` the page-ACL identity (always `None` for embedded users in v1)."""
+    PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): the read path is driven by a single
+    frozen `AuthContext` (built from a
+    verified edge JWT, or the tokenless context, not narrowed to a connection) instead of a
+    caller-reported `knowledge_scope` string. `auth.allowed_scopes` is always empty (the scope
+    axis is retired, ADR-routing-labels-sole-content-axis) and `auth.principal` is the page-ACL
+    identity (always `None` for embedded users in v1)."""
 
     def answer(self, history: Sequence[ChatMessage], auth: AuthContext) -> Answer: ...
 
@@ -214,11 +226,13 @@ class AnswerService:
         self._product_catalog = product_catalog
         # Option A Stage 6 (substep 9.4.1, panel mi-session): the WRITER sessionmaker for the
         # directed-connection chat-session store. `None` in a test/deployment that never wires it —
-        # a directed chat then degrades to no routing (general-only), never an error.
+        # a directed chat then degrades to no routing (not narrowed to a connection: all indexed
+        # pages), never an error.
         self._session_store_sessionmaker = session_store_sessionmaker
 
     def _resolve_directed_routing(self, auth: AuthContext) -> tuple[list[str] | None, str | None]:
-        """Option A Stage 6 (substep 9.4.1, panels mi-session/mi-hardfilter, ADR-directed-source-target-routing-labels): resolve the
+        """Option A Stage 6 (substep 9.4.1, panels mi-session/mi-hardfilter,
+        ADR-directed-source-target-routing-labels): resolve the
         directed ``source → target`` chat's session ONCE and reuse it on every later question.
 
         Returns ``(session_labels, connection_block)``: the four routing labels feed the retrieval
@@ -256,7 +270,7 @@ class AnswerService:
             return labels, connection_block
         except ChatSessionError:
             # a directed form always rides a verified token carrying subject + company; if either is
-            # missing the session cannot be keyed -> degrade to general-only, never crash.
+            # missing the session cannot be keyed -> degrade to no label narrowing, never crash.
             return None, None
 
     def answer(self, history: Sequence[ChatMessage], auth: AuthContext) -> Answer:
@@ -320,7 +334,8 @@ class AnswerService:
             )
             if decision.is_ambiguous:
                 # PLAN 9.3: bypass rewrite/retrieval/CRAG/refusal, same shape as small-talk above —
-                # writes no `query_trace` row (ADR-ambiguity-clarification-then-fallback-answer decision 1). Substep 3.6.7 (panel r5-image):
+                # writes no `query_trace` row (ADR-ambiguity-clarification-then-fallback-answer
+                # decision 1). Substep 3.6.7 (panel r5-image):
                 # a kept image is no longer silently dropped here — the transcription computed above
                 # rides back on `Answer.image_analysis`.
                 reply = self._generator.generate_clarification(original_query)
@@ -335,7 +350,8 @@ class AnswerService:
                     image_analysis=image_analysis,
                 )
 
-        # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired, so `auth.allowed_scopes` is empty and the
+        # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired, so
+        # `auth.allowed_scopes` is empty and the
         # scope filter is inert (retrieval opts the scope GUC out; content is routed by labels).
         # This list is still threaded through so the curated layer's app-overlap query keeps its
         # shape (empty → the always-included empty-tag entries). `scope` is the page-ACL principal
@@ -344,7 +360,8 @@ class AnswerService:
         scope = auth.principal
         # Substep 8.3.1 (panel mi-filter): the VERIFIED slots + host platform become the one
         # CustomerContext retrieval filters eligibility by, inside the search SQL — never a
-        # body value. Empty slots mean general-only eligibility; unstamped pages are unaffected
+        # body value. Empty slots satisfy no product-specific Applies-to rule; unstamped pages
+        # are unaffected
         # (absence never excludes). The CRAG retry below reuses this same context.
         customer_context = CustomerContext(
             slot_pos=auth.slot_pos,
@@ -352,14 +369,16 @@ class AnswerService:
             slot_accounting=auth.slot_accounting,
             platform=auth.platform,
         )
-        # Substep 9.4.1 (panels mi-session/mi-hardfilter, ADR-directed-source-target-routing-labels): resolve this directed chat's
+        # Substep 9.4.1 (panels mi-session/mi-hardfilter,
+        # ADR-directed-source-target-routing-labels): resolve this directed chat's
         # session once (chat-start) and reuse it per question. The four routing labels feed the
         # retrieval hard filter below; the connection block feeds the answer prompt. A
         # legacy/slot/tokenless chat is not directed -> (None, None), so the filter is a no-op and
         # the prompt carries no connection block (pre-9.4.1 behavior). The CRAG retry reuses the
         # same labels, so the retry can never widen the connection.
         session_labels, connection_block = self._resolve_directed_routing(auth)
-        # PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): audit *who* asked as sha256(sub) — never the raw subject/token.
+        # PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): audit *who* asked as
+        # sha256(sub) — never the raw subject/token.
         subject_hash = sha256_text(auth.token_subject).hex() if auth.token_subject else None
 
         # The rewritten standalone question (text only). Rewrite is skipped when disabled or when
@@ -449,7 +468,8 @@ class AnswerService:
                 image_analysis=image_analysis,
             )
 
-        # PLAN 10.6, ADR-knowledge-scope-tagging-and-filtering: curated entries are always-present, scope-filtered evidence that
+        # PLAN 10.6, ADR-knowledge-scope-tagging-and-filtering: curated entries are always-present,
+        # scope-filtered evidence that
         # rides through the exact same numbered evidence/citation machinery a real retrieved hit
         # already uses — curated markers [1..k], retrieved markers [k+1..n] (build_evidence_block
         # numbers `evidence_hits` in order, unchanged itself). Fetched fresh per request (tags can
@@ -502,7 +522,8 @@ class AnswerService:
             # empty string would be a broken response, and this fixed workflow does not retry
             # generation (only retrieval, via CRAG) — so this degrades to a refusal instead.
             # `image_analysis` (if any) still rides along — the citation-enforcement refusal is
-            # about the grounded claim only and is unaffected by has_image (ADR-vision-grounded-image-analysis decision 3).
+            # about the grounded claim only and is unaffected by has_image
+            # (ADR-vision-grounded-image-analysis decision 3).
             log.info("refusal", reason=_NO_CITATIONS_REASON)
             log.info(
                 "human_handoff",

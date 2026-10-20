@@ -1175,7 +1175,7 @@ _Workflow label shown in the drawer: Embedding Obi in another application_
 - Settings and rules:
   | Setting | Value |
   |---|---|
-  | Default | no values: general pages only |
+  | Default | no values: not narrowed to a connection (all indexed pages) |
   | Three values | source_system, target_system, business_id |
   | Always | iss, aud = obi, sub, iat, exp |
   | Signed with | the platform's private key; key id in the header |
@@ -1198,7 +1198,7 @@ _Workflow label shown in the drawer: Embedding Obi in another application_
 - How to test it:
   - Change one character of source_system: signature fails, refused.
   - exp in the past: refused.
-  - No values: general pages only.
+  - No values: not narrowed to a connection (all indexed pages).
   - A valid toast → mews note and a body knowledge_scope: the body value is ignored.
 - Target and notes: The issuer URL, the key id and the sub format are placeholders. Nothing is configured until the decisions in section 11 are made.
 
@@ -4701,7 +4701,7 @@ _Workflow label shown in the drawer: Security_
   | Used by | worker, webhook, sweeps, ingestion, trace and feedback writes |
 - Where in the code:
   - `platform/db/schema.py:52-68` — apply_chunk_rls
-  - `docs/adr/0013` — the decision
+  - `docs/adr/supabase-postgres-store-without-force-rls.md` — the decision
 
 ##### Panel `s-reader` · rag_reader · [Implemented]
 - Kind: Role

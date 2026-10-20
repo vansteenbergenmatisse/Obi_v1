@@ -92,7 +92,8 @@ def test_ks_index_page_not_searchable_outside_its_scope(gateway, settings: Setti
         k=5,
         knowledge_scopes=["toast-general"],
     )
-    # ADR-routing-labels-sole-content-axis: the scope axis is retired — `knowledge_scopes` no longer excludes a page by its
+    # ADR-routing-labels-sole-content-axis: the scope axis is retired — `knowledge_scopes` no longer
+    # excludes a page by its
     # tags. The mews page now resolves regardless of the scope arg; cross-integration isolation is
     # the routing-label hard filter (test_label_hardfilter_db.py), not the scope axis.
     assert str(_MEWS_PAGE) in hits

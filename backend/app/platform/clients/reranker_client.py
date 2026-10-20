@@ -9,7 +9,8 @@ mirroring ``embeddings_client`` exactly:
 * ``CohereReranker`` — hosted cross-encoder over ``httpx`` (no vendor SDK), Cohere v2 ``/rerank``.
 * ``LocalReranker`` — sentence-transformers ``CrossEncoder``, lazily imported (optional dep).
 
-**Cross-encoder rerankers only — never a general chat model asked to reorder** (ADR-rerank-then-verify-cited-answers): a
+**Cross-encoder rerankers only — never a general chat model asked to reorder**
+(ADR-rerank-then-verify-cited-answers): a
 cross-encoder is cheaper per candidate, deterministic enough to eval, and built for the task.
 
 Security controls applied to every hosted call (mirroring the embeddings client):

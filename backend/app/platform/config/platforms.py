@@ -1,11 +1,13 @@
 """Platform + integration registry for Obi embed (PLAN 11.1c; validated by substep 1.2.3).
 
-The JWT 'integration' claim carries the platform KEY (e.g. "mews"); this registry maps that key
-to the live obi-*-test knowledge scopes and holds the trusted-issuer verification config.
+The legacy JWT 'integration' claim carries a product key (e.g. "mews"). The keys of the
+'integrations' map are only the valid integration-claim allow-list: their knowledge-scope value
+lists are retired and empty (ADR-routing-labels-sole-content-axis). This registry also holds the
+trusted-issuer verification config.
 
-Validated at startup, after the tag map, rules in order, each error naming the offending entry:
-every mapped scope exists in knowledge_scopes.json; 'classified' is never mappable; the general
-scope is added by the loader, never listed by hand; lifetime_minutes sits within 1..1440; every
+Validated at startup, after knowledge_scopes.json, rules in order, each error naming the offending
+entry: any residual mapped value must exist in knowledge_scopes.json and 'classified' is never
+mappable (a guard so a stray scope cannot slip back in); lifetime_minutes sits within 1..1440; every
 signing alg is on the allow-list (RS256, ES256); every platform's allowed_integrations value is a
 real integration (a key of the integrations map — gap CIP-A1); an empty registry, or one with zero
 active platforms, stops startup outside local (allow_empty=False). Outside offline (offline=False)
@@ -420,7 +422,8 @@ def load_platform_registry(
             if entry.active:
                 _reject_untrusted_active_platform(entry)
 
-    # ADR-routing-labels-sole-content-axis: the knowledge-scope value lists are retired (empty). The keys remain as the valid
+    # ADR-routing-labels-sole-content-axis: the knowledge-scope value lists are retired (empty). The
+    # keys remain as the valid
     # integration-claim allow-list (the allowed_integrations cross-check above). Any residual slug
     # is still validated so a stray value can never slip back in unnoticed.
     scopes: dict[str, tuple[str, ...]] = {}

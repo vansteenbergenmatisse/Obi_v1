@@ -1,4 +1,5 @@
-"""Fallback and faithfulness signal metrics (PLAN 9.7, ADR-ambiguity-clarification-then-fallback-answer decision 7).
+"""Fallback and faithfulness signal metrics (PLAN 9.7,
+ADR-ambiguity-clarification-then-fallback-answer decision 7).
 
 Both are lightweight proxies, not an LLM-judge — that would need a live model call this DB-free
 harness deliberately avoids (matching every other metric here). ``fallback_rate`` counts how often

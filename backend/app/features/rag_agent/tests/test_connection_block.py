@@ -1,7 +1,8 @@
 """Unit tests for build_connection_block (panel mi-session, substep 9.2.1).
 
 Pure-string rendering of the directed-connection block chat-start writes into the system prompt
-(ADR-directed-source-target-routing-labels chat-start step 3) — no DB, no catalog mutation, so these run at the unit level.
+(ADR-directed-source-target-routing-labels chat-start step 3) — no DB, no catalog mutation, so these
+run at the unit level.
 """
 
 from __future__ import annotations

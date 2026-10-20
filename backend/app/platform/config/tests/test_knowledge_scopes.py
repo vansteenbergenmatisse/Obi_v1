@@ -1,7 +1,9 @@
-"""panels tg-config / ks-validate / cm-config — The reserved-label file (ADR-routing-labels-sole-content-axis).
+"""panels tg-config / ks-validate / cm-config — The reserved-label file
+(ADR-routing-labels-sole-content-axis).
 
 The one file (`knowledge-base/config/knowledge_scopes.json`) is validated at startup: every entry
-lowercase, no duplicates, the reserved `classified` scope present. ADR-routing-labels-sole-content-axis retired the
+lowercase, no duplicates, the reserved `classified` scope present.
+ADR-routing-labels-sole-content-axis retired the
 knowledge-scope `-test` axis, so the file now holds only `classified` and the recognized (offerable)
 set is empty. `classified` is present in the file but is never offered — excluded from the returned
 set and from GET /health.
@@ -21,7 +23,8 @@ from app.platform.config.knowledge_scopes import (
     load_recognized_knowledge_scopes,
 )
 
-# Post-ADR-routing-labels-sole-content-axis there are NO offerable knowledge scopes; `classified` is reserved and excluded.
+# Post-ADR-routing-labels-sole-content-axis there are NO offerable knowledge scopes; `classified` is
+# reserved and excluded.
 _RECOGNIZED: set[str] = set()
 
 
@@ -81,7 +84,8 @@ def test_tags_missing_classified_fails(tmp_path: Path) -> None:
 
 def test_tags_health_lists_scopes_without_classified() -> None:
     """panel tg-config
-    GET /health lists the loaded recognized scopes (empty post-ADR-routing-labels-sole-content-axis) and never classified."""
+    GET /health lists the loaded recognized scopes (empty post-ADR-routing-labels-sole-content-axis)
+    and never classified."""
     client = TestClient(create_app(start_scheduler=False))
 
     resp = client.get("/health")

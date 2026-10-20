@@ -1,4 +1,5 @@
-"""Citation enforcement (ADR-rerank-then-verify-cited-answers §6): uncited and hallucinated-source claims are stripped."""
+"""Citation enforcement (ADR-rerank-then-verify-cited-answers §6): uncited and hallucinated-source
+claims are stripped."""
 
 from __future__ import annotations
 

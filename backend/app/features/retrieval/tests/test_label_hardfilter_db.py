@@ -1,6 +1,7 @@
 """panels mi-hardfilter · mi-match · substep 9.4.1 — the directed-connection hard label filter.
 
-Option A Stage 6 (ADR-directed-source-target-routing-labels D1/D2): ``_base_filters`` gains ``AND labels && :session_labels`` at the
+Option A Stage 6 (ADR-directed-source-target-routing-labels D1/D2): ``_base_filters`` gains ``AND
+labels && :session_labels`` at the
 same spot as the ``tags`` overlap, threaded through keyword/dense candidate search AND the
 rerank-text fetch, with the ``app.allowed_labels`` GUC set in the same path as the scope GUC so the
 RESTRICTIVE ``chunk_labels_read`` RLS policy (migration 0016, inert until now) and the app predicate

@@ -6930,7 +6930,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "apply_chunk_rls"
 ],
 [
-"docs/adr/0013",
+"docs/adr/supabase-postgres-store-without-force-rls.md",
 "the decision"
 ]
 ],
@@ -7723,7 +7723,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "f": [
 [
 "Default",
-"no values: general pages only"
+"no values: not narrowed to a connection (all indexed pages)"
 ],
 [
 "Three values",
@@ -7754,7 +7754,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "t": [
 "Change one character of source_system: signature fails, refused.",
 "exp in the past: refused.",
-"No values: general pages only.",
+"No values: not narrowed to a connection (all indexed pages).",
 "A valid toast → mews note and a body knowledge_scope: the body value is ignored."
 ],
 "note": "The issuer URL, the key id and the sub format are placeholders. Nothing is configured until the decisions in section 11 are made."

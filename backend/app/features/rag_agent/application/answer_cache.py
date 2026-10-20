@@ -45,7 +45,8 @@ log = get_logger("rag_agent.answer_cache")
 
 
 def _cache_key(history: Sequence[ChatMessage], auth: AuthContext) -> str:
-    """PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): the key binds the full history to the verified edge identity —
+    """PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): the key binds the full history
+    to the verified edge identity —
     `principal` (page-ACL), `allowed_scopes` (knowledge scope), and `token_subject`. A cache hit
     can therefore never cross a principal, a scope allow-list, or a subject boundary; the raw
     token is never part of the key (only its verified subject)."""

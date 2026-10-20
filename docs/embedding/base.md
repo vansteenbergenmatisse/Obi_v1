@@ -23,7 +23,7 @@ systems a Base customer connects, not platforms that embed Obi.
 ## What is live today
 
 Both Base hosts are on the `/embed` frame CSP through the temporary `obi-test` platform, so the
-widget can load there and answer **general-only** questions. No Base-signed token is honoured
+widget can load there and answer questions **not narrowed to a connection** (all indexed pages). No Base-signed token is honoured
 until the `base` entry goes active.
 
 ## What Base sends

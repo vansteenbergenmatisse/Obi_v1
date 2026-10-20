@@ -1,7 +1,10 @@
-"""Loads the reserved Confluence labels (ADR-routing-labels-sole-content-axis, superseding ADR-knowledge-scope-tagging-and-filtering) from the config file.
+"""Loads the reserved Confluence labels (ADR-routing-labels-sole-content-axis, superseding
+ADR-knowledge-scope-tagging-and-filtering) from the config file.
 
-ADR-routing-labels-sole-content-axis retired the knowledge-scope `-test` axis: index membership and content routing now ride
-the ADR-directed-source-target-routing-labels routing-label axis alone (the `chunk.labels` column, validated against
+ADR-routing-labels-sole-content-axis retired the knowledge-scope `-test` axis: index membership and
+content routing now ride
+the ADR-directed-source-target-routing-labels routing-label axis alone (the `chunk.labels` column,
+validated against
 `product_catalog.json`), so this file no longer carries any offerable knowledge scope. It keeps
 only the RESERVED `classified` label. A dedicated file, not an env var: it is a content registry an
 operator edits directly, living at `knowledge-base/config/` so it reads as one global place.
@@ -36,7 +39,8 @@ def load_recognized_knowledge_scopes(path: Path = DEFAULT_KNOWLEDGE_SCOPES_PATH)
     """Validate the tag file at startup and return the recognized, offerable scopes.
 
     The returned set is every scope in the file EXCEPT the reserved `classified` scope — which,
-    post-ADR-routing-labels-sole-content-axis, is normally empty. A failing rule raises ``ValueError`` before ``create_app``
+    post-ADR-routing-labels-sole-content-axis, is normally empty. A failing rule raises
+    ``ValueError`` before ``create_app``
     finishes, so a malformed file exits the process non-zero rather than serving one request under
     wrong permissions.
     """

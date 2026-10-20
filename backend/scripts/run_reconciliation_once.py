@@ -1,17 +1,18 @@
 """One-off CLI: run a single COMPLETE reconciliation sweep + drain the resulting jobs (PLAN 10.7).
 
-This is the operator step that re-stamps ``chunk.tags`` after Confluence labels change but the page
-body does not — e.g. after adding a recognized knowledge-scope label (``general``/``mews``/
-``opera-cloud``/``toast``) to already-indexed pages. A *complete* sweep enqueues a ``sync_page`` job
-for every live page; each job's ``handle_sync_page`` re-reads the page's fresh labels, resolves them
-to knowledge-scope tags (PLAN 10.2), unions them with the page's ``source_scope`` tags, and writes
-the result to ``chunk.tags`` via the **metadata-only path — no re-embedding** (a label change bumps
-``labels_hash`` but not the page body, so ``classify`` never routes it to a rebuild).
+This is the operator step that re-stamps a page's routing labels (the ``labels`` column) after
+its Confluence labels change but the page body does not — e.g. after adding a routing label
+(``obi-general``, ``{slug}-general``, ``{slug}-to-{kind}``) to already-indexed pages. A *complete*
+sweep enqueues a ``sync_page`` job for every live page; each job's ``handle_sync_page`` re-reads
+the page's fresh labels and writes them to ``labels`` via the **metadata-only path — no
+re-embedding** (a label change bumps ``labels_hash`` but not the page body, so ``classify`` never
+routes it to a rebuild). The knowledge-scope tags (``chunk.tags``) are still written but inert
+since migration 0018 (ADR-routing-labels-sole-content-axis).
 
 It is the manual equivalent of the scheduled ``scheduled_complete_reconcile`` + ``worker_tick`` the
 in-process worker runs — used here as a deliberate, one-shot backfill instead of waiting for the
 next scheduled complete sweep. Idempotent and safe to re-run: every handler is version-guarded, and
-a page already carrying the right tags re-stamps to the identical value.
+a page already carrying the right labels re-stamps to the identical value.
 
 REFUSES to run against the offline fixture gateway: a real backfill must hit the live Confluence
 instance, never the deterministic fixture corpus. If Confluence is not configured this exits

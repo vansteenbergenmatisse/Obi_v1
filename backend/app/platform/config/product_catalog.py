@@ -18,7 +18,8 @@ The 8 validation rules (product-catalog.md §3), enforced in order:
      per role (an expansion can never put two products in one slot);
   6. launch_allowlist lists only existing canonical ids whose role matches the list they
      sit in;
-  6b. enabled_sources (ADR-source-system-decides-widget-eligibility, optional) lists only existing canonical ids (flat/global, not
+  6b. enabled_sources (ADR-source-system-decides-widget-eligibility, optional) lists only existing
+  canonical ids (flat/global, not
      role-keyed); absent ⇒ every product enabled, so the enablement gate stays inert;
   7. the reserved names never appear: `classified`, `general`, any `obi-*` spelling
      (reserved for the routing-label axis — e.g. `obi-general` — never a product id);
@@ -58,7 +59,8 @@ _DIRECTION_RE = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+)*$")
 _RESERVED_EXACT = frozenset({"classified", "general"})
 _RESERVED_PREFIX = "obi-"
 
-# Option A routing labels (ADR-directed-source-target-routing-labels D0/D4): the content-routing axis. These are
+# Option A routing labels (ADR-directed-source-target-routing-labels D0/D4): the content-routing
+# axis. These are
 # Confluence LABELS, not products — the reserved-name rules above gate product ids,
 # never these boxes. The four ordered boxes a directed source→target connection sees are
 # obi-general, {source.slug}-general, {target.slug}-general, {source.slug}-to-{target.kind}.
@@ -95,7 +97,8 @@ class ProductCatalog:
     launch_allowlist: dict[str, frozenset[str]]  # role -> allowed canonical ids
     alias_to_id: dict[str, str]
     connection_directions: dict[str, tuple[str, ...]]  # type key -> its §D.2 flow directions
-    # ADR-source-system-decides-widget-eligibility (source-enablement visibility gate, supersedes ADR-widget-hides-via-visibility-probe's target gate): the flat,
+    # ADR-source-system-decides-widget-eligibility (source-enablement visibility gate, supersedes
+    # ADR-widget-hides-via-visibility-probe's target gate): the flat,
     # global set of canonical product ids Obi supports as a directed-connection SOURCE. A source is
     # enabled iff it is in this set; the target is never checked. Materialized
     # from the optional top-level `enabled_sources` list; ABSENT in the file ⇒ every product id
@@ -123,7 +126,8 @@ class ProductCatalog:
         return ()
 
     def resolve_system(self, name: str) -> Product | None:
-        """Resolve one directed-connection endpoint to a product (panel mi-route, ADR-directed-source-target-routing-labels
+        """Resolve one directed-connection endpoint to a product (panel mi-route,
+        ADR-directed-source-target-routing-labels
         D4/D7). Matches the canonical id, any per-product alias, or the display name,
         ignoring case and surrounding/collapsed whitespace. An unmatched value returns
         ``None`` — a clear miss, never a fuzzy match and never a wildcard.
@@ -146,14 +150,17 @@ class ProductCatalog:
 
     def build_labels(self, source: str, target: str) -> list[str]:
         """Turn a directed ``source → target`` connection into exactly the four ordered
-        Confluence label boxes (ADR-directed-source-target-routing-labels D4, plan "The routing rule"):
+        Confluence label boxes (ADR-directed-source-target-routing-labels D4, plan "The routing
+        rule"):
         ``obi-general``, ``{source.slug}-general``, ``{target.slug}-general``,
         ``{source.slug}-to-{target.kind}`` — where the slug is the resolved product's
         canonical id and the kind is the TARGET product's role (pos/pms/accounting).
 
-        An unknown source yields ``[obi-general]`` alone — never a wildcard (ADR-directed-source-target-routing-labels chat-start
+        An unknown source yields ``[obi-general]`` alone — never a wildcard
+        (ADR-directed-source-target-routing-labels chat-start
         step 5 / panel mi-route). A known source with an unknown target yields the two boxes the
-        source alone can fill, ``[obi-general, {source.slug}-general]`` (ADR-source-system-decides-widget-eligibility: a source can
+        source alone can fill, ``[obi-general, {source.slug}-general]``
+        (ADR-source-system-decides-widget-eligibility: a source can
         have hundreds of targets, so the target is assumed supported, never a direction box for a
         target we cannot classify). Direction is primary:
         ``build_labels("toast", "mews")`` ≠ ``build_labels("mews", "toast")``.
@@ -188,7 +195,8 @@ class ProductCatalog:
         return False
 
     def all_routing_labels(self) -> frozenset[str]:
-        """Every well-formed routing label this catalog recognizes (ADR-routing-labels-sole-content-axis) — the ingestion
+        """Every well-formed routing label this catalog recognizes
+        (ADR-routing-labels-sole-content-axis) — the ingestion
         membership set. ``obi-general`` plus, for each product, ``{slug}-general`` and
         ``{slug}-to-{kind}`` for each valid target kind. A published page is in the index iff it
         carries at least one of these and is not ``classified`` (replaces the retired

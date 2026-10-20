@@ -69,7 +69,8 @@ def _isolate_space_to(gateway, page_id: int) -> None:
 def _set_recognized(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, names: list[str]) -> None:
     """Simulate the operator changing the recognized membership set.
 
-    ADR-routing-labels-sole-content-axis: membership is the ROUTING-label set the worker and both sweeps read from
+    ADR-routing-labels-sole-content-axis: membership is the ROUTING-label set the worker and both
+    sweeps read from
     ``settings.product_catalog.all_routing_labels()`` (the old knowledge_scopes.json axis is
     retired). A redeploy that adds/removes a product changes that set; here we patch
     ``ProductCatalog.all_routing_labels`` to return exactly ``names`` so the shrunk/grown set flows

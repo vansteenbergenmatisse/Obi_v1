@@ -1,4 +1,5 @@
-"""ADR-routing-labels-sole-content-axis Path B: ``setup_supabase.check_deploy_readiness`` must gate the reader path.
+"""ADR-routing-labels-sole-content-axis Path B: ``setup_supabase.check_deploy_readiness`` must gate
+the reader path.
 
 Under Path B (migration 0018 ``retire_knowledge_scope_rls``) the fail-closed tenant fence is NOT the
 retired knowledge-scope RESTRICTIVE policies — it is the PERMISSIVE source policy plus RLS ENABLEd:
@@ -16,7 +17,8 @@ blocks a deploy where the source policy is missing or RLS is disabled — the te
 silently fails OPEN. This check reads the catalog and refuses the deploy unless both policies are
 present (PERMISSIVE, FOR SELECT) and RLS is ENABLEd on each table; these tests are the deterministic
 proof of that gate. The retired ``chunk_scope_read`` / ``curated_knowledge_entry_scope_read``
-policies are NOT asserted (0018 dropped them, ADR-routing-labels-sole-content-axis); the ``chunk_labels_read`` routing axis is
+policies are NOT asserted (0018 dropped them, ADR-routing-labels-sole-content-axis); the
+``chunk_labels_read`` routing axis is
 reported but, being fail-OPEN by design, never blocks the deploy.
 
 Each test runs inside a single connection's transaction and rolls back, so no committed schema
@@ -42,7 +44,8 @@ pytestmark = (
 
 
 def test_deploy_readiness_reports_ready_under_path_b(capsys) -> None:
-    """ADR-routing-labels-sole-content-axis Path B — source fence + curated reader policy in place -> gate is READY (rc 0).
+    """ADR-routing-labels-sole-content-axis Path B — source fence + curated reader policy in place
+    -> gate is READY (rc 0).
 
     Protects the live-isolation panel's deploy gate on a correctly-migrated Path B store (0018
     applied): ``chunk_source_read`` is applied session-wide by the harness; the curated reader
@@ -73,7 +76,8 @@ def test_deploy_readiness_reports_ready_under_path_b(capsys) -> None:
 
 
 def test_deploy_readiness_fails_when_source_policy_absent(capsys) -> None:
-    """ADR-routing-labels-sole-content-axis Path B — a missing ``chunk_source_read`` MUST block the deploy (non-zero + names).
+    """ADR-routing-labels-sole-content-axis Path B — a missing ``chunk_source_read`` MUST block the
+    deploy (non-zero + names).
 
     Reproduces a store whose lock-1 source/company fence was never applied or was dropped: with the
     curated reader policy present (so curated is NOT the gap), ``drop_chunk_rls`` removes
@@ -98,7 +102,8 @@ def test_deploy_readiness_fails_when_source_policy_absent(capsys) -> None:
 
 
 def test_deploy_readiness_fails_when_chunk_rls_disabled(capsys) -> None:
-    """ADR-routing-labels-sole-content-axis Path B — chunk RLS DISABLED MUST block the deploy even when the policy still exists.
+    """ADR-routing-labels-sole-content-axis Path B — chunk RLS DISABLED MUST block the deploy even
+    when the policy still exists.
 
     A PERMISSIVE policy is inert if row security is off (every row is returned), so the gate asserts
     ``relrowsecurity`` independently of policy presence. Here ``chunk_source_read`` stays present
@@ -123,7 +128,8 @@ def test_deploy_readiness_fails_when_chunk_rls_disabled(capsys) -> None:
 
 
 def test_deploy_readiness_fails_when_curated_reader_policy_absent(capsys) -> None:
-    """ADR-routing-labels-sole-content-axis Path B — a missing curated reader policy MUST block the deploy (non-zero + names).
+    """ADR-routing-labels-sole-content-axis Path B — a missing curated reader policy MUST block the
+    deploy (non-zero + names).
 
     The harness never applies ``apply_reader_rls``, so without it ``curated_knowledge_entry`` has
     no reader policy and RLS off — the exact state of a store where ``provision-reader`` never ran.

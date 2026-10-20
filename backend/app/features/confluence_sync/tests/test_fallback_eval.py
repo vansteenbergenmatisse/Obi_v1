@@ -1,4 +1,5 @@
-"""PLAN 9.7 (ADR-ambiguity-clarification-then-fallback-answer decision 7): real, wiring-level proof that `ambiguity.json`'s cases and a
+"""PLAN 9.7 (ADR-ambiguity-clarification-then-fallback-answer decision 7): real, wiring-level proof
+that `ambiguity.json`'s cases and a
 genuinely out-of-corpus question each correctly fall back — one to a clarifying question, the
 other to a refusal, neither to a fabricated answer — against the real indexed fixture corpus, plus
 the new `fallback_rate`/`citation_grounding_rate` metrics computed over real `AnswerService`
@@ -88,7 +89,8 @@ def test_ambiguity_dataset_cases_trigger_clarification_end_to_end(
         assert answer.clarification_question
         assert answer.refused is False
         assert answer.citations == []
-        assert answer.trace_id is None  # not a retrieval event, per ADR-ambiguity-clarification-then-fallback-answer decision 1
+        # not a retrieval event, per ADR-ambiguity-clarification-then-fallback-answer decision 1
+        assert answer.trace_id is None
         fell_back.append(answer.needs_clarification or answer.refused)
 
     assert fallback_rate(fell_back) == 1.0  # every ambiguity case is a fallback, by construction
@@ -110,14 +112,17 @@ def test_out_of_corpus_case_refuses_not_clarifies_or_hallucinates(
     _index_corpus(gateway, settings)
     dataset = load_dataset(_DATASETS / "out_of_corpus.json")
     case = dataset.cases[0]
-    assert case.relevant_chunk_ids == []  # ADR-ambiguity-clarification-then-fallback-answer decision 7: empty relevant set, not a new kind
+    # ADR-ambiguity-clarification-then-fallback-answer decision 7: empty relevant set, not a new
+    # kind
+    assert case.relevant_chunk_ids == []
 
     service = AnswerService(
         _build_retriever(gateway, settings, allowed_sources=("confluence:nonexistent",)),
         _EchoRewriter(),
         _ClarifyingGenerator(),
         get_sessionmaker(),
-        # Clarification branch stays off, matching the production default: ADR-ambiguity-clarification-then-fallback-answer decision 7 is
+        # Clarification branch stays off, matching the production default:
+        # ADR-ambiguity-clarification-then-fallback-answer decision 7 is
         # explicit that this case is "no clarification, no match anywhere" — it must resolve to a
         # refusal, not get relabelled as ambiguous just because the query happens to be short.
     )

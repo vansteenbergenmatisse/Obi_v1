@@ -1,4 +1,5 @@
-"""query_trace.subject_hash — hashed edge-token subject for audit (Phase 11.1c / ADR-db-level-customer-scope-isolation-backstop)
+"""query_trace.subject_hash — hashed edge-token subject for audit (Phase 11.1c /
+ADR-db-level-customer-scope-isolation-backstop)
 
 The Obi embed binds each request to a verified platform JWT (``X-Obi-Token``). For audit we record
 *who* asked as ``sha256(sub)`` — never the raw subject and never the token itself. Nullable: the

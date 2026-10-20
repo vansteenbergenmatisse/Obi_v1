@@ -349,7 +349,8 @@ def test_image_within_caps_is_accepted_and_analysis_reaches_the_done_event(
     gateway, settings: Settings
 ) -> None:
     """panel r5-stream · substep p0-s0_5-reg-retrieval-stage-5
-    PLAN 7.3/7.4, ADR-vision-grounded-image-analysis: an image-bearing turn is accepted, the vision-analysis call runs,
+    PLAN 7.3/7.4, ADR-vision-grounded-image-analysis: an image-bearing turn is accepted, the
+    vision-analysis call runs,
     and its text arrives on the SSE `done` event's `imageAnalysis` field, distinct from `answer`
     (the `done (with imageAnalysis)` half of the Events check)."""
     _index_corpus(gateway, settings)
@@ -482,7 +483,8 @@ def test_r1_limits_tenth_image_accepted_eleventh_rejected(gateway, settings: Set
 
 
 class _SpyAnswerService:
-    """PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): records the AuthContext `POST /chat` forwards into
+    """PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): records the AuthContext `POST
+    /chat` forwards into
     `AnswerService.answer` — proves the *verified token* (not the request body) drives scope,
     without needing a real scoped corpus. The per-integration token->scope resolution itself is
     proven in test_router_auth_context.py; here we only prove the tokenless/body-ignored path."""
@@ -518,7 +520,8 @@ def test_tokenless_request_forwards_general_only_and_ignores_body_scope(
 
 
 def test_malformed_knowledge_scope_is_rejected(gateway, settings: Settings) -> None:
-    """PLAN 10.5, ADR-knowledge-scope-tagging-and-filtering decision 6: shape-validated, not whitelisted — a value that could
+    """PLAN 10.5, ADR-knowledge-scope-tagging-and-filtering decision 6: shape-validated, not
+    whitelisted — a value that could
     never be a real scope (spaces, punctuation) is a 422, but an unrecognized-yet-well-shaped
     value is still accepted (degrades gracefully inside `AnswerService`, see
     `test_answer_service.py`)."""
@@ -532,13 +535,15 @@ def test_malformed_knowledge_scope_is_rejected(gateway, settings: Settings) -> N
         },
         headers=_auth(),
     )
-    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired; the body `knowledge_scope` is a deprecated,
+    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired; the body
+    # `knowledge_scope` is a deprecated,
     # accepted-and-ignored field (kept only so an older client does not hit extra=forbid). Any
     # value — even malformed — is ignored and never reaches retrieval, so the request succeeds.
     assert resp.status_code == 200
 
 
-# PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): the pre-existing "principal" and "knowledge_scope" cases are gone — body
+# PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): the pre-existing "principal" and
+# "knowledge_scope" cases are gone — body
 # principal is now ignored and body knowledge_scope no longer affects scope, so a tokenless replay
 # differing only by those fields legitimately shares the (general-only, no-subject) AuthContext and
 # is a correct cache hit, not a leak. The AuthContext-keyed idempotency binding (principal, scopes,
@@ -819,7 +824,8 @@ def test_r5_stream_trace_row_records_raw_query_candidates_scores_scopes_latency_
         build_embedding_provider(chat_settings),
         _build_policy(gateway),
         build_reranker(chat_settings),
-        # ADR-routing-labels-sole-content-axis: the knowledge-scope filter is retired; leave it off (default) so the empty
+        # ADR-routing-labels-sole-content-axis: the knowledge-scope filter is retired; leave it off
+        # (default) so the empty
         # allowed_scopes does not exclude everything. Verifies query_trace fields, not scope.
         trace_sessionmaker=get_sessionmaker(),
     )
@@ -854,7 +860,8 @@ def test_r5_stream_trace_row_records_raw_query_candidates_scores_scopes_latency_
     assert row.retrieved_chunk_ids
     assert row.rerank_scores  # scores
     assert row.allowed_sources == ["confluence:default"]
-    assert row.allowed_knowledge_scopes is None  # ADR-routing-labels-sole-content-axis: no scope filtering applied
+    # ADR-routing-labels-sole-content-axis: no scope filtering applied
+    assert row.allowed_knowledge_scopes is None
     assert isinstance(row.latency_ms, int) and row.latency_ms >= 0
     assert row.answer == done["answer"]
     assert row.citations["markers"]
@@ -880,7 +887,8 @@ def test_s_audit_query_trace_persists_every_named_field_plus_subject_and_feedbac
         build_embedding_provider(chat_settings),
         _build_policy(gateway),
         build_reranker(chat_settings),
-        # ADR-routing-labels-sole-content-axis: the knowledge-scope filter is retired; leave it off (default) so the empty
+        # ADR-routing-labels-sole-content-axis: the knowledge-scope filter is retired; leave it off
+        # (default) so the empty
         # allowed_scopes does not exclude everything. Verifies query_trace fields, not scope.
         trace_sessionmaker=get_sessionmaker(),
     )
@@ -923,7 +931,8 @@ def test_s_audit_query_trace_persists_every_named_field_plus_subject_and_feedbac
     assert row.retrieved_chunk_ids
     assert row.rerank_scores  # scores
     assert row.allowed_sources == ["confluence:default"]
-    assert row.allowed_knowledge_scopes is None  # ADR-routing-labels-sole-content-axis: no scope filtering applied
+    # ADR-routing-labels-sole-content-axis: no scope filtering applied
+    assert row.allowed_knowledge_scopes is None
     assert row.answer == done["answer"]
     assert row.citations["markers"]
     assert row.feedback == 1
@@ -1211,7 +1220,8 @@ def test_answer_cache_replays_without_rerunning_retrieval(gateway, settings: Set
 
 
 def test_answer_cache_does_not_cross_token_subject_boundary(gateway, settings: Settings) -> None:
-    """PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): the answer cache is keyed off the verified AuthContext, so two
+    """PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): the answer cache is keyed off
+    the verified AuthContext, so two
     different token subjects never share a cached answer. (Body `principal` is ignored now — the
     pre-11.1c body-principal variant of this test was removed; identity comes from the token.)"""
     _index_corpus(gateway, settings)
@@ -1401,8 +1411,10 @@ def test_auth6_chat_membership_and_body_scope_ignore_end_to_end(
 ) -> None:
     """gap AUTH-6 · ADR-routing-labels-sole-content-axis (panels s-source / r3-deny).
 
-    This E2E test previously proved the ADR-db-level-customer-scope-isolation-backstop KNOWLEDGE-SCOPE isolation backstop (a Mews token
-    never saw a Toast-tagged page). ADR-routing-labels-sole-content-axis RETIRES that axis: a legacy integration token carries
+    This E2E test previously proved the ADR-db-level-customer-scope-isolation-backstop
+    KNOWLEDGE-SCOPE isolation backstop (a Mews token
+    never saw a Toast-tagged page). ADR-routing-labels-sole-content-axis RETIRES that axis: a legacy
+    integration token carries
     no knowledge scope, so content isolation no longer lives here — it rides the directed-connection
     ROUTING-LABEL hard filter, proven at the retrieval/DB layer (test_retrieval_knowledge_scope::
     test_label_hard_filter_excludes_a_page_outside_the_connection_boxes and
@@ -1410,7 +1422,8 @@ def test_auth6_chat_membership_and_body_scope_ignore_end_to_end(
     `POST /chat` surface are the RETAINED guarantees: an authorized token gets a grounded, cited
     answer over the indexed page (membership + reader-role retrieval + query_trace intact), and a
     body `knowledge_scope` is always IGNORED — never a 400, never a scope selection (never-bend
-    rule 2 / ADR-routing-labels-sole-content-axis). Source/company isolation (chunk_source_read) is unchanged."""
+    rule 2 / ADR-routing-labels-sole-content-axis). Source/company isolation (chunk_source_read) is
+    unchanged."""
     index_page(gateway, settings, 3002, 1)  # "Mews PMS Sync Setup", routing label mews-general
 
     chat_settings = _chat_settings(settings)
@@ -1439,7 +1452,8 @@ def test_auth6_chat_membership_and_body_scope_ignore_end_to_end(
         },
         headers={**_auth(), "x-obi-token": "mews-jwt"},
     )
-    assert resp.status_code == 200  # body scope ignored, never a 400 (ADR-routing-labels-sole-content-axis)
+    # body scope ignored, never a 400 (ADR-routing-labels-sole-content-axis)
+    assert resp.status_code == 200
     done = _parse_sse(resp.text)[-1]
     page_ids, _ = _trace_page_and_chunk_ids(int(done["traceId"]))
 
@@ -1452,7 +1466,9 @@ def test_auth6_chat_membership_and_body_scope_ignore_end_to_end(
 def test_cip1_forwarded_body_principal_is_inert_scope_and_principal_unchanged(
     gateway, settings: Settings
 ) -> None:
-    """gap CIP-1 · ADR-db-level-customer-scope-isolation-backstop, ADR-source-id-row-security-with-reader-writer-roles default-deny. A body-supplied `principal` (a well-shaped,
+    """gap CIP-1 · ADR-db-level-customer-scope-isolation-backstop,
+    ADR-source-id-row-security-with-reader-writer-roles default-deny. A body-supplied `principal` (a
+    well-shaped,
     non-numeric garbage value the shape validator accepts) is inert: it never reaches the
     AuthContext the read path runs under. The served scope stays exactly the verified token's
     scopes and the recorded auth `principal` is None (v1 embedded users are always principal-less).
@@ -1512,7 +1528,8 @@ def test_rt1_empty_string_knowledge_scope_is_422_before_the_service(
         headers=_auth(),
     )
 
-    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired; an empty body `knowledge_scope` is accepted
+    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired; an empty body
+    # `knowledge_scope` is accepted
     # and ignored (not a 422), and the request proceeds to the service.
     assert resp.status_code == 200
     assert len(spy.calls) == 1
@@ -1535,7 +1552,8 @@ def test_rt1_wildcard_knowledge_scope_sentinel_is_422(gateway, settings: Setting
         headers=_auth(),
     )
 
-    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired; the body value (even the old "*" sentinel) is
+    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired; the body value
+    # (even the old "*" sentinel) is
     # accepted and ignored and never reaches retrieval — the scope GUC is opted out server-side
     # regardless of the body, so there is nothing to smuggle. The request proceeds.
     assert resp.status_code == 200
@@ -1651,7 +1669,8 @@ def test_sec_answer_cache_never_crosses_the_subject_boundary_end_to_end(
     gateway, settings: Settings, tmp_path
 ) -> None:
     """panel r3-deny · ADR-routing-labels-sole-content-axis (coverage gap G16, re-aimed)
-    This E2E test previously proved cross-KNOWLEDGE-SCOPE answer-cache isolation; ADR-routing-labels-sole-content-axis retires
+    This E2E test previously proved cross-KNOWLEDGE-SCOPE answer-cache isolation;
+    ADR-routing-labels-sole-content-axis retires
     that axis (two legacy tokens no longer differ by scope). The RETAINED, load-bearing cache
     boundary is the verified SUBJECT: `CachingAnswerService` keys on the issuer-namespaced token
     subject, so two DIFFERENT subjects with IDENTICAL history never share a cached answer — one

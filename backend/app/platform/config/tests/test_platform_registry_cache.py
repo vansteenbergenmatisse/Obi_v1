@@ -34,7 +34,8 @@ _MEWS_ISS = "https://app.mews.com"
 def _write_platforms(
     path: Path, *, mews_active: bool = True, integrations: dict | None = None
 ) -> Path:
-    # ADR-routing-labels-sole-content-axis: the integrations map values are empty by default (the knowledge-scope axis is
+    # ADR-routing-labels-sole-content-axis: the integrations map values are empty by default (the
+    # knowledge-scope axis is
     # retired); a test that needs a mapped scope (to prove the dangling-scope revalidation) passes
     # `integrations` explicitly together with a monkeypatched recognized-scope set.
     path.write_text(
@@ -134,7 +135,8 @@ def test_tags_scopes_file_change_revalidates_platforms(
     )
     p = _write_platforms(tmp_path / "platforms.json", integrations={"mews": ["obi-mews-test"]})
     s = _settings(p)
-    # loads fine while the scopes file still carries the scope platforms.json maps. ADR-routing-labels-sole-content-axis: no
+    # loads fine while the scopes file still carries the scope platforms.json maps.
+    # ADR-routing-labels-sole-content-axis: no
     # general base scope is injected, so the mapped set is exactly the one slug.
     assert s.platform_registry.allowed_scopes_for("mews") == {"obi-mews-test"}
 

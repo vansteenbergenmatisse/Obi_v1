@@ -20,7 +20,8 @@ weakening — the oracle is §D.9, transcribed exactly into concrete pages):
   that canonical product, eligible only when its catalog role fills the matching slot.
 - "accounting" guidance for a QuickBooks customer -> that customer's actual accounting product
   (QuickBooks Online) — the launch catalog carries no separate accounting-scope payload (no
-  accounting scope tag exists yet; product-catalog.md §5 / integration-token-decisions O9), so the accounting
+  accounting scope tag exists yet; product-catalog.md §5 / integration-token-decisions O9), so the
+  accounting
   guidance a customer sees IS its accounting product's guidance.
 - "Mews/QuickBooks" / "Mews/Xero" / "room-charge" (Toast->Mews) / direct "Toast/QuickBooks"
   guidance -> a ``connection`` rule for that pair; eligible only for a connection the company
@@ -32,7 +33,8 @@ Example 5 — the Toast/OperaCloud + Mews/QuickBooks property — cannot be expr
 single-product-per-role launch token (it has two PMS products). It is modelled faithfully by a
 context carrying the two REAL connection records it actually has (Toast<->OperaCloud and
 Mews<->QuickBooks) and empty slots, exactly the ``CustomerContext.connections`` shape the matcher
-accepts (legacy-three-slot-context-contract §9). Its headline assertion — a Toast/Mews pair guide is NEVER
+accepts (legacy-three-slot-context-contract §9). Its headline assertion — a Toast/Mews pair guide is
+NEVER
 eligible — is the cross-matching regression guard (panel mi-match).
 
 Seeding mirrors ``test_eligibility_filter_db.py``: one page chain + one active child chunk per

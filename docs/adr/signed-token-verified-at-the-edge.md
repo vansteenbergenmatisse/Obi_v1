@@ -49,6 +49,16 @@ the host API key (caller authentication of the proxy).
    `allowed_scopes` / `allowed_sources` / `company_*` / `token_subject`; `company_*` is for
    audit only, never a scope axis. `allowed_scopes` drives every scoped read.
 
+   > **As-built note (2026-10-20).** Steps 2.6 and 3 above describe the retired
+   > knowledge-scope model. The `obi-general-test` scope no longer exists
+   > (ADR-routing-labels-sole-content-axis): `knowledge_scopes.json` holds only the reserved
+   > `classified`, and `allowed_scopes` is always empty. The all-three-or-none legacy trio
+   > (`company_id`, `company_name`, `integration`) and the slot `context` are still accepted but
+   > do not route. A tokenless request gets `general_only_context()`: no identity, no scopes, and
+   > no routing-label narrowing, so it searches all indexed pages. The directed claims
+   > `source_system` / `target_system` / `business_id` are the routing contract
+   > (ADR-directed-source-target-routing-labels). The decision text above is left as written.
+
 4. **The body never decides access.** A body `knowledge_scope` is validated for shape and
    membership only; a recognized-but-disagreeing value is logged
    (`body_knowledge_scope_ignored`) and ignored; the body `principal` is not used for scope

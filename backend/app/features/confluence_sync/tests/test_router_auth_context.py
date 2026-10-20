@@ -1,4 +1,5 @@
-"""PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop) — the /chat edge-binding proof: the verified `X-Obi-Token` (NOT the
+"""PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop) — the /chat edge-binding proof: the
+verified `X-Obi-Token` (NOT the
 request body) drives the knowledge scope that reaches the answer service.
 
 This is the security done-when for Task B1, extended with the AUTH-1 / CIP-A1 / CIP-A2 repair:
@@ -163,7 +164,8 @@ def test_body_scope_disagreeing_with_token_is_ignored(client_and_recorder) -> No
 
 def test_unknown_body_scope_is_ignored_not_400(client_and_recorder) -> None:
     client, recorder = client_and_recorder
-    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired, so a body knowledge_scope is always logged and
+    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired, so a body
+    # knowledge_scope is always logged and
     # ignored (never a 400); the verified token drives the request and the service IS reached.
     resp = _post(client, token="MEWS", knowledge_scope="obi-fake-test")
     assert resp.status_code == 200
@@ -231,7 +233,8 @@ def test_rt1_body_scope_is_accepted_and_ignored_and_token_scopes_serve(
     client_and_recorder,
 ) -> None:
     """panel r1-auth · substep 4.2 (coverage gap G4)
-    ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired. A body `knowledge_scope` that disagrees with the
+    ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired. A body
+    `knowledge_scope` that disagrees with the
     token is accepted and SILENTLY ignored (no 400, no log line — the field is deprecated and read
     by nothing); the served scopes come only from the verified token (now empty), never the body
     (never-bend rule 2 — the body never decides access)."""
@@ -340,7 +343,8 @@ def test_rt1_legacy_note_serves_identically_to_one_filled_slot(client_and_record
 def test_rt1_body_hint_never_overrides_the_note_slots(client_and_recorder) -> None:
     """panel mi-gate · substep 8.1.3
     The body never decides access under the slot form either: a body `knowledge_scope` that
-    disagrees with the structured note is accepted and silently ignored (ADR-routing-labels-sole-content-axis: the scope axis
+    disagrees with the structured note is accepted and silently ignored
+    (ADR-routing-labels-sole-content-axis: the scope axis
     is retired — no 400, no log); the served scopes stay the note's (now empty), never the body
     (never-bend rule 2)."""
     client, recorder = client_and_recorder

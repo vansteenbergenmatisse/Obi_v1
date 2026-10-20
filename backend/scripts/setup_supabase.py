@@ -1,6 +1,7 @@
 """One-off operator CLI: stand up the RAG schema + roles on managed Postgres (Supabase / RDS).
 
-Phase 6 / ADR-supabase-postgres-store-without-force-rls. Runs the *non-Alembic* half of the cutover — Alembic itself is driven
+Phase 6 / ADR-supabase-postgres-store-without-force-rls. Runs the *non-Alembic* half of the cutover
+— Alembic itself is driven
 separately (``uv run alembic upgrade head``) between ``preflight`` and ``provision-reader``. Every
 phase is idempotent and safe to re-run. **No secret is ever printed or logged**: the generated
 ``rag_reader`` password is written only into the gitignored root ``.env`` (``DATABASE_READER_URL``).
@@ -132,7 +133,8 @@ def provision_reader() -> int:
     with eng.begin() as conn:
         schema.ensure_reader_role(conn, role=_READER_ROLE, password=password)
         # Belt-and-suspenders: migrations already apply this, but re-assert ENABLE + NO FORCE so a
-        # partially-migrated instance still ends RLS-correct (ADR-supabase-postgres-store-without-force-rls). Idempotent.
+        # partially-migrated instance still ends RLS-correct
+        # (ADR-supabase-postgres-store-without-force-rls). Idempotent.
         schema.apply_chunk_rls(conn)
         # Fresh-deploy path (13.2): install the non-chunk reader read policies (migration 0009) now
         # that the role exists in this same transaction. The `alembic upgrade` in step 2 ran before
@@ -157,7 +159,8 @@ def _check_reader_halfvec(reader) -> tuple[bool, str]:
 
     On Supabase pgvector lives in the ``extensions`` schema; without ``USAGE`` + it on the reader
     ``search_path`` the reader fails with ``type "halfvec" does not exist`` — so live semantic
-    retrieval (which MUST run as the non-owner reader, ADR-source-id-row-security-with-reader-writer-roles) is broken even though chunk RLS is
+    retrieval (which MUST run as the non-owner reader,
+    ADR-source-id-row-security-with-reader-writer-roles) is broken even though chunk RLS is
     fine. We return ``(ok, detail)`` instead of raising so the summary can point at the operator
     remediation (NEXT FIXES #1: ``GRANT USAGE ON SCHEMA extensions TO rag_reader`` + ``ALTER ROLE
     rag_reader SET search_path = public, extensions``) rather than a traceback.
@@ -215,7 +218,8 @@ def _check_anon_denied(conn) -> tuple[bool, str]:
 
 
 def _check_reader_scope_axis(eng, reader, real_source: str) -> tuple[bool, str]:
-    """Prove the ADR-db-level-customer-scope-isolation-backstop / migration-0010 knowledge-scope backstop: a chunk *tagged* for one
+    """Prove the ADR-db-level-customer-scope-isolation-backstop / migration-0010 knowledge-scope
+    backstop: a chunk *tagged* for one
     customer scope is invisible to the reader under any other scope, and visible under its own.
 
     Distinct from the source axis above: that isolates by ``source_id`` (``app.allowed_sources``);
@@ -257,14 +261,16 @@ def _check_reader_scope_axis(eng, reader, real_source: str) -> tuple[bool, str]:
 
 
 def verify_isolation() -> int:
-    """Prove the ADR-source-id-row-security-with-reader-writer-roles read-path guarantee holds live: owner sees rows, reader is default-deny.
+    """Prove the ADR-source-id-row-security-with-reader-writer-roles read-path guarantee holds live:
+    owner sees rows, reader is default-deny.
 
     Meaningful only once the corpus is loaded (an empty chunk table reads 0 either way). Reads the
     real ``source_id`` set from the owner side, then checks the reader: no GUC -> 0 rows; GUC set to
     a real source -> only that source's rows; GUC set to a bogus source -> 0 rows. Then (13.2) also
     checks the reader can resolve pgvector types (dense-query path), can read its non-``chunk``
     page-ACL + curated tables (migration 0009), and that an ``anon``-like public role stays denied.
-    Finally (ADR-db-level-customer-scope-isolation-backstop / migration 0010) it proves the knowledge-scope backstop: a chunk tagged for
+    Finally (ADR-db-level-customer-scope-isolation-backstop / migration 0010) it proves the
+    knowledge-scope backstop: a chunk tagged for
     one customer scope is invisible to the reader under any other scope (the source-axis checks opt
     out of that RESTRICTIVE policy via the ``'*'`` wildcard so they still measure the source axis).
     """
@@ -296,7 +302,8 @@ def verify_isolation() -> int:
         # SET LOCAL cannot bind params; set_config(name, value, is_local=true) is the transaction-
         # scoped equivalent that can (mirrors retrieval's apply_source_scope).
         s.execute(text("SELECT set_config('app.allowed_sources', :v, true)"), {"v": real})
-        # ADR-db-level-customer-scope-isolation-backstop / 0010: the RESTRICTIVE scope policy ANDs with the source policy, so a *tagged*
+        # ADR-db-level-customer-scope-isolation-backstop / 0010: the RESTRICTIVE scope policy ANDs
+        # with the source policy, so a *tagged*
         # corpus needs the scope GUC or every tagged row drops out and this source-axis count reads
         # 0. Opt out with '*' here so this block isolates the *source* axis; the scope axis is
         # proven separately below.
@@ -321,7 +328,8 @@ def verify_isolation() -> int:
     non_chunk_ok, non_chunk_detail = _check_reader_non_chunk(reader, owner_page_sources)
     with eng.connect() as conn:
         anon_ok, anon_detail = _check_anon_denied(conn)
-    # ADR-db-level-customer-scope-isolation-backstop / 0010: prove the scope backstop — a *tagged* chunk is isolated to its own scope.
+    # ADR-db-level-customer-scope-isolation-backstop / 0010: prove the scope backstop — a *tagged*
+    # chunk is isolated to its own scope.
     scope_ok, scope_detail = _check_reader_scope_axis(eng, reader, real)
     print(f"reader halfvec    : {halfvec_detail}")
     print(f"reader non-chunk  : {non_chunk_detail}")
@@ -356,11 +364,15 @@ def verify_isolation() -> int:
             file=sys.stderr,
         )
         return 8
-    print("OK: ADR-source-id-row-security-with-reader-writer-roles read-path isolation + reader read-access hold on this instance.")
+    print(
+        "OK: ADR-source-id-row-security-with-reader-writer-roles read-path isolation + reader "
+        "read-access hold on this instance."
+    )
     return 0
 
 
-# --- ADR-routing-labels-sole-content-axis Path B: deploy-readiness gate for the fail-closed tenant backstop ----------------
+# --- ADR-routing-labels-sole-content-axis Path B: deploy-readiness gate for the fail-closed tenant
+# backstop ----------------
 # Under Path B (migration 0018 retire_knowledge_scope_rls) the fail-closed tenant fence is the
 # PERMISSIVE source policy plus RLS ENABLEd — NOT the retired knowledge-scope RESTRICTIVE policies.
 # A single PERMISSIVE SELECT policy on an RLS-enabled table is deny-by-default: the non-owner
@@ -373,12 +385,14 @@ def verify_isolation() -> int:
 #       (schema.apply_reader_rls; applied in production by `setup_supabase.py provision-reader`).
 # These are the exact policy + table names those helpers create (mirrored here as literals, as the
 # tests do). The retired chunk_scope_read / curated_knowledge_entry_scope_read policies are NOT
-# asserted — migration 0018 DROPPED them (ADR-routing-labels-sole-content-axis), so asserting them would be a false-fail.
+# asserted — migration 0018 DROPPED them (ADR-routing-labels-sole-content-axis), so asserting them
+# would be a false-fail.
 _READINESS_POLICIES = (
     ("chunk", "chunk_source_read"),
     ("curated_knowledge_entry", "curated_knowledge_entry_reader_read"),
 )
-# The routing/relevance axis (ADR-directed-source-target-routing-labels / ADR-routing-labels-sole-content-axis Path B): reported for the operator but NEVER asserted.
+# The routing/relevance axis (ADR-directed-source-target-routing-labels /
+# ADR-routing-labels-sole-content-axis Path B): reported for the operator but NEVER asserted.
 # chunk_labels_read is RESTRICTIVE and fail-OPEN by design (an unset app.allowed_labels GUC opts
 # out), so its absence is not a tenant-isolation gap — only a loss of label routing
 # (serve-to-legacy, not cross-tenant leak). Blocking the deploy on it would re-introduce the
@@ -387,7 +401,8 @@ _ROUTING_POLICY = ("chunk", "chunk_labels_read")
 
 
 def check_deploy_readiness(conn: Connection | None = None) -> int:
-    """Gate before the reader path is exposed in production (ADR-routing-labels-sole-content-axis Path B).
+    """Gate before the reader path is exposed in production (ADR-routing-labels-sole-content-axis
+    Path B).
 
     Under Path B (migration 0018 retire_knowledge_scope_rls) the fail-closed tenant fence is the
     PERMISSIVE source policy plus RLS ENABLEd — NOT the retired knowledge-scope RESTRICTIVE
@@ -412,7 +427,8 @@ def check_deploy_readiness(conn: Connection | None = None) -> int:
     was re-specified to remove.
 
     The retired ``chunk_scope_read`` / ``curated_knowledge_entry_scope_read`` policies are NOT
-    asserted (0018 dropped them, ADR-routing-labels-sole-content-axis). The former X2 empty-``tags`` census is GONE: under
+    asserted (0018 dropped them, ADR-routing-labels-sole-content-axis). The former X2 empty-``tags``
+    census is GONE: under
     Path B ``chunk.tags`` is inert for retrieval (routing rides ``chunk.labels``), so an
     empty-``tags`` active chunk is no longer "dark content" and the census is meaningless.
 

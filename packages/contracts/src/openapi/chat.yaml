@@ -113,7 +113,7 @@ paths:
         `{"visible": true}` when the verified context is servable, or
         `{"visible": false, "reason": "source_not_enabled"}` when the verified
         directed token's source system is not supported — so the frontend can
-        hide Obi before any chat round-trip. A tokenless/general-only context is
+        hide Obi before any chat round-trip. A tokenless context (not narrowed to a connection) is
         always visible. A 400 (unknown/malformed value) or 401 (bad token) hard
         failure propagates exactly as it would on `POST /chat`; it is never
         masked as `visible: false`.

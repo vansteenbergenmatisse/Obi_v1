@@ -58,14 +58,16 @@ def test_verify_isolation_passes_and_runs_reader_readpath_checks(
     assert "reader halfvec" in out and "resolves halfvec" in out
     assert "reader non-chunk" in out and "reader reads its non-chunk tables" in out
     assert "anon role" in out and "anon-denied check N/A" in out  # no `anon` role locally
-    # ADR-db-level-customer-scope-isolation-backstop scope axis: untagged corpus -> the scope check is a documented skip-as-pass.
+    # ADR-db-level-customer-scope-isolation-backstop scope axis: untagged corpus -> the scope check
+    # is a documented skip-as-pass.
     assert "scope axis" in out and "no tagged chunks" in out
 
 
 def test_verify_isolation_proves_scope_isolation_on_tagged_corpus(
     gateway, settings: Settings, capsys
 ) -> None:
-    """ADR-db-level-customer-scope-isolation-backstop / 0010 backstop: a chunk tagged for one knowledge scope is invisible to the reader
+    """ADR-db-level-customer-scope-isolation-backstop / 0010 backstop: a chunk tagged for one
+    knowledge scope is invisible to the reader
     under any other scope, yet still passes the source-axis checks (which opt out via the '*'
     wildcard). Before the extension, the source-axis `scoped` count collapsed to 0 on a tagged
     corpus (the RESTRICTIVE scope policy denies tagged rows with no scope GUC) and rc was non-zero.

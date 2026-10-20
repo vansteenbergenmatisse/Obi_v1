@@ -136,7 +136,8 @@ def _sweep_space(
 
     # CQL safety net: union in every routing-labelled page, even one no root covers. It surfaces
     # a freshly-labelled page for the worker to authorize (or reject) — the "Mews Page 2" fix. Only
-    # labelled pages come back, so this adds a small, bounded set, not the whole space. ADR-routing-labels-sole-content-axis:
+    # labelled pages come back, so this adds a small, bounded set, not the whole space.
+    # ADR-routing-labels-sole-content-axis:
     # discovery is the routing-label axis (the retired knowledge-scope set is empty).
     discovered = gateway.list_pages_by_label(
         space_id, sorted(settings.product_catalog.all_routing_labels())

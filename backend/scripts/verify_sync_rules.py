@@ -13,7 +13,8 @@ part of pytest (it needs real network + real credentials + it mutates live Confl
     └─────────────────────────────────────────────────────────────────────────────────────────┘
 
 What it drives on ONE already-synced page you name with ``--page-id`` (carrying exactly one
-recognized ROUTING label to start, e.g. ``mews-general``). Under ADR-routing-labels-sole-content-axis Path B "recognized label"
+recognized ROUTING label to start, e.g. ``mews-general``). Under
+ADR-routing-labels-sole-content-axis Path B "recognized label"
 means a routing label (``obi-general`` / ``{slug}-general`` / ``{slug}-to-{kind}``); the knowledge-
 scope ``-test`` axis is retired. Membership = published + >=1 recognized routing label.
 
@@ -350,10 +351,14 @@ def main(argv: list[str] | None = None) -> int:
         help="A second untouched indexed page — rule 8 side-check (must stay byte-identical).",
     )
     parser.add_argument(
-        "--scope-a", default="mews-general", help="First recognized routing label (ADR-routing-labels-sole-content-axis)."
+        "--scope-a",
+        default="mews-general",
+        help="First recognized routing label (ADR-routing-labels-sole-content-axis).",
     )
     parser.add_argument(
-        "--scope-b", default="toast-general", help="Second recognized routing label (ADR-routing-labels-sole-content-axis)."
+        "--scope-b",
+        default="toast-general",
+        help="Second recognized routing label (ADR-routing-labels-sole-content-axis).",
     )
     parser.add_argument(
         "--marker", default="verifymarker", help="Word to add in the rule-6 body edit."

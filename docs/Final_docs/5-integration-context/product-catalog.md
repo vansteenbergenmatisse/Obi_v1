@@ -5,14 +5,14 @@
 (pms/pos/accounting/…), and supported connection types" — note: `toast-opera` was an *illustrative*
 example only; §4 below (O8) records it exists nowhere and `legacy_aliases` is empty). It is a data
 concern, so it lives in
-`knowledge-base/config/` beside the tag map and the platform list (root `CLAUDE.md`, "Where a
-new file goes" rule 1; §D.12 item 2).
+`knowledge-base/config/` beside `knowledge_scopes.json` (now only the reserved `classified`
+label) and the platform list (root `CLAUDE.md`, "Where a new file goes" rule 1; §D.12 item 2).
 
 **The one rule above all: nothing else may define a product.** A product id, role, alias, or
 supported connection type exists in exactly this file or not at all. No backend constant, no
 frontend list, no prompt text, no test fixture defines one — they read (or will read) this file.
-This mirrors the standing rule for tags and platforms (`knowledge-base/CLAUDE.md`: "nothing else
-may define a tag or platform").
+This mirrors the standing rule for platforms and reserved labels (`knowledge-base/CLAUDE.md`:
+nothing else may define them).
 
 **Loader wired (substep 8.1.1, 2026-10-05):** `backend/app/platform/config/product_catalog.py`
 reads and validates this file at startup (fail-fast via a `Settings` model validator, the
@@ -42,20 +42,21 @@ the chunk `labels` column, the chat session and the hard filter are later Option
 
 | File | Owns | Does NOT own |
 |---|---|---|
-| `knowledge_scopes.json` | the knowledge-scope **tags** (incl. `obi-general-test`, reserved `classified`) | products |
-| `platforms.json` | trusted JWT issuers + the **integration→scope map** + per-platform vend rights | products, scope tags |
-| `product_catalog.json` | **products**: canonical ids, roles, aliases, connection types; the launch allowlist | scope tags, issuers, the integration→scope map |
+| `knowledge_scopes.json` | only the reserved **`classified`** label (the knowledge-scope axis is retired, ADR-routing-labels-sole-content-axis) | products, routing labels |
+| `platforms.json` | trusted JWT issuers + the valid **integration-claim allow-list** (the `integrations` keys; their value lists are retired and empty) + per-platform vend rights | products, routing labels |
+| `product_catalog.json` | **products**: canonical ids, roles, aliases, connection types; the launch allowlist; the slugs every routing label is validated against | issuers, the integration-claim allow-list |
 
-The catalog deliberately does **not** duplicate the integration→scope map — `platforms.json`
-already owns it (`platforms.json:10-14`), and one concept gets one source. The coupling is by
+The catalog deliberately does **not** duplicate the integration-claim allow-list —
+`platforms.json` already owns it (its `integrations` map), and one concept gets one source. The coupling is by
 id: `toast`, `mews`, `opera-cloud` here equal the integration keys there, and the loader must
 cross-check that (§6).
 
-**Why `general` is not in the catalog:** `general` is a knowledge scope
-(`obi-general-test`, `knowledge_scopes.json:4`), not a software product — no customer "runs"
+**Why `general` is not in the catalog:** general content is the routing label `obi-general`
+(`GENERAL_LABEL` in `product_catalog.py`), not a software product — no customer "runs"
 general, no slot can hold it, it joins eligibility unconditionally (§D.13 keuze 2: general
 guides are always eligible). Putting it in the catalog would make it a valid slot value, which
-is wrong. The call: it stays in `knowledge_scopes.json` only.
+is wrong. The call: `general` and the `obi-*` namespace are reserved names, never product ids
+(§3 rule 7).
 
 ## 2 · Fields
 
@@ -112,9 +113,10 @@ can mis-scope anyone, each failure naming the offending entry:
 6b. `enabled_sources` (optional; ADR-source-system-decides-widget-eligibility, formerly `enabled_targets`) — when present, every entry is an existing catalog
    canonical id; stored as a frozenset; an unknown id stops the backend at boot. Absent ⇒ all
    products enabled (no validation, feature inert).
-7. The reserved names never appear anywhere in this file: `classified`,
-   `obi-general-test`/`general`, and any `obi-*` scope-tag spelling (scope tags live in
-   `knowledge_scopes.json` only).
+7. Reserved names are never a product id, alias, legacy-alias key or connection-type key:
+   the exact names `classified` and `general`, and any name starting with `obi-` (the
+   routing-label namespace, e.g. `obi-general`) — `_RESERVED_EXACT` / `_RESERVED_PREFIX` in
+   `product_catalog.py`.
 8. Cross-check against `platforms.json`: every key of its `integrations` map is a canonical id
    (or alias) in this catalog — the two files may never disagree on what an integration claim
    value means.
@@ -150,8 +152,9 @@ a documented mechanism. If a platform ever vends a real compound value, it is ad
 its evidence named.
 
 **Alias policy:** aliases are **evidence-based only**. `operacloud` is included because that
-spelling exists in repo data (the scope tag `obi-operacloud-test`, `knowledge_scopes.json:6`,
-and §15's own example `knowledge_scopes: [toast, operacloud]`, sync-rules/plan.md:1031). No
+spelling exists in repo data (the `opera-cloud` entry's `"aliases": ["operacloud"]` in
+`product_catalog.json`, carried over from the retired scope tag of that spelling, and §15's own
+example `knowledge_scopes: [toast, operacloud]`, sync-rules/plan.md:1031). No
 invented shorthands (`qbo`, `quickbooks`, …) — an alias is added when a real legacy value is
 found in a token, a config, or an owner statement, and the addition names its evidence.
 
@@ -160,10 +163,11 @@ found in a token, a config, or an owner statement, and the addition names its ev
 1. Add one entry under `products`: canonical id (lowercase slug), `label`, one `role`,
    `aliases` (usually empty), and its supported `connection_types`. Nothing else in the
    codebase defines the product.
-2. If the product's docs get a knowledge scope: add the tag to `knowledge_scopes.json` and the
-   integration→scope mapping to `platforms.json` — those files keep owning those concepts
-   (today no scope tags exist for the accounting products; open item O9 in
-   `integration-token-decisions.md`).
+2. Label the product's Confluence pages with its routing labels (`{slug}-general`,
+   `{slug}-to-{pos|pms|accounting}`), which are validated against this catalog. No knowledge
+   scope is added: that axis is retired (ADR-routing-labels-sole-content-axis). Only if a
+   platform must assert it as a legacy `integration` claim does it also become a key of the
+   `platforms.json` `integrations` map (with an empty list).
 3. If customers should see it at launch in a POS/PMS slot: add it to `launch_allowlist`
    (an owner decision, like every visibility change).
 4. Once the loader exists: restart to pick the file up (same operational note as

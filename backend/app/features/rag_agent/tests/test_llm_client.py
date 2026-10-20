@@ -404,7 +404,8 @@ def test_generate_image_analysis_never_reaches_enforce_citations_shape() -> None
     """panel r5-image · substep p0-s0_5-reg-retrieval-stage-5
     Never: passes citation enforcement or carries a marker. Structural check, not a
     citations-module test: the call site never passes an evidence block or citation-instruction
-    prompt (ADR-vision-grounded-image-analysis decision 4) — confirms the prompt sent is just the redacted query, no
+    prompt (ADR-vision-grounded-image-analysis decision 4) — confirms the prompt sent is just the
+    redacted query, no
     `Evidence:`/marker-instruction text like `build_answer_prompt` adds."""
     seen: list[dict] = []
     generator = AnthropicAnswerGenerator(_client_capturing(seen), "answer-model")

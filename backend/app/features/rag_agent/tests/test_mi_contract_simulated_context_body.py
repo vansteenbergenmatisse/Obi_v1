@@ -5,7 +5,8 @@ simulated integration context (company_id + three §D.13 slots) onto the request
 can exercise the real pipeline. The body model accepts the SHAPE so the harness does not 400; the
 backend logs and IGNORES it in favour of the verified token/note — the body never decides access
 (never-bend rules 2–3; the integration context comes only from the verified token,
-legacy-three-slot-context-contract §4). Unit level: pure body-model + helper behavior, no DB, no network.
+legacy-three-slot-context-contract §4). Unit level: pure body-model + helper behavior, no DB, no
+network.
 """
 
 from __future__ import annotations

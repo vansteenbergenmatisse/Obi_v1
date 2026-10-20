@@ -17,7 +17,8 @@
  *                               header (present only from the Obi `/embed` frame) is forwarded to
  *                               the backend as `X-Obi-Token`, which is the actual scope authority
  *                               — the backend's `TokenVerifier` verifies it and derives
- *                               general-only access when it is absent or unverifiable. `CHAT_API_KEY`
+ *                               an un-narrowed context (all indexed pages, no connection) when it
+ *                               is absent. `CHAT_API_KEY`
  *                               is read server-side only and injected as `Authorization: Bearer`
  *                               on the *outbound* call to the backend (the host key, distinct from
  *                               the inbound JWT above); never sent to or readable by the browser.
@@ -53,7 +54,7 @@
  *                               `X-Obi-Token` (the scope authority, verified by `TokenVerifier`);
  *                               the host `CHAT_API_KEY` is injected server-side as the outbound
  *                               `Authorization` and never reaches the browser. A tokenless context
- *                               is general-only and always visible.
+ *                               is not narrowed to a connection and is always visible.
  *   C2_rate_limit:  opted_out - the backend enforces C2 authoritatively (same note as POST /chat);
  *                               a second, driftable limiter here would be redundant. The 429 is
  *                               forwarded verbatim.
@@ -82,7 +83,7 @@ const _BEARER_PREFIX = "Bearer ";
 /** Extracts the platform-signed user JWT from the incoming `Authorization` header, if present.
  * Never forwarded back out as `Authorization` (that header carries the host `chat_api_key` on the
  * outbound leg) — threaded into `callAutomationApi` as `userToken`, which sends it on its own
- * `X-Obi-Token` header (PLAN 11.1c). Absent means the tokenless/general-only path;
+ * `X-Obi-Token` header (PLAN 11.1c). Absent means the tokenless path (not narrowed to a connection);
  * never logged. */
 function extractUserToken(request: Request): string | undefined {
   const header = request.headers.get(_AUTH_HEADER) ?? "";

@@ -1,7 +1,11 @@
-"""retire the knowledge-scope RLS axis (ADR-routing-labels-sole-content-axis, superseding ADR-knowledge-scope-tagging-and-filtering/ADR-db-level-customer-scope-isolation-backstop's scope policies)
+"""retire the knowledge-scope RLS axis (ADR-routing-labels-sole-content-axis, superseding
+ADR-knowledge-scope-tagging-and-filtering/ADR-db-level-customer-scope-isolation-backstop's scope
+policies)
 
-ADR-routing-labels-sole-content-axis retires the knowledge-scope ``-test`` tag axis entirely: index membership and content
-routing now ride the ADR-directed-source-target-routing-labels routing-label axis alone (the ``chunk.labels`` column, the
+ADR-routing-labels-sole-content-axis retires the knowledge-scope ``-test`` tag axis entirely: index
+membership and content
+routing now ride the ADR-directed-source-target-routing-labels routing-label axis alone (the
+``chunk.labels`` column, the
 ``app.allowed_labels`` GUC and the ``chunk_labels_read`` RESTRICTIVE policy). This migration drops
 the two RESTRICTIVE knowledge-scope policies that implemented the retired axis:
 
@@ -23,7 +27,8 @@ source/company-isolation axis:
   scope policy re-exposes nothing to anon (unlike the 0009 downgrade; never-bend rule 1 holds).
 
 Unlike 0010/0014 — whose *downgrades* DROP these policies and are therefore blocked on Supabase —
-this migration's *upgrade* is the sanctioned, deliberate drop (fix-forward, ADR-routing-labels-sole-content-axis), and its
+this migration's *upgrade* is the sanctioned, deliberate drop (fix-forward,
+ADR-routing-labels-sole-content-axis), and its
 *downgrade* RE-APPLIES both policies (tightening, never loosening), so the downgrade is safe on any
 host and needs no Supabase guard. Idempotent via the schema helpers' ``DROP ... IF EXISTS`` /
 ``DROP`` + ``CREATE``. Reversible (never-bend rule 11).
@@ -49,7 +54,8 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     bind = op.get_bind()
-    # ADR-routing-labels-sole-content-axis: retire the knowledge-scope axis. Drops the two RESTRICTIVE scope policies; leaves
+    # ADR-routing-labels-sole-content-axis: retire the knowledge-scope axis. Drops the two
+    # RESTRICTIVE scope policies; leaves
     # chunk RLS ENABLEd with the source (lock 1) + labels (routing) policies, and leaves every
     # non-chunk fence untouched — source/company isolation is unchanged.
     schema.drop_chunk_scope_rls(bind)

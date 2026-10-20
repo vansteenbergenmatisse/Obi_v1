@@ -39,7 +39,8 @@ def apply_hnsw_gucs(session: Session, *, ef_search: int, iterative_scan: str) ->
 
 
 def apply_source_scope(session: Session, allowed_sources: Sequence[str]) -> None:
-    """Set the RLS scope GUC ``app.allowed_sources`` for this transaction (ADR-source-id-row-security-with-reader-writer-roles).
+    """Set the RLS scope GUC ``app.allowed_sources`` for this transaction
+    (ADR-source-id-row-security-with-reader-writer-roles).
 
     Uses ``set_config(..., is_local=true)`` with a **bound** parameter: ``SET LOCAL`` cannot bind,
     and interpolating the caller's source list would be an injection vector or a silent
@@ -52,26 +53,29 @@ def apply_source_scope(session: Session, allowed_sources: Sequence[str]) -> None
     )
 
 
-# The '*' sentinel is an explicit opt-out from customer-scope RLS, distinct from an unset GUC (which
-# the RESTRICTIVE `chunk_scope_read` policy reads as default-deny). Public retrieval always resolves
-# a real scope list; only the internal/eval path (`knowledge_scopes is None`) sets '*' (ADR-db-level-customer-scope-isolation-backstop).
+# The '*' sentinel opts out of the knowledge-scope GUC. That axis is RETIRED
+# (ADR-routing-labels-sole-content-axis): migration 0018 dropped the `chunk_scope_read` policy that
+# read it, and every production caller now passes None, so the GUC is always '*' and restricts
+# nothing. It is still set because the 0018 downgrade re-applies policies that read it.
 KNOWLEDGE_SCOPE_WILDCARD = "*"
 
 
 def apply_knowledge_scope(session: Session, allowed_scopes: Sequence[str] | None) -> None:
-    """Set the customer/knowledge-scope RLS GUC ``app.allowed_knowledge_scopes`` for this txn.
+    """Set the retired knowledge-scope GUC ``app.allowed_knowledge_scopes`` for this txn.
 
-    Enforces the customer-isolation backstop (ADR-db-level-customer-scope-isolation-backstop, Phase 11.1a) **independent of the
-    ``enable_knowledge_scope_filtering`` app-layer flag** — that flag only governs the redundant SQL
-    predicate; RLS always enforces so a dropped predicate or a flag flip can no longer leak.
+    RETIRED / INERT (ADR-routing-labels-sole-content-axis): migration 0018 dropped the
+    ``chunk_scope_read`` and ``curated_knowledge_entry_scope_read`` policies that read this GUC
+    (the old "lock 2"). Every production caller passes ``None``, so the value is the ``'*'``
+    wildcard and restricts nothing. The function stays because the 0018 downgrade re-applies
+    policies that read the GUC.
 
-    * ``None`` -> the ``'*'`` wildcard (unrestricted; the internal/eval opt-out). NOT unset: an
-      unset GUC fails closed and would return zero rows for every legacy caller.
-    * a list -> bound and joined; the RESTRICTIVE policy overlaps ``chunk.tags`` against it. An
-      empty list yields ``''`` -> the policy matches nothing -> default-deny (fail closed).
+    * ``None`` -> the ``'*'`` wildcard (the only value production sets).
+    * a list -> bound and joined (test/legacy path only). Under the pre-0018 policy an empty list
+      yielded ``''`` -> default-deny.
 
     Bound param, never interpolated (same injection-safety discipline as ``apply_source_scope``).
-    Binding alone is not enough, though: the policy splits the GUC with ``string_to_array(.., ',')``
+    Binding alone is not enough, though: the (pre-0018) policy splits the GUC with
+    ``string_to_array(.., ',')``
     and compares the whole value against ``'*'``, so a single *element* carrying an embedded comma
     would semantically widen to every scope it names, and a list joining to the literal ``'*'``
     would unlock the wildcard opt-out. Every production scope-GUC write funnels through here
@@ -95,15 +99,16 @@ def apply_knowledge_scope(session: Session, allowed_scopes: Sequence[str] | None
 
 
 # The '*' sentinel opts out of the routing-label filter (same spelling the chunk_labels_read policy
-# reads, migration 0016). Distinct from the scope wildcard above: labels are the relevance/routing
-# axis, NOT the access fence, so an unset/opt-out GUC fails OPEN (the legacy/slot and parent-
-# expansion paths route nothing) — source isolation (lock 1) and customer-scope isolation (lock 2)
-# stay the fail-closed boundary and are untouched by this GUC.
+# reads, migration 0016). Distinct from the retired scope wildcard above: labels are the
+# relevance/routing axis, NOT the access fence, so an unset/opt-out GUC fails OPEN (the tokenless,
+# legacy/slot and parent-expansion paths route nothing) — source isolation (chunk_source_read)
+# stays the fail-closed boundary and is untouched by this GUC.
 ALLOWED_LABELS_WILDCARD = "*"
 
 
 def apply_allowed_labels(session: Session, session_labels: Sequence[str] | None) -> None:
-    """Set the directed-connection routing GUC ``app.allowed_labels`` for this txn (ADR-directed-source-target-routing-labels D1).
+    """Set the directed-connection routing GUC ``app.allowed_labels`` for this txn
+    (ADR-directed-source-target-routing-labels D1).
 
     The RESTRICTIVE ``chunk_labels_read`` policy (migration 0016) overlaps ``chunk.labels`` against
     this value; the app-layer ``labels && :session_labels`` predicate in ``_base_filters`` mirrors
@@ -246,13 +251,14 @@ def _base_filters(
         # ix_chunk_active_source. RLS is the security net; this is the query's own predicate.
         clause += " AND source_id = ANY(:sources)"
     if knowledge_scopes is not None:
-        # PLAN 10.4 / ADR-knowledge-scope-tagging-and-filtering: array-overlap against the tags GIN index (0007_knowledge_scope).
-        # Bound, never interpolated — same discipline as `sources` above. A chunk with no
-        # knowledge-scope tag at all (empty array) overlaps nothing, so it does not participate
-        # (Decision 1: "no recognized tag -> does not participate", not a silent fallback-visible).
+        # INERT: the knowledge-scope axis is retired (ADR-routing-labels-sole-content-axis) and
+        # production callers never pass `knowledge_scopes`, so this predicate is never added.
+        # Kept for the retired PLAN 10.4 tags overlap (0007_knowledge_scope GIN index). Bound,
+        # never interpolated — same discipline as `sources` above.
         clause += " AND tags && :knowledge_scopes"
     if session_labels is not None:
-        # Option A Stage 6 / 9.4.1 (panel mi-hardfilter, ADR-directed-source-target-routing-labels D1/D2): the directed-connection
+        # Option A Stage 6 / 9.4.1 (panel mi-hardfilter, ADR-directed-source-target-routing-labels
+        # D1/D2): the directed-connection
         # routing filter, at the SAME spot as the tags overlap, against the labels GIN index
         # (ix_chunk_labels_gin, migration 0016). Bound, never interpolated (never-bend rule 10).
         # An unlabelled chunk (empty array) overlaps nothing, so it is invisible under an active

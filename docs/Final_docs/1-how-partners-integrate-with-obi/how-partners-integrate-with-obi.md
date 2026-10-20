@@ -18,7 +18,8 @@ customer (`business_id`) and the connection: a **source system** and a **target 
   **Mews, Toast or Opera Cloud** — Obi shows and answers from that connection's documentation. If it
   is not, Obi stays hidden.
 - **The target system is never checked.** One source can connect to hundreds of targets, so any
-  target is accepted. A target we have no pages for falls back to the source's own pages.
+  target is accepted. A target name that is not in our product catalog (e.g. NetSuite) falls back
+  to the source's own pages.
 - **No token means no connection.** The widget still works, but Obi does not know the customer's
   systems, so it searches all indexed Omniboost pages instead of the four for one connection (the
   routing labels narrow relevance; they are not an access fence —
@@ -34,7 +35,7 @@ The rule is recorded in
 | Embed hosts allowed | `base.development.omniboost.io` (dev), `app.omniboost.io` (live) | `datahub.omniboost.io` |
 | What works now | Widget loads; answers without a connection (no token yet) | Widget loads; answers without a connection (no token yet) |
 | Registered as a signing partner | Yes, entry `base`, **inactive** | Yes, entry `datahub`, **inactive** |
-| Blocking activation | The JWKS URL returns HTTP 500; we need a token from the deployed dev environment | Issuer and JWKS URL not received yet |
+| Blocking activation | The JWKS URL returns HTTP 500; we need a token from the deployed dev environment | Issuer, JWKS URL, token endpoint and an example token not received yet |
 
 Live facts per partner are tracked in
 [partner-facts.md](../5-integration-context/partner-facts.md). The partner pages are
@@ -54,8 +55,8 @@ Five steps, in this order. Each step names exactly what we need back.
 ## A1. Tell us where the widget will load
 
 Give us every **https origin** where Obi will appear, e.g. `https://base.development.omniboost.io`.
-Permission is per origin, so every page on that host is covered — paths and query strings don't
-matter. A page on an origin we have not listed cannot show Obi: the browser blocks it with a
+Permission is per origin (https only in production), so every page on that origin is covered —
+paths and query strings don't matter. A page on an origin we have not listed cannot show Obi: the browser blocks it with a
 `frame-ancestors` error.
 
 ## A2. Publish a signing key (JWKS)
@@ -74,7 +75,8 @@ standard JWKS document:
 - Sign with **RS256 or ES256**. Anything else (including HS256) is rejected.
 - Every key needs a **`kid`**, and every token's header must carry the `kid` it was signed with.
 - To rotate: publish the new key (new `kid`) in the JWKS first, then start signing with it. Obi
-  fetches an unknown `kid` from your JWKS on first sight.
+  refetches your JWKS when it sees an unknown `kid`, at most once every 30 seconds, so publish a
+  little before you switch.
 - Most JWT libraries generate this JSON from your key; you don't write it by hand.
 
 **We need back:** the JWKS URL, and the exact issuer string you put in `iss`.
@@ -97,9 +99,12 @@ The token's claims:
 | `aud` | yes | `"obi"` |
 | `sub` | yes | A stable id for the user. We only ever store a hash of it. |
 | `iat`, `exp` | yes | Issued-at and expiry, in epoch seconds. `exp − iat` may be at most 60 minutes. |
-| `source_system` | for answers per customer | The system the customer already has, e.g. `"Toast"`. |
-| `target_system` | for answers per customer | The system it connects to, e.g. `"NetSuite"`. Any value is accepted. |
-| `business_id` | for answers per customer | Your customer id, as a string or a number (`2108` and `"2108"` both work). |
+| `source_system` | together with the next two | The system the customer already has, e.g. `"Toast"`. |
+| `target_system` | together | The system it connects to, e.g. `"NetSuite"`. Any non-empty value is accepted; it is never judged. |
+| `business_id` | together | Your customer id, as a string or a number (`2108` and `"2108"` both work). |
+
+Send `source_system`, `target_system` and `business_id` together, each non-empty. A token that
+carries one of them without the others is malformed and refused (401).
 
 A complete example:
 
@@ -157,8 +162,8 @@ over between customers.
 | Source system in the token | Target system | What the user sees |
 |---|---|---|
 | Supported (Mews, Toast, Opera Cloud) | Any — known or not | Obi shows and answers from that connection's pages |
-| Supported | One we have no pages for | Obi shows and answers from the source's own pages plus `obi-general` |
-| Not supported or unknown (e.g. `"PEP PMS"`) | Any | Obi stays hidden — no launcher, no error |
+| Supported | Not in our product catalog (e.g. NetSuite) | Obi shows and answers from the source's own pages plus `obi-general` |
+| Not supported or unknown (e.g. `"PEP PMS"`) | Any | Obi stays hidden — no launcher, no error. (On the backend, a known product the partner may not assert is a 401 rather than a 403; the widget still never shows, because the script hides it first.) |
 | No token at all | — | Obi shows and answers from all indexed pages, not narrowed to a connection |
 | Invalid token (bad signature, wrong `iss`, expired) | — | The chat refuses the session; fix the token |
 
@@ -240,7 +245,7 @@ the label `classified` removes it. The labels in use are listed in
    one authorization context at the gate (`_build_directed_context` in
    [`auth_context.py`](../../../backend/app/features/rag_agent/application/auth_context.py)),
    searches the four labels and answers with citations.
-6. `GET /chat/visibility` answers `{"visible": false}` for an unsupported source; the frame then
+6. `GET /chat/visibility` answers `{"visible": false, "reason": "source_not_enabled"}` for an unsupported source; the frame then
    tells the loader to remove the widget (`obi:hidden`), as decided in
    [ADR-widget-hides-via-visibility-probe](../../adr/widget-hides-via-visibility-probe.md).
 
@@ -257,9 +262,9 @@ A git push does **not** deploy. Both services are uploaded from the repo root wi
 - Frontend: `scripts/deploy-frontend.sh`
   ([runbook](../../runbooks/railway-frontend-deploy.md))
 
-`obi.js` is built with two values baked in: the Obi origin and the supported-source names. A change
-to `enabled_sources` or the catalog's names therefore needs a frontend redeploy; a change to
-`platforms.json` needs both. After a deploy, check `/health` on the backend and the `/embed`
+`obi.js` is built with two values baked in: the Obi origin and the supported-source names. The
+backend loads the catalog and `platforms.json` once at startup. So any change to
+`product_catalog.json` or `platforms.json` needs both redeploys. After a deploy, check `/health` on the backend and the `/embed`
 `frame-ancestors` header on the frontend.
 
 ## B6. Troubleshooting
@@ -267,7 +272,7 @@ to `enabled_sources` or the catalog's names therefore needs a frontend redeploy;
 | Symptom | Cause | Fix |
 |---|---|---|
 | Browser: `Framing … violates … frame-ancestors` | The page's host is not on an active entry's `domains` | Add the host (B1), redeploy |
-| Widget never appears | Unsupported source in the token, or the token fetch failed | Check `source_system`; open `tokenUrl` directly |
+| Widget never appears | The token's `source_system` is unsupported or unknown (a failed token fetch does **not** hide it — the widget then loads without a token) | Check `source_system` against B2 |
 | Chat says the session is refused (401) | Bad signature, `iss` mismatch, expired token, `exp − iat` over 60 minutes, or a source the partner may not assert | Compare the token to A3 and the entry to B1 |
 | Answers are not specific to the customer's connection | No token was sent, so no routing labels apply | Check that `tokenUrl` returns `{"token": …}` |
 | Refused (401) right after a partner starts sending tokens | The partner's entry is still inactive | Activate the entry (B1) |

@@ -68,7 +68,7 @@ wiring.
    Its output is appended to the grounded answer (if any) as a clearly labeled, visually distinct
    section — never passed through `enforce_citations`, and never itself carrying a numbered
    citation marker. This keeps `citations.py`/`enforce_citations`, `refusal.py`'s existing
-   `no_citations` reason, and every other ADR-rerank-then-verify-cited-answers-governed stage of the grounded call completely
+   `no_citations` reason, and every other stage governed by ADR-rerank-then-verify-cited-answers of the grounded call completely
    untouched — the only touched decision point is `decide_refusal`'s `has_image` gate (3).
 
 5. **`Answer` gains `imageAnalysis: str | None`, not a new SSE event.** Same additive-contract
@@ -156,7 +156,7 @@ transmission avoid inventing storage and bound the resend-cost problem without a
 - `redact_pii`'s scope note grows a documented gap (image bytes are never scanned) that a future
   phase would need a real CV/NER pass to close — not invented here.
 - No change to `retrieval/**`, the reranker, citation enforcement's marker logic, or any other
-  ADR-rerank-then-verify-cited-answers-governed pipeline stage besides `decide_refusal`'s new input.
+  pipeline stage governed by ADR-rerank-then-verify-cited-answers besides `decide_refusal`'s new input.
 
 ## Paths governed
 

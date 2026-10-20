@@ -198,7 +198,7 @@ def _apply_upsert(
     # §D.0 scope restamp: cmd.scopes is authoritative (recognized_labels ∩ authorized), but
     # classify() compares only page-side state — a recognized-set or source_scope allow-list
     # edit changes neither the page nor its labels_hash. Comparing the stamped tags here is
-    # what lets the complete sweep restamp (gap A: a scope added to the tag map; gap B: a
+    # what lets the complete sweep restamp (gap A: a routing label added to the catalog; gap B: a
     # narrowed allow-list whose stale tags would keep satisfying the RLS overlap forever).
     scopes_drifted = local is not None and set(local.tags) != set(final_tags)
 
@@ -348,7 +348,8 @@ def _apply_metadata_only(
     if tags is not None:
         ps.tags = list(tags)
     if labels is not None:
-        ps.labels = list(labels)  # raw labels restamp (ADR-directed-source-target-routing-labels D3, mi-labels): no re-embed
+        # raw labels restamp (ADR-directed-source-target-routing-labels D3, mi-labels): no re-embed
+        ps.labels = list(labels)
     if applicability is not _KEEP:
         ps.applicability = applicability  # mi-applies 8.2.2: restamp (None = removed)
     ps.last_indexed_at = now

@@ -8,7 +8,8 @@ the cross-encoder *who is asking* is to put it in the two string inputs it does 
 * **(b)** a short YAML applicability block ahead of each document's text.
 
 These are **pure request-construction** helpers, not a prompt — no model is asked to reason,
-reorder or generate here (ADR-rerank-then-verify-cited-answers keeps the reranker a cross-encoder), so this lives in the
+reorder or generate here (ADR-rerank-then-verify-cited-answers keeps the reranker a cross-encoder),
+so this lives in the
 retrieval domain and no prompt text leaves ``rag_agent``. Eligibility is already enforced in
 the search SQL (8.3.1); enrichment only changes how the already-eligible candidates are
 *scored and ordered* — it never widens the set.

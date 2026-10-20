@@ -209,7 +209,8 @@ def test_hub_vends_multiple_product_integrations(tmp_path):
             integration=integration,
         )
 
-    # ADR-routing-labels-sole-content-axis: the hub may still VEND both integrations (no IntegrationNotAllowedError), but the
+    # ADR-routing-labels-sole-content-axis: the hub may still VEND both integrations (no
+    # IntegrationNotAllowedError), but the
     # knowledge-scope axis is retired, so each resolves to the empty scope set.
     assert build_auth_context(_hub_claims("mews"), reg).allowed_scopes == ()
     assert build_auth_context(_hub_claims("toast"), reg).allowed_scopes == ()

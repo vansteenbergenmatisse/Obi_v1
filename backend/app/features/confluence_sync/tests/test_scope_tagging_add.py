@@ -91,9 +91,11 @@ def test_tg_add_label_only_change_makes_page_appear_in_new_scope_on_next_questio
     retr = _retriever(settings)
 
     # Before the add: no recognized scope tag on the page's chunks, so a query scoped to
-    # mews-general never resolves it (ADR-knowledge-scope-tagging-and-filtering Decision 1: no tag -> no participation).
+    # mews-general never resolves it (ADR-knowledge-scope-tagging-and-filtering Decision 1: no tag
+    # -> no participation).
     before = retr.retrieve("Onboarding Guide", "100", k=5, knowledge_scopes=["mews-general"])
-    # ADR-routing-labels-sole-content-axis: the scope axis is retired, so `knowledge_scopes` no longer gates retrieval — the
+    # ADR-routing-labels-sole-content-axis: the scope axis is retired, so `knowledge_scopes` no
+    # longer gates retrieval — the
     # indexed page resolves regardless of the scope arg. The label-add mechanics below (tags
     # stamped, metadata-only, no re-embed) are the live behavior this test still guards.
     assert "1001" in before

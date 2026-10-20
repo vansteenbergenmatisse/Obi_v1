@@ -120,7 +120,8 @@ def test_platforms_real_file_loads(tmp_path):
         allow_empty=False,
         offline=True,
     )
-    # did not raise -> at least one active platform is present. ADR-routing-labels-sole-content-axis: the integrations map
+    # did not raise -> at least one active platform is present.
+    # ADR-routing-labels-sole-content-axis: the integrations map
     # values are empty (the knowledge-scope axis is retired), so a mapped integration resolves to
     # the empty scope set — the key stays as the valid integration-claim allow-list.
     assert reg.allowed_scopes_for("mews") == set()
@@ -167,7 +168,8 @@ def test_platforms_maps_platform_key_to_live_slugs(tmp_path):
     entry = reg.by_issuer("https://app.mews.com")
     assert entry is not None
     assert entry.key == "mews"
-    # ADR-routing-labels-sole-content-axis: no general base scope is prepended — the mapped slugs are returned as-is.
+    # ADR-routing-labels-sole-content-axis: no general base scope is prepended — the mapped slugs
+    # are returned as-is.
     assert reg.scopes_for("mews") == ["obi-mews-test"]
     assert reg.scopes_for("unknown") is None
     assert reg.active_domains() == ["app.mews.com"]
@@ -610,10 +612,12 @@ def test_platforms_local_file_allowed_integrations_match_test_hosts():
 
 
 def test_platforms_local_file_test_integrations_are_known_claims_with_empty_scopes():
-    """CIP-A1 · ADR-routing-labels-sole-content-axis · the committed platforms.local.json (the localhost embed test's registry)
+    """CIP-A1 · ADR-routing-labels-sole-content-axis · the committed platforms.local.json (the
+    localhost embed test's registry)
     keeps each test integration as a KNOWN claim value (a key of the integrations map, so the
     allowed_integrations vend check resolves) but the knowledge-scope axis is retired, so each maps
-    to the EMPTY scope set. Cross-integration content isolation is now enforced by the ADR-directed-source-target-routing-labels
+    to the EMPTY scope set. Cross-integration content isolation is now enforced by the
+    ADR-directed-source-target-routing-labels
     routing-label axis, not these scopes."""
     local_file = DEFAULT_PLATFORMS_PATH.parent / "platforms.local.json"
     reg = load_platform_registry(local_file, RECOGNIZED, allow_empty=True, offline=True)

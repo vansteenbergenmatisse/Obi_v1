@@ -1,12 +1,15 @@
 """The ``app.allowed_labels`` GUC + RESTRICTIVE ``chunk_labels_read`` policy (substep 9.1.2, D1).
 
-ADR-directed-source-target-routing-labels D1 puts the directed-connection routing filter on the RLS/GUC layer (not SQL text alone),
+ADR-directed-source-target-routing-labels D1 puts the directed-connection routing filter on the
+RLS/GUC layer (not SQL text alone),
 mirroring ``chunk_scope_read``. This stage lands the policy but the retrieval path that SETS the
 GUC is a later substep (9.4.1 / Stage 6). So the policy here is deliberately a **no-op until the
 GUC is set**: it opts out when ``app.allowed_labels`` is unset and on the explicit ``'*'`` sentinel,
 and only overlaps when a real connection-label list is set. This is sound because labels are the
-*routing/relevance* axis, not the access boundary — source isolation (ADR-source-id-row-security-with-reader-writer-roles
-``chunk_source_read``, lock 1) and customer-scope isolation (ADR-db-level-customer-scope-isolation-backstop ``chunk_scope_read``, lock 2)
+*routing/relevance* axis, not the access boundary — source isolation
+(ADR-source-id-row-security-with-reader-writer-roles
+``chunk_source_read``, lock 1) and customer-scope isolation
+(ADR-db-level-customer-scope-isolation-backstop ``chunk_scope_read``, lock 2)
 remain the fail-closed enforcement fence and are unchanged.
 
 These tests read ``chunk`` directly as the non-owner ``rag_reader`` (RLS-subject) with no app

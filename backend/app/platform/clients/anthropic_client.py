@@ -9,7 +9,8 @@ and an optional per-call input-size abuse cap (C10) — the same discipline `rer
 (a high threshold, no cap) so the existing contextualization call sites are unaffected; Phase 4.4's
 chat client construction sets both explicitly, because that call sits behind an HTTP surface for
 the first time. From PLAN 7.3, `create_message` also accepts optional multimodal `images`
-(`ImageBlock`) content blocks for the vision-grounded image analysis call (ADR-vision-grounded-image-analysis).
+(`ImageBlock`) content blocks for the vision-grounded image analysis call
+(ADR-vision-grounded-image-analysis).
 """
 
 from __future__ import annotations
@@ -39,7 +40,8 @@ class _Transient(Exception):
 
 @dataclass(frozen=True)
 class ImageBlock:
-    """One inline image for a multimodal `create_message` call (PLAN 7.3, ADR-vision-grounded-image-analysis decision 4).
+    """One inline image for a multimodal `create_message` call (PLAN 7.3,
+    ADR-vision-grounded-image-analysis decision 4).
 
     A platform-local shape, not `rag_agent`'s `ImageAttachment` — this module is `platform/**`
     and imports no features (repo boundary rule); callers convert their own DTO into this at the

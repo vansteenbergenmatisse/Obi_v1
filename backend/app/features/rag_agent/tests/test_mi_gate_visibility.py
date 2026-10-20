@@ -1,4 +1,5 @@
-"""ADR-source-system-decides-widget-eligibility (panel mi-gate / mi-contract): the HTTP surface of the source-enablement visibility
+"""ADR-source-system-decides-widget-eligibility (panel mi-gate / mi-contract): the HTTP surface of
+the source-enablement visibility
 gate — `router._resolve_auth_context`'s 403 mapping and the read-only `GET /chat/visibility`
 probe (`router._visibility_payload`).
 

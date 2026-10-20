@@ -1,5 +1,7 @@
 # Confluence trigger layer — split trigger from ingestion
 
+> **Historical (pre-migration 0018):** the obi-*-test tags below are retired; see ADR-routing-labels-sole-content-axis.
+
 ## Context
 
 **Problem that started this.** A published page "Mews Page 2" (id `1712324611`, space `701857803`) with the valid tag `obi-mews-test` was never ingested. Root cause: discovery depends on `source_scope` roots, not tags — the sweep drops any page not under a root at `reconciliation.py:169`, before the (already correct) tag-based membership logic in `sync_service.handle_sync_page` ever runs. Webhooks are dead (`event_ledger` empty, unreachable in dev).

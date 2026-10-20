@@ -95,7 +95,8 @@ def test_r1_clarify_otherwise_exactly_one_classifier_call() -> None:
 
 
 def test_history_is_accepted_but_not_required_to_be_non_empty() -> None:
-    """Signature compatibility (ADR-ambiguity-clarification-then-fallback-answer decision 1) — history isn't consulted yet (see module
+    """Signature compatibility (ADR-ambiguity-clarification-then-fallback-answer decision 1) —
+    history isn't consulted yet (see module
     docstring), but passing a real one must not raise or change the outcome."""
     classifier = _FakeClassifier(verdict=True)
     history = [

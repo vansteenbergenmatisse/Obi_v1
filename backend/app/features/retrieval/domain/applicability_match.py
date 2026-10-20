@@ -18,7 +18,8 @@ The semantics of record (§D.4, panel mi-match):
   connection (both §D.2 directions); PMS+Accounting filled → the PMS–Accounting
   connection. A direct POS–Accounting pair is NEVER derived from three filled slots —
   it needs a real connection record (§D.13/O1), which the launch token cannot carry
-  (legacy-three-slot-context-contract §5.2); :class:`CustomerContext.connections` is where such records
+  (legacy-three-slot-context-contract §5.2); :class:`CustomerContext.connections` is where such
+  records
   land when a future context carries them.
 - **Incomplete context asks, never broadens.** A rule blocked only by configuration the
   context does not carry (an empty slot, an unknown host platform, an unverifiable
@@ -72,7 +73,8 @@ class CustomerContext:
     """The verified customer context the matcher sees: the three §D.13 slots (one
     canonical id or None each, exactly the gate's ``AuthContext`` slot fields), the
     host platform key (platforms.json; None when unknown), and any REAL connection
-    records — empty at launch, the token cannot express one (legacy-three-slot-context-contract §9)."""
+    records — empty at launch, the token cannot express one (legacy-three-slot-context-contract
+    §9)."""
 
     slot_pos: str | None = None
     slot_pms: str | None = None
@@ -119,7 +121,8 @@ def derive_connections(
 ) -> tuple[ConnectionRecord, ...]:
     """The launch pairs: one derived connection per derivable catalog type whose every
     role slot is filled with a product that supports that connection family. All of the
-    type's §D.2 directions are enabled (legacy-three-slot-context-contract §5.2: "both directions")."""
+    type's §D.2 directions are enabled (legacy-three-slot-context-contract §5.2: "both
+    directions")."""
     out: list[ConnectionRecord] = []
     for type_key in sorted(catalog.connection_types):
         roles = catalog.connection_types[type_key]

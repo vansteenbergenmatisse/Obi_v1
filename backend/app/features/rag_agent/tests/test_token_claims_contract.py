@@ -51,7 +51,8 @@ def test_business_claims_are_all_three_or_none() -> None:
 
 def test_directed_connection_form_is_published_and_optional() -> None:
     """panel mi-contract · substep 9.3.1
-    The directed source → target form (ADR-directed-source-target-routing-labels) is published in the contract: source_system,
+    The directed source → target form (ADR-directed-source-target-routing-labels) is published in
+    the contract: source_system,
     target_system and business_id are declared properties, none added to the REQUIRED registered
     claims (they are an OPTIONAL third business-claim form, like `context`)."""
     schema = _schema()

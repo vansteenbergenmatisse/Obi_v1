@@ -1,8 +1,10 @@
-"""Operator CLI: backfill the raw-labels column on existing chunks (ADR-directed-source-target-routing-labels D1, substep 9.1.2).
+"""Operator CLI: backfill the raw-labels column on existing chunks
+(ADR-directed-source-target-routing-labels D1, substep 9.1.2).
 
 Stamps each indexed page's raw Confluence labels (the unresolved ``get_labels`` output) onto its
 ``page_source`` row and active chunks, for a corpus indexed before migration 0016 added the column.
-This is the backfill ADR-directed-source-target-routing-labels D0 / plan Stage 7 calls after the Confluence relabel; the live
+This is the backfill ADR-directed-source-target-routing-labels D0 / plan Stage 7 calls after the
+Confluence relabel; the live
 label-change path already stamps the column going forward.
 
 Idempotent — safe to run twice. Reads raw labels through the live Confluence gateway (the same one

@@ -10,7 +10,8 @@
  * handed over by the host's `obi.js` loader via `postMessage`; it rides on `Authorization: Bearer`
  * so the proxy (`server/route-handlers.ts`) can thread it to the backend as `X-Obi-Token`. No
  * token (the un-embedded/default app shell) means no `Authorization` header at all — the backend
- * degrades that to its general-only scope, never an error.
+ * treats that as a tokenless chat not narrowed to a connection (all indexed pages), never an
+ * error.
  */
 import type {
   ChatCitationsEvent,

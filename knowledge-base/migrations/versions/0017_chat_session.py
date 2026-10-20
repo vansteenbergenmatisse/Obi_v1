@@ -10,7 +10,8 @@ the row instead of re-resolving (never-bend rule 8). A partner switch refires ch
 replaces the labels + block in place (D7). ``source_slug``/``target_slug`` are nullable: an
 unrecognized system leaves ``labels = {obi-general}`` and an "unknown" connection block (step 5).
 
-The table is written + read via the writer (owner) engine, which bypasses RLS (ADR-supabase-postgres-store-without-force-rls NO FORCE),
+The table is written + read via the writer (owner) engine, which bypasses RLS
+(ADR-supabase-postgres-store-without-force-rls NO FORCE),
 so the chat path is unaffected. RLS is still ENABLEd with NO policy so the Supabase public REST
 roles (anon/authenticated, which hold a blanket GRANT SELECT) are default-denied — the same Phase
 13.1 rationale that keeps every non-chunk table fenced (never-bend rule 1). No GUC, no policy: the
@@ -59,7 +60,8 @@ def upgrade() -> None:
         ")"
     )
     # Fence the Supabase public REST roles out (Phase 13.1 / rule 1): RLS ENABLEd with no policy
-    # default-denies every non-owner role; the writer (owner) bypasses it (ADR-supabase-postgres-store-without-force-rls NO FORCE).
+    # default-denies every non-owner role; the writer (owner) bypasses it
+    # (ADR-supabase-postgres-store-without-force-rls NO FORCE).
     bind = op.get_bind()
     bind.execute(text(f"ALTER TABLE {_TABLE} ENABLE ROW LEVEL SECURITY"))
 

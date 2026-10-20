@@ -1,7 +1,8 @@
 """Pure decision tests for the trigger layer — one case per row of the event→command table.
 
 No DB, no gateway: :func:`decide_command` is a pure function of the page's current
-state. ADR-routing-labels-sole-content-axis: membership is the ROUTING-label axis (``obi-general`` / ``{slug}-general`` /
+state. ADR-routing-labels-sole-content-axis: membership is the ROUTING-label axis (``obi-general`` /
+``{slug}-general`` /
 ``{slug}-to-{kind}`` from the product catalog), so the cases are parametrized over every recognized
 routing label — no single label (``mews-general``) is special-cased.
 """
@@ -21,7 +22,8 @@ from app.platform.clients import ConfluencePageMeta
 from app.platform.config.product_catalog import load_product_catalog
 from schema.models import SourceScope
 
-# ADR-routing-labels-sole-content-axis: a page's membership is decided on the routing-label set, not the retired knowledge
+# ADR-routing-labels-sole-content-axis: a page's membership is decided on the routing-label set, not
+# the retired knowledge
 # scopes. The decision function is generic over whatever "recognized" set it is handed.
 RECOGNIZED = load_product_catalog().all_routing_labels()
 SPACE_ID = 701857803

@@ -9,7 +9,8 @@ Produces two chunk tiers per page, following the plan's sizing and split priorit
 
 Splitting descends structural boundaries: page -> heading section -> block (table/code kept whole)
 -> paragraph -> sentence/word -> token (only an over-long token-less blob is cut mid-word). Each
-chunk carries the three keys the incremental diff relies on (ADR-hybrid-retrieval-over-versioned-chunk-store / plan "stable identity"):
+chunk carries the three keys the incremental diff relies on
+(ADR-hybrid-retrieval-over-versioned-chunk-store / plan "stable identity"):
 
 * ``section_key``  — identity of the owning section, independent of edits to *other* sections;
 * ``positional_key`` — where the chunk sits (section + ordinals), independent of its text;

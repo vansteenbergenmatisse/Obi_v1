@@ -1,6 +1,7 @@
 """panel mi-route · substep 9.1.1 — the catalog resolves a directed connection.
 
-Option A (ADR-directed-source-target-routing-labels, D4/D7): every chat is one directed source→target connection
+Option A (ADR-directed-source-target-routing-labels, D4/D7): every chat is one directed
+source→target connection
 and the catalog turns that pair into exactly four ordered Confluence label boxes —
 ``obi-general``, ``{source.slug}-general``, ``{target.slug}-general``,
 ``{source.slug}-to-{target.kind}`` (kind = the target product's role). ``resolve_system``

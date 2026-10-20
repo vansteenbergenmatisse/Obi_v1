@@ -4,7 +4,8 @@ On Supabase pgvector is installed into an ``extensions`` schema (not ``public``)
 role is granted no ``USAGE`` there and has ``extensions`` off its ``search_path``. Every dense query
 (``embedding::halfvec(dim)``) then fails as ``rag_reader`` with ``type "halfvec" does not exist`` /
 ``permission denied for schema extensions`` — so live semantic retrieval, which MUST run as
-the non-owner reader (ADR-source-id-row-security-with-reader-writer-roles), is broken. ``schema.ensure_reader_role`` must therefore grant it
+the non-owner reader (ADR-source-id-row-security-with-reader-writer-roles), is broken.
+``schema.ensure_reader_role`` must therefore grant it
 ``USAGE`` on the ``extensions`` schema and add it to the role ``search_path`` whenever that schema
 exists (a local/RDS install puts pgvector in ``public``, where the reader is already covered).
 
@@ -352,7 +353,8 @@ def test_vd_rls_forbidden_rows_nearest_neighbor_hit_is_never_returned(session: S
 
 def test_s_source_separates_whole_source_systems_by_source_id(session: Session) -> None:
     """panel s-source · substep p0-s0_5-reg-security
-    ADR-source-id-row-security-with-reader-writer-roles Lock 1: RLS separates whole source systems by ``source_id``, not just individual
+    ADR-source-id-row-security-with-reader-writer-roles Lock 1: RLS separates whole source systems
+    by ``source_id``, not just individual
     pages within one connector. Two *different* source systems (a Confluence page and a Zendesk
     page, distinct ``source_type``s and ``source_id``s) both carry a chunk that would match the
     same query — the Zendesk chunk is seeded strictly nearer to it than the Confluence one. A

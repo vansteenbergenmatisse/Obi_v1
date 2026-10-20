@@ -10,7 +10,7 @@ docs/future-ideas/IDEAS.md
 ## Context
 
 `docs/adr/README.md` (2026-08-10) reversed ADR-defer-product-and-package-extraction's deferral
-and scheduled the split as `docs/rag/PLAN.md` Phase 4.8, ahead of any second product/deployment, for
+and scheduled the split as `docs/rag/PLAN.md` (removed) Phase 4.8, ahead of any second product/deployment, for
 separation-of-concerns and independent-deployability reasons. That phase never started — it sat
 blocked on three "needs your input" decisions (registry choice, two new repo names, origin-monorepo
 fate) through Phase 7's entire lifecycle.
@@ -27,7 +27,7 @@ plan.
 
 1. **Re-defer the split.** ADR-separate-frontend-backend-repos's Decision item 1 ("split now, ahead of a second product") is
    reversed. ADR-defer-product-and-package-extraction's original Decision items 1–2 (no structural change now) are back in force.
-2. **Phase 4.8 is removed from `docs/rag/PLAN.md`'s active scope.** Its content (goal, all seven
+2. **Phase 4.8 is removed from `docs/rag/PLAN.md` (removed)'s active scope.** Its content (goal, all seven
    sub-steps, the three open decisions) moves to `docs/future-ideas/IDEAS.md` as a fully-detailed,
    unscheduled idea — not deleted, per that file's own history-preservation convention.
 3. **Phase 9's sequencing simplifies.** Phase 9 (9.2 onward) was sequenced after "Phase 7 + Phase
@@ -59,7 +59,7 @@ CI/secrets split, doc updates) from being lost, without it blocking Phase 9 or f
   blocked since 2026-08-10 with no path to an answer; keeping it in the active plan misrepresents it
   as near-term work.
 - **Delete the phase's content outright instead of moving it.** Rejected: violates this project's
-  documentation discipline (nothing gets silently dropped — see `docs/rag/fixes/` and IDEAS.md's own
+  documentation discipline (nothing gets silently dropped — see `docs/rag/fixes/` (removed) and IDEAS.md's own
   "not deleting history" convention); the detailed sub-step breakdown is real design work worth
   keeping for whenever this is revisited.
 - **Amend ADR-separate-frontend-backend-repos in place rather than writing a new ADR.** Rejected: same reasoning ADR-separate-frontend-backend-repos itself
@@ -68,7 +68,7 @@ CI/secrets split, doc updates) from being lost, without it blocking Phase 9 or f
 
 ## Consequences
 
-- `docs/rag/PLAN.md`'s Phase 4.8 section, its status-ledger references, its phase-table row, and its
+- `docs/rag/PLAN.md` (removed)'s Phase 4.8 section, its status-ledger references, its phase-table row, and its
   Phase-9 sequencing text are all updated to remove the phase and drop the "+ Phase 4.8" dependency.
 - `docs/future-ideas/IDEAS.md` gains a new, fully-detailed idea entry (registry options, extraction
   mechanics, monorepo-fate options, CI/secrets split, doc updates, the three open decisions) so no
@@ -81,4 +81,4 @@ CI/secrets split, doc updates) from being lost, without it blocking Phase 9 or f
 ## Paths governed
 
 `frontend/**`, `backend/**`, `packages/contracts/**`, `packages/design-tokens/**`,
-`docs/rag/PLAN.md`, `docs/future-ideas/IDEAS.md`, `docs/adr/defer-product-and-package-extraction.md`, ADR-separate-frontend-backend-repos (deleted).
+`docs/rag/PLAN.md` (removed), `docs/future-ideas/IDEAS.md`, `docs/adr/defer-product-and-package-extraction.md`, ADR-separate-frontend-backend-repos (deleted).

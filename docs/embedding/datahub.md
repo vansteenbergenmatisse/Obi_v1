@@ -23,7 +23,7 @@ systems a Data Hub customer connects, not platforms that embed Obi.
 ## What is live today
 
 `datahub.omniboost.io` is on the `/embed` frame CSP through the temporary `obi-test` platform, so
-the widget can load there and answer **general-only** questions. No Data Hub-signed token is
+the widget can load there and answer questions **not narrowed to a connection** (all indexed pages). No Data Hub-signed token is
 honoured until the `datahub` entry has real values and goes active.
 
 ## What the Data Hub will send

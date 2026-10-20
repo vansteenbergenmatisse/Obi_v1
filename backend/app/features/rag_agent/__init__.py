@@ -1,6 +1,7 @@
 """rag_agent feature: the grounded answer runtime over the Phase 3.5 retrieval spine.
 
-A fixed, testable workflow (not an agent loop, ADR-rerank-then-verify-cited-answers §5): conversational rewrite →
+A fixed, testable workflow (not an agent loop, ADR-rerank-then-verify-cited-answers §5):
+conversational rewrite →
 RLS-scoped retrieve → RRF → cross-encoder rerank → parent-context expansion → grounded
 generation with forced citations → refusal threshold → at most one CRAG retry → SSE.
 

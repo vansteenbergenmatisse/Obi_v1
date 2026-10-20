@@ -52,7 +52,8 @@ class _SpySession:
 
 
 def _select_call(s: _SpySession) -> tuple[str, dict[str, Any]]:
-    """The curated SELECT among the spy's calls (the first call is now the ADR-db-level-customer-scope-isolation-backstop scope-GUC
+    """The curated SELECT among the spy's calls (the first call is now the
+    ADR-db-level-customer-scope-isolation-backstop scope-GUC
     `set_config`, which does not touch `curated_knowledge_entry`)."""
     return next(c for c in s.calls if "curated_knowledge_entry" in c[0])
 
@@ -62,7 +63,8 @@ def _guc_call(s: _SpySession) -> tuple[str, dict[str, Any]]:
 
 
 def test_fetch_curated_entries_opts_the_scope_guc_out_before_reading() -> None:
-    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired, so the scope GUC is opted OUT (wildcard '*')
+    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired, so the scope GUC is
+    # opted OUT (wildcard '*')
     # before the SELECT, independent of what allowed_scopes the caller passes. The GUC-set is still
     # the first statement (it runs before the read).
     s = _SpySession()
@@ -89,7 +91,8 @@ def test_fetch_curated_entries_binds_a_malicious_scope_value_never_reaches_raw_s
     sql, params = _select_call(s)
     assert payload not in sql
     assert params["allowed_scopes"] == [payload]
-    # ADR-routing-labels-sole-content-axis: the scope GUC is opted out ('*'), so the malicious value never reaches the GUC
+    # ADR-routing-labels-sole-content-axis: the scope GUC is opted out ('*'), so the malicious value
+    # never reaches the GUC
     # set_config at all; the app-overlap SELECT still binds it as a parameter (never interpolated).
     guc_sql, guc_params = _guc_call(s)
     assert payload not in guc_sql

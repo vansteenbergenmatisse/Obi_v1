@@ -1,7 +1,9 @@
-"""Substep 9.3.1 + ADR-source-system-decides-widget-eligibility (panels mi-gate / mi-contract): `build_auth_context` accepts the
+"""Substep 9.3.1 + ADR-source-system-decides-widget-eligibility (panels mi-gate / mi-contract):
+`build_auth_context` accepts the
 directed source → target connection form (Option A, ADR-directed-source-target-routing-labels).
 
-ADR-source-system-decides-widget-eligibility (owner, 2026-10-20): only the SOURCE system decides eligibility. A source can have
+ADR-source-system-decides-widget-eligibility (owner, 2026-10-20): only the SOURCE system decides
+eligibility. A source can have
 hundreds of targets, so the target is assumed supported and never checked — an unknown target is
 carried as `target_slug=None`. The source must resolve in the catalog, be vendable by the issuer
 (401 otherwise) and be in `enabled_sources` (403 otherwise; an unknown source is also 403, so Obi
@@ -134,15 +136,18 @@ def test_rt1_directed_target_is_never_vend_checked(tmp_path):
 
 def test_rt1_directed_accounting_target_is_first_class(tmp_path):
     """panel mi-gate · substep 9.3.1
-    ADR-directed-source-target-routing-labels D5: accounting is a first-class target — a mews → xero (PMS → accounting) connection
-    is accepted, and since ADR-source-system-decides-widget-eligibility the target's own enablement is never checked."""
+    ADR-directed-source-target-routing-labels D5: accounting is a first-class target — a mews → xero
+    (PMS → accounting) connection
+    is accepted, and since ADR-source-system-decides-widget-eligibility the target's own enablement
+    is never checked."""
     reg = _registry(tmp_path, ["mews", "xero"])
     ctx = build_auth_context(_directed(source="mews", target="xero"), reg)
     assert ctx.source_slug == "mews"
     assert ctx.target_slug == "xero"
 
 
-# --- ADR-source-system-decides-widget-eligibility (panel mi-gate): the source-enablement visibility gate (after vend rights) ---
+# --- ADR-source-system-decides-widget-eligibility (panel mi-gate): the source-enablement visibility
+# gate (after vend rights) ---
 
 
 def test_mi_gate_directed_refuses_disabled_source(tmp_path):

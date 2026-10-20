@@ -1,8 +1,8 @@
 # Runbook — ADR-routing-labels-sole-content-axis production migration & deploy (0014 → head/0018)
 
 **Status: EXECUTED on 2026-10-13.** Production went from `0014` to `0018` and the Path B backend
-was redeployed (commit `3178553`; see the ledger entries "ADR-0021 Path B production cutover" and
-"ADR-0021 Path B live verification"). The procedure below is kept as the record of how it was done
+was redeployed (commit `3178553`; see the two 2026-10-13 ledger entries for the Path B production cutover and
+its live verification). The procedure below is kept as the record of how it was done
 and as the rollback reference.
 
 Why now: the Path B code (ADR-routing-labels-sole-content-axis) is complete and green locally, but it writes/reads the

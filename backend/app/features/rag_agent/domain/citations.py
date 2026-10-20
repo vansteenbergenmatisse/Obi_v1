@@ -1,6 +1,7 @@
 """Citation enforcement (pure): strip uncited claims before an answer is returned.
 
-Groundedness is enforced in code, not merely prompted (ADR-rerank-then-verify-cited-answers §6). The generator is
+Groundedness is enforced in code, not merely prompted (ADR-rerank-then-verify-cited-answers §6). The
+generator is
 told to cite every claim with a numbered marker (``[1]``, ``[2]``, …) that indexes a
 retrieved page. This pass is the enforcement:
 

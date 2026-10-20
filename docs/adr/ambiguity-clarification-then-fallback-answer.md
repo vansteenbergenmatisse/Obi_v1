@@ -150,7 +150,7 @@ before the business has decided where it should actually go.
 - The human hand-off stays a log line + static CTA until a future phase adds a real integration;
   fallback-rate metrics (9.7) measure how often this CTA fires, giving a real number to justify (or
   not) building the Salesforce integration later.
-- No change to `retrieval/**`, the reranker, or any ADR-rerank-then-verify-cited-answers-governed pipeline stage.
+- No change to `retrieval/**`, the reranker, or any pipeline stage governed by ADR-rerank-then-verify-cited-answers.
 
 ## Paths governed
 

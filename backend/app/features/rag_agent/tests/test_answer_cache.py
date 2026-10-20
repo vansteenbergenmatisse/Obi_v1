@@ -2,7 +2,8 @@
 `AnswerProvider` — no network, no DB. Asserts on *call count* into the inner provider, not just
 the returned `Answer`, since the whole point of the cache is to skip that work.
 
-PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): the cache is now keyed off the frozen `AuthContext` — a hit can never
+PLAN 11.1c (ADR-db-level-customer-scope-isolation-backstop): the cache is now keyed off the frozen
+`AuthContext` — a hit can never
 cross a principal, a knowledge-scope allow-list, or a token-subject boundary."""
 
 from __future__ import annotations
@@ -162,7 +163,8 @@ def test_different_token_subject_is_not_served_from_cache() -> None:
 
 
 def test_cip3_distinct_token_subjects_never_share_a_cache_key_or_entry() -> None:
-    """gap CIP-3 · ADR-db-level-customer-scope-isolation-backstop. Two verified users with byte-for-byte identical history (and identical
+    """gap CIP-3 · ADR-db-level-customer-scope-isolation-backstop. Two verified users with
+    byte-for-byte identical history (and identical
     principal/scopes) must never collide in the answer cache: the `token_subject` is part of the
     key, so their keys differ AND a first user's entry is never replayed to the second. Asserts BOTH
     the key-level property (no collision by construction) and the behavioral one (no cross-subject

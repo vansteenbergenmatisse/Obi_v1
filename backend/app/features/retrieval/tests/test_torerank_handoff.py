@@ -186,7 +186,8 @@ def test_rt3_torerank_fetches_text_in_same_transaction_same_scope(
     # the exact same scope the searches ran under is what the text fetch used
     assert scope_by_call["fetch_rerank_texts"] == scope_by_call["keyword_search"]
     assert scope_by_call["fetch_rerank_texts"] == scope_by_call["dense_search"]
-    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired, so no scope list is threaded (the scope GUC is
+    # ADR-routing-labels-sole-content-axis: the knowledge-scope axis is retired, so no scope list is
+    # threaded (the scope GUC is
     # opted out to wildcard); the invariant that all three calls share ONE scope in ONE transaction
     # still holds — now with None. Source scope is unchanged.
     assert scope_by_call["fetch_rerank_texts"] == (

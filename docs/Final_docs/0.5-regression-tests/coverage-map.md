@@ -662,7 +662,7 @@ row's citation is literally named for its own panel, same bar as the security/ve
   Constructor args are asserted via a spy on `main.HybridRetriever`, not private `_embedder` state.
 - `cm-docs` (3 checks: ADR-fastapi-nextjs-postgres-pgvector-stack stack = Postgres+pgvector/FastAPI/Next.js; 0002 retrieval core =
   hybrid/RRF/versioned store; 0003 feature boundaries) — 3 new unit tests in
-  `apps/automation/tests/test_cm_docs.py`, each reads `docs/adr/000X-*.md` and asserts the named
+  `apps/automation/tests/test_cm_docs.py`, each reads one ADR file under `docs/adr/` and asserts the named
   terms (repo root walked up from the test file, ADRs live outside `apps/automation`). Disclosed:
   ADR-hybrid-retrieval-over-versioned-chunk-store writes the concept in full as "Reciprocal Rank Fusion" and never uses the acronym "RRF";
   the test asserts the full phrase (whitespace-collapsed) and guards that "RRF" is absent, with a

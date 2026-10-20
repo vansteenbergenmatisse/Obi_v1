@@ -5,7 +5,8 @@ on a page's **current** state, so the two paths can never disagree — the event
 table in ``docs/plans/confluence-trigger-layer.md`` is this one function applied
 to the state *after* each event, with only ``reason`` differing.
 
-Membership has two independent gates, both required (ADR-routing-labels-sole-content-axis: the ``recognized``
+Membership has two independent gates, both required (ADR-routing-labels-sole-content-axis: the
+``recognized``
 set is the ROUTING-label axis — ``obi-general`` / ``{slug}-general`` /
 ``{slug}-to-{kind}`` from the product catalog — the retired knowledge-scope
 ``-test`` tags no longer exist):

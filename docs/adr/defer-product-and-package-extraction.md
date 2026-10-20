@@ -72,7 +72,7 @@ existing tag model, not part of this ADR.
 
 6. **Trigger to revisit:** a committed launch decision for Muse (or any second product) **and** a
    real second Postgres connection target. At that point, open an ADR-gated phase (mirroring how
-   Phase 6/Supabase and the Bedrock future-direction note in `docs/rag/PLAN.md` are already handled)
+   Phase 6/Supabase and the Bedrock future-direction note in `docs/rag/PLAN.md` (removed) are already handled)
    before doing any extraction work — not an ad hoc refactor.
 
 ## Reason

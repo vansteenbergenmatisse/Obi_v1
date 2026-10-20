@@ -22,7 +22,7 @@ export interface TestHostConfig {
   kid: string;
   privateKeyEnv: string;
   publicKeyEnv: string;
-  /** `null` for `none` — a note with no business values (general-only, per ADR-db-level-customer-scope-isolation-backstop). */
+  /** `null` for `none` — a note with no business values (not narrowed to a connection: all indexed pages). */
   businessClaims: { company_id: string; company_name: string; integration: string } | null;
   /** Directed source → target connection claims (substep 9.3.1, ADR-directed-source-target-routing-labels Option A). When the mint
    * route is asked for the directed form (`?form=directed`) it emits THESE instead of
