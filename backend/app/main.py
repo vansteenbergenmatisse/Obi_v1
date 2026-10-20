@@ -33,9 +33,9 @@ from app.features.rag_agent import (
     AnthropicAnswerGenerator,
     AnthropicQueryRewriter,
     CachingAnswerService,
-    TargetNotEnabledHTTPError,
+    SourceNotEnabledHTTPError,
     TokenVerifier,
-    render_target_not_enabled,
+    render_source_not_enabled,
 )
 from app.features.rag_agent import router as chat_router
 from app.features.retrieval import HybridRetriever, PrincipalPermissionPolicy
@@ -229,7 +229,7 @@ def create_app(*, settings: Settings | None = None, start_scheduler: bool | None
     # Task 5: render the target-enablement 403 as a top-level {error, reason} body (chat.yaml's
     # Error schema), not FastAPI's default {"detail": ...} — the feature owns the renderer; this
     # is wiring only. Scoped to the custom exception type, so no other error's shape changes.
-    app.add_exception_handler(TargetNotEnabledHTTPError, render_target_not_enabled)
+    app.add_exception_handler(SourceNotEnabledHTTPError, render_source_not_enabled)
 
     @app.get("/health")
     def health() -> dict:

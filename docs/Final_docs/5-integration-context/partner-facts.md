@@ -34,8 +34,8 @@ routing identity in `auth_context.py:173-230`.
 
 ## Base — Marien
 
-**Status (2026-10-16): entry written to `platforms.json` as `base`, still `active: false`. Facts 1 and 3
-received; 2 received but not yet working; 4 and 5 partly.** Marien replied on 2026-10-16. Base and
+**Status (2026-10-16): entry written to `platforms.json` as `base`, still `active: false`. Facts 1, 3 and 4
+received; 2 received but not yet working (HTTP 500, rechecked 2026-10-20); 5 partly (`/obi/token` on dev answers 401, i.e. it exists behind login).** Marien replied on 2026-10-16. Base and
 Data Hub are two separate integrations on two different sites (owner, 2026-10-16), so Base has its
 own entry rather than sharing `datahub`.
 
@@ -44,7 +44,7 @@ own entry rather than sharing `datahub`.
 | 1 · Issuer | **received (dev)** | `https://base.development.omniboost.io`, now the `base` entry's `issuer` | the token from the deployed dev environment must carry exactly this `iss` (Marien's example token carried `http://app.omniboost.io.test`, his local machine). The **live** issuer for `app.omniboost.io` is still to come. |
 | 2 · JWKS URL | **received, not working** | `https://base.development.omniboost.io/obi/jwks`, RS256, keyed by `kid` | it returned **HTTP 500 (HTML)** on 2026-10-16. It must serve JSON `keys` before `base` can go active. |
 | 3 · Embed domains | **confirmed** | `base.development.omniboost.io` (dev) and `app.omniboost.io` (live), both https. The CSP works per origin, so every page on those hosts (e.g. `/integrations/integration-settings?...`) is covered. | none. Both hosts are live on the `/embed` CSP today through `obi-test` (general-only chat). |
-| 4 · Source/target ids | **format confirmed, values partly unknown** | example payload: `aud:"obi"`, `sub:"5"`, 5-minute lifetime, `source_system:"PEP PMS"`, `target_system:"NetSuite"`, `business_id: 2108` (an integer). Base sends display names; the gate resolves names case-insensitively (`auth_context.py:215-218`). An integer `business_id` is accepted since 2026-10-16 (normalized to `"2108"`). | **PEP PMS and NetSuite are not in `product_catalog.json`**, so this example token is refused with a 400 before search. Owner to decide: add them to the catalog (PEP PMS = PMS, NetSuite = accounting), or have Base only vend supported systems. |
+| 4 · Source/target ids | **format confirmed, values partly unknown** | example payload: `aud:"obi"`, `sub:"5"`, 5-minute lifetime, `source_system:"PEP PMS"`, `target_system:"NetSuite"`, `business_id: 2108` (an integer). Base sends display names; the gate resolves names case-insensitively (`auth_context.py:215-218`). An integer `business_id` is accepted since 2026-10-16 (normalized to `"2108"`). | none — resolved by ADR-0023 (owner, 2026-10-20): **only the source system decides**. Base sends the customer's real systems unchanged. A supported source (Mews, Toast, Opera Cloud) shows Obi for ANY target, NetSuite included; an unsupported or unknown source (this example's PEP PMS) hides Obi instead of erroring. |
 | 5 · Token endpoint | **received for local only** | `https://app.omniboost.io.test/obi/token?property_id=…&source_software_name=…&destination_software_name=…` | `.test` is Marien's local machine and is not reachable. We need the deployed dev URL. |
 
 **Special requirement — multi-customer context switch (Marien, confirmed).** One Base user can reach

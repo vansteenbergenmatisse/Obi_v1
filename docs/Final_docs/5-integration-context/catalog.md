@@ -83,13 +83,14 @@ Top-level keys:
   allowed at launch (`pos: [toast]`, `pms: [mews]`). A **filled** POS/PMS slot outside this list
   hides Obi; an **empty** slot never does. Data, not code, so widening the launch set later is a
   config edit plus its test. Governs the **slot** token only.
-- **`enabled_targets`** — **optional flat list** (ADR-0022, substep 9.5 / Task 5): the product-global
-  set of targets enabled for the **directed** token path (shipped `["mews", "toast", "opera-cloud"]`).
-  A directed `source → target` whose **target** is not in this list is refused — backend **403**
-  (`TargetNotEnabledError`, after vend rights) and `GET /chat/visibility` → `visible:false` so the
-  widget hides. **Absent ⇒ all products enabled** (feature inert, backward-compatible). Data, not
-  code; reversible with no migration (remove/empty ⇒ today's content-gated behavior). This is the
-  directed-path analogue of `launch_allowlist`; it does **not** touch retrieval routing (ADR-0020 D5).
+- **`enabled_sources`** — **optional flat list** (ADR-0023, renamed from ADR-0022's
+  `enabled_targets`): the product-global set of SOURCE systems Obi supports on the **directed** token
+  path (shipped `["mews", "toast", "opera-cloud"]`). A directed `source → target` whose **source** is
+  unknown or not in this list is refused — backend **403** (`SourceNotEnabledError`) and
+  `GET /chat/visibility` → `visible:false` so the widget hides. The **target is never checked** (a
+  source can have hundreds of targets). **Absent ⇒ all products enabled.** Data, not code;
+  reversible with no migration. The frontend loader reads it at build time through
+  `frontend/scripts/enabled-source-names.mjs` (ids, labels and aliases, normalized).
 
 ## 3 · Validation rules (what the loader enforces at startup — built in 8.1.1)
 
@@ -108,7 +109,7 @@ can mis-scope anyone, each failure naming the offending entry:
    role (an expansion can never put two products in one slot).
 6. `launch_allowlist` lists only existing canonical ids whose `role` matches the list they sit
    in.
-6b. `enabled_targets` (optional; ADR-0022) — when present, every entry is an existing catalog
+6b. `enabled_sources` (optional; ADR-0023, formerly `enabled_targets`) — when present, every entry is an existing catalog
    canonical id; stored as a frozenset; an unknown id stops the backend at boot. Absent ⇒ all
    products enabled (no validation, feature inert).
 7. The reserved names never appear anywhere in this file: `classified`,

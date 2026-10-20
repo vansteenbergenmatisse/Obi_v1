@@ -152,7 +152,7 @@ from app.features.rag_agent.application.auth_context import (
     AuthContext,
     AuthContextError,
     InvalidSlotValueError,
-    TargetNotEnabledError,
+    SourceNotEnabledError,
     build_auth_context,
     general_only_context,
 )
@@ -182,37 +182,37 @@ _OBI_TOKEN_HEADER = "x-obi-token"
 # rejected with a 400 in `_validate_history`, BEFORE any LLM call runs.
 _ALLOWED_IMAGE_MEDIA_TYPES = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
 
-# Task 5 (target-enablement visibility gate): the 403 body for a verified-but-not-enabled directed
-# target. Kept here because rag_agent owns the /chat wire contract (chat.yaml). It is rendered
+# ADR-0023 (source-enablement visibility gate): the 403 body for a verified directed connection whose
+# source system Obi does not support. Kept here because rag_agent owns the /chat wire contract (chat.yaml). It is rendered
 # TOP-LEVEL — `{error, reason}`, matching chat.yaml's `Error` schema — NOT wrapped in FastAPI's
 # default `{"detail": ...}`, so the frontend proxy (which forwards the backend JSON verbatim) hands
-# the widget a body it reads as `reason`. Rule 10: the body NEVER names the disabled product id.
-_TARGET_NOT_ENABLED_BODY: dict[str, str] = {
+# the widget a body it reads as `reason`. Rule 10: the body NEVER names the refused product.
+_SOURCE_NOT_ENABLED_BODY: dict[str, str] = {
     "error": "integration not available",
-    "reason": "target_not_enabled",
+    "reason": "source_not_enabled",
 }
 
 
-class TargetNotEnabledHTTPError(HTTPException):
-    """Raised by `_resolve_auth_context` on a verified directed target that is not enabled. A 403
+class SourceNotEnabledHTTPError(HTTPException):
+    """Raised by `_resolve_auth_context` on a verified directed source that is not supported. A 403
     (off the 401 renew path; distinct from the 400 fail-closed family). Subclasses HTTPException so
-    it is still a 403, but `render_target_not_enabled` (wired in `main.create_app`) renders its
-    body top-level as `_TARGET_NOT_ENABLED_BODY` instead of `{"detail": ...}`."""
+    it is still a 403, but `render_source_not_enabled` (wired in `main.create_app`) renders its
+    body top-level as `_SOURCE_NOT_ENABLED_BODY` instead of `{"detail": ...}`."""
 
     def __init__(self) -> None:
         super().__init__(
-            status_code=status.HTTP_403_FORBIDDEN, detail=dict(_TARGET_NOT_ENABLED_BODY)
+            status_code=status.HTTP_403_FORBIDDEN, detail=dict(_SOURCE_NOT_ENABLED_BODY)
         )
 
 
-async def render_target_not_enabled(_request: Request, _exc: Exception) -> JSONResponse:
-    """App-level handler (wired in `main.create_app` for `TargetNotEnabledHTTPError`) that renders
-    the target-not-enabled 403 as a top-level `{error, reason}` body (never `{"detail": ...}`), so
+async def render_source_not_enabled(_request: Request, _exc: Exception) -> JSONResponse:
+    """App-level handler (wired in `main.create_app` for `SourceNotEnabledHTTPError`) that renders
+    the source-not-enabled 403 as a top-level `{error, reason}` body (never `{"detail": ...}`), so
     the wire body matches chat.yaml's `Error` schema and the frontend proxy forwards a `reason` the
     widget can switch on. `_exc` is typed `Exception` to satisfy Starlette's `ExceptionHandler`
     contract; it is only ever this one exception type at runtime."""
     return JSONResponse(
-        status_code=status.HTTP_403_FORBIDDEN, content=dict(_TARGET_NOT_ENABLED_BODY)
+        status_code=status.HTTP_403_FORBIDDEN, content=dict(_SOURCE_NOT_ENABLED_BODY)
     )
 
 
@@ -321,11 +321,11 @@ def _resolve_auth_context(
     except InvalidSlotValueError as exc:
         # never echoes the claimed value — a fixed detail string, like the body-scope 400
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "unknown integration value") from exc
-    except TargetNotEnabledError as exc:
-        # Task 5: a verified-but-not-enabled directed target. 403 (not 401: it is off the renew
+    except SourceNotEnabledError as exc:
+        # ADR-0023: a verified directed connection whose source is not supported. 403 (not 401: it is off the renew
         # path; not 400: distinct from the fail-closed family) with a fixed top-level {error,
         # reason} body (rule 10 — no product id). Caught BEFORE the generic AuthContextError.
-        raise TargetNotEnabledHTTPError() from exc
+        raise SourceNotEnabledHTTPError() from exc
     except (TokenError, AuthContextError) as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "invalid token") from exc
 
@@ -334,8 +334,8 @@ def _visibility_payload(
     request: Request, settings: Settings, verifier: TokenVerifier
 ) -> dict[str, object]:
     """Task 5 read-only visibility decision shared by `GET /chat/visibility`. Runs the SAME gate
-    as `POST /chat` (`_resolve_auth_context`), then turns ONLY the target-not-enabled 403 into
-    `{"visible": false, "reason": "target_not_enabled"}`; every other outcome (general-only or a
+    as `POST /chat` (`_resolve_auth_context`), then turns ONLY the source-not-enabled 403 into
+    `{"visible": false, "reason": "source_not_enabled"}`; every other outcome (general-only or a
     resolved context) is `{"visible": true}`. A 400/401 hard failure is NOT swallowed — it
     propagates exactly as `POST /chat` would, so the probe never masks a malformed/forbidden
     connection as merely hidden. 403 is the only status this gate produces for enablement, so it
@@ -344,7 +344,7 @@ def _visibility_payload(
         _resolve_auth_context(request, settings, verifier)
     except HTTPException as exc:
         if exc.status_code == status.HTTP_403_FORBIDDEN:
-            return {"visible": False, "reason": "target_not_enabled"}
+            return {"visible": False, "reason": "source_not_enabled"}
         raise
     return {"visible": True}
 
@@ -638,7 +638,7 @@ async def get_chat_visibility(
 ) -> dict[str, object]:
     """Task 5: a read-only probe the frontend calls to decide whether to show Obi at all, BEFORE
     any chat round-trip. Same host-key + `X-Obi-Token` auth as `POST /chat`. Returns 200 with
-    `{"visible": true}` or `{"visible": false, "reason": "target_not_enabled"}`; a 400/401 hard
+    `{"visible": true}` or `{"visible": false, "reason": "source_not_enabled"}`; a 400/401 hard
     failure propagates exactly as `POST /chat` would (never masked as merely hidden).
 
     security_baseline (surface: GET /chat/visibility, tier AUTHENTICATED-READ):

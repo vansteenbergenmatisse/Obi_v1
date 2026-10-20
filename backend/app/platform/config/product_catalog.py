@@ -18,7 +18,7 @@ The 8 validation rules (catalog.md §3), enforced in order:
      per role (an expansion can never put two products in one slot);
   6. launch_allowlist lists only existing canonical ids whose role matches the list they
      sit in;
-  6b. enabled_targets (Task 5, optional) lists only existing canonical ids (flat/global, not
+  6b. enabled_sources (ADR-0023, optional) lists only existing canonical ids (flat/global, not
      role-keyed); absent ⇒ every product enabled, so the enablement gate stays inert;
   7. the reserved names never appear: `classified`, `general`, any `obi-*` spelling
      (reserved for the routing-label axis — e.g. `obi-general` — never a product id);
@@ -95,13 +95,14 @@ class ProductCatalog:
     launch_allowlist: dict[str, frozenset[str]]  # role -> allowed canonical ids
     alias_to_id: dict[str, str]
     connection_directions: dict[str, tuple[str, ...]]  # type key -> its §D.2 flow directions
-    # Task 5 (target-enablement visibility gate): the flat, global set of canonical product ids
-    # live as a directed-connection TARGET. A target is enabled iff it is in this set. Materialized
-    # from the optional top-level `enabled_targets` list; ABSENT in the file ⇒ every product id
+    # ADR-0023 (source-enablement visibility gate, supersedes ADR-0022's target gate): the flat,
+    # global set of canonical product ids Obi supports as a directed-connection SOURCE. A source is
+    # enabled iff it is in this set; the target is never checked. Materialized
+    # from the optional top-level `enabled_sources` list; ABSENT in the file ⇒ every product id
     # (backward-compatible — the gate's enablement check then never fires). Not role-keyed, and
     # independent of `launch_allowlist`. A direct construction (not via the loader) defaults to the
     # empty set — fail closed, never fail open — but the loader always materializes the real set.
-    enabled_targets: frozenset[str] = frozenset()
+    enabled_sources: frozenset[str] = frozenset()
 
     def resolve(self, value: str) -> tuple[str, ...]:
         """Resolve one incoming value to canonical ids (catalog.md §4).
@@ -150,14 +151,19 @@ class ProductCatalog:
         ``{source.slug}-to-{target.kind}`` — where the slug is the resolved product's
         canonical id and the kind is the TARGET product's role (pos/pms/accounting).
 
-        An unknown source OR target yields ``[obi-general]`` alone — never a wildcard
-        (ADR-0020 chat-start step 5 / panel mi-route). Direction is primary:
+        An unknown source yields ``[obi-general]`` alone — never a wildcard (ADR-0020 chat-start
+        step 5 / panel mi-route). A known source with an unknown target yields the two boxes the
+        source alone can fill, ``[obi-general, {source.slug}-general]`` (ADR-0023: a source can
+        have hundreds of targets, so the target is assumed supported, never a direction box for a
+        target we cannot classify). Direction is primary:
         ``build_labels("toast", "mews")`` ≠ ``build_labels("mews", "toast")``.
         """
         src = self.resolve_system(source)
         tgt = self.resolve_system(target)
-        if src is None or tgt is None:
+        if src is None:
             return [GENERAL_LABEL]
+        if tgt is None:
+            return [GENERAL_LABEL, f"{src.id}{_GENERAL_SUFFIX}"]
         return [
             GENERAL_LABEL,
             f"{src.id}{_GENERAL_SUFFIX}",
@@ -240,7 +246,7 @@ def load_product_catalog(
     raw_allowlist: dict[str, list[str]] = data.get("launch_allowlist", {})
     # Task 5: the enablement list is optional. `None` sentinel distinguishes "absent" (⇒ all
     # products enabled, materialized below) from an explicit "[]" (⇒ nothing enabled).
-    raw_enabled_targets: list[str] | None = data.get("enabled_targets")
+    raw_enabled_sources: list[str] | None = data.get("enabled_sources")
 
     # Rules 1 + 7 over every canonical id, alias and legacy key — reject before indexing.
     for product_id, entry in raw_products.items():
@@ -361,19 +367,19 @@ def load_product_catalog(
                 )
         launch_allowlist[str(role)] = frozenset(str(i) for i in ids)
 
-    # Rule 6b (Task 5): `enabled_targets` lists only existing canonical ids — mirrors the rule-6
+    # Rule 6b (Task 5): `enabled_sources` lists only existing canonical ids — mirrors the rule-6
     # allowlist loop. ABSENT ⇒ every product is enabled (backward compatible); present ⇒ exactly
     # the listed ids (an empty list enables nothing). A role mismatch is NOT checked: enablement
     # is a flat, global axis, not role-keyed.
-    if raw_enabled_targets is None:
-        enabled_targets = frozenset(raw_products)
+    if raw_enabled_sources is None:
+        enabled_sources = frozenset(raw_products)
     else:
-        for canonical in raw_enabled_targets:
+        for canonical in raw_enabled_sources:
             if str(canonical) not in raw_products:
                 raise ValueError(
-                    f"{path}: enabled_targets names unknown product {str(canonical)!r}"
+                    f"{path}: enabled_sources names unknown product {str(canonical)!r}"
                 )
-        enabled_targets = frozenset(str(i) for i in raw_enabled_targets)
+        enabled_sources = frozenset(str(i) for i in raw_enabled_sources)
 
     products = {
         product_id: Product(
@@ -392,7 +398,7 @@ def load_product_catalog(
         launch_allowlist=launch_allowlist,
         alias_to_id=alias_to_id,
         connection_directions=connection_directions,
-        enabled_targets=enabled_targets,
+        enabled_sources=enabled_sources,
     )
 
     # Rule 8: every platforms.json integration key resolves here — the two files may

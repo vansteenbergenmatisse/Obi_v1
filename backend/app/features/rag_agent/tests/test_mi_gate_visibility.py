@@ -1,18 +1,18 @@
-"""Task 5 (panel mi-gate / mi-contract): the HTTP surface of the target-enablement visibility
+"""ADR-0023 (panel mi-gate / mi-contract): the HTTP surface of the source-enablement visibility
 gate — `router._resolve_auth_context`'s 403 mapping and the read-only `GET /chat/visibility`
 probe (`router._visibility_payload`).
 
-A verified directed token whose TARGET is not in the catalog's `enabled_targets` is refused on
-`POST /chat` with a 403 whose body is the fixed `{error, reason}` pair — distinct from the 400
-fail-closed family (unknown value) and the 401 renew family (bad token / vend violation) — and
-NEVER names the product id (never-bend rule 10). The visibility probe turns that same refusal
-into `{"visible": false, "reason": "target_not_enabled"}` so the widget can hide Obi before any
-chat, while a 400/401 hard failure still propagates as today.
+A verified directed token whose SOURCE is unknown or not in the catalog's `enabled_sources` is
+refused on `POST /chat` with a 403 whose body is the fixed `{error, reason}` pair — distinct from
+the 401 renew family (bad token / vend violation) — and NEVER names the product (never-bend rule
+10). The visibility probe turns that same refusal into `{"visible": false, "reason":
+"source_not_enabled"}` so the widget hides Obi before any chat. The target is never checked: any
+target, known or not, is visible when the source is supported.
 
 App- and DB-free: `_resolve_auth_context` / `_visibility_payload` read only `settings.platform_
 registry` and the injected verifier, so a synthetic registry (like test_mi_gate_directed.py) and
 a fake verifier returning VerifiedClaims verbatim exercise the full gate with the shipped
-catalog as its default (enabled_targets = mews/toast/opera-cloud; xero deliberately disabled)."""
+catalog as its default (enabled_sources = mews/toast/opera-cloud; xero deliberately disabled)."""
 
 from __future__ import annotations
 
@@ -107,14 +107,13 @@ def _settings(reg) -> Settings:
     return cast(Settings, SimpleNamespace(platform_registry=reg))
 
 
-def test_mi_gate_disabled_target_maps_to_403_with_reason_and_no_product_id(tmp_path):
-    """panel mi-gate · Task 5
-    `_resolve_auth_context` maps TargetNotEnabledError to a 403 whose body is exactly
-    {"error": "integration not available", "reason": "target_not_enabled"} — a 403 (not 401:
-    off the renew path; not 400: distinct from the fail-closed family) — and the body never
-    names the disabled product id (rule 10)."""
+def test_mi_gate_disabled_source_maps_to_403_with_reason_and_no_product_id(tmp_path):
+    """panel mi-gate · ADR-0023
+    `_resolve_auth_context` maps SourceNotEnabledError to a 403 whose body is exactly
+    {"error": "integration not available", "reason": "source_not_enabled"} — a 403 (not 401: off
+    the renew path) — and the body never names the refused product (rule 10)."""
     reg = _registry(tmp_path, ["mews", "xero"])  # vends both → vend rights pass, enablement bites
-    verifier = _FakeVerifier(_directed(source="mews", target="xero"))
+    verifier = _FakeVerifier(_directed(source="xero", target="mews"))
 
     with pytest.raises(HTTPException) as exc:
         _resolve_auth_context(_request_with_token(), _settings(reg), verifier)
@@ -122,48 +121,44 @@ def test_mi_gate_disabled_target_maps_to_403_with_reason_and_no_product_id(tmp_p
     assert exc.value.status_code == 403
     assert exc.value.detail == {
         "error": "integration not available",
-        "reason": "target_not_enabled",
+        "reason": "source_not_enabled",
     }
     assert "xero" not in json.dumps(exc.value.detail)  # rule 10: no product id leaks
 
 
-def test_mi_gate_visibility_probe_reports_hidden_for_disabled_target(tmp_path):
-    """panel mi-contract · Task 5
-    The visibility probe reports the company as hidden — {"visible": false, "reason":
-    "target_not_enabled"} — when the verified directed target is not enabled, so the frontend
-    can hide Obi before any chat round-trip."""
+def test_mi_gate_visibility_probe_reports_hidden_for_disabled_source(tmp_path):
+    """panel mi-contract · ADR-0023
+    A known source that is not enabled (xero) reports {"visible": false, "reason":
+    "source_not_enabled"}, so the frontend hides Obi before any chat round-trip."""
     reg = _registry(tmp_path, ["mews", "xero"])
-    verifier = _FakeVerifier(_directed(source="mews", target="xero"))
+    verifier = _FakeVerifier(_directed(source="xero", target="mews"))
 
     payload = _visibility_payload(_request_with_token(), _settings(reg), verifier)
 
-    assert payload == {"visible": False, "reason": "target_not_enabled"}
+    assert payload == {"visible": False, "reason": "source_not_enabled"}
 
 
-def test_mi_gate_visibility_probe_reports_visible_for_enabled_target(tmp_path):
-    """panel mi-contract · Task 5
-    An enabled target (mews, in the shipped enabled_targets) reports visible — the probe never
-    adds a reason on the happy path."""
+def test_mi_gate_visibility_probe_hides_an_unknown_source(tmp_path):
+    """panel mi-contract · ADR-0023
+    A source the catalog does not know (Base's "PEP PMS") is not supported, so Obi is hidden —
+    {"visible": false} — instead of the old 400 error that left the widget showing a failure."""
+    reg = _registry(tmp_path, ["mews", "xero"])
+    verifier = _FakeVerifier(_directed(source="PEP PMS", target="NetSuite"))
+
+    payload = _visibility_payload(_request_with_token(), _settings(reg), verifier)
+
+    assert payload == {"visible": False, "reason": "source_not_enabled"}
+
+
+def test_mi_gate_visibility_probe_reports_visible_for_any_target(tmp_path):
+    """panel mi-contract · ADR-0023
+    An enabled source is visible whatever its target: a known enabled target (mews), a known
+    target that is not enabled (xero), and a target the catalog does not know (NetSuite)."""
     reg = _registry(tmp_path, ["toast", "mews"])
-    verifier = _FakeVerifier(_directed(source="toast", target="mews"))
-
-    payload = _visibility_payload(_request_with_token(), _settings(reg), verifier)
-
-    assert payload == {"visible": True}
-
-
-def test_mi_gate_visibility_probe_propagates_400_unknown_target(tmp_path):
-    """panel mi-contract · Task 5
-    A 400/401 hard failure is NOT swallowed into visible:false — an unknown target still
-    propagates as the 400 fail-closed family, so the probe never masks a malformed connection
-    as merely hidden."""
-    reg = _registry(tmp_path, ["mews", "xero"])
-    verifier = _FakeVerifier(_directed(source="mews", target="no-such-system"))
-
-    with pytest.raises(HTTPException) as exc:
-        _visibility_payload(_request_with_token(), _settings(reg), verifier)
-
-    assert exc.value.status_code == 400
+    for target in ("mews", "xero", "NetSuite"):
+        verifier = _FakeVerifier(_directed(source="toast", target=target))
+        payload = _visibility_payload(_request_with_token(), _settings(reg), verifier)
+        assert payload == {"visible": True}, target
 
 
 def test_mi_gate_403_body_is_rendered_top_level_not_wrapped_in_detail():
@@ -177,19 +172,19 @@ def test_mi_gate_403_body_is_rendered_top_level_not_wrapped_in_detail():
     from fastapi.testclient import TestClient
 
     from app.features.rag_agent.server.router import (
-        TargetNotEnabledHTTPError,
-        render_target_not_enabled,
+        SourceNotEnabledHTTPError,
+        render_source_not_enabled,
     )
 
     app = FastAPI()
-    app.add_exception_handler(TargetNotEnabledHTTPError, render_target_not_enabled)
+    app.add_exception_handler(SourceNotEnabledHTTPError, render_source_not_enabled)
 
     @app.get("/boom")
     def _boom() -> dict:
-        raise TargetNotEnabledHTTPError()
+        raise SourceNotEnabledHTTPError()
 
     resp = TestClient(app, raise_server_exceptions=False).get("/boom")
 
     assert resp.status_code == 403
-    assert resp.json() == {"error": "integration not available", "reason": "target_not_enabled"}
+    assert resp.json() == {"error": "integration not available", "reason": "source_not_enabled"}
     assert "detail" not in resp.json()

@@ -1,6 +1,6 @@
 # 0022 — Target-Enablement Widget Eligibility in the Directed Path
 
-Status: Accepted
+Status: Accepted — the target-vs-source choice superseded by ADR-0023 (2026-10-20)
 Date: 2026-10-13
 Governs: `knowledge-base/config/product_catalog.json` (`enabled_targets`),
 `backend/app/platform/config/product_catalog.py` (loader rule 6b, the `enabled_targets` frozenset),

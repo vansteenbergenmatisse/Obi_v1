@@ -17,5 +17,5 @@
     "pos": ["toast"],
     "pms": ["mews"]
   },
-  "enabled_targets": ["mews", "toast", "opera-cloud"]
+  "enabled_sources": ["mews", "toast", "opera-cloud"]
 }

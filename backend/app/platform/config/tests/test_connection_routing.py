@@ -88,10 +88,13 @@ def test_rt1_build_labels_unknown_source_yields_obi_general_only() -> None:
     assert CATALOG.build_labels("Lightspeed", "opera-cloud") == [GENERAL_LABEL]
 
 
-def test_rt1_build_labels_unknown_target_yields_obi_general_only() -> None:
-    """panel mi-route · substep 9.1.1
-    An unknown target yields [obi-general] alone — never a wildcard."""
-    assert CATALOG.build_labels("toast", "nonesuch") == [GENERAL_LABEL]
+def test_rt1_build_labels_unknown_target_falls_back_to_the_source_boxes() -> None:
+    """panel mi-route · ADR-0023
+    A known source with an unknown target (NetSuite is not in the catalog) yields the two boxes
+    the source alone can fill — [obi-general, {source}-general] — never a direction box for a
+    target we cannot classify, never a wildcard."""
+    assert CATALOG.build_labels("toast", "nonesuch") == [GENERAL_LABEL, "toast-general"]
+    assert CATALOG.build_labels("Opera Cloud", "NetSuite") == [GENERAL_LABEL, "opera-cloud-general"]
 
 
 # ---------------------------------------------------------------- resolve_system —

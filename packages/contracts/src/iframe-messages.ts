@@ -7,7 +7,7 @@
  *    them only from `window.parent` and only when `event.origin` is an allowed host origin.
  *  - FRAME → HOST (one): `obi:hidden` (sync-rules Task 5, authorized by ADR-0022). The frame posts
  *    it after the server-authoritative `GET /chat/visibility` probe reports `visible:false`
- *    (target-enablement hide); the loader accepts it only from its own iframe's `contentWindow`
+ *    (source-enablement hide, ADR-0023); the loader accepts it only from its own iframe's `contentWindow`
  *    and the exact Obi origin, then `destroy()`s the widget.
  *
  * The token lives only in memory on both sides — never a cookie, localStorage, sessionStorage, or
@@ -35,8 +35,8 @@ export interface ObiClearMessage {
 
 /**
  * Frame → host: the server-authoritative visibility probe (`GET /chat/visibility`) reported
- * `visible:false` for the verified context — the directed token's target integration is not
- * enabled (sync-rules Task 5, authorized by ADR-0022). Carries no data. The loader `destroy()`s
+ * `visible:false` for the verified context — the directed token's source system is not
+ * supported (ADR-0023; the message itself was authorized by ADR-0022). Carries no data. The loader `destroy()`s
  * the widget on receipt, accepting it ONLY from its own iframe's `contentWindow` and the exact Obi
  * origin. A hard failure of the probe (400/401/429/503) is NEVER turned into this message — the
  * widget stays mounted — so an outage can't blank the widget for everyone.

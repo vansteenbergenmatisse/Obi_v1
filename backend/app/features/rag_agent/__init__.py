@@ -69,9 +69,9 @@ from .infrastructure.llm_client import (
 )
 from .schemas import Answer, ChatMessage, Citation, ImageAttachment
 from .server import (
-    TargetNotEnabledHTTPError,
+    SourceNotEnabledHTTPError,
     chat_router_module,
-    render_target_not_enabled,
+    render_source_not_enabled,
     router,
 )
 from .server.token_verifier import ContextSlots, TokenError, TokenVerifier, VerifiedClaims
@@ -115,6 +115,6 @@ __all__ = [
     "fetch_curated_entries",
     "router",
     "chat_router_module",
-    "TargetNotEnabledHTTPError",
-    "render_target_not_enabled",
+    "SourceNotEnabledHTTPError",
+    "render_source_not_enabled",
 ]

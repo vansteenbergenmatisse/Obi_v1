@@ -107,12 +107,12 @@ class SlotNotOnAllowlistError(AuthContextError):
     the boundary."""
 
 
-class TargetNotEnabledError(AuthContextError):
-    """Task 5 (target-enablement visibility gate): a verified, vendable directed TARGET whose
-    product is not in the catalog's `enabled_targets` — the integration is not yet live, so the
-    session is refused and the router returns a 403 (off the 401 renew path, distinct from the
-    400 fail-closed family). The message NEVER names the product id (never-bend rule 10): the
-    error body is a fixed string; which product was disabled is not leaked to the caller."""
+class SourceNotEnabledError(AuthContextError):
+    """ADR-0023 (source-enablement visibility gate, supersedes the ADR-0022 target gate): the
+    directed SOURCE system is unknown to the catalog or not in its `enabled_sources` — not a source
+    Obi supports, so the session is refused and the router returns a 403 (off the 401 renew path)
+    that hides Obi. The message NEVER names the product (never-bend rule 10): the error body is a
+    fixed string; which source was refused is not leaked to the caller."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -186,23 +186,18 @@ def _build_directed_context(
     """The directed source → target gate (substep 9.3.1, Option A, ADR-0020, panels mi-gate/
     mi-contract).
 
-    Only two of the slot form's five checks apply, plus vend rights:
-      1-2 · shape + membership — each endpoint resolves through the SAME lenient catalog resolver
-            chat-start uses (`resolve_system`: canonical id, alias, or display name, case/space
-            insensitive) so the gate can never admit a connection chat-start would then fail to
-            resolve. An unresolved source OR target fails closed as UnknownIntegrationError — the
-            400-before-any-search family (§D.11), raised before any retrieval runs.
-      4   · vend rights (CIP-A1 generalized) — the issuing platform may assert only systems its
-            `allowed_integrations` resolve to; a connection it may not vend is IntegrationNotAllowed
-            (401), the same cross-issuer boundary as the slot form.
-      5t  · target enablement (Task 5) — AFTER vend rights, the TARGET product must be in the
-            catalog's `enabled_targets`, else TargetNotEnabledError (403) so Obi stays hidden for a
-            not-yet-live integration. `enabled_targets` absent ⇒ all products enabled ⇒ this never
-            fires (backward compatible). Only the target gates; the source's enablement is ignored.
-    The slot role check (3) and the launch allowlist (5) LAPSE for the directed form (ADR-0020
-    D4/D5: direction is primary, accounting is a first-class target, launch is content-gated by the
-    label boxes, not an allowlist) — the launch allowlist lapses, but the Task 5 enablement check
-    (5t) above is a separate, global axis that does apply to the directed target.
+    ADR-0023 (owner, 2026-10-20): only the SOURCE system decides eligibility. A source can have
+    hundreds of targets, so the target is assumed supported and NEVER checked.
+      source · resolves through the SAME lenient catalog resolver chat-start uses
+            (`resolve_system`: canonical id, alias, or display name, case/space insensitive). An
+            unresolved source is SourceNotEnabledError (403, Obi hidden) — raised before any
+            retrieval runs. A known source must be vendable by the issuer (`allowed_integrations`,
+            CIP-A1: IntegrationNotAllowedError, 401) and then be in `enabled_sources`
+            (SourceNotEnabledError, 403). Precedence: vend 401 before enablement 403.
+      target · resolved with the same resolver for routing only. An unknown target is carried as
+            `target_slug=None` (never a fabricated system) and routing falls back to the source's
+            own labels; no vend, enablement, role or allowlist check applies to it.
+    The slot role check and the launch allowlist lapse for the directed form (ADR-0020 D4/D5).
 
     `business_id` (verified present for this form) becomes `company_id` — the company-isolation
     axis the chat-session key and the audit trail already consume (never a scope axis by itself).
@@ -211,29 +206,23 @@ def _build_directed_context(
     never contributes any of this (never-bend rules 2-3): the gate reads only the verified token."""
     catalog = catalog if catalog is not None else _default_catalog()
 
-    # -- checks 1-2 · shape + membership (fail closed: 400 before any search) ------------------
+    # -- source · membership, vend rights, enablement (ADR-0023: only the source gates) ---------
     source = catalog.resolve_system(claims.source_system or "")
     if source is None:
-        raise UnknownIntegrationError("source system")
-    target = catalog.resolve_system(claims.target_system or "")
-    if target is None:
-        raise UnknownIntegrationError("target system")
-
-    # -- check 4 · vend rights (both endpoints) ------------------------------------------------
+        raise SourceNotEnabledError("source system is not supported")
     vend_set: set[str] = set()
     for allowed in entry.allowed_integrations:
         vend_set.update(catalog.resolve(allowed))
-    for role, product in (("source", source), ("target", target)):
-        if product.id not in vend_set:
-            raise IntegrationNotAllowedError(
-                f"platform {entry.key} may not assert '{product.id}' as the {role} system"
-            )
+    if source.id not in vend_set:
+        raise IntegrationNotAllowedError(
+            f"platform {entry.key} may not assert '{source.id}' as the source system"
+        )
+    # Rule 10: the message carries NO product id — which source was refused is not leaked.
+    if source.id not in catalog.enabled_sources:
+        raise SourceNotEnabledError("source system is not supported")
 
-    # -- check 5t · target enablement (Task 5) — AFTER vend rights so precedence is: unknown
-    # target → 400 (membership), vend violation → 401, not-enabled → 403. Only the target gates.
-    # Rule 10: the error message carries NO product id — which target was disabled is not leaked.
-    if target.id not in catalog.enabled_targets:
-        raise TargetNotEnabledError("target system is not enabled")
+    # -- target · routing input only, never checked (ADR-0023) -----------------------------------
+    target = catalog.resolve_system(claims.target_system or "")
 
     return AuthContext(
         company_id=claims.business_id,
@@ -244,7 +233,7 @@ def _build_directed_context(
         principal=None,  # v1: embedded users have no per-person Confluence ACL
         token_subject=_identity_key(claims),
         source_slug=source.id,
-        target_slug=target.id,
+        target_slug=target.id if target is not None else None,
         platform=entry.key,
     )
 
