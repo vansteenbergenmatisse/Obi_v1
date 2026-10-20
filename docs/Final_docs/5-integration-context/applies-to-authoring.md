@@ -54,7 +54,7 @@ falls back to that default — it fails validation loudly at sync, by name.
   `any`. A field you *leave out* never becomes a wildcard — a missing required field is a
   loud validation failure (`missing-field:<name>`), never a silent widening.
 - **One vocabulary.** Products, roles, connection types and flow directions come from the
-  product catalog (`knowledge-base/config/product_catalog.json`; see `catalog.md`). Aliases
+  product catalog (`knowledge-base/config/product_catalog.json`; see `product-catalog.md`). Aliases
   resolve (`operacloud` → `opera-cloud`); unknown values fail (`unknown-product`).
 - **Typos fail loudly.** A field name the level does not know is rejected (`unknown-field`) —
   a silently dropped row would silently widen the rule.

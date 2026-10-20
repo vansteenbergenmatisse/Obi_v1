@@ -1,6 +1,6 @@
 """Substep 8.1.3 (panel mi-gate): `build_auth_context` accepts the three-slot context.
 
-The five checks of docs/Final_docs/5-integration-context/decision-memo.md §4, in order —
+The five checks of docs/Final_docs/5-integration-context/integration-token-decisions.md §4, in order —
 shape → membership (catalog) → role agreement → vend rights → allowlist — each with its own
 red-first test, plus the owner-decided edge cases: an empty slot never refuses, a filled
 Accounting slot outside support is inert for eligibility (O4), and a legacy single-integration
@@ -99,7 +99,7 @@ def test_rt1_slot_shape_rejects_a_malformed_value(tmp_path):
 
 def test_rt1_filled_slots_without_company_id_are_invalid(tmp_path):
     """panel mi-gate · substep 8.1.3
-    Check 1 (shape): company_id must be present when a slot is filled (decision-memo §4 rule 1)
+    Check 1 (shape): company_id must be present when a slot is filled (integration-token-decisions §4 rule 1)
     — a filled slot with no company identity is refused in the 400 family."""
     reg = _registry(tmp_path, ["mews"])
     with pytest.raises(InvalidSlotValueError):
@@ -127,7 +127,7 @@ def test_rt1_unknown_slot_value_fails_closed(tmp_path):
 def test_rt1_role_mismatch_toast_in_pms_slot_is_refused(tmp_path):
     """panel mi-gate · substep 8.1.3
     Check 3 (role agreement): toast is a real catalog product but its role is pos — toast in
-    the PMS slot is never valid (decision-memo §4 rule 2) and is refused in the 400 family."""
+    the PMS slot is never valid (integration-token-decisions §4 rule 2) and is refused in the 400 family."""
     reg = _registry(tmp_path, ["mews", "toast"])
     with pytest.raises(InvalidSlotValueError):
         build_auth_context(_slot_claims(pms="toast"), reg)

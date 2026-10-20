@@ -102,7 +102,7 @@ nothing is indexed yet — run Gate 2 first.
 
 ### Gate 4 · Phase A (human validation)
 
-Follow `docs/Final_docs/5-integration-context/phase-a-validation-cases.md`. A person asks real
+Follow `docs/Final_docs/5-integration-context/human-validation-cases.md`. A person asks real
 questions through the widget under a known connection and confirms:
 
 - Every sentence in an answer cites a real source that backs it.
@@ -142,10 +142,10 @@ Supabase backup first** — the migrate is upgrade-only and cannot be rolled bac
    --target mews --mirror` against prod — point `DATABASE_URL` + `DATABASE_READER_URL` at Supabase
    (the reader URL must be the `rag_reader` role so RLS bites). Expect `RESULT: PASS` both ways and
    `RLS enforced: True`. Also drive the deployed widget with a directed token for the human view.
-   Save the output into `docs/Final_docs/5-integration-context/phase-9-isolation-run.txt`.
+   Save the output into `docs/Final_docs/5-integration-context/directed-routing-isolation-run.txt`.
 
 4. Only after Phase A passes: send the partner replies
-   (`docs/Final_docs/5-integration-context/phase-9-partner-replies.md`).
+   (`docs/Final_docs/5-integration-context/directed-routing-partner-reply-drafts.md`).
 
 ---
 

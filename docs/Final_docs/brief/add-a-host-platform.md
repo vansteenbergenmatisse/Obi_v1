@@ -117,6 +117,6 @@ The partner's developers need to know what to build and what to send back:
 ## Pitfalls
 
 - **`active: true` in production fails closed** unless issuer + jwks + domains are real `https`, non-placeholder, non-loopback, non-`.local`. This is why `datahub` stays `active: false` while its issuer/JWKS are `TODO` — flipping it would stop a production boot, by design.
-- **No new host key** and **no issuer↔host-key wiring** — `CHAT_API_KEY` is global. If you went looking for a per-platform key, there isn't one; that mandate line does not map to this architecture (documented in the FINAL-REPORT).
+- **No new host key** and **no issuer↔host-key wiring** — `CHAT_API_KEY` is global. If you went looking for a per-platform key, there isn't one; that mandate line does not map to this architecture (documented in the embed-security-final-report).
 - **`platforms.local.json` and `frontend/src/app/api/test-hosts/config.ts` must stay in lockstep** for the local flow (asserted by `test_platforms_local_file_allowed_integrations_match_test_hosts`).
 - **Inactive is safe to commit** — an `active: false` entry with real values is verified-but-denied and skipped by CSP/loader; use it to stage before go-live.

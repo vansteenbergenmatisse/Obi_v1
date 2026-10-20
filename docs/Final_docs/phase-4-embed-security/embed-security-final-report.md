@@ -26,7 +26,7 @@ Owner-mandated closed loop: **implement → independent audit → triage → rep
 
 **11 audit waves** (Waves 0–10), **9 repair rounds** (R1–R5, RW2–RW4, SEC-MUT, SEC-RW6/7/8).
 
-> Waves 0–5 were run by the prior session (recorded in `loop-log.md`, ledger entries SEC-S1…SEC-RW4, and the Wave-5 clean commit `54370d3`). Waves 6–10 and repairs SEC-RW6/7/8 were run this session. Wave 5's clean result was invalidated as consecutive-clean #1 because Wave 6 (the intended #2) surfaced an actionable finding — the counter correctly reset, per the mandate.
+> Waves 0–5 were run by the prior session (recorded in `audit-loop-wave-log.md`, ledger entries SEC-S1…SEC-RW4, and the Wave-5 clean commit `54370d3`). Waves 6–10 and repairs SEC-RW6/7/8 were run this session. Wave 5's clean result was invalidated as consecutive-clean #1 because Wave 6 (the intended #2) surfaced an actionable finding — the counter correctly reset, per the mandate.
 
 ## 2. Agents per round (Waves 6–10, this session)
 
@@ -46,7 +46,7 @@ All findings this session were **LOW severity, fail-closed, and operator-config-
 | **W8-A1-1** | 8 | loopback twin diverges on 6 code points where Python `str.strip()` ≠ JS `trim()` (Python-only U+001C–1F,U+0085; JS-only U+FEFF) | CONFIRMED (two independent auditor differentials, 3,779 + 3,137 inputs, converged on the identical 6-char set) | 2× differential | SEC-RW8 |
 | W9-A1-OBS | 9 | (observation, **explicitly "NOT a defect"**) parity enforced only by per-side tests, not a mechanized CI differential | NON-ACTIONABLE — twins proven equivalent (~882k inputs, 0 divergences), per-side tests non-vacuous, completeness-critic found no missing test | 3× differential | recorded in `future-ideas.md` |
 
-**Disproven / refuted across the loop:** ISO-AUTH-1 (Wave 1, claimed scope-derivation bypass — disproved from code); FINDING-AUTH7 (re-weighed bounded-safe in Waves 1/2/3/5/6/7/8/9/10 with ingestion-code evidence — parent+child of a page always share tags); the classify_scope note (disproven for v1); W9-A1-OBS (non-actionable, twins proven equivalent). Prior-session refutations are in `loop-log.md`.
+**Disproven / refuted across the loop:** ISO-AUTH-1 (Wave 1, claimed scope-derivation bypass — disproved from code); FINDING-AUTH7 (re-weighed bounded-safe in Waves 1/2/3/5/6/7/8/9/10 with ingestion-code evidence — parent+child of a page always share tags); the classify_scope note (disproven for v1); W9-A1-OBS (non-actionable, twins proven equivalent). Prior-session refutations are in `audit-loop-wave-log.md`.
 
 ## 4. Repairs + regression tests (this session)
 
@@ -60,7 +60,7 @@ Every confirmed defect has a regression test that goes RED on revert (verified e
 
 ## 5. Mutation checks
 
-Full targeted mutation testing was run in the prior session (SEC-MUT, commit `1b3097f`): ~20 security boundaries, each deliberately broken one at a time, the guarding test confirmed RED, then reverted. **All boundaries caught except one** — the web-storage WRITE guard (test spied only reads) — which was **found + fixed + re-verified RED**. See `loop-log.md` "Targeted mutation testing". This session's three new controls each carry a revert→red regression test, empirically confirmed (the `int("²")` crash on revert; `[ ::1]`→false without the trim; `127.0.0.1<BOM>`→false without the shared strip), which Wave-8/9/10 auditors independently re-confirmed by revert-simulation.
+Full targeted mutation testing was run in the prior session (SEC-MUT, commit `1b3097f`): ~20 security boundaries, each deliberately broken one at a time, the guarding test confirmed RED, then reverted. **All boundaries caught except one** — the web-storage WRITE guard (test spied only reads) — which was **found + fixed + re-verified RED**. See `audit-loop-wave-log.md` "Targeted mutation testing". This session's three new controls each carry a revert→red regression test, empirically confirmed (the `int("²")` crash on revert; `[ ::1]`→false without the trim; `127.0.0.1<BOM>`→false without the shared strip), which Wave-8/9/10 auditors independently re-confirmed by revert-simulation.
 
 ## 6. Final test commands + results (this session, HEAD 0905ad2)
 
@@ -78,7 +78,7 @@ The single strict-xfail (`test_delete_marks_the_active_version_superseded`, a Pl
 
 ## 7. Requirement-traceability matrix — final status
 
-The full per-requirement matrix is `traceability-matrix.md` (Wave-0 baseline). Final disposition of every gap it identified:
+The full per-requirement matrix is `embed-security-traceability-matrix.md` (Wave-0 baseline). Final disposition of every gap it identified:
 
 - **Browser/iframe (BIT-1…BIT-10):** all working. Gaps closed — BIT-7 runtime token-string guard (S1), BIT-10 `server-only` trip-wire (S3), CSP shared-helper so CSP + bridge allow-list can't diverge (R3), loopback strip parity (R2/R3/RW2/RW3/RW4/RW6/RW7/RW8).
 - **Authorization/isolation (AUTH-1…AUTH-9):** all working. Active-platform gate + per-issuer `allowed_integrations` binding (R2); issuer-namespaced subject `iss\x00sub` (S3); RESTRICTIVE RLS fail-closed on unset GUC (pre-existing, re-proven every wave); AUTH-7 parent-fetch opt-out bounded-safe (documented, `future-ideas.md`).

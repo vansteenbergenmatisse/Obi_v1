@@ -67,7 +67,7 @@ export interface ChatRequest {
    * renders in the standalone env, `isStandaloneEnv()`), and NEVER decides
    * access: the verified token/note is the only authority (never-bend rules
    * 2–3; the integration context comes only from the verified token —
-   * context-contract §4). The backend accepts the shape so the dev harness
+   * legacy-three-slot-context-contract §4). The backend accepts the shape so the dev harness
    * does not 400, and treats it as non-authoritative — logged and ignored in
    * favour of the token. Lives in memory and on the wire only; never persisted
    * (rule 10).

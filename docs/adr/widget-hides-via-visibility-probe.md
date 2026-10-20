@@ -25,9 +25,9 @@ edge-token verification (ADR-signed-token-verified-at-the-edge), or the knowledg
 ADR-directed-source-target-routing-labels adopted directed-connection routing and, in D4/D5, made launch behavior **content-gated**:
 direction is primary, accounting is a first-class target, and a chat is served when its four label
 boxes have pages and refused with a reason when they are empty. In doing so the directed path
-deliberately dropped the slot form's launch **allowlist** (`context-contract.md` §4: a filled
+deliberately dropped the slot form's launch **allowlist** (`legacy-three-slot-context-contract.md` §4: a filled
 off-allowlist POS/PMS slot hides Obi). The consequence — recorded as the directed-path "allowlist
-lapse" (`auth_context.py:202-205`; `decision-memo.md` §6; `sync-rules/plan.md` §D.18 item 4) — was
+lapse" (`auth_context.py:202-205`; `integration-token-decisions.md` §6; `sync-rules/plan.md` §D.18 item 4) — was
 that a directed token for any catalog-valid target (e.g. `mews → quickbooks-online` at launch, when
 no `*-to-accounting` pages exist) was accepted if it verified and vended, and the customer saw an
 already-mounted widget that could only refuse for lack of content. There was **no widget-eligibility
@@ -88,8 +88,8 @@ without reintroducing the allowlist as a retrieval filter and without a Confluen
   decisions are untouched.
 - **Honesty surface.** A not-yet-live target (e.g. QuickBooks at launch) now yields no widget and a
   clean 403 (`reason: target_not_enabled`), instead of an already-mounted launcher that can only
-  refuse. `context-contract.md` §4/§8.4, `decision-memo.md` §6, `catalog.md`, and
-  `phase-a-validation-cases.md` Case 18 are synced; Case 18 flips from decision-dependent to a live
+  refuse. `legacy-three-slot-context-contract.md` §4/§8.4, `integration-token-decisions.md` §6, `product-catalog.md`, and
+  `human-validation-cases.md` Case 18 are synced; Case 18 flips from decision-dependent to a live
   pass/fail gate.
 - **Reversible, no migration.** Removing or emptying `enabled_targets` makes the feature inert and
   restores today's content-gated behavior with no code revert and no schema change (rule 11; plan 5f).

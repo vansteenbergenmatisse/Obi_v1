@@ -230,7 +230,7 @@ class SimulatedContextBody(BaseModel):
     simulated integration context the standalone preset selector carries on the wire — company_id
     + three slots. The backend accepts the SHAPE so the dev harness does not 400, then logs and
     IGNORES it in favour of the verified token/note: the body never decides access (never-bend
-    rule 2; the integration context comes only from the verified token — context-contract §4)."""
+    rule 2; the integration context comes only from the verified token — legacy-three-slot-context-contract §4)."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -351,7 +351,7 @@ def _note_simulated_context_ignored(body: ChatRequestBody) -> None:
     """substep 8.4.2: the standalone preset selector carries a simulated integration context on the
     wire for the dev/standalone harness. It is NON-AUTHORITATIVE — the verified token/note is the
     only authority (never-bend rules 2–3; the integration context comes only from the verified
-    token, context-contract §4). The body model accepts the shape so the dev harness does not 400;
+    token, legacy-three-slot-context-contract §4). The body model accepts the shape so the dev harness does not 400;
     here it is logged and IGNORED — it never widens access. Log only which slot keys were filled
     (never the product ids or the company id), mirroring the body_knowledge_scope_ignored posture
     and keeping rule 10 intact."""

@@ -33,7 +33,7 @@ claim, which the gate reads as exactly one filled slot (the product's catalog ro
 slot; aliases resolve through the catalog, §D.11).
 
 After the active-platform gate (AUTH-1/CIP-A2, unchanged), the five slot checks of
-`docs/Final_docs/5-integration-context/decision-memo.md` §4 run in order over the filled slots:
+`docs/Final_docs/5-integration-context/integration-token-decisions.md` §4 run in order over the filled slots:
 
 1. **Shape** — every filled value a short lowercase slug; `company_id` present when a slot is
    filled → `InvalidSlotValueError`, mapped to **400 before any search**.
@@ -122,7 +122,7 @@ signed*, the gate decides *what that signer may assert*. The five checks fail cl
 an unknown or misplaced product dies as a 400 before any search (§D.11 / the 8.1.2 chat.yaml
 contract), a cross-tenant or un-vended slot dies as the same bare 401 as every trust failure,
 and an unsupported-but-real POS/PMS product refuses the session exactly as the frontend hides
-Obi — the backend is the boundary, the hiding is UX (`context-contract.md` §4). Empty slots
+Obi — the backend is the boundary, the hiding is UX (`legacy-three-slot-context-contract.md` §4). Empty slots
 never refuse ("empty slots never hide Obi") and a legacy note keeps working forever as one
 filled slot (§D.13 keuze 4).
 

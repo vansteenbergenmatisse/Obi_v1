@@ -40,7 +40,7 @@ order, scores by descending input rank; the offline/CI default and the zero-lift
 endpoint, raw `httpx`, no vendor SDK), and `LocalReranker` (an optional
 sentence-transformers CrossEncoder). The v2 request body carries only
 `{model, query, documents, top_n}` — the v2 API has no instruction, context or system-prompt
-field in any version (see `docs/Final_docs/5-integration-context/research-rerank-api.md`).
+field in any version (see `docs/Final_docs/5-integration-context/reranker-api-wiring-notes.md`).
 The reranked order feeds the refusal thresholds (`refusal_min_rerank_score`,
 `offtopic_max_rerank_score`) and the CRAG weak-score retry in `rag_agent`'s
 `answer_service`, and the per-query trace records `rerank_scores` and `reranker_model`.

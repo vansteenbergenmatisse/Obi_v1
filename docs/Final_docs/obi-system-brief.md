@@ -2611,7 +2611,7 @@ _Workflow label shown in the drawer: Multi-integration context_
   | Not at launch | property/instance bindings, connection records, selected_connection, a known/absent/unknown wire marker (O1-O3) |
 - Where in the code:
   - `packages/contracts/src/token-claims.json` — the claim shape to extend (T1/T2)
-  - `docs/Final_docs/5-integration-context/context-contract.md` — the contract of record
+  - `docs/Final_docs/5-integration-context/legacy-three-slot-context-contract.md` — the contract of record
   - `rag_agent/server/token_verifier.py` — VerifiedClaims
 - How to test it:
   - An old single-integration note verifies and behaves exactly as a note with one filled slot.
@@ -2629,11 +2629,11 @@ _Workflow label shown in the drawer: Multi-integration context_
   | Owner rule | nothing else in the repo may define a product id, role, alias or connection type |
   | Products | toast (pos) · mews (pms) · opera-cloud (pms) · quickbooks-online (accounting) · xero (accounting) |
   | Connection types | pos-pms (two directions of one connection) · pms-accounting · pos-accounting |
-  | Loader | fail-fast at startup on the 8 validation rules in catalog.md §3, incl. the platforms.json cross-check |
+  | Loader | fail-fast at startup on the 8 validation rules in product-catalog.md §3, incl. the platforms.json cross-check |
   | Aliases | evidence-based only, resolved at the gate before validation; legacy_aliases is empty by owner decision (O8) |
 - Where in the code:
   - `knowledge-base/config/product_catalog.json` — the registry
-  - `docs/Final_docs/5-integration-context/catalog.md` — the schema and the 8 rules
+  - `docs/Final_docs/5-integration-context/product-catalog.md` — the schema and the 8 rules
   - `platform/config/product_catalog.py` — the loader, enabled_sources, build_labels
 - How to test it:
   - The loader rejects a duplicate alias, a role outside pos/pms/accounting, an unknown connection type, and a reserved name (classified, obi-*).
@@ -2655,7 +2655,7 @@ _Workflow label shown in the drawer: Multi-integration context_
   | Unknown value | 400 before any search; body hints are shape-checked only, never authoritative |
 - Where in the code:
   - `rag_agent/application/auth_context.py` — build_auth_context — where the checks extend
-  - `docs/Final_docs/5-integration-context/decision-memo.md` — §4 · the five checks
+  - `docs/Final_docs/5-integration-context/integration-token-decisions.md` — §4 · the five checks
 - How to test it:
   - PMS=opera-cloud (filled, outside the allowlist) is refused; empty POS with Mews PMS serves.
   - An unknown slot value is a 400 before any search touches the database.
@@ -2696,7 +2696,7 @@ _Workflow label shown in the drawer: Multi-integration context_
   | Incomplete context | serve the applicable general guidance and ask for the missing configuration; never broaden to every page naming the product |
 - Where in the code:
   - `retrieval feature` — where the eligibility predicate is built
-  - `docs/Final_docs/5-integration-context/context-contract.md` — §5 · eligibility
+  - `docs/Final_docs/5-integration-context/legacy-three-slot-context-contract.md` — §5 · eligibility
 - How to test it:
   - A page for Mews/QuickBooks OR OperaCloud/Xero never matches Mews/Xero.
   - Toast/OperaCloud plus Mews/QuickBooks at one property never qualifies for Toast/Mews guidance.
@@ -2738,7 +2738,7 @@ _Workflow label shown in the drawer: Multi-integration context_
 - Where in the code:
   - `platform/clients/reranker_client.py` — the v2 /rerank call
   - `retrieval/infrastructure/search_repo.py` — fetch_rerank_texts
-  - `docs/Final_docs/5-integration-context/research-rerank-api.md` — the decision of record
+  - `docs/Final_docs/5-integration-context/reranker-api-wiring-notes.md` — the decision of record
 - How to test it:
   - The request-shape contract test is updated intentionally to the enriched body.
   - The to_rerank handoff stays locked: the exact eligible chunks are what rerank scores.
@@ -2879,7 +2879,7 @@ _Workflow label shown in the drawer: Multi-integration context_
 ##### Panel `mi-hardfilter` · The hard label filter before top-k · [Unverified]
 - Kind: Search
 - In plain words: The database only returns pages whose labels match this chat's connection. Wrong-connection pages can never reach the answer, no matter how similar they look.
-- Today: 9.6.1 closeout: Phase-9 triple-check green (boundaries 0 · backend 912 unit + 392 db + 1 xfailed · kb 29+24 · make eval floor + routing-off-vs-on · pnpm test:e2e 7/7), securing-http-and-llm-endpoints review on file (PASS, phase-9-directed-connection-security-review.md), DB-level isolation + 0016/0017 reversibility proven (phase-9-isolation-run.txt); stays Unverified overall — the live relabeled-corpus leg is owner-blocked (prod wiped + at 0014, 9.5.1 relabel + prod migrate + re-sync pending).
+- Today: 9.6.1 closeout: Phase-9 triple-check green (boundaries 0 · backend 912 unit + 392 db + 1 xfailed · kb 29+24 · make eval floor + routing-off-vs-on · pnpm test:e2e 7/7), securing-http-and-llm-endpoints review on file (PASS, directed-routing-security-review.md), DB-level isolation + 0016/0017 reversibility proven (directed-routing-isolation-run.txt); stays Unverified overall — the live relabeled-corpus leg is owner-blocked (prod wiped + at 0014, 9.5.1 relabel + prod migrate + re-sync pending).
 - Settings and rules:
   | Setting | Value |
   |---|---|

@@ -12,7 +12,7 @@
 > unknown target routes on `[obi-general, {source}-general]`. The Task 5 text below records what was
 > built on 2026-10-13 and is kept as written; read "target" in its gate wording as "source" for
 > current behaviour. Current status per gate: `widget-target-enablement-hide.md` (frontend) and
-> `5-integration-context/phase-a-validation-cases.md` Case 18. How a partner integrates:
+> `5-integration-context/human-validation-cases.md` Case 18. How a partner integrates:
 > `docs/Final_docs/1-how-partners-integrate-with-obi/how-partners-integrate-with-obi.md`.
 >
 > **Removed docs cited below.** `sync-rules/test-proof.md`, `sync-rules/path-b-audit.md`,
@@ -27,15 +27,15 @@
 
 > **EXECUTION STATUS 2026-10-13 — Tasks 0–5 code+docs SHIPPED; only the human pass remains.**
 > Driven as four parallel agents (Tasks 2/3/4 + Task 5 backend) then two sequential (Task 5 frontend,
-> Task 5e). Done: **Task 0** (plan recorded); **Task 2** `phase-a-run-sheet.md` (Cases 1–18);
+> Task 5e). Done: **Task 0** (plan recorded); **Task 2** `human-validation-fill-in-worksheet.md` (Cases 1–18);
 > **Task 3** `partner-activation-patch.md` (both partners, 5 blanks each, verify sequence);
-> **Task 4** `decision-memo.md` §6 routing/visibility capture; **Task 5** the target-enablement gate —
+> **Task 4** `integration-token-decisions.md` §6 routing/visibility capture; **Task 5** the target-enablement gate —
 > `enabled_targets` config + loader rule 6b, `TargetNotEnabledError`→**403** (precedence 400→401→403),
 > read-only `GET /chat/visibility`, frontend load-time hide (`__OBI_ENABLED_TARGETS__` decode) +
 > `/chat/visibility` probe + the 4th `obi:hidden` message, 13 backend + 19 frontend unit tests, the
 > `widget-hidden-when-target-disabled` e2e spec (signed-key-gated, proven locally with a throwaway key),
 > the `securing-http-and-llm-endpoints` review (no gaps), and **ADR-widget-hides-via-visibility-probe** amending ADR-directed-source-target-routing-labels D4/D5 +
-> doc sync (`context-contract.md` §4/§8.4, `catalog.md`, `decision-memo.md` §7, Case 18 flipped to a
+> doc sync (`legacy-three-slot-context-contract.md` §4/§8.4, `product-catalog.md`, `integration-token-decisions.md` §7, Case 18 flipped to a
 > live gate). `make check` green (boundaries 0 · backend 1555 +1 xfail · kb 53); retrieval routing
 > UNCHANGED so rule 11 owes no gold-set number; no migration; reversible (empty/absent `enabled_targets`
 > ⇒ inert). **NOT done (per owner "not the testing"):** Task 1 (Option B local-harness verification,
@@ -56,7 +56,7 @@ This block does four things the owner asked for, plus one build the owner decide
    path works end-to-end on our own side, so that when a partner's staging comes up any failure is
    unambiguously theirs. Owner chose **both** legs: automated Playwright smoke *and* the manual
    real-gate leg.
-2. **Phase A run-sheet** — turn `phase-a-validation-cases.md` (Cases 1–18) into a standalone
+2. **Phase A run-sheet** — turn `human-validation-cases.md` (Cases 1–18) into a standalone
    fill-in checklist so the owner can work the gating step top to bottom.
 3. **Pre-staged `platforms.json` activation patch** — a paste-and-go diff per partner (filled as far
    as the facts allow, five blanks marked) + the verify sequence, so activation is minutes not fresh
@@ -134,8 +134,8 @@ the real token gate.
 - Case 18 becomes a real pass/fail gate after Task 5 — run it in the consolidated pass.
 
 ### Task 2 — Phase A run-sheet
-Create `docs/Final_docs/5-integration-context/phase-a-run-sheet.md` (none exists; the cases doc only
-embeds a blank template at `phase-a-validation-cases.md:466-504`). One section per case (1–18): exact
+Create `docs/Final_docs/5-integration-context/human-validation-fill-in-worksheet.md` (none exists; the cases doc only
+embeds a blank template at `human-validation-cases.md:466-504`). One section per case (1–18): exact
 question(s), preset / directed token, connection under test, expected include/exclude + attribution
 badges, and the §D.10 seven-step evidence table with empty PASS/FAIL + trace-ref cells. Cases 11–18 get
 the per-environment (local / Base / Data Hub) table. Pure transcription from the cases doc + a one-line
@@ -153,7 +153,7 @@ registry won't load), (b) the verify sequence (JWKS reachable → endpoint mints
 11–18 partner-staging leg).
 
 ### Task 4 — Capture the routing/visibility clarification
-Append to `docs/Final_docs/5-integration-context/decision-memo.md` (cross-link `plan.md` §D R2/R5): the
+Append to `docs/Final_docs/5-integration-context/integration-token-decisions.md` (cross-link `plan.md` §D R2/R5): the
 confirmed label model, the content-coverage consequence above, and that target-enablement hide is being
 built (Task 5), citing this as the resolution of the open §D intent. Append-only; names the design
 panel / §D item it serves.
@@ -214,8 +214,8 @@ host stub ⇒ launcher count 0 (needs a `/test-hosts/*` stub minting a `target_s
 **5e. ADR + doc sync.** New **ADR-widget-hides-via-visibility-probe "Target-Enablement Widget Eligibility in the Directed Path"**
 amending ADR-directed-source-target-routing-labels D4/D5: partially reverses the allowlist lapse for *widget eligibility only*; retrieval
 routing unchanged; backend 403 is authority, frontend hide is UX; authorizes the init fetch + the 4th
-`obi:hidden` message. Sync `context-contract.md` §4/§8.4, `decision-memo.md`, `catalog.md`; flip
-`phase-a-validation-cases.md` Case 18 to a live pass/fail gate.
+`obi:hidden` message. Sync `legacy-three-slot-context-contract.md` §4/§8.4, `integration-token-decisions.md`, `product-catalog.md`; flip
+`human-validation-cases.md` Case 18 to a live pass/fail gate.
 
 **5f. No migrations.** Pure config + gate + router + one GET + frontend loader. Reversibility (rule 11):
 remove/empty `enabled_targets` ⇒ feature inert ⇒ today's behavior, no code revert.
@@ -344,12 +344,12 @@ frontend is live as the Railway service **`obi-web`** at `https://obi-web-produc
 `platforms.json` domains); the deploy is codified as `scripts/deploy-frontend.sh` (it hides the backend-only repo-root
 `railway.json`/`Dockerfile`/`.dockerignore` during upload so Railway builds the web workspace, not the backend image) and
 re-proven 7/7 by the new `frontend/scripts/embed-check-live.mjs` (output in
-`docs/Final_docs/5-integration-context/embed-check-8.4.3-run.txt`). Runbook: `docs/runbooks/railway-frontend-deploy.md`;
+`docs/Final_docs/5-integration-context/embed-live-check-output.txt`). Runbook: `docs/runbooks/railway-frontend-deploy.md`;
 canonical embed origin recorded as decision `obi-js-url` (the Railway host for now, `obi.omniboost.com` deferred). **The
 eight sync rules this file documents were not touched** — 8.4.3 is a deploy of the existing frontend, no ingestion/retrieval
 code changed, `make check` still green (boundaries 0 · backend 1240 + 1 xfailed · kb 51). The two remaining Phase-8 items
 are now **prepped and owner-gated**: 8.5.2 (Phase A human validation) has its case doc
-`docs/Final_docs/5-integration-context/phase-a-validation-cases.md` (10 cases, humans run it), and 8.5.3 (the Jasper reply)
+`docs/Final_docs/5-integration-context/human-validation-cases.md` (10 cases, humans run it), and 8.5.3 (the Jasper reply)
 has its draft `docs/Final_docs/5-integration-context/jasper-reply-draft.md` (owner edits + sends; the working obi.js URL now
 exists). Operational tails: §D.15 DB-password rotation, and a **temporary `obi-test` embed allow-list**
 (`platforms.json` domains = the Railway host) to remove at real integration. Detail + status: ledger entries `8.4.3`,
@@ -404,7 +404,7 @@ comes first, and **immediately after** it comes the full A-Z platform integratio
 (Marien)** and **Data Hub (Jasper)** — stand everything up end to end, which explicitly includes
 contacting both partners and collecting the five facts Obi needs (issuer, JWKS URL, exact embed
 domains, each customer's source+target ids, and a token endpoint). The send-ready directed-contract
-emails already exist in `5-integration-context/phase-9-partner-replies.md`. **(2) Source/target
+emails already exist in `5-integration-context/directed-routing-partner-reply-drafts.md`. **(2) Source/target
 routing axis:** the source systems Obi accepts are exactly `mews`, `opera-cloud`, `toast` (a chat
 starts from one of these); targets are tagged too and the target *narrows* the results (the source's
 whole eligible set is fetched, then the target picks the relevant directional slice, e.g.
@@ -455,7 +455,7 @@ not fixed**" lines.
 **Net:** the whole **technical verify tail (items 1–5) is closed and proven live**. What remains is
 the **human / partner tail only** — Phase A human validation first, then the A-Z Base + Data Hub
 integration (the five facts from Marien + Jasper; the directed-contract emails are send-ready in
-`5-integration-context/phase-9-partner-replies.md`, pending only the `[OWNER: name]` and the
+`5-integration-context/directed-routing-partner-reply-drafts.md`, pending only the `[OWNER: name]` and the
 pick-one JWKS-test-option placeholders), and the optional `obi.omniboost.com` DNS switch. `make
 check` green (boundaries 0 · backend 1542 + 1 xfail · kb 53). These checks were run by an agent in
 this session, read-only, with owner authorization; no writes, no labels created, no secrets printed.
@@ -1560,7 +1560,7 @@ Werkwijze per golf: één golf per keer, /obi-change-procedure, ledger-entry bij
 
 **Dit is DE volgende stap** (toegevoegd 2026-10-09; owner koos **Option A** boven het membership-slot-model, bron: `~/Downloads/Obi page routing Option A ... how Obi picks pages.html`). Het **overschrijft** de slot-/`context.slots`-routing uit `plan.md` §D voor het *routing-gedeelte* (zie Override-map in Stage 0). De acht sync-regels, de RLS-locks 0–2 (company/source-isolatie, `source_scope`) en regel 8 (max twee extra reads) blijven **ongewijzigd** — Option A verandert alleen *welke pagina's* een vraag mag zien, niet de beveiligingsgrenzen.
 
-> **Build status (bijgewerkt 2026-10-12).** **Stage 0 ✅** (commit `0209579` — ADR-directed-source-target-routing-labels + decisions.md + override-map). **Stage 1 ✅** (commit `42448cb` — 4 nieuwe panels `mi-route`/`mi-labels`/`mi-session`/`mi-hardfilter`, 6 bijgewerkt, brief 203→207; action-plan **Phase 9** toegevoegd, substeps `9.1.1`–`9.6.1`; `make check` groen). **Stage 2 ✅** (substep `9.1.1`, commit `099caef` — catalogus-resolver `resolve_system`/`build_labels`/`is_valid_label`; `make check` groen: backend 1265+1xfail · kb 51 · boundaries 0). **Stage 3 ✅** (substep `9.1.2`, commit `8746e71` — ruwe `labels`-kolom + migratie 0016 + restamp-threading; de labels-RLS blijft inert tot 9.4.1 om de retrieval niet te breken; `make check` groen: backend 1270+1xfail · kb 53 · boundaries 0). **Stage 4 ✅** (substep `9.2.1` — `chat_session`-tabel + migratie `0017` gebonden aan geverifieerde `token_subject`+`company_id`; `start_chat_session` lost op + slaat één keer op, `load_chat_session` hergebruikt de rij zonder catalogus-call (regel 8); `build_connection_block` nieuw in `prompt.py`; `make check` groen: backend 1275+1xfail · kb 53 · boundaries 0; `make eval` ongewijzigd). **Stage 5 ✅** (substep `9.3.1` — gerichte `source_system`+`target_system`+`business_id` token-vorm in `token-claims.json`/`token_verifier.py`/`chat.yaml` + drift-tests; gate `_build_directed_context` (resolve source/target, onbekend → 400 vóór search, vend-rechten, slot-role + allowlist vervallen D4/D5; `business_id` → `company_id`, `source_slug`/`target_slug` gedragen); widget-bridge `TokenScope`/`sameScope` krijgen source/target zodat een stille connectie-switch de thread reset; nieuwe `connection` `CitationAttribution`-variant; test-host mint `?form=directed` + nieuwe `connection-switch` test-host-pagina. Levels: backend unit 899+1xfail · kb 29 · DB (`make test-db`) 385+1xfail + kb 24 · `pnpm test:e2e` 7/7 · `make eval` ongewijzigd. `start_chat_session` wiring in `POST /chat` is uitgesteld naar 9.4.1 (daar waar labels/block geconsumeerd worden).) **Stage 6 ✅** (substep `9.4.1`, commit `8ce2098` — `_base_filters` krijgt `AND labels && :session_labels` (bound) door `keyword_search`/`dense_search`/`fetch_rerank_texts`; `app.allowed_labels` GUC in hetzelfde pad als `apply_knowledge_scope` zodat de 0016 RESTRICTIVE policy live wordt; parent-expansie label-exempt; `answer_service._resolve_directed_routing` voedt `session_labels` + `connection_block` uit de chat-sessie, één keer per gesprek; D0-reconciliatie bleek geen code nodig (routing-label + `obi-general-test` indexeert + routet al). Levels: DB 390+1xfail + kb 24 · `make eval` vloer ongewijzigd. mi-hardfilter → unverified.) **Stage 8 ✅** (substep `9.5.2`, commit `534b967` — `connection_routing` gelabelde gold-stage + `evaluate_routing_lift`: routing-off-vs-on recall 1.000→1.000, served_precision 0.167→0.333, served_count 6→3 naar `eval-reports/routing_lift.{json,md}`, geprint door `make eval`.) **Stage 9 ✅** (substep `9.6.1`, commit `6548fc1` — triple-check groen (boundaries 0 · unit 912+kb 29 · DB 392+1xfail+kb 24 · eval vloer+routing-gate · `pnpm test:e2e` 7/7); securing-http-and-llm-endpoints review + isolatie/reversibiliteit op bestand (`5-integration-context/phase-9-*`); Jasper+Marien partner-replies herschreven naar het gerichte contract. De live-tegen-prod isolatierun is **owner-geblokkeerd** (prod leeg + op 0014; 9.5.1 relabel + prod-migrate + re-sync open).) **DE AGENT-DOENBARE ROUTING-ENGINE IS KLAAR (9.3.1–9.6.1 allemaal gecommit).** Tail vóór testen — wat de agent wél/niet kan afmaken: (1) `alembic upgrade head` op Supabase — *productiemutatie; de agent kan dit alleen met expliciete owner-go-ahead + bevestigde recente backup* (0015/0016/0017 zijn additief + veilig: de 0016 label-RLS is inert tot een connectie de GUC zet, 0017 voegt alleen `chat_session` toe; upgrade-only, never-bend regel 1); (2) 9.5.1 relabel = **owner Confluence-werk** (labels owner-attested aanwezig), re-sync geblokkeerd op (1) — agent kan de label→pagina-mapping + backfill (`backfill_labels` CLI bestaat) voorbereiden; (3) live isolatie-spotcheck — geblokkeerd op (1)+(2); agent kan het script klaarzetten; (4) partner-replies versturen = **owner-only** (drafts klaar in `5-integration-context/phase-9-partner-replies.md`); (5) Phase A human-validatie = **human**. Kortom: de engine is af; de tail is een deploy-/content-/sign-off-ketting die bij de owner hoort — het enige dat de agent kan overnemen is (1), en dan (2)-backfill + (3) zodra de relabel staat.
+> **Build status (bijgewerkt 2026-10-12).** **Stage 0 ✅** (commit `0209579` — ADR-directed-source-target-routing-labels + decisions.md + override-map). **Stage 1 ✅** (commit `42448cb` — 4 nieuwe panels `mi-route`/`mi-labels`/`mi-session`/`mi-hardfilter`, 6 bijgewerkt, brief 203→207; action-plan **Phase 9** toegevoegd, substeps `9.1.1`–`9.6.1`; `make check` groen). **Stage 2 ✅** (substep `9.1.1`, commit `099caef` — catalogus-resolver `resolve_system`/`build_labels`/`is_valid_label`; `make check` groen: backend 1265+1xfail · kb 51 · boundaries 0). **Stage 3 ✅** (substep `9.1.2`, commit `8746e71` — ruwe `labels`-kolom + migratie 0016 + restamp-threading; de labels-RLS blijft inert tot 9.4.1 om de retrieval niet te breken; `make check` groen: backend 1270+1xfail · kb 53 · boundaries 0). **Stage 4 ✅** (substep `9.2.1` — `chat_session`-tabel + migratie `0017` gebonden aan geverifieerde `token_subject`+`company_id`; `start_chat_session` lost op + slaat één keer op, `load_chat_session` hergebruikt de rij zonder catalogus-call (regel 8); `build_connection_block` nieuw in `prompt.py`; `make check` groen: backend 1275+1xfail · kb 53 · boundaries 0; `make eval` ongewijzigd). **Stage 5 ✅** (substep `9.3.1` — gerichte `source_system`+`target_system`+`business_id` token-vorm in `token-claims.json`/`token_verifier.py`/`chat.yaml` + drift-tests; gate `_build_directed_context` (resolve source/target, onbekend → 400 vóór search, vend-rechten, slot-role + allowlist vervallen D4/D5; `business_id` → `company_id`, `source_slug`/`target_slug` gedragen); widget-bridge `TokenScope`/`sameScope` krijgen source/target zodat een stille connectie-switch de thread reset; nieuwe `connection` `CitationAttribution`-variant; test-host mint `?form=directed` + nieuwe `connection-switch` test-host-pagina. Levels: backend unit 899+1xfail · kb 29 · DB (`make test-db`) 385+1xfail + kb 24 · `pnpm test:e2e` 7/7 · `make eval` ongewijzigd. `start_chat_session` wiring in `POST /chat` is uitgesteld naar 9.4.1 (daar waar labels/block geconsumeerd worden).) **Stage 6 ✅** (substep `9.4.1`, commit `8ce2098` — `_base_filters` krijgt `AND labels && :session_labels` (bound) door `keyword_search`/`dense_search`/`fetch_rerank_texts`; `app.allowed_labels` GUC in hetzelfde pad als `apply_knowledge_scope` zodat de 0016 RESTRICTIVE policy live wordt; parent-expansie label-exempt; `answer_service._resolve_directed_routing` voedt `session_labels` + `connection_block` uit de chat-sessie, één keer per gesprek; D0-reconciliatie bleek geen code nodig (routing-label + `obi-general-test` indexeert + routet al). Levels: DB 390+1xfail + kb 24 · `make eval` vloer ongewijzigd. mi-hardfilter → unverified.) **Stage 8 ✅** (substep `9.5.2`, commit `534b967` — `connection_routing` gelabelde gold-stage + `evaluate_routing_lift`: routing-off-vs-on recall 1.000→1.000, served_precision 0.167→0.333, served_count 6→3 naar `eval-reports/routing_lift.{json,md}`, geprint door `make eval`.) **Stage 9 ✅** (substep `9.6.1`, commit `6548fc1` — triple-check groen (boundaries 0 · unit 912+kb 29 · DB 392+1xfail+kb 24 · eval vloer+routing-gate · `pnpm test:e2e` 7/7); securing-http-and-llm-endpoints review + isolatie/reversibiliteit op bestand (`5-integration-context/phase-9-*`); Jasper+Marien partner-replies herschreven naar het gerichte contract. De live-tegen-prod isolatierun is **owner-geblokkeerd** (prod leeg + op 0014; 9.5.1 relabel + prod-migrate + re-sync open).) **DE AGENT-DOENBARE ROUTING-ENGINE IS KLAAR (9.3.1–9.6.1 allemaal gecommit).** Tail vóór testen — wat de agent wél/niet kan afmaken: (1) `alembic upgrade head` op Supabase — *productiemutatie; de agent kan dit alleen met expliciete owner-go-ahead + bevestigde recente backup* (0015/0016/0017 zijn additief + veilig: de 0016 label-RLS is inert tot een connectie de GUC zet, 0017 voegt alleen `chat_session` toe; upgrade-only, never-bend regel 1); (2) 9.5.1 relabel = **owner Confluence-werk** (labels owner-attested aanwezig), re-sync geblokkeerd op (1) — agent kan de label→pagina-mapping + backfill (`backfill_labels` CLI bestaat) voorbereiden; (3) live isolatie-spotcheck — geblokkeerd op (1)+(2); agent kan het script klaarzetten; (4) partner-replies versturen = **owner-only** (drafts klaar in `5-integration-context/directed-routing-partner-reply-drafts.md`); (5) Phase A human-validatie = **human**. Kortom: de engine is af; de tail is een deploy-/content-/sign-off-ketting die bij de owner hoort — het enige dat de agent kan overnemen is (1), en dan (2)-backfill + (3) zodra de relabel staat.
 >
 > **Production cutover 2026-10-13 (ADR-routing-labels-sole-content-axis Path B — DB + backend LIVE; re-sync in progress).** The
 > owner authorized the full cutover and confirmed a recent Supabase backup. Done + verified:
@@ -1612,7 +1612,7 @@ Werkwijze per golf: één golf per keer, /obi-change-procedure, ledger-entry bij
 > lokale pgvector + de isolatie-check). Nieuw gereedschap gecommit: het één-commando-isolatiescript
 > `backend/scripts/verify_directed_routing_live.py` (commit `b394ca7`, lokaal bewezen: toast→mews +
 > mews→toast PASS, en het FAALT correct als RLS omzeild wordt) en de runbook
-> `docs/runbooks/phase-9-directed-routing-live-test.md` (commit `ed13ca6`). Status van de poging:
+> `docs/runbooks/directed-routing-live-test.md` (commit `ed13ca6`). Status van de poging:
 > lokale DB op head (`0017`) ✓; Confluence bereikbaar ✓; de vijf routing-testpagina's gevonden in
 > space **`omnidoc`** (space_id `701857803`, alle `current`). **BLOKKER:** elke pagina draagt **alleen
 > haar routing-label** (`obi-general` / `toast-general` / `mews-general` / `toast-to-pms` /
@@ -1659,7 +1659,7 @@ Werkwijze per golf: één golf per keer, /obi-change-procedure, ledger-entry bij
 > **Next agent tasks (do in this order; dependencies noted). Keep this list's status current as each lands.**
 > 1. **Docs + design-page sync (doable now).** Update the remaining docs and the design-page HTML to describe the new tagging system (routing labels = membership + content axis; scope axis retired). Targets: `docs/Final_docs/retrieval/scope-enforcement-read-path.md` (full rewrite — a retirement banner is already on it), `docs/Final_docs/ingestion/routing-labels.md` (now also the membership axis), `ingestion/deletion-and-purge.md` + `ingestion/webhook.md` + `retrieval/eligibility-filtering.md` + `retrieval/auth-context-gate.md` + `retrieval/rerank.md` (drop/repoint scope references), and the design-page panels that mention the knowledge-scope axis. **Status: DONE (2026-10-12).** All 7 component docs updated (`scope-enforcement-read-path.md` fully rewritten; `routing-labels.md` now documents routing labels as the membership axis; `deletion-and-purge.md`/`webhook.md`/`eligibility-filtering.md`/`auth-context-gate.md`/`rerank.md` repointed), and the design-page HTML (`obi-rag-system-flow.html`) updated with ADR-routing-labels-sole-content-axis context (well-formed). A couple of `-test` mentions remain only as clearly-marked historical/provenance (e.g. a retired command example with a retirement note).
 > 2. **Inert-plumbing cleanup + baseline refresh (doable now; after task 1 or parallel).** Remove the now-unused `knowledgeScope` field from the frontend chat path and the `enable_knowledge_scope_filtering` / `default_knowledge_scope` settings, and update any affected `packages/contracts` types + the OpenAPI `chat.yaml`; rerun `make test-unit` + `make test-db` + `pnpm test:e2e` + `make eval`; then refresh `docs/plan/baseline.md` from fresh verified `ruff`/`pyright` measurements (record the real current counts, noting the pre-existing drift). **Status: DONE (2026-10-12).** Removed `enable_knowledge_scope_filtering` + `default_knowledge_scope` settings (+ the retriever/answer_service/main wiring and `recognized_knowledge_scopes`) and the `knowledge_scope`/`knowledgeScope` plumbing — the backend `ChatRequestBody.knowledge_scope` field is kept only as a deprecated **accepted-and-ignored** field (back-compat, no 400), its validator/ignored-log removed; `packages/contracts` `ChatRequest` + OpenAPI `chat.yaml` + the frontend provider/route-handlers/validation drop it. All gates GREEN after the migration of the scope-filter tests: boundaries 0 · unit backend 1148 + kb 29 · db backend 392 (+1 xfail) + kb 24 · eval floor + routing lift unchanged · frontend tsc clean, vitest chat 192/193 (1 pre-existing untouched `composer.test.tsx` env failure), e2e 7/7 · ruff 18 / ruff-format 1 (= floor) · pyright 46 (= branch pre-work). `baseline.md` refreshed (pyright 43→46, the stale-drift correction). **Note:** both delegated agents (Task 1 docs, Task 2 cleanup) stalled on the background watchdog mid-edit; the work was completed and fully re-verified by hand.
-> 3. **Prepare the production migration/deployment runbook (doable now — preparation only).** Write the exact owner steps to take prod from 0014 → head (0015/0016/0017/0018) and deploy: prerequisites (confirmed recent backup; explicit owner go-ahead; never-bend rule 1 — upgrade only, never the 0009 downgrade on Supabase), the explicit `DATABASE_URL`-scoped `alembic upgrade head` command, per-migration notes (0015/0016/0017 additive; 0018 drops the two scope policies — RLS stays enabled), post-migration verification (preflight revision check; `chunk_source_read` + `chunk_labels_read` present; the nine routing-labelled pages index on re-sync), and the rollback path (0018 downgrade re-applies the scope policies; 0015–0017 reversibility). Land it as `docs/runbooks/adr-0021-prod-migration.md`. **Status: DONE (2026-10-12)** — `docs/runbooks/adr-0021-prod-migration.md` written (prerequisites, the explicit `DATABASE_URL`-scoped `alembic upgrade head`, per-migration 0015–0018 notes, post-migration policy-presence verification, re-sync of the nine pages, the `verify_directed_routing_live.py` routing proof, and the 0018-downgrade rollback). No prod contact — preparation only.
+> 3. **Prepare the production migration/deployment runbook (doable now — preparation only).** Write the exact owner steps to take prod from 0014 → head (0015/0016/0017/0018) and deploy: prerequisites (confirmed recent backup; explicit owner go-ahead; never-bend rule 1 — upgrade only, never the 0009 downgrade on Supabase), the explicit `DATABASE_URL`-scoped `alembic upgrade head` command, per-migration notes (0015/0016/0017 additive; 0018 drops the two scope policies — RLS stays enabled), post-migration verification (preflight revision check; `chunk_source_read` + `chunk_labels_read` present; the nine routing-labelled pages index on re-sync), and the rollback path (0018 downgrade re-applies the scope policies; 0015–0017 reversibility). Land it as `docs/runbooks/routing-labels-prod-migration.md`. **Status: DONE (2026-10-12)** — `docs/runbooks/routing-labels-prod-migration.md` written (prerequisites, the explicit `DATABASE_URL`-scoped `alembic upgrade head`, per-migration 0015–0018 notes, post-migration policy-presence verification, re-sync of the nine pages, the `verify_directed_routing_live.py` routing proof, and the 0018-downgrade rollback). No prod contact — preparation only.
 > 4. **Production execution + verification (GATED — only on explicit owner authorization).** After the owner authorizes, run the migration/deploy, then verify the nine existing routing-labelled pages index correctly and that retrieval respects the customer's `source → target` connection (the `verify_directed_routing_live.py` isolation run against the live store). **Status: BLOCKED on owner authorization only (tasks 1–3 are DONE); see the owner checklist below.**
 
 > **Owner checklist (parallel — the owner works these while the agent does tasks 1–3).**
@@ -1698,7 +1698,7 @@ Werkwijze per golf: één golf per keer, /obi-change-procedure, ledger-entry bij
 - `plan.md` §D.6–§D.8 (rerank-enrich, prompt-block, presets) → connection-block variant.
 - `plan.md` §D.11/§D.12 (token-compat, contracts/catalog/migraties).
 - `plan.md` §D.16 items 2 & 5 (O4-allowlist; "integratie LAST").
-- `5-integration-context/decision-memo.md` O1 (open → gesloten door A), O5 (`context.slots`-shape → aangevuld), O4 (allowlist/accounting → vervalt voor routing); `context-contract.md` §5.2 ("geen connection records at launch").
+- `5-integration-context/integration-token-decisions.md` O1 (open → gesloten door A), O5 (`context.slots`-shape → aangevuld), O4 (allowlist/accounting → vervalt voor routing); `legacy-three-slot-context-contract.md` §5.2 ("geen connection records at launch").
 - `docs/plan/decisions.md:45` (`partner-token-handover`, "not a flat source/target claim").
 - `sync-rules/plan.md` §15 keuzes (~r.1084 "BESLIST" slot-model), §A row 5 context, en r.1381 owner-item (a) "company + integratie/slots + scope" → "company + source/target".
 - **Blijft ongewijzigd:** de 8 sync-regels, RLS-locks 0–2 + §D access-invarianten, regel 8, lock-0 edge-JWT.
@@ -1922,7 +1922,7 @@ This fires once per switch. Never per question.
 
 > **Order (owner-confirmed 2026-10-13).** **Phase A human testing comes FIRST** (the engine is proven
 > hermetically + live-isolation; Phase A is the human validation of real content/answers, cases in
-> `docs/Final_docs/5-integration-context/phase-a-validation-cases.md`). **Immediately after Phase A**
+> `docs/Final_docs/5-integration-context/human-validation-cases.md`). **Immediately after Phase A**
 > comes the full **A-Z platform integration** below: stand everything up to put Obi into the **Base**
 > and **Data Hub** test environments, end to end — and that explicitly includes **contacting Jasper
 > and Marien** and getting the facts Obi needs from them. Platform integration does NOT run ahead of
@@ -1932,7 +1932,7 @@ This fires once per switch. Never per question.
    possible), A-Z.** The embed widget opens but will not authenticate without a trusted per-platform
    token. **Platform ownership:** **Marien owns Base, Jasper owns Data Hub** (one partner, one hub).
    The send-ready contract + the exact emails to Jasper and Marien live in
-   `docs/Final_docs/5-integration-context/phase-9-partner-replies.md` (directed `source_system` →
+   `docs/Final_docs/5-integration-context/directed-routing-partner-reply-drafts.md` (directed `source_system` →
    `target_system` + `business_id` form, ADR-directed-source-target-routing-labels / ADR-routing-labels-sole-content-axis — it supersedes the earlier single-`integration`
    handover the partners already received). Run it in this order:
 
@@ -1954,7 +1954,7 @@ This fires once per switch. Never per question.
      directed JWT.
 
    **Our side, once a platform's five facts are in** (full detail: the "What happens after they
-   reply" steps 1-7 in `phase-9-partner-replies.md`): add a `platforms.json` entry (issuer, JWKS URL,
+   reply" steps 1-7 in `directed-routing-partner-reply-drafts.md`): add a `platforms.json` entry (issuer, JWKS URL,
    embed domains, the source/target ids the hub may vend) with **`active: false`**; verify the JWKS is
    reachable and the endpoint mints a conforming directed JWT; confirm vend rights (the issuer may
    assert only the agreed ids); flip **`active: true`**; redeploy backend (registry) + rebuild/redeploy

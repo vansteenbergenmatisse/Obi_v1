@@ -98,7 +98,7 @@ is healthy.
       the RLS policies bite). Expect: a `toast → mews` connection sees `obi-general` / `toast-general`
       / `mews-general` / `toast-to-pms` and **hides** `mews-to-pos` / `toast-to-accounting`; the
       `--mirror` reversed connection flips the direction box; `RESULT: PASS`, exit 0.
-- [ ] Spot-check a real chat per the live-test runbook (`phase-9-directed-routing-live-test.md`): the
+- [ ] Spot-check a real chat per the live-test runbook (`directed-routing-live-test.md`): the
       answer cites only pages in the connection's four boxes.
 
 ## 7. Rollback
@@ -121,5 +121,5 @@ is healthy.
 
 **Cross-references:** ADR-routing-labels-sole-content-axis (`docs/adr/routing-labels-sole-content-axis.md`), migration
 `0018_retire_knowledge_scope_rls.py`, `supabase-vector-store-cutover.md`,
-`deploy-readiness-scope-rls.md`, `phase-9-directed-routing-live-test.md`, and the Path B status +
+`deploy-readiness-scope-rls.md`, `directed-routing-live-test.md`, and the Path B status +
 task list in `docs/Final_docs/sync-rules/plan.md`.

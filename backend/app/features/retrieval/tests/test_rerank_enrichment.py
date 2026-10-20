@@ -2,7 +2,7 @@
 
 Context-aware reranking is retrieval-side request construction, never a prompt (prompts live
 only in rag_agent). These unit tests pin the two enrichment shapes the research memo
-(`docs/Final_docs/5-integration-context/research-rerank-api.md`, options a+b) prescribes:
+(`docs/Final_docs/5-integration-context/reranker-api-wiring-notes.md`, options a+b) prescribes:
 a verified-context preamble prepended to the query string, and a short YAML applicability
 block ahead of each document's text — with the caps (query 2,048-token, document 4,000-char)
 enforced metadata-first so the user question and the metadata both survive.

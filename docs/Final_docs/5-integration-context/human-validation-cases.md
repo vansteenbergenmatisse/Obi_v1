@@ -19,9 +19,9 @@ Every "expected" line in every case is derived from the **design**, not from the
 - The include/exclude categories come from **plan.md §D.9** (the five concrete examples) and the
   eligibility rules in **§D.4 / §D.5**.
 - The slot → visibility → eligibility logic comes from the **context contract**
-  (`context-contract.md` §4–§6) and the owner decisions **§D.13 / §D.16**.
+  (`legacy-three-slot-context-contract.md` §4–§6) and the owner decisions **§D.13 / §D.16**.
 - The per-slot attribution vocabulary (`general | pos | pms | accounting | pair`) comes from
-  **§D.13 keuze 3** and `context-contract.md` §6.
+  **§D.13 keuze 3** and `legacy-three-slot-context-contract.md` §6.
 - The flow types come from **§D.2**; the presets from `knowledge-base/config/standalone_presets.json`.
 
 The worked-example test `backend/app/features/retrieval/tests/test_worked_examples_db.py` encodes
@@ -106,7 +106,7 @@ Covers: **general guidance**, the configuration step, the visibility rule for an
   are my Mews invoices missing in QuickBooks?").
 - **(c) Expected included vs excluded:** Included — only **general** pages. Excluded — every
   software, connection, and workflow page (no slot is filled, so nothing slot- or pair-specific is
-  eligible). Derived from `context-contract.md` §5 (general always; slot/pair guides only for
+  eligible). Derived from `legacy-three-slot-context-contract.md` §5 (general always; slot/pair guides only for
   filled slots / real pairs).
 - **(d) Expected citations + attribution:** Every citation badge reads **"General guide"**
   (`general`). No `pos`/`pms`/`accounting`/`pair` badges appear.
@@ -126,7 +126,7 @@ Covers: **flow type POS→PMS**, two-system context, shared single connection (b
   the PMS→POS guest-info direction — two directions of the one connection). Excluded — all
   accounting guidance (QuickBooks, Xero), the Mews/QuickBooks and direct Toast/QuickBooks pair
   guides, Mews/Xero, and any Opera Cloud guidance. Derived from §D.9 example 2 + §D.2 (one
-  connection, two directions) + `context-contract.md` §5.1.
+  connection, two directions) + `legacy-three-slot-context-contract.md` §5.1.
 - **(d) Expected citations + attribution:** general → **"General guide"**; Toast page → **"For your
   POS"** (`pos`); Mews page → **"For your PMS"** (`pms`); Toast/Mews connection page(s) → **"For your
   integration"** (`pair`).
@@ -180,7 +180,7 @@ derivable from slots alone at launch.
 - **(c) Expected included vs excluded:** Included — **general**, **Toast** (software), **QuickBooks
   Online** (software/accounting). Excluded — the **direct Toast/QuickBooks connection** guide (the
   launch slots-only token cannot express a real POS→Accounting connection — §5.2), all Mews guidance,
-  and any pair needing Mews. Derived from `context-contract.md` §5.1–§5.2 (POS–Accounting not derived
+  and any pair needing Mews. Derived from `legacy-three-slot-context-contract.md` §5.1–§5.2 (POS–Accounting not derived
   from slots; §D.2 "Toast + Mews + QuickBooks does not automatically have a direct
   Toast→QuickBooks connection").
 - **(d) Expected citations + attribution:** general → "General guide"; Toast → "For your POS";
@@ -276,14 +276,14 @@ Covers: **unknown configuration**, and the out-of-allowlist / hidden-visibility 
   slot. 9b — attempt to open a session for the Opera-Cloud-PMS context.
 - **(c) Expected included vs excluded:** 9a — Included: general + the filled slot's own guidance;
   Excluded: every accounting / connection page the missing slot would unlock. Derived from §D.4 (serve
-  general + ask; never broaden to every page that mentions the provider) and `context-contract.md` §3.
+  general + ask; never broaden to every page that mentions the provider) and `legacy-three-slot-context-contract.md` §3.
 - **(d) Expected citations + attribution:** 9a — only "General guide" and the filled-slot badge; no
   accounting/pair badge.
 - **(e) Expected behaviour:** 9a — Obi **answers the general part and asks for the missing
   configuration** instead of giving accounting-connection instructions; it never invents the missing
   slot. 9b — **Obi is hidden / the session is refused** (a filled POS/PMS slot outside the allowlist
   hides Obi; the backend gate refuses too — the frontend hiding is UX, not the boundary). Derived from
-  `context-contract.md` §4 + §8.4, §D.13 item 3. Unknown (non-catalog) slot values keep **failing
+  `legacy-three-slot-context-contract.md` §4 + §8.4, §D.13 item 3. Unknown (non-catalog) slot values keep **failing
   closed — 400 before any search** (§D.11); verify a malformed/unknown scope is rejected pre-search.
 
 ### Case 10 — Metadata update invalidates stale eligibility
@@ -318,7 +318,7 @@ widget, not the preset selector.
 **Where expected results come from:** the token claim schema
 (`packages/contracts/src/token-claims.json`), the verification order (`token_verifier.py:146-217`),
 the gate (`auth_context.py:173-230`), ADR-directed-source-target-routing-labels (directed routing), the partner contract
-(`phase-9-partner-replies.md`), and owner decision round 4 (`plan.md` §D.18).
+(`directed-routing-partner-reply-drafts.md`), and owner decision round 4 (`plan.md` §D.18).
 
 **How to run — two environments, recorded separately (never merged):**
 
@@ -547,7 +547,7 @@ gates 8.5.2 like any other case.
 1. **§D.9 example 5 (Case 7) is not exercisable through the standalone preset selector.** The
    launch slots-only token holds one product per role, and Opera Cloud as PMS is off the launch
    allowlist (it would hide Obi). The two-PMS, two-connection property needs real connection records
-   (§D.1 target shape, `context-contract.md` §9 — deliberately **not** in the launch contract). The
+   (§D.1 target shape, `legacy-three-slot-context-contract.md` §9 — deliberately **not** in the launch contract). The
    cross-match guard is reproduced by the automated DB test today; live Phase A validation of it
    waits on §D.3/§D.4 real-connection context landing in the standalone env. Recorded as a gap, not a
    pass.

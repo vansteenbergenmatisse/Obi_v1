@@ -385,7 +385,7 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _require_valid_product_catalog(self) -> Settings:
-        # fail fast at startup if product_catalog.json breaks any of the 8 catalog.md §3
+        # fail fast at startup if product_catalog.json breaks any of the 8 product-catalog.md §3
         # rules (incl. the platforms.json cross-check) — panel mi-catalog, substep 8.1.1
         _ = self.product_catalog
         return self

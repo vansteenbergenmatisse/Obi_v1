@@ -163,7 +163,7 @@ found in a token, a config, or an owner statement, and the addition names its ev
 2. If the product's docs get a knowledge scope: add the tag to `knowledge_scopes.json` and the
    integration→scope mapping to `platforms.json` — those files keep owning those concepts
    (today no scope tags exist for the accounting products; open item O9 in
-   `decision-memo.md`).
+   `integration-token-decisions.md`).
 3. If customers should see it at launch in a POS/PMS slot: add it to `launch_allowlist`
    (an owner decision, like every visibility change).
 4. Once the loader exists: restart to pick the file up (same operational note as
@@ -177,6 +177,6 @@ found in a token, a config, or an owner statement, and the addition names its ev
   **done, substep 8.1.1 (2026-10-05)**: `product_catalog.py`, exported from the platform
   config root, fail-fast via `Settings._require_valid_product_catalog`.
 - The gate change consuming it (slot membership + role agreement + allowlist + alias
-  resolution) — see `decision-memo.md` §4.
+  resolution) — see `integration-token-decisions.md` §4.
 - The `platforms.json` cross-check (§3 rule 8) wired into the same startup validation.
 - Tests red-first per behavior, including the §D.9 example matrix.

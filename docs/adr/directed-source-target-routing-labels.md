@@ -13,7 +13,7 @@ routes on **membership slots**: the token carries `context.slots{pos,pms,account
 a company *has*), the gate derives eligibility (general + each filled slot + the pairs POS-PMS and
 PMS-Accounting), and an in-SQL applicability filter (migration 0015) narrows further. Direction is
 not modeled — a Mews→Toast customer and a Toast→Mews customer are indistinguishable to the gate, and
-a direct POS→Accounting pair is deliberately not derivable (decision-memo O1).
+a direct POS→Accounting pair is deliberately not derivable (integration-token-decisions O1).
 
 A dev handoff ("Obi page routing — Option A: how Obi picks pages") proposes a different model:
 route each chat on a **directed `source → target` connection**, selecting pages by a hard filter on
@@ -91,7 +91,7 @@ parameters; it does not itself land code (implementation is staged and gated by 
    connection (never-bend rules 2–3).
 
 4. **Supersession is explicit, never silent.** Every superseded statement in `plan.md` §D,
-   `decision-memo.md` (O1/O4/O5), `context-contract.md` §5.2 and `docs/plan/decisions.md`
+   `integration-token-decisions.md` (O1/O4/O5), `legacy-three-slot-context-contract.md` §5.2 and `docs/plan/decisions.md`
    (`partner-token-handover`) carries a dated "SUPERSEDED by Option A (ADR-directed-source-target-routing-labels)" note; the old text
    is kept for provenance. A new `decisions.md` row (`connection-routing`) supersedes
    `partner-token-handover`.
@@ -108,7 +108,7 @@ parameters; it does not itself land code (implementation is staged and gated by 
   ADR-source-id-row-security-with-reader-writer-roles and ADR-scope-state-materialized-as-tags (the `tags` axis gains a sibling `labels` axis with its own RLS policy;
   the tag taxonomy changes). The source-isolation and scope-backstop *mechanisms* they establish are
   reused, not removed.
-- **Closes** decision-memo O1 (connection records beyond the three slots now exist, as directed
+- **Closes** integration-token-decisions O1 (connection records beyond the three slots now exist, as directed
   labels) and **retires for routing** O4 (accounting inert) and O5 (`context.slots` is the fixed
   handover shape — still accepted, no longer the routing contract).
 - **Requires a Confluence content relabel** (D0) before Option A serves production content; until

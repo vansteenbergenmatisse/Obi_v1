@@ -6,8 +6,8 @@ The single home for the owner-requested **implementation → independent-audit �
 
 ## What lives here
 
-- `traceability-matrix.md` — the requirement-traceability matrix and 15-item test-contract coverage from the initial research wave (six independent read-only auditors + synthesis). One row per requirement: required behavior, current behavior, status, implementation location, existing/missing tests, smallest change, severity, evidence. Includes the premise-verification table (which mandate assumptions were confirmed vs refuted) and the prioritized gap list.
-- `loop-log.md` — the running record of each loop wave: implementation slices, audit findings, triage verdicts, repairs, mutation-test results, and the two-consecutive-clean-wave exit gate. (Appended as the loop runs.)
+- `embed-security-traceability-matrix.md` — the requirement-traceability matrix and 15-item test-contract coverage from the initial research wave (six independent read-only auditors + synthesis). One row per requirement: required behavior, current behavior, status, implementation location, existing/missing tests, smallest change, severity, evidence. Includes the premise-verification table (which mandate assumptions were confirmed vs refuted) and the prioritized gap list.
+- `audit-loop-wave-log.md` — the running record of each loop wave: implementation slices, audit findings, triage verdicts, repairs, mutation-test results, and the two-consecutive-clean-wave exit gate. (Appended as the loop runs.)
 
 ## The gap slices
 

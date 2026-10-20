@@ -1,7 +1,7 @@
 """panel mi-catalog · substep 8.1.1 — The product catalog gets a loader.
 
 The one product file (`knowledge-base/config/product_catalog.json`) is validated at startup
-against the 8 rules in docs/Final_docs/5-integration-context/catalog.md §3, in the fail-fast
+against the 8 rules in docs/Final_docs/5-integration-context/product-catalog.md §3, in the fail-fast
 style of knowledge_scopes.py: a bad entry stops the backend before it can mis-scope anyone,
 each failure naming the offending entry. A valid catalog exposes product lookups, alias
 resolution (operacloud → opera-cloud) and the launch allowlist; an unmatched value fails
@@ -45,7 +45,7 @@ def _catalog(**overrides: Any) -> dict[str, Any]:
     return data
 
 
-# --- the 8 validation rules of catalog.md §3, one red-first test each ---
+# --- the 8 validation rules of product-catalog.md §3, one red-first test each ---
 
 
 def test_catalog_bad_slug_fails_and_names_it(tmp_path: Path) -> None:

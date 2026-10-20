@@ -104,7 +104,7 @@ Your token endpoint signs a JWT like this:
 | Case | What it checks | Status |
 |---|---|---|
 | Directed connection | A `source → target` pair resolves and the user gets answers from that connection's pages only | **Works today** (the directed gate + hard label filter are built and tested) |
-| Wrong-connection isolation | A different connection's pages never appear, at any similarity | **Works today** (proven at the DB + eval level; `phase-9-isolation-run.txt`) |
+| Wrong-connection isolation | A different connection's pages never appear, at any similarity | **Works today** (proven at the DB + eval level; `directed-routing-isolation-run.txt`) |
 | Unsupported source | A source not in the catalog or not enabled hides the widget; a known source your issuer may not vend is refused | **Works today** (403 `source_not_enabled` before any search, or 401 on a vend violation; ADR-source-system-decides-widget-eligibility) |
 | Any target | The target is never checked; an unknown target still gets general + source answers | **Works today** (routes on `[obi-general, {source}-general]`) |
 | Direction swap | `source` and `target` swapped is treated as a new connection and resets the chat | **Works today** (widget + session) |

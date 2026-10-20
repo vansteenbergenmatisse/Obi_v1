@@ -4,12 +4,12 @@
 > **confirmed** and which are still **missing**, plus the ready-to-paste `platforms.json` entry for
 > each. Nothing here activates a registration. Every entry stays `active: false` until its issuer,
 > JWKS and token endpoint are verified against a fresh signed token (the sequence in
-> `phase-9-partner-replies.md` §"What happens after they reply"). Facts are **owner/partner-supplied,
+> `directed-routing-partner-reply-drafts.md` §"What happens after they reply"). Facts are **owner/partner-supplied,
 > never invented** (never-bend rule 12).
 >
 > Opened 2026-10-13 (owner decision round 4, `plan.md` §D.18). Advances open item **O7**
-> (`decision-memo.md` §5) and the `ov-auth-key` tracking row (`docs/plan/decisions.md`). This doc is
-> the request/status ledger; the contract both partners receive is `phase-9-partner-replies.md`.
+> (`integration-token-decisions.md` §5) and the `ov-auth-key` tracking row (`docs/plan/decisions.md`). This doc is
+> the request/status ledger; the contract both partners receive is `directed-routing-partner-reply-drafts.md`.
 
 ## The five facts we need, per partner
 
@@ -108,7 +108,7 @@ the JWKS serves keys and a fresh token from the deployed dev endpoint verifies, 
 `true`, remove the two Base hosts from `obi-test`, redeploy both services.
 **Data Hub** keeps its inactive placeholder (`issuer`/`jwks_url` = `"TODO until 4.x"`) with domain
 `datahub.omniboost.io`. When Jasper's facts land, fill the block below and run the activation
-sequence (`phase-9-partner-replies.md` §"What happens after they reply").
+sequence (`directed-routing-partner-reply-drafts.md` §"What happens after they reply").
 
 **Data Hub (update the existing `datahub` placeholder):**
 

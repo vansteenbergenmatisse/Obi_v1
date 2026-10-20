@@ -1,7 +1,7 @@
 """Context-aware rerank request construction (panel mi-rerank, substep 8.3.2) — §D.6.
 
 The Cohere v2 ``/rerank`` API carries no instruction / context field in any version
-(``docs/Final_docs/5-integration-context/research-rerank-api.md``), so the only way to tell
+(``docs/Final_docs/5-integration-context/reranker-api-wiring-notes.md``), so the only way to tell
 the cross-encoder *who is asking* is to put it in the two string inputs it does accept:
 
 * **(a)** the verified customer context prepended to the ``query`` string, and

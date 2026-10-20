@@ -10,7 +10,7 @@ Append-only. One section per wave. Never edit a prior wave; a correction is a ne
 
 ## Wave 0 — Research & requirement-traceability matrix (2026-09-22)
 
-Six independent read-only research agents (auth & host-key, browser/iframe, authorization/isolation, Confluence/identity, lifecycle/stale-state, config/migration/CI) inspected code, config, tests, migrations, and docs — reaching conclusions from the code itself, not the plan. One agent (auth & host-key) hit a structured-output failure on the first run and was re-run standalone. A synthesis pass built `traceability-matrix.md`.
+Six independent read-only research agents (auth & host-key, browser/iframe, authorization/isolation, Confluence/identity, lifecycle/stale-state, config/migration/CI) inspected code, config, tests, migrations, and docs — reaching conclusions from the code itself, not the plan. One agent (auth & host-key) hit a structured-output failure on the first run and was re-run standalone. A synthesis pass built `embed-security-traceability-matrix.md`.
 
 **Baseline (green) before any change:** `make boundaries` OK · backend unit 529 passed · knowledge-base unit 17 passed · frontend vitest 240 passed · Playwright e2e 4 passed.
 
@@ -256,7 +256,7 @@ No actionable finding of any severity from any auditor. **Wave 10 = CLEAN. Conse
 
 ## LOOP EXIT — two consecutive clean waves met (2026-09-22)
 
-The mandate's clean-exit criteria are satisfied for the locally-provable core: every target requirement has an implementation location and an automated proof; all suites green (backend unit 630, backend db 281/1xf, kb 23+18, frontend vitest 288, Playwright embed e2e 4, typecheck/ruff/pyright/boundaries clean); all targeted mutations caught by the tests (SEC-MUT + each new control carries a revert→red test, confirmed empirically by the audit waves); no unresolved critical/high/medium core finding — every finding this loop was LOW and is fixed; docs + ledger + progress-log match the verified state; migration 0010 recorded as inert-for-local / mandatory-before-prod; and **Waves 9 and 10 are two consecutive fresh independent clean waves**. Real Base / Data Hub staging readiness remains a separate external gate (see the final report). Final report: `FINAL-REPORT.md` in this folder.
+The mandate's clean-exit criteria are satisfied for the locally-provable core: every target requirement has an implementation location and an automated proof; all suites green (backend unit 630, backend db 281/1xf, kb 23+18, frontend vitest 288, Playwright embed e2e 4, typecheck/ruff/pyright/boundaries clean); all targeted mutations caught by the tests (SEC-MUT + each new control carries a revert→red test, confirmed empirically by the audit waves); no unresolved critical/high/medium core finding — every finding this loop was LOW and is fixed; docs + ledger + progress-log match the verified state; migration 0010 recorded as inert-for-local / mandatory-before-prod; and **Waves 9 and 10 are two consecutive fresh independent clean waves**. Real Base / Data Hub staging readiness remains a separate external gate (see the final report). Final report: `embed-security-final-report.md` in this folder.
 
 
 

@@ -1,12 +1,12 @@
 # Phase A · run sheet (fill-in checklist for substep 8.5.2)
 
 **Status: prepared, not run.** This is the owner's top-to-bottom worksheet for Phase A. It
-transcribes the cases from `phase-a-validation-cases.md` into one fillable section per case (1–18),
+transcribes the cases from `human-validation-cases.md` into one fillable section per case (1–18),
 each carrying the §D.10 seven-step evidence table with **empty** PASS/FAIL and trace-ref cells.
 Nothing here is a claim that any case passed — a case counts only when a human records evidence per
 step (panel `mi-validate`, plan.md §D.10).
 
-Read `phase-a-validation-cases.md` for the full derivation of every expected result (where each
+Read `human-validation-cases.md` for the full derivation of every expected result (where each
 "expected" line comes from in the design) and the honest gaps. This sheet is the thing you fill in;
 that doc is the reference. The seven-step order (never reorder) is: **1 Configuration · 2 Metadata ·
 3 Included/excluded page & chunk ids · 4 Reranker results · 5 Answers · 6 Citations · 7 Further
@@ -298,7 +298,7 @@ recorded **twice** — once on the local harness (runs now) and once against eac
 (when it exists). A local PASS never stands in for a partner-staging PASS; keep the legs separate.
 Expected results derive from the token claim schema (`packages/contracts/src/token-claims.json`),
 the verification order (`token_verifier.py:146-217`), the gate (`auth_context.py:173-230`),
-ADR-directed-source-target-routing-labels, the partner contract (`phase-9-partner-replies.md`), and owner decision round 4 (§D.18).
+ADR-directed-source-target-routing-labels, the partner contract (`directed-routing-partner-reply-drafts.md`), and owner decision round 4 (§D.18).
 
 For each integration case: the **seven-step evidence table** records one run; the **per-environment
 table** records the local/Base/Data Hub legs separately.
@@ -539,7 +539,7 @@ table** records the local/Base/Data Hub legs separately.
 - **How to reach this context:** a directed token whose **source** is not a supported system (e.g.
   `source_system: "PEP PMS"`, `target_system: "NetSuite"`). Only the source decides whether Obi
   shows (`enabled_sources` = `mews`, `toast`, `opera-cloud`); the target is never checked. Full case:
-  `phase-a-validation-cases.md` Case 18.
+  `human-validation-cases.md` Case 18.
 - **Action:** open Obi.
 - **Expected:** the widget is **hidden**; `GET /chat/visibility` → `{"visible":false,"reason":"source_not_enabled"}`;
   `POST /chat` → **403** `{"error":"integration not available","reason":"source_not_enabled"}` (no

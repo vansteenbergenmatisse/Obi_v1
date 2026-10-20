@@ -12,7 +12,7 @@
 **Status: design of record for the Step-5 build.** Everything normative here traces to the owner
 decisions in `docs/Final_docs/plan.md` §D.13 (2026-10-05), to §D.1/§D.2/§D.11, or to real code
 cited by file and line. Where the owner has not decided, this document says so and points at the
-§D part that will decide it — the full open list lives in `decision-memo.md`.
+§D part that will decide it — the full open list lives in `integration-token-decisions.md`.
 
 One contract serves **all three environments**: Base, Data Hub, and the standalone/test
 environment (§D.1, §D.8). The standalone environment uses the same contract with
@@ -37,11 +37,11 @@ more than one system at launch.
 
 Slot values are canonical ids resolved through the catalog; alias values (e.g. `operacloud` →
 `opera-cloud`) resolve through the catalog's aliases before validation (§D.11; see
-`catalog.md` — no legacy compound value exists; O8 closed in decision round 2).
+`product-catalog.md` — no legacy compound value exists; O8 closed in decision round 2).
 
 **Claim field names: FIXED (substep 8.1.2, 2026-10-05).** The owner decided the *content* of
 the token (company ID + three slots); the exact JSON claim names and nesting were fixed when
-`packages/contracts/` was extended (O5 closed — `decision-memo.md` §3): the §8 shape below is
+`packages/contracts/` was extended (O5 closed — `integration-token-decisions.md` §3): the §8 shape below is
 now the shape of record in `packages/contracts/src/token-claims.json`, verbatim.
 
 ## 2 · Trust model: the token decides, the body never does
@@ -85,7 +85,7 @@ slots justify, never more. When connection-specific guidance would need the miss
 configuration, the pipeline serves applicable general guidance and asks for the missing
 configuration instead of broadening (§D.4). A three-way wire-level marker (absent vs
 explicitly-unknown) is **not** part of the decided launch token; if §D.3/§D.4's richer context
-record needs one, it is decided there (open item — `decision-memo.md` §5).
+record needs one, it is decided there (open item — `integration-token-decisions.md` §5).
 
 ## 4 · The launch allowlist and the visibility rule
 
@@ -103,7 +103,7 @@ Notes that keep this honest:
 - The decided rule names **POS/PMS slots only**. No visibility rule was decided for the
   Accounting slot; a filled accounting slot does not hide Obi under the decided wording. What an
   *unrecognized* accounting value does (beyond failing catalog membership, which fails closed)
-  is an open item (`decision-memo.md` §5).
+  is an open item (`integration-token-decisions.md` §5).
 - Hiding is a visibility decision, not the security boundary. A token whose slot value is not in
   the catalog at all keeps **failing closed — 400 before any search** (§D.11); the allowlist
   check is enforced by the backend gate as well, never only by the frontend (never-bend rules
@@ -165,7 +165,7 @@ enumeration, which names exactly two pair families: **Toast→Mews** (POS+PMS bo
 - **A direct POS–Accounting pair is NOT derived from three filled slots.** It needs a real
   POS→Accounting connection, and the launch token cannot express one. Direct-pair guides become
   eligible only when §D.4's real-connection matching lands and the context carries actual
-  connection records (§D.1's illustrative record; open item — `decision-memo.md` §5).
+  connection records (§D.1's illustrative record; open item — `integration-token-decisions.md` §5).
 
 This is a deliberate, honest narrowing: within what the three-slot token can express, the
 slot-derived POS–PMS and PMS–Accounting pairs coincide with connections the host platforms
@@ -185,7 +185,7 @@ context it will receive.
 §D.13 item 3 (§15 keuze 3), decided: **each result shows which slot let it in.** Every retrieved
 document (and its citation/trace) is attributable to the reason it was eligible: `general`, a
 named filled slot (`pos` / `pms` / `accounting`), or a slot pair. Wire-level field names were
-fixed in substep 8.1.2 (`decision-memo.md` §3, T4/O5 closed): `Citation.attribution`, optional,
+fixed in substep 8.1.2 (`integration-token-decisions.md` §3, T4/O5 closed): `Citation.attribution`, optional,
 enum `general | pos | pms | accounting | pair` (TS union `CitationAttribution`), absent until
 the backend assembles it (8.3.4). The requirement — inspectable inclusion reasons, which §D.10's
 human validation checks — is decided.
@@ -200,7 +200,7 @@ interpreted as a token with one filled slot**. Concretely (§D.11):
   role in the catalog.
 - Alias values (e.g. `operacloud`) map to canonical ids via the catalog's aliases (§D.11).
   No legacy *compound* value exists — §D.11's `toast-opera` example was proven to appear
-  nowhere in the repo and was removed (O8 closed, decision round 2; see `catalog.md` §4).
+  nowhere in the repo and was removed (O8 closed, decision round 2; see `product-catalog.md` §4).
 - Unknown values keep failing closed: **400 before any search** (§D.11), exactly like today's
   unknown-scope behavior (`router.py:283`).
 
@@ -305,5 +305,5 @@ frontend hiding is UX, not the boundary (§4).
 in the design's target shape but are **not** decided for launch and are **not** in this
 contract: `property_id` and per-property context, `connections` (actual connection records with
 `type`/`directions`/`instance`), `selected_connection`, `unknown_roles`, multiple
-instances/connections per company. Each is tracked in `decision-memo.md` §5 with the §D part
+instances/connections per company. Each is tracked in `integration-token-decisions.md` §5 with the §D part
 that will decide it (§D.3–§D.4). Never infer any of them from the slots.

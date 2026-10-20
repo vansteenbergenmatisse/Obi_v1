@@ -19,7 +19,7 @@ The frontend **is already deployed and live** as the Railway service **`obi-web`
   `obi.omniboost.com` host named in the brief/em-loader "Loads from" line remains the eventual
   target; it currently CNAMEs to the main omniboost.com site and does **not** serve `/obi.js`.
 - Proof of the live state: `node frontend/scripts/embed-check-live.mjs` → all 7 checks pass; captured
-  output in `docs/Final_docs/5-integration-context/embed-check-8.4.3-run.txt`.
+  output in `docs/Final_docs/5-integration-context/embed-live-check-output.txt`.
 
 ### Service variables observed on `obi-web` (keys only — values never read or printed)
 

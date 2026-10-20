@@ -2,12 +2,12 @@
 
 `knowledge-base/config/product_catalog.json` is THE single canonical registry of software
 products — nothing else in the repo may define a product id, role, alias or connection type
-(docs/Final_docs/5-integration-context/catalog.md). Like `knowledge_scopes.py`, this is a
+(docs/Final_docs/5-integration-context/product-catalog.md). Like `knowledge_scopes.py`, this is a
 content registry an operator edits directly, read at startup and validated fail-fast: the
 catalog decides which token slot values exist, so a bad entry stops the backend before it can
 mis-scope anyone, each failure naming the offending entry.
 
-The 8 validation rules (catalog.md §3), enforced in order:
+The 8 validation rules (product-catalog.md §3), enforced in order:
   1. every canonical id and alias is a short lowercase slug — no silent lowercasing;
   2. canonical ids unique; aliases unique across the whole file (per-product aliases plus
      legacy_aliases keys) and never colliding with any canonical id;
@@ -25,7 +25,7 @@ The 8 validation rules (catalog.md §3), enforced in order:
   8. cross-check against platforms.json: every key of its `integrations` map resolves to a
      canonical id (or alias) in this catalog.
 
-Resolution (catalog.md §4) happens once, before any validation or allowlist check, at the
+Resolution (product-catalog.md §4) happens once, before any validation or allowlist check, at the
 gate: canonical id first, then per-product alias, then legacy compound expansion; anything
 else resolves to nothing — fail closed, 400 before any search, never a fuzzy match.
 """
@@ -105,7 +105,7 @@ class ProductCatalog:
     enabled_sources: frozenset[str] = frozenset()
 
     def resolve(self, value: str) -> tuple[str, ...]:
-        """Resolve one incoming value to canonical ids (catalog.md §4).
+        """Resolve one incoming value to canonical ids (product-catalog.md §4).
 
         Canonical id first, then per-product alias (one-to-one), then legacy compound
         expansion (one-to-many). An unmatched value returns the empty tuple — fail

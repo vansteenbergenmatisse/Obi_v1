@@ -103,7 +103,7 @@ richer context record lands.
   example's verified context and asserts the EXACT set of included page ids AND the EXACT set of
   excluded page ids (never a count), with each hit's `attribution` as the inspectable inclusion
   reason. Example 5 (Toast/OperaCloud + Mews/QuickBooks, modelled by two real connection records
-  with empty slots per context-contract §9) proves a Toast/Mews pair guide is never eligible —
+  with empty slots per legacy-three-slot-context-contract §9) proves a Toast/Mews pair guide is never eligible —
   the cross-matching guard. Red-first shown by the break-it inversion: dropping
   `_ELIGIBILITY_CLAUSE` makes every excluded page leak back and all five go red; restored green.
   The `mixed_connection` eval stage (5 §D.9 questions) extends the gold set; the existing four

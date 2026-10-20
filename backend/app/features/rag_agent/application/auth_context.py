@@ -28,7 +28,7 @@ verifies-without-serving — PLAN 11.1c):
 
 Substep 8.1.3 (panels mi-gate/mi-contract): the gate accepts the three-slot integration context.
 After the active-platform gate, the FIVE slot checks of
-docs/Final_docs/5-integration-context/decision-memo.md §4 run in order over the filled slots —
+docs/Final_docs/5-integration-context/integration-token-decisions.md §4 run in order over the filled slots —
 a legacy single-`integration` note is read as ONE filled slot (the product's catalog role picks
 the slot), so both token forms go through the same chain:
 
@@ -166,7 +166,7 @@ def general_only_context() -> AuthContext:
 
 # The §D.13 slot roles in their fixed order (matches the catalog's VALID_PRODUCT_ROLES).
 _SLOT_ROLES = ("pos", "pms", "accounting")
-# Check 1 (shape): mirrors the router's body knowledge_scope slug validator (decision-memo §4).
+# Check 1 (shape): mirrors the router's body knowledge_scope slug validator (integration-token-decisions §4).
 _SLOT_VALUE_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$")
 
 

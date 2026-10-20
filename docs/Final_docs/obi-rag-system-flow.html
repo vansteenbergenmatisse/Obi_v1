@@ -8037,7 +8037,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "the claim shape to extend (T1/T2)"
 ],
 [
-"docs/Final_docs/5-integration-context/context-contract.md",
+"docs/Final_docs/5-integration-context/legacy-three-slot-context-contract.md",
 "the contract of record"
 ],
 [
@@ -8073,7 +8073,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 ],
 [
 "Loader",
-"fail-fast at startup on the 8 validation rules in catalog.md §3, incl. the platforms.json cross-check"
+"fail-fast at startup on the 8 validation rules in product-catalog.md §3, incl. the platforms.json cross-check"
 ],
 [
 "Aliases",
@@ -8086,7 +8086,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "the registry"
 ],
 [
-"docs/Final_docs/5-integration-context/catalog.md",
+"docs/Final_docs/5-integration-context/product-catalog.md",
 "the schema and the 8 rules"
 ],
 [
@@ -8135,7 +8135,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "build_auth_context — where the checks extend"
 ],
 [
-"docs/Final_docs/5-integration-context/decision-memo.md",
+"docs/Final_docs/5-integration-context/integration-token-decisions.md",
 "§4 · the five checks"
 ]
 ],
@@ -8221,7 +8221,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "where the eligibility predicate is built"
 ],
 [
-"docs/Final_docs/5-integration-context/context-contract.md",
+"docs/Final_docs/5-integration-context/legacy-three-slot-context-contract.md",
 "§5 · eligibility"
 ]
 ],
@@ -8311,7 +8311,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "fetch_rerank_texts"
 ],
 [
-"docs/Final_docs/5-integration-context/research-rerank-api.md",
+"docs/Final_docs/5-integration-context/reranker-api-wiring-notes.md",
 "the decision of record"
 ]
 ],
@@ -8597,7 +8597,7 @@ ALTER TABLE query_trace ADD COLUMN decision text;
 "h": "The hard label filter before top-k",
 "st": "unverified",
 "simple": "The database only returns pages whose labels match this chat's connection. Wrong-connection pages can never reach the answer, no matter how similar they look.",
-"today": "9.6.1 closeout: Phase-9 triple-check green (boundaries 0 · backend 912 unit + 392 db + 1 xfailed · kb 29+24 · make eval floor + routing-off-vs-on · pnpm test:e2e 7/7), securing-http-and-llm-endpoints review on file (PASS, phase-9-directed-connection-security-review.md), DB-level isolation + 0016/0017 reversibility proven (phase-9-isolation-run.txt); stays Unverified overall — the live relabeled-corpus leg is owner-blocked (prod wiped + at 0014, 9.5.1 relabel + prod migrate + re-sync pending).",
+"today": "9.6.1 closeout: Phase-9 triple-check green (boundaries 0 · backend 912 unit + 392 db + 1 xfailed · kb 29+24 · make eval floor + routing-off-vs-on · pnpm test:e2e 7/7), securing-http-and-llm-endpoints review on file (PASS, directed-routing-security-review.md), DB-level isolation + 0016/0017 reversibility proven (directed-routing-isolation-run.txt); stays Unverified overall — the live relabeled-corpus leg is owner-blocked (prod wiped + at 0014, 9.5.1 relabel + prod migrate + re-sync pending).",
 "f": [
 [
 "Hard pre-filter",

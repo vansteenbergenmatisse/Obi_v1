@@ -56,7 +56,7 @@ search over general + filled slots + actual pairs; keuze 3 → per-slot source a
   (`knowledge-base/config/product_catalog.json`) before any validation: per-product `aliases`
   (e.g. `operacloud` → `opera-cloud`, evidence-based) plus the `legacy_aliases` compound
   mechanism — which is **empty by decision round 2** (§D.11's `toast-opera` example was proven
-  to exist nowhere; O8 closed, see `catalog.md` §4). The mechanism stays; values are added only
+  to exist nowhere; O8 closed, see `product-catalog.md` §4). The mechanism stays; values are added only
   with named evidence.
 - **Unknown values keep failing closed** with a **400 before any search** — the behavior that
   exists today for an unknown body scope
@@ -153,7 +153,7 @@ property/instance context records stay open in O1/O2.
 | O5 | ✅ **CLOSED (substep 8.1.2, 2026-10-05):** contract §8's proposed shape adopted unchanged — top-level `company_id` + `context.slots.{pos,pms,accounting}` (each one canonical catalog id or `null`; `context` requires `company_id`; the legacy all-three-or-none rule scoped to context-less tokens), and `Citation.attribution` with enum `general/pos/pms/accounting/pair` (TS: `CitationAttribution`). Why: the proposal matched §D.13's decided content exactly, the slot names reuse the catalog loader's one role vocabulary (`VALID_PRODUCT_ROLES`, no second spelling to drift), and the attribution values are §D.13 keuze 3 verbatim. Details in §3 | closed |
 | O6 | ✅ **CLOSED (substep 8.1.2, 2026-10-05):** `knowledgeScope` **keeps the single-string shape unchanged**. Why: it is non-authoritative either way (never-bend rule 2 — only the verified token decides), so a slots-shaped body hint adds no capability while forcing a migration; the conservative no-behavior-change default wins | closed |
 | O7 | **Base + Data Hub platform-registry entries** — `platforms.json` has datahub with TODO issuer/JWKS placeholders (`knowledge-base/config/platforms.json:5`) and **no Base entry at all**; issuers, JWKS URLs and vend sets are owner/platform-supplied facts (never-bend rule 12 — never invented). ~~**Owner ordered (decision round 2, 2026-10-05): deliberately LAST**~~ → **AMENDED (decision round 4, 2026-10-13, `plan.md` §D.18 item 1): integration prep runs NOW, in parallel with Phase A** — contact both partners, collect the five facts, stand the wiring up to activation; the ordering guard that remains is "no registration goes `active:true` until its issuer/JWKS/token endpoint verify." **Status: partial facts in from both, 0/5 confirmed each; neither activatable** — per-field status + ready-to-paste entries in `partner-facts.md`. | owner + platform teams; in progress — **tracked in `partner-facts.md`** |
-| O8 | ✅ **CLOSED (decision round 2, 2026-10-05):** `toast-opera` **does not exist** — whole-repo search finds it in no config, code, token, or tag; it was plan.md's own illustrative example ("e.g. legacy values like `toast-opera`") carried from §D.1 into §D.11, a placeholder describing the alias mechanism, never an observed datum. Removed from the catalog; `legacy_aliases` is `{}` (mechanism kept, values only with named evidence). Full reasoning in `catalog.md` §4 | closed |
+| O8 | ✅ **CLOSED (decision round 2, 2026-10-05):** `toast-opera` **does not exist** — whole-repo search finds it in no config, code, token, or tag; it was plan.md's own illustrative example ("e.g. legacy values like `toast-opera`") carried from §D.1 into §D.11, a placeholder describing the alias mechanism, never an observed datum. Removed from the catalog; `legacy_aliases` is `{}` (mechanism kept, values only with named evidence). Full reasoning in `product-catalog.md` §4 | closed |
 | O9 | **Accounting products ↔ knowledge scopes** — no Confluence scope tag exists today for QuickBooks Online or Xero (`knowledge_scopes.json` has mews/operacloud/toast only); how accounting-product guides are tagged and scoped | §D.3 (applicability metadata) + the tag-map substep that adds the scopes |
 | O10 | **Standalone preset definitions** — §D.8 requires backend-validated presets covering the four flow types + the three-system workflow; their concrete contents | the §D.8 substep |
 
@@ -217,8 +217,8 @@ enabled; reversible, no migration); `TargetNotEnabledError` after vend rights �
 rule 10); new optional `Error.reason` in `chat.yaml`; read-only `GET /chat/visibility`; frontend
 loader init fetch + the 4th `obi:hidden` frame→host message (both bent conventions authorized by
 ADR-widget-hides-via-visibility-probe). Retrieval routing (ADR-directed-source-target-routing-labels D5 four-label hard filter) is **unchanged** — the gate is
-widget-eligibility only, so rule 11's gold-set before/after does not apply. `context-contract.md`
-§4/§8.4 and `catalog.md` are synced, and `phase-a-validation-cases.md` Case 18 is flipped from
+widget-eligibility only, so rule 11's gold-set before/after does not apply. `legacy-three-slot-context-contract.md`
+§4/§8.4 and `product-catalog.md` are synced, and `human-validation-cases.md` Case 18 is flipped from
 decision-dependent to a live pass/fail gate (disabled target ⇒ widget hidden + 403). The §D.18
 item-4 intent is now resolved in code and of record.
 
